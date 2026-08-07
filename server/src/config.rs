@@ -21,6 +21,8 @@ pub struct Config {
     pub email_api_backup: String,
     pub email_sender: String,
     pub email_password: String,
+    #[serde(default)]
+    pub static_dir: String,
 }
 
 impl Config {
@@ -52,6 +54,7 @@ impl Config {
             email_api_backup: env::var("EMAIL_API_BACKUP").unwrap_or_else(|_| "http://a.bzxhkj.com/b".into()),
             email_sender: env::var("EMAIL_SENDER").unwrap_or_else(|_| "admin@bzxhkj.com".into()),
             email_password: env::var("EMAIL_PASSWORD").unwrap_or_else(|_| "1183265081aA".into()),
+            static_dir: env::var("STATIC_DIR").unwrap_or_default(),
         }
     }
 }

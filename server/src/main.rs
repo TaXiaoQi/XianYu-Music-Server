@@ -17,6 +17,7 @@ use sqlx::MySqlPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
+use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -37,10 +38,20 @@ async fn main() -> anyhow::Result<()> {
     let cors = CorsLayer::permissive();
     let pool = state.pool.clone();
 
+    // 静态文件托管目录（空则不托管）
+    let static_dir = if state.config.static_dir.is_empty() {
+        "../admin-web/dist".to_string()
+    } else {
+        state.config.static_dir.clone()
+    };
+    let index_path = format!("{}/index.html", static_dir);
+    let serve_dir = ServeDir::new(&static_dir).fallback(ServeFile::new(&index_path));
+
     let app = Router::new()
         .route("/api", get(handle_api).post(handle_api))
         .route("/api/", get(handle_api).post(handle_api))
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
+        .fallback_service(serve_dir)
         .layer(cors)
         .with_state(state);
 

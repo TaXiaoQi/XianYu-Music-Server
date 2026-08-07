@@ -206,7 +206,8 @@ cd server && cargo build --release
   "email_api_primary": "http://a.bzxhkj.com/a",
   "email_api_backup": "http://a.bzxhkj.com/b",
   "email_sender": "admin@bzxhkj.com",
-  "email_password": "your_email_password"
+  "email_password": "your_email_password",
+  "static_dir": "../admin-web/dist"
 }
 ```
 
@@ -216,6 +217,7 @@ cd server && cargo build --release
 | `email_api_backup` | 惜梦邮箱 API 备用地址 |
 | `email_sender` | 发件邮箱地址 |
 | `email_password` | 发件邮箱调用密码 |
+| `static_dir` | 前端静态文件目录，留空则默认 `../admin-web/dist`。Rust 服务端直接托管前端，无需 Nginx |
 
 首次启动时，服务会自动创建全部 33 张数据库表 (含 `CREATE TABLE IF NOT EXISTS`)。
 
