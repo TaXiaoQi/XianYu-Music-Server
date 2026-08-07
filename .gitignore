@@ -1,0 +1,25 @@
+# 密钥与配置（含数据库密码、API 密钥），禁止入库
+server/config.json
+
+# Rust 编译产物
+server/target/
+
+# 前端依赖与构建产物
+admin-web/node_modules/
+admin-web/dist/
+
+# 上传文件（用户生成内容）
+uploads/
+
+# 数据库备份
+beifen/
+
+# 日志与临时文件
+*.log
+*.bak
+*.backup
+*.tmp
+
+# 系统文件
+Thumbs.db
+.DS_Store

@@ -1,0 +1,50 @@
+[2m2026-08-07T12:20:52.474863Z[0m [32m INFO[0m [2mserver[0m[2m:[0m listening on 0.0.0.0:8081
+[2m2026-08-07T12:20:57.492956Z[0m [33m WARN[0m [2mserver::db[0m[2m:[0m initial db ping failed: pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:02.508573Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `source_call_log` (
+            `id` bigint(20) unsig -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:07.516990Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `login_log` (
+            `id` bigint(20) unsigned NO -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:12.523860Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `error_log` (
+            `id` bigint(20) unsigned NO -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:17.540012Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `app_users` (
+            `id` bigint(20) unsigned NO -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:22.544910Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `email_verify_codes` (
+            `id` bigint(20) un -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:27.566708Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `admin_users` (
+            `id` bigint(20) unsigned  -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:32.577125Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `admin_operation_log` (
+            `id` bigint(20) u -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:37.587081Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `admin_login_log` (
+            `id` bigint(20) unsig -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:42.594246Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `email_templates` (
+            `id` bigint(20) unsig -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:47.609827Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `email_send_log` (
+            `id` bigint(20) unsign -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:52.623492Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `music_source_config` (
+            `id` int(11) NOT  -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:21:57.629942Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `app_versions` (
+            `id` int(11) NOT NULL AU -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:02.637335Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `user_settings` (
+            `ciyuanxi_id` varchar(3 -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:07.652084Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `chat_channels` (
+            `id` bigint(20) unsigne -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:12.662632Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `chat_messages` (
+            `id` bigint(20) unsigne -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:17.669026Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `chat_user_remarks` (
+            `id` bigint(20) uns -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:22.677857Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `chat_channel_remarks` (
+            `id` bigint(20)  -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:27.692262Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `tv_login_codes` (
+            `id` bigint(20) unsign -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:32.699609Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `user_feedback` (
+            `id` bigint(20) unsigne -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:37.712077Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `user_playlists` (
+            `id` bigint(20) unsign -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:42.726832Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `user_playlist_songs` (
+            `id` bigint(20) u -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:47.742075Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `user_avatar_pending` (
+            `id` bigint(20) u -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:52.746484Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `user_nickname_pending` (
+            `id` bigint(20) -> pool timed out while waiting for an open connection
+[2m2026-08-07T12:22:57.760484Z[0m [33m WARN[0m [2mserver::schema[0m[2m:[0m schema init failed: CREATE TABLE IF NOT EXISTS `notification_emails` (
+            `id` int(11) NOT  -> pool timed out while waiting for an open connection
