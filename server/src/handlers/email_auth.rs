@@ -708,7 +708,6 @@ mod tests {
             email_api_backup: "http://localhost/b".into(),
             email_sender: "test@localhost".into(),
             email_password: "pass".into(),
-            static_dir: "".into(),
             local_debug_no_db: false,
         }
     }

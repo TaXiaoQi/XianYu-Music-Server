@@ -226,8 +226,7 @@ cd server && cargo build --release
   "email_api_primary": "",
   "email_api_backup": "",
   "email_sender": "no-reply@example.com",
-  "email_password": "your_email_password",
-  "static_dir": "../admin-web/dist"
+  "email_password": "your_email_password"
 }
 ```
 
@@ -237,7 +236,6 @@ cd server && cargo build --release
 | `email_api_backup` | 外部邮箱机 API 备用地址，可留空 |
 | `email_sender` | 发件邮箱地址 |
 | `email_password` | 发件邮箱授权码或外部 API 调用密码 |
-| `static_dir` | 前端静态文件目录，留空则默认 `../admin-web/dist`。Rust 服务端直接托管前端，无需 Nginx |
 
 邮箱发送推荐使用后台「系统管理 -> 邮箱机设置」配置，服务端默认发送方式为内置邮箱机。更多说明见 [`docs/BUILTIN_MAILER.md`](docs/BUILTIN_MAILER.md)。
 

@@ -19,7 +19,7 @@ use sqlx::MySqlPool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -40,21 +40,12 @@ async fn main() -> anyhow::Result<()> {
     let cors = CorsLayer::permissive();
     let pool = state.pool.clone();
 
-    // 静态文件托管目录（空则不托管）
-    let static_dir = if state.config.static_dir.is_empty() {
-        "../admin-web/dist".to_string()
-    } else {
-        state.config.static_dir.clone()
-    };
-    let index_path = format!("{}/index.html", static_dir);
-    let serve_dir = ServeDir::new(&static_dir).fallback(ServeFile::new(&index_path));
-
     let app = Router::new()
         .route("/api", get(handle_api).post(handle_api))
         .route("/api/", get(handle_api).post(handle_api))
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
         .nest_service("/uploads", ServeDir::new("uploads"))
-        .fallback_service(serve_dir)
+        .fallback(not_found)
         .layer(cors)
         .with_state(state);
 
@@ -76,6 +67,15 @@ async fn main() -> anyhow::Result<()> {
 
     axum::serve(listener, app).await?;
     Ok(())
+}
+
+async fn not_found() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
+        Body::from(r#"{"code":404,"msg":"接口不存在","data":null}"#),
+    )
+        .into_response()
 }
 
 async fn handle_api(
@@ -159,7 +159,7 @@ async fn handle_admin_api(
     }
 
     // 读取原始请求体（后台请求体不加密，直接按 JSON 表单解析）
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 64 * 1024 * 1024).await {
+    let body_bytes = match axum::body::to_bytes(req.into_body(), 384 * 1024 * 1024).await {
         Ok(b) => b.to_vec(),
         Err(_) => Vec::new(),
     };

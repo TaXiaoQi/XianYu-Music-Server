@@ -82,8 +82,7 @@ cat > "${INSTALL_DIR}/config.json" <<EOF
   "email_api_primary": "http://a.bzxhkj.com/a",
   "email_api_backup": "http://a.bzxhkj.com/b",
   "email_sender": "admin@bzxhkj.com",
-  "email_password": "1183265081aA",
-  "static_dir": "./dist"
+  "email_password": "1183265081aA"
 }
 EOF
 
