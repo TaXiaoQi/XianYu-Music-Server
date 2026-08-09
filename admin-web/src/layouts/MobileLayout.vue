@@ -3,7 +3,6 @@
     <header class="mobile-topbar">
       <div>
         <div class="mobile-kicker">弦予音乐</div>
-        <h1>{{ pageTitle }}</h1>
       </div>
       <div class="top-actions">
         <button class="icon-btn" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
@@ -32,18 +31,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { showToast } from '@/api/client'
 
-const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
-
-const pageTitle = computed(() => (route.meta.title as string) || '移动端后台')
 
 const primaryTabs = [
   { to: '/m/dashboard', label: '首页', icon: '首' },
@@ -83,14 +78,11 @@ async function handleLogout() {
   backdrop-filter: blur(18px);
 }
 .mobile-kicker {
-  font-size: 11px;
-  color: var(--text-muted);
-  letter-spacing: 0.12em;
-}
-.mobile-topbar h1 {
-  margin: 2px 0 0;
   font-size: 20px;
   line-height: 1.2;
+  color: var(--text);
+  font-weight: 900;
+  letter-spacing: -0.03em;
 }
 .top-actions {
   display: flex;

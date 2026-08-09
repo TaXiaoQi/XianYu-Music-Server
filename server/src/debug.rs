@@ -773,8 +773,20 @@ pub fn handle_admin_api(action: &str) -> Response {
             "total_shares": 26,
             "today_shares": 2,
             "yesterday_shares": 4,
-            "total_logins": 88,
-            "today_logins": 15,
+            "active_users": 7,
+            "source_distribution": [
+                { "source_name": "酷狗音乐", "count": 156 },
+                { "source_name": "QQ音乐", "count": 98 },
+                { "source_name": "酷我音乐", "count": 64 },
+                { "source_name": "网易音乐", "count": 42 },
+                { "source_name": "咪咕音乐", "count": 26 }
+            ],
+            "today_hot_search_keyword": "晴天",
+            "today_hot_search_count": 18,
+            "pending_wallpapers": 2,
+            "pending_avatars": 1,
+            "pending_nicknames": 3,
+            "pending_feedback": 4,
             "debug": true
         })),
         "get_about_config_admin" => admin::ok("ok", about_config()),

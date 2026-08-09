@@ -114,6 +114,65 @@
           端口 465 使用隐式 SSL/TLS 加密；端口 587 或 25 使用 STARTTLS。内置邮箱机优先使用这里的 SMTP 出口投递。
         </p>
       </div>
+
+      <!-- SMTP 账号池 -->
+      <div v-if="form.email_provider === 'builtin'" class="config-card">
+        <div class="section-head">
+          <div>
+            <div class="section-title">SMTP 账号池</div>
+            <p class="hint pool-hint">
+              配置多个发件邮箱后，内置邮箱机会按发送次数轮流选择账号，降低单个邮箱触发风控的概率。账号池为空时继续使用上面的单 SMTP 出口。
+            </p>
+          </div>
+          <button type="button" class="btn-add-account" @click="addSmtpAccount">添加邮箱</button>
+        </div>
+
+        <div v-if="form.smtp_accounts.length === 0" class="empty-pool">
+          暂未配置账号池，当前仍使用单 SMTP 出口发送。
+        </div>
+
+        <div v-for="(account, index) in form.smtp_accounts" :key="index" class="smtp-account-card">
+          <div class="account-head">
+            <strong>发件账号 {{ index + 1 }}</strong>
+            <label class="enabled-line">
+              <input v-model="account.enabled" type="checkbox" />
+              启用
+            </label>
+            <button type="button" class="btn-remove-account" @click="removeSmtpAccount(index)">删除</button>
+          </div>
+
+          <div class="field-grid">
+            <label class="field">
+              <span class="required">发件邮箱</span>
+              <input v-model="account.sender" type="text" placeholder="no-reply@example.com" />
+            </label>
+            <label class="field">
+              <span>备注</span>
+              <input v-model="account.remark" type="text" placeholder="例如：QQ邮箱一号" />
+            </label>
+            <label class="field">
+              <span class="required">SMTP 服务器地址</span>
+              <input v-model="account.host" type="text" placeholder="smtp.qq.com" />
+            </label>
+            <label class="field">
+              <span class="required">SMTP 端口</span>
+              <input v-model="account.port" type="number" placeholder="465" />
+            </label>
+            <label class="field">
+              <span class="required">SMTP 用户名</span>
+              <input v-model="account.username" type="text" placeholder="通常与发件邮箱相同" />
+            </label>
+            <label class="field">
+              <span class="required">SMTP 密码 / 授权码</span>
+              <input
+                v-model="account.password"
+                type="password"
+                :placeholder="account.has_password ? '********（留空保留原值）' : '请输入授权码'"
+              />
+            </label>
+          </div>
+        </div>
+      </div>
     </template>
 
     <!-- 测试邮件 -->
@@ -153,6 +212,18 @@ interface EmailConfigForm {
   smtp_port: string
   smtp_username: string
   smtp_password: string
+  smtp_accounts: SmtpAccountForm[]
+}
+
+interface SmtpAccountForm {
+  sender: string
+  host: string
+  port: string | number
+  username: string
+  password: string
+  has_password?: boolean
+  enabled: boolean
+  remark: string
 }
 
 const loading = ref(true)
@@ -169,6 +240,7 @@ const form = ref<EmailConfigForm>({
   smtp_port: '465',
   smtp_username: '',
   smtp_password: '',
+  smtp_accounts: [],
 })
 
 const testEmail = ref('')
@@ -190,6 +262,7 @@ async function loadConfig() {
     smtp_username: string
     smtp_password: string
     has_smtp_password: boolean
+    smtp_accounts?: SmtpAccountForm[]
   }>('get_email_config')
 
   if (res.code === 200 && res.data) {
@@ -203,6 +276,16 @@ async function loadConfig() {
       smtp_port: String(res.data.smtp_port || 465),
       smtp_username: res.data.smtp_username || '',
       smtp_password: res.data.has_smtp_password ? '********' : '',
+      smtp_accounts: (res.data.smtp_accounts || []).map(account => ({
+        sender: account.sender || '',
+        host: account.host || '',
+        port: String(account.port || 465),
+        username: account.username || '',
+        password: account.has_password ? '********' : '',
+        has_password: account.has_password,
+        enabled: account.enabled !== false,
+        remark: account.remark || '',
+      })),
     }
     hasPassword.value = res.data.has_password
     hasSmtpPassword.value = res.data.has_smtp_password
@@ -212,9 +295,32 @@ async function loadConfig() {
   loading.value = false
 }
 
+function addSmtpAccount() {
+  form.value.smtp_accounts.push({
+    sender: '',
+    host: form.value.smtp_host || '',
+    port: form.value.smtp_port || '465',
+    username: '',
+    password: '',
+    enabled: true,
+    remark: '',
+  })
+}
+
+function removeSmtpAccount(index: number) {
+  form.value.smtp_accounts.splice(index, 1)
+}
+
 async function save() {
   saving.value = true
-  const res = await adminApi('update_email_config', { ...form.value })
+  const payload = {
+    ...form.value,
+    smtp_accounts: form.value.smtp_accounts.map(account => ({
+      ...account,
+      port: Number(account.port || 465),
+    })),
+  }
+  const res = await adminApi('update_email_config', payload)
   saving.value = false
 
   if (res.code === 200) {
@@ -334,6 +440,12 @@ onMounted(loadConfig)
 .section-title:first-child {
   margin-top: 0;
 }
+.section-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
 .provider-toggle {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -402,6 +514,69 @@ onMounted(loadConfig)
   margin: 22px 0 0;
   font-size: 12px;
   color: var(--text-muted);
+}
+.pool-hint {
+  margin-top: 0;
+  line-height: 1.6;
+}
+.btn-add-account,
+.btn-remove-account {
+  border: 1.5px solid var(--accent);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--accent);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-add-account:hover,
+.btn-remove-account:hover {
+  background: var(--accent);
+  color: var(--white);
+}
+.btn-remove-account {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+.btn-remove-account:hover {
+  background: #dc2626;
+  color: var(--white);
+}
+.empty-pool {
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 18px;
+  background: #fafafa;
+}
+.smtp-account-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px;
+  background: #fafafa;
+  margin-top: 14px;
+}
+.account-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.account-head strong {
+  color: var(--text);
+  font-size: 14px;
+  margin-right: auto;
+}
+.enabled-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-light);
+  font-size: 13px;
+  font-weight: 700;
 }
 .test-card {
   padding: 24px;
@@ -476,6 +651,7 @@ onMounted(loadConfig)
 }
 @media (max-width: 760px) {
   .page-header,
+  .section-head,
   .field-grid,
   .test-row {
     grid-template-columns: 1fr;

@@ -1,4 +1,5 @@
 :root {
+    color-scheme: light;
     --accent: #EC4141;
     --accent-hover: #d83a3a;
     --accent-soft: rgba(236, 65, 65, 0.10);
@@ -34,6 +35,7 @@
     --motion: cubic-bezier(0.16, 1, 0.3, 1);
 }
 html[data-theme='dark'] {
+    color-scheme: dark;
     --accent: #ff5a5a;
     --accent-hover: #ff7070;
     --accent-soft: rgba(255, 90, 90, 0.14);
@@ -342,43 +344,346 @@ html[data-theme='dark'] select:focus {
     box-shadow: 0 0 0 4px var(--accent-soft) !important;
 }
 html[data-theme='dark'] .card,
+html[data-theme='dark'] [class$='-card'],
+html[data-theme='dark'] [class*='-card '],
 html[data-theme='dark'] .stat-card,
 html[data-theme='dark'] .config-card,
 html[data-theme='dark'] .ann-card,
+html[data-theme='dark'] .section-card,
+html[data-theme='dark'] .section-block,
+html[data-theme='dark'] .admin-card,
+html[data-theme='dark'] .bind-card,
+html[data-theme='dark'] .stat-chip,
+html[data-theme='dark'] .limit-card,
+html[data-theme='dark'] .account-limit-card,
+html[data-theme='dark'] .wp-card,
+html[data-theme='dark'] .avatar-card,
+html[data-theme='dark'] .smtp-account-card,
+html[data-theme='dark'] .mobile-card,
+html[data-theme='dark'] .mobile-item,
+html[data-theme='dark'] .mobile-stat,
 html[data-theme='dark'] .modal-dialog,
+html[data-theme='dark'] .modal,
+html[data-theme='dark'] .modal-content,
+html[data-theme='dark'] .popup,
+html[data-theme='dark'] .drawer,
+html[data-theme='dark'] .sheet,
 html[data-theme='dark'] .login-container {
     background: var(--card) !important;
     border-color: var(--border) !important;
     color: var(--text) !important;
 }
-html[data-theme='dark'] .modal-backdrop {
-    background: rgba(0, 0, 0, 0.46) !important;
+html[data-theme='dark'] [class$='-panel'],
+html[data-theme='dark'] [class*='-panel '],
+html[data-theme='dark'] [class$='-box'],
+html[data-theme='dark'] [class*='-box '],
+html[data-theme='dark'] [class$='-bar'],
+html[data-theme='dark'] [class*='-bar '],
+html[data-theme='dark'] .page-header,
+html[data-theme='dark'] .list-header,
+html[data-theme='dark'] .section-header,
+html[data-theme='dark'] .param-bar,
+html[data-theme='dark'] .summary-card,
+html[data-theme='dark'] .upload-zone,
+html[data-theme='dark'] .mobile-upload,
+html[data-theme='dark'] .filter-box,
+html[data-theme='dark'] .search-box,
+html[data-theme='dark'] .provider-option,
+html[data-theme='dark'] .type-option,
+html[data-theme='dark'] .filter-pill,
+html[data-theme='dark'] .thumb-wrap,
+html[data-theme='dark'] .wp-category,
+html[data-theme='dark'] .account-limit-item,
+html[data-theme='dark'] .empty-pool {
+    background: var(--control-bg) !important;
+    border-color: var(--border) !important;
+    color: var(--text) !important;
+}
+html[data-theme='dark'] .provider-option:hover,
+html[data-theme='dark'] .type-option:hover,
+html[data-theme='dark'] .filter-pill:hover {
+    border-color: var(--accent) !important;
+}
+html[data-theme='dark'] .provider-option.active,
+html[data-theme='dark'] .filter-pill.active {
+    background: var(--accent-soft) !important;
+    border-color: var(--accent) !important;
+    color: var(--accent) !important;
+}
+html[data-theme='dark'] .filter-pill.active .pill-count {
+    background: rgba(255, 255, 255, 0.16) !important;
+    color: #fff !important;
+}
+html[data-theme='dark'] .modal-backdrop,
+html[data-theme='dark'] .modal-overlay,
+html[data-theme='dark'] .overlay,
+html[data-theme='dark'] .mask {
+    background: rgba(0, 0, 0, 0.58) !important;
+    backdrop-filter: blur(10px);
 }
 html[data-theme='dark'] .card-footer,
+html[data-theme='dark'] .card-header,
+html[data-theme='dark'] .modal-head,
+html[data-theme='dark'] .modal-header,
 html[data-theme='dark'] .modal-foot,
-html[data-theme='dark'] .table-foot {
+html[data-theme='dark'] .modal-footer,
+html[data-theme='dark'] .table-foot,
+html[data-theme='dark'] .table-wrap,
+html[data-theme='dark'] .table-wrapper {
     border-color: var(--border) !important;
 }
 html[data-theme='dark'] .card-title,
 html[data-theme='dark'] .page-title,
 html[data-theme='dark'] .empty-title,
 html[data-theme='dark'] .modal-head h3,
+html[data-theme='dark'] .modal-title,
+html[data-theme='dark'] .mobile-card-title,
+html[data-theme='dark'] .mobile-item-title,
 html[data-theme='dark'] .section-title {
     color: var(--text) !important;
 }
 html[data-theme='dark'] .card-content,
 html[data-theme='dark'] .page-desc,
 html[data-theme='dark'] .empty-sub,
+html[data-theme='dark'] .mobile-muted,
+html[data-theme='dark'] .mobile-item-sub,
+html[data-theme='dark'] .meta,
+html[data-theme='dark'] .desc,
 html[data-theme='dark'] .field label {
     color: var(--text-light) !important;
 }
+html[data-theme='dark'] .modal-body,
+html[data-theme='dark'] .modal-form,
+html[data-theme='dark'] .form-card,
+html[data-theme='dark'] .form-panel,
+html[data-theme='dark'] .reply-target-info,
+html[data-theme='dark'] .info-row,
+html[data-theme='dark'] .detail-row,
+html[data-theme='dark'] .nick-row,
+html[data-theme='dark'] .avatar-card,
+html[data-theme='dark'] .backup-row,
+html[data-theme='dark'] .row-data,
+html[data-theme='dark'] .table-row,
+html[data-theme='dark'] .limit-row,
+html[data-theme='dark'] .account-limit-item,
+html[data-theme='dark'] .detail-card,
+html[data-theme='dark'] .preview-card,
+html[data-theme='dark'] .state-box,
+html[data-theme='dark'] .empty,
+html[data-theme='dark'] .mobile-empty {
+    background: transparent !important;
+    border-color: var(--border) !important;
+    color: var(--text-light) !important;
+}
+html[data-theme='dark'] .state-box,
+html[data-theme='dark'] .empty,
+html[data-theme='dark'] .mobile-empty {
+    background: var(--empty-bg) !important;
+    border-color: var(--empty-border) !important;
+    color: var(--text-muted) !important;
+}
+html[data-theme='dark'] .row-data.is-failed,
+html[data-theme='dark'] .table-row.is-failed,
+html[data-theme='dark'] .data-table tbody tr.row-failed {
+    background: rgba(255, 90, 90, 0.08) !important;
+}
+html[data-theme='dark'] .row-data:hover,
+html[data-theme='dark'] .table-row:hover,
+html[data-theme='dark'] .nick-row:hover,
+html[data-theme='dark'] .avatar-card:hover {
+    background: var(--table-row-hover) !important;
+    border-color: var(--border) !important;
+}
+html[data-theme='dark'] .modal-close,
+html[data-theme='dark'] .close-btn,
+html[data-theme='dark'] .btn-cancel,
+html[data-theme='dark'] .action-btn,
+html[data-theme='dark'] .icon-action,
+html[data-theme='dark'] .page-action,
+html[data-theme='dark'] .btn-refresh,
+html[data-theme='dark'] .btn-limit-refresh,
+html[data-theme='dark'] .btn-add-account,
+html[data-theme='dark'] .btn-remove-account,
+html[data-theme='dark'] .btn-test,
+html[data-theme='dark'] .btn-outline,
+html[data-theme='dark'] .tab-btn,
+html[data-theme='dark'] .filter-btn,
+html[data-theme='dark'] .overlay-btn,
+html[data-theme='dark'] .pagination button,
+html[data-theme='dark'] .mobile-btn {
+    background: var(--control-bg) !important;
+    border-color: var(--border) !important;
+    color: var(--text) !important;
+}
+html[data-theme='dark'] .modal-close:hover,
+html[data-theme='dark'] .close-btn:hover,
+html[data-theme='dark'] .btn-cancel:hover,
+html[data-theme='dark'] .action-btn:hover,
+html[data-theme='dark'] .icon-action:hover,
+html[data-theme='dark'] .page-action:hover,
+html[data-theme='dark'] .btn-refresh:hover,
+html[data-theme='dark'] .btn-limit-refresh:hover,
+html[data-theme='dark'] .btn-add-account:hover,
+html[data-theme='dark'] .btn-remove-account:hover,
+html[data-theme='dark'] .btn-test:hover,
+html[data-theme='dark'] .btn-outline:hover,
+html[data-theme='dark'] .tab-btn:hover,
+html[data-theme='dark'] .filter-btn:hover,
+html[data-theme='dark'] .overlay-btn:hover,
+html[data-theme='dark'] .pagination button:hover,
+html[data-theme='dark'] .mobile-btn:hover {
+    background: rgba(255, 255, 255, 0.10) !important;
+    border-color: var(--border) !important;
+}
+html[data-theme='dark'] .btn-primary,
+html[data-theme='dark'] .btn-save,
+html[data-theme='dark'] .btn-add,
+html[data-theme='dark'] .btn-limit-save,
+html[data-theme='dark'] .mobile-btn.primary {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+    color: #fff !important;
+}
+html[data-theme='dark'] .btn-danger,
+html[data-theme='dark'] .mobile-btn.danger {
+    background: rgba(255, 90, 90, 0.12) !important;
+    border-color: rgba(255, 90, 90, 0.24) !important;
+    color: var(--accent) !important;
+}
 html[data-theme='dark'] table,
 html[data-theme='dark'] .data-table {
-    color: var(--text);
+    background: var(--card) !important;
+    color: var(--text) !important;
+    border-color: var(--border) !important;
+}
+html[data-theme='dark'] th,
+html[data-theme='dark'] .data-table th {
+    background: var(--table-head-bg) !important;
+    color: var(--text-light) !important;
+    border-color: var(--table-border) !important;
+}
+html[data-theme='dark'] td,
+html[data-theme='dark'] .data-table td {
+    border-color: var(--table-border) !important;
 }
 html[data-theme='dark'] tbody tr:hover,
-html[data-theme='dark'] .data-table tbody tr:hover {
+html[data-theme='dark'] .data-table tbody tr:hover,
+html[data-theme='dark'] .data-table tr:hover td {
     background: var(--table-row-hover) !important;
+}
+html[data-theme='dark'] pre,
+html[data-theme='dark'] code,
+html[data-theme='dark'] .sql-pre,
+html[data-theme='dark'] .log-content,
+html[data-theme='dark'] .json-box,
+html[data-theme='dark'] .mobile-code {
+    background: rgba(255, 255, 255, 0.055) !important;
+    border-color: var(--border) !important;
+    color: var(--text-light) !important;
+}
+html[data-theme='dark'] .badge,
+html[data-theme='dark'] .mobile-badge {
+    background: var(--accent-soft) !important;
+    color: var(--accent) !important;
+}
+html[data-theme='dark'] .badge-success,
+html[data-theme='dark'] .badge.green,
+html[data-theme='dark'] .mobile-badge.green {
+    background: rgba(34, 197, 94, 0.14) !important;
+    color: #4ade80 !important;
+}
+html[data-theme='dark'] .badge-error,
+html[data-theme='dark'] .badge.red,
+html[data-theme='dark'] .mobile-badge.red {
+    background: rgba(255, 90, 90, 0.14) !important;
+    color: var(--accent) !important;
+}
+html[data-theme='dark'] .badge-warning,
+html[data-theme='dark'] .badge-super,
+html[data-theme='dark'] .status-unbound {
+    background: rgba(245, 158, 11, 0.14) !important;
+    color: #fbbf24 !important;
+}
+html[data-theme='dark'] .badge-info,
+html[data-theme='dark'] .badge-admin {
+    background: rgba(59, 130, 246, 0.14) !important;
+    color: #60a5fa !important;
+}
+html[data-theme='dark'] .pending-badge,
+html[data-theme='dark'] .section-count {
+    background: rgba(245, 158, 11, 0.14) !important;
+    color: #fbbf24 !important;
+}
+html[data-theme='dark'] .type-option.active {
+    border-color: transparent !important;
+    font-weight: 700;
+}
+html[data-theme='dark'] .pick-info.active {
+    background: rgba(59, 130, 246, 0.14) !important;
+    color: #60a5fa !important;
+}
+html[data-theme='dark'] .pick-warning.active {
+    background: rgba(245, 158, 11, 0.14) !important;
+    color: #fbbf24 !important;
+}
+html[data-theme='dark'] .pick-update.active,
+html[data-theme='dark'] .pick-enable.active {
+    background: rgba(16, 185, 129, 0.14) !important;
+    color: #34d399 !important;
+}
+html[data-theme='dark'] .pick-disable.active {
+    background: rgba(148, 163, 184, 0.14) !important;
+    color: #cbd5e1 !important;
+}
+html[data-theme='dark'] .pick-dot {
+    background: rgba(255, 255, 255, 0.22) !important;
+}
+html[data-theme='dark'] .pick-info.active .pick-dot { background: #60a5fa !important; }
+html[data-theme='dark'] .pick-warning.active .pick-dot { background: #fbbf24 !important; }
+html[data-theme='dark'] .pick-update.active .pick-dot,
+html[data-theme='dark'] .pick-enable.active .pick-dot { background: #34d399 !important; }
+html[data-theme='dark'] .pick-disable.active .pick-dot { background: #cbd5e1 !important; }
+html[data-theme='dark'] [class^='tag-'],
+html[data-theme='dark'] [class*=' tag-'],
+html[data-theme='dark'] [class^='label-'],
+html[data-theme='dark'] [class*=' label-'] {
+    background: var(--control-bg) !important;
+    border-color: var(--border) !important;
+    color: var(--text-light) !important;
+}
+html[data-theme='dark'] .tag-green,
+html[data-theme='dark'] .status-bound {
+    background: rgba(34, 197, 94, 0.14) !important;
+    color: #4ade80 !important;
+}
+html[data-theme='dark'] .tag-blue,
+html[data-theme='dark'] .label-new {
+    background: rgba(59, 130, 246, 0.14) !important;
+    color: #60a5fa !important;
+}
+html[data-theme='dark'] .tag-orange {
+    background: rgba(249, 115, 22, 0.14) !important;
+    color: #fb923c !important;
+}
+html[data-theme='dark'] .icon-user,
+html[data-theme='dark'] .icon-role,
+html[data-theme='dark'] .icon-mail,
+html[data-theme='dark'] .icon-ip,
+html[data-theme='dark'] .icon-op,
+html[data-theme='dark'] .icon-time,
+html[data-theme='dark'] .stat-icon,
+html[data-theme='dark'] .nick-avatar-placeholder,
+html[data-theme='dark'] .avatar-fallback {
+    background: var(--accent-soft) !important;
+}
+html[data-theme='dark'] .avatar-img,
+html[data-theme='dark'] .avatar-fallback {
+    border-color: var(--border) !important;
+}
+html[data-theme='dark'] .empty-inline {
+    background: var(--empty-bg) !important;
+    border-color: var(--empty-border) !important;
+    color: var(--text-muted) !important;
 }
 html[data-theme='dark'] .toast {
     box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);

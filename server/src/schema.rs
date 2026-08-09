@@ -224,6 +224,7 @@ static TABLE_STATEMENTS: &[&str] = &[
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_port', '465', 'SMTP 端口，SSL通常465，STARTTLS通常587')",
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_username', '', 'SMTP 登录用户名，通常与发件邮箱相同')",
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_password', '', 'SMTP 登录密码/授权码，留空则使用 email_password 的值')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_accounts', '[]', '内置邮箱机 SMTP 账号池 JSON，支持多个邮箱轮换发送')",
         "CREATE TABLE IF NOT EXISTS `wallpaper_upload_limits` (
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `upload_limit` int(11) NOT NULL DEFAULT 20,

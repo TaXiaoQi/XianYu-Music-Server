@@ -62,6 +62,43 @@ fn is_valid_email(email: &str) -> bool {
         && rest.is_none()
 }
 
+/// SMTP 账号池条目。内置邮箱机可配置多个发件账号，发送时按顺序轮换。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SmtpAccount {
+    #[serde(default)]
+    pub sender: String,
+    #[serde(default)]
+    pub host: String,
+    #[serde(default = "default_smtp_port")]
+    pub port: u16,
+    #[serde(default)]
+    pub username: String,
+    #[serde(default)]
+    pub password: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub remark: String,
+}
+
+fn default_smtp_port() -> u16 {
+    465
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl SmtpAccount {
+    fn is_usable(&self) -> bool {
+        self.enabled
+            && !self.sender.trim().is_empty()
+            && !self.host.trim().is_empty()
+            && !self.username.trim().is_empty()
+            && !self.password.trim().is_empty()
+    }
+}
+
 /// 邮箱运行时配置（优先从数据库读取，回退到环境变量）
 pub struct EmailRuntimeConfig {
     pub provider: String, // "builtin"、"http_api" 或 "smtp"
@@ -76,6 +113,7 @@ pub struct EmailRuntimeConfig {
     pub smtp_port: u16,
     pub smtp_username: String,
     pub smtp_password: String,
+    pub smtp_accounts: Vec<SmtpAccount>,
 }
 
 /// 从 `server_settings` 表读取邮箱配置，留空的字段回退到环境变量默认值。
@@ -124,6 +162,10 @@ pub async fn load_email_config(
     let smtp_password = read_setting(pool, "smtp_password")
         .await
         .unwrap_or_else(|| password.clone());
+    let smtp_accounts = read_setting(pool, "smtp_accounts")
+        .await
+        .and_then(|s| serde_json::from_str::<Vec<SmtpAccount>>(&s).ok())
+        .unwrap_or_default();
 
     EmailRuntimeConfig {
         provider,
@@ -135,6 +177,19 @@ pub async fn load_email_config(
         smtp_port,
         smtp_username,
         smtp_password,
+        smtp_accounts,
+    }
+}
+
+fn primary_smtp_account(cfg: &EmailRuntimeConfig) -> SmtpAccount {
+    SmtpAccount {
+        sender: cfg.sender.clone(),
+        host: cfg.smtp_host.clone(),
+        port: cfg.smtp_port,
+        username: cfg.smtp_username.clone(),
+        password: cfg.smtp_password.clone(),
+        enabled: true,
+        remark: "主 SMTP 配置".to_string(),
     }
 }
 
@@ -197,18 +252,25 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, context: &str,
 
 /// 通过标准 SMTP 发送邮件
 async fn send_via_smtp(cfg: &EmailRuntimeConfig, title: &str, context: &str, recipient: &str) -> Result<(), String> {
+    let account = primary_smtp_account(cfg);
+    send_via_smtp_account(&account, title, context, recipient).await
+}
+
+/// 通过指定 SMTP 账号发送邮件
+async fn send_via_smtp_account(account: &SmtpAccount, title: &str, context: &str, recipient: &str) -> Result<(), String> {
     use lettre::message::header::ContentType;
     use lettre::message::{Mailbox, MultiPart, SinglePart};
     use lettre::transport::smtp::authentication::Credentials;
     use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
-    if cfg.smtp_host.is_empty() {
+    if account.host.is_empty() {
         return Err("SMTP 服务器地址未配置".to_string());
     }
 
     let from_mailbox = Mailbox::new(
         Some("弦予音乐".to_string()),
-        cfg.sender
+        account
+            .sender
             .parse()
             .map_err(|e| format!("发件邮箱地址格式错误: {e}"))?,
     );
@@ -231,22 +293,22 @@ async fn send_via_smtp(cfg: &EmailRuntimeConfig, title: &str, context: &str, rec
     // 根据端口选择 TLS 模式
     // 465 → 隐式 TLS (Ssl)
     // 587/25 → STARTTLS
-    let transport = if cfg.smtp_port == 465 {
-        AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.smtp_host)
+    let transport = if account.port == 465 {
+        AsyncSmtpTransport::<Tokio1Executor>::relay(&account.host)
             .map_err(|e| format!("SMTP 连接构建失败: {e}"))?
-            .port(cfg.smtp_port)
+            .port(account.port)
             .credentials(Credentials::new(
-                cfg.smtp_username.clone(),
-                cfg.smtp_password.clone(),
+                account.username.clone(),
+                account.password.clone(),
             ))
             .build()
     } else {
-        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.smtp_host)
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&account.host)
             .map_err(|e| format!("SMTP 连接构建失败: {e}"))?
-            .port(cfg.smtp_port)
+            .port(account.port)
             .credentials(Credentials::new(
-                cfg.smtp_username.clone(),
-                cfg.smtp_password.clone(),
+                account.username.clone(),
+                account.password.clone(),
             ))
             .build()
     };
@@ -256,6 +318,34 @@ async fn send_via_smtp(cfg: &EmailRuntimeConfig, title: &str, context: &str, rec
         .await
         .map(|_| ())
         .map_err(|e| format!("SMTP 发送失败: {e}"))
+}
+
+async fn select_builtin_smtp_accounts(pool: &MySqlPool, cfg: &EmailRuntimeConfig) -> Vec<SmtpAccount> {
+    let mut accounts: Vec<SmtpAccount> = cfg
+        .smtp_accounts
+        .iter()
+        .filter(|a| a.is_usable())
+        .cloned()
+        .collect();
+
+    if accounts.is_empty() {
+        let primary = primary_smtp_account(cfg);
+        if primary.is_usable() {
+            accounts.push(primary);
+        }
+    }
+
+    if accounts.is_empty() {
+        return accounts;
+    }
+
+    let sent_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log WHERE ip = 'builtin' AND status IN (1, 2)")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    let idx = (sent_count.max(0) as usize) % accounts.len();
+    accounts.rotate_left(idx);
+    accounts
 }
 
 async fn create_builtin_mail_log(pool: &MySqlPool, recipient: &str, title: &str, detail: &str) -> Option<u64> {
@@ -282,7 +372,7 @@ async fn update_builtin_mail_log(pool: &MySqlPool, id: Option<u64>, status: i32,
     }
 }
 
-/// 服务端内置邮箱机：统一记录发送日志，优先使用 SMTP 出口投递，失败后回退外部邮箱机 API。
+/// 服务端内置邮箱机：统一记录发送日志，优先轮换 SMTP 账号池投递，失败后回退外部邮箱机 API。
 async fn send_via_builtin_mailer(
     cfg: &EmailRuntimeConfig,
     pool: &MySqlPool,
@@ -293,16 +383,31 @@ async fn send_via_builtin_mailer(
     let log_id = create_builtin_mail_log(pool, recipient, title, "内置邮箱机已接收，等待投递").await;
     let mut errors = Vec::new();
 
-    if !cfg.smtp_host.is_empty() {
-        match send_via_smtp(cfg, title, context, recipient).await {
-            Ok(()) => {
-                update_builtin_mail_log(pool, log_id, 1, "内置邮箱机已通过 SMTP 出口投递").await;
-                return Ok(());
+    let accounts = select_builtin_smtp_accounts(pool, cfg).await;
+    if !accounts.is_empty() {
+        for account in accounts {
+            let sender_label = if account.remark.trim().is_empty() {
+                account.sender.clone()
+            } else {
+                format!("{} ({})", account.sender, account.remark)
+            };
+
+            match send_via_smtp_account(&account, title, context, recipient).await {
+                Ok(()) => {
+                    update_builtin_mail_log(
+                        pool,
+                        log_id,
+                        1,
+                        &format!("内置邮箱机已通过 SMTP 账号投递: {}", sender_label),
+                    )
+                    .await;
+                    return Ok(());
+                }
+                Err(e) => errors.push(format!("SMTP 账号 {} 失败: {}", sender_label, e)),
             }
-            Err(e) => errors.push(format!("SMTP 出口失败: {}", e)),
         }
     } else {
-        errors.push("SMTP 出口未配置".to_string());
+        errors.push("SMTP 账号池未配置可用账号".to_string());
     }
 
     if !cfg.api_primary.is_empty() || !cfg.api_backup.is_empty() {

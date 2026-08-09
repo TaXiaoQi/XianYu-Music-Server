@@ -292,11 +292,89 @@ async fn upsert_setting(pool: &MySqlPool, key: &str, value: &str) {
     .await;
 }
 
+fn smtp_account_key(account: &crate::handlers::email_auth::SmtpAccount) -> String {
+    format!(
+        "{}|{}|{}",
+        account.sender.trim().to_lowercase(),
+        account.host.trim().to_lowercase(),
+        account.username.trim().to_lowercase()
+    )
+}
+
+fn mask_smtp_accounts(accounts: &[crate::handlers::email_auth::SmtpAccount]) -> Vec<Value> {
+    accounts
+        .iter()
+        .map(|a| {
+            json!({
+                "sender": a.sender.clone(),
+                "host": a.host.clone(),
+                "port": a.port,
+                "username": a.username.clone(),
+                "password": if a.password.is_empty() { "" } else { "********" },
+                "has_password": !a.password.is_empty(),
+                "enabled": a.enabled,
+                "remark": a.remark.clone(),
+            })
+        })
+        .collect()
+}
+
+fn parse_smtp_accounts_from_body(
+    data: &Value,
+    old_accounts: &[crate::handlers::email_auth::SmtpAccount],
+) -> Vec<crate::handlers::email_auth::SmtpAccount> {
+    let Some(items) = data.get("smtp_accounts").and_then(|v| v.as_array()) else {
+        return old_accounts.to_vec();
+    };
+
+    let mut accounts = Vec::new();
+    for item in items {
+        let mut account = crate::handlers::email_auth::SmtpAccount {
+            sender: item.get("sender").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+            host: item.get("host").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+            port: item
+                .get("port")
+                .and_then(|v| {
+                    if let Some(n) = v.as_u64() {
+                        Some(n as u16)
+                    } else {
+                        v.as_str().and_then(|s| s.parse::<u16>().ok())
+                    }
+                })
+                .unwrap_or(465),
+            username: item.get("username").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+            password: item.get("password").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+            enabled: item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true),
+            remark: item.get("remark").and_then(|v| v.as_str()).unwrap_or("").trim().to_string(),
+        };
+
+        if account.sender.is_empty() && account.username.contains('@') {
+            account.sender = account.username.clone();
+        }
+        if account.username.is_empty() {
+            account.username = account.sender.clone();
+        }
+
+        if account.password.is_empty() || account.password == "********" {
+            let key = smtp_account_key(&account);
+            if let Some(old) = old_accounts.iter().find(|old| smtp_account_key(old) == key) {
+                account.password = old.password.clone();
+            }
+        }
+
+        if !account.sender.is_empty() || !account.host.is_empty() || !account.username.is_empty() {
+            accounts.push(account);
+        }
+    }
+    accounts
+}
+
 /// 获取邮箱机配置（密码字段脱敏）
 pub async fn get_email_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let cfg = crate::handlers::email_auth::load_email_config(pool, &ctx.config).await;
     let has_password = !cfg.password.is_empty();
     let has_smtp_password = !cfg.smtp_password.is_empty();
+    let smtp_accounts = mask_smtp_accounts(&cfg.smtp_accounts);
 
     ok("ok", json!({
         "email_provider": cfg.provider,
@@ -310,6 +388,7 @@ pub async fn get_email_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
         "smtp_username": cfg.smtp_username,
         "smtp_password": if has_smtp_password { "********".to_string() } else { String::new() },
         "has_smtp_password": has_smtp_password,
+        "smtp_accounts": smtp_accounts,
     }))
 }
 
@@ -332,6 +411,9 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     let smtp_port = str_of(&data, "smtp_port").trim().to_string();
     let smtp_username = str_of(&data, "smtp_username").trim().to_string();
     let smtp_password = str_of(&data, "smtp_password").trim().to_string();
+    let current_cfg = crate::handlers::email_auth::load_email_config(pool, &ctx.config).await;
+    let smtp_accounts = parse_smtp_accounts_from_body(&data, &current_cfg.smtp_accounts);
+    let smtp_accounts_json = serde_json::to_string(&smtp_accounts).unwrap_or_else(|_| "[]".to_string());
 
     upsert_setting(pool, "email_provider", &provider).await;
     upsert_setting(pool, "email_api_primary", &api_primary).await;
@@ -340,6 +422,7 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     upsert_setting(pool, "smtp_host", &smtp_host).await;
     upsert_setting(pool, "smtp_port", &smtp_port).await;
     upsert_setting(pool, "smtp_username", &smtp_username).await;
+    upsert_setting(pool, "smtp_accounts", &smtp_accounts_json).await;
 
     // 通用密码为空时保留原值
     if !password.is_empty() && password != "********" {
@@ -352,7 +435,7 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
 
     log_operation(
         pool, ctx, "保存邮箱配置",
-        &format!("方式:{} 外部API:{} SMTP:{}", provider, api_primary, smtp_host),
+        &format!("方式:{} 外部API:{} SMTP:{} 账号池:{}个", provider, api_primary, smtp_host, smtp_accounts.len()),
         "",
     ).await;
 
