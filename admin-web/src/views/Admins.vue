@@ -142,15 +142,15 @@
           </div>
           <div class="modal-body">
             <div class="field">
-              <label>用户名</label>
+              <label class="required">用户名</label>
               <input v-model="form.username" type="text" placeholder="请输入用户名" autocomplete="off" />
             </div>
             <div class="field">
-              <label>密码</label>
+              <label class="required">密码</label>
               <input v-model="form.password" type="password" placeholder="请输入密码" autocomplete="new-password" />
             </div>
             <div class="field">
-              <label>角色</label>
+              <label class="required">角色</label>
               <div class="role-select">
                 <div
                   class="role-option"

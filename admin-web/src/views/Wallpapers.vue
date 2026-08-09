@@ -21,6 +21,74 @@
       </div>
     </Transition>
 
+    <!-- 上传限制配置 -->
+    <Transition name="fade-up" appear>
+      <div class="limit-card">
+        <div>
+          <div class="limit-title">用户上传上限</div>
+          <div class="limit-desc">
+            每个桌面端用户最多可上传的壁纸数量；填 0 表示不限制。
+            <span v-if="wallpaperUploadLimit === 0">当前：无限制</span>
+            <span v-else>当前：{{ wallpaperUploadLimit }} 张</span>
+          </div>
+        </div>
+        <div class="limit-controls">
+          <input
+            v-model.number="wallpaperUploadLimitInput"
+            type="number"
+            min="0"
+            max="10000"
+            class="limit-input"
+            :disabled="limitLoading || limitSaving"
+          />
+          <button class="btn-limit-save" :disabled="limitLoading || limitSaving" @click="saveWallpaperUploadLimit">
+            {{ limitSaving ? '保存中...' : '保存限制' }}
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 账号独立上传限制 -->
+    <Transition name="fade-up" appear>
+      <div class="account-limit-card">
+        <div class="account-limit-head">
+          <div>
+            <div class="limit-title">账号独立上限</div>
+            <div class="limit-desc">指定某个弦予号使用独立上传上限；填 0 表示该账号无限制，未配置账号继续使用全局上限。</div>
+          </div>
+          <button class="btn-limit-refresh" :disabled="accountLimitLoading" @click="loadWallpaperAccountLimits">刷新</button>
+        </div>
+        <div class="account-limit-form">
+          <input v-model.trim="accountLimitForm.ciyuanxi_id" class="limit-input account-id-input" placeholder="弦予号，例如 XY123456" />
+          <input v-model.number="accountLimitForm.upload_limit" type="number" min="0" max="10000" class="limit-input" placeholder="上限" />
+          <input v-model.trim="accountLimitForm.remark" class="limit-input account-remark-input" placeholder="备注（可选）" />
+          <button class="btn-limit-save" :disabled="accountLimitSaving" @click="saveWallpaperAccountLimit">
+            {{ accountLimitSaving ? '保存中...' : '保存账号限制' }}
+          </button>
+        </div>
+        <div v-if="accountLimits.length === 0" class="account-limit-empty">
+          暂无账号独立限制
+        </div>
+        <div v-else class="account-limit-list">
+          <div v-for="item in accountLimits" :key="item.ciyuanxi_id" class="account-limit-item">
+            <div class="account-limit-main">
+              <div class="account-id">{{ item.ciyuanxi_id }}</div>
+              <div class="account-meta">
+                {{ item.username || '未命名账号' }} · 已上传 {{ Number(item.uploaded_count || 0) }} 张 ·
+                <template v-if="Number(item.upload_limit) === 0">无限制</template>
+                <template v-else>最多 {{ item.upload_limit }} 张</template>
+              </div>
+              <div v-if="item.remark" class="account-remark">{{ item.remark }}</div>
+            </div>
+            <div class="account-limit-actions">
+              <button class="text-btn" @click="fillAccountLimitForm(item)">编辑</button>
+              <button class="text-btn danger" @click="deleteWallpaperAccountLimit(item.ciyuanxi_id)">恢复默认</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 状态筛选 -->
     <Transition name="fade-up" appear>
       <div class="filter-bar">
@@ -159,7 +227,7 @@
           </div>
           <div class="modal-form">
             <div class="field">
-              <label>标题</label>
+              <label class="required">标题</label>
               <input v-model="addForm.title" type="text" placeholder="请输入壁纸标题" />
             </div>
             <div class="field">
@@ -171,7 +239,7 @@
               <input v-model="addForm.category" type="text" placeholder="默认" />
             </div>
             <div class="field">
-              <label>图片 <span class="field-optional">（JPG/PNG/WEBP）</span></label>
+              <label><span class="required">图片</span> <span class="field-optional">（JPG/PNG/WEBP）</span></label>
               <div
                 class="upload-zone"
                 :class="{ dragging: isDragging, 'has-preview': !!imagePreview }"
@@ -236,6 +304,21 @@ interface Wallpaper {
   [key: string]: any
 }
 
+interface WallpaperUploadLimit {
+  wallpaper_upload_limit: number
+}
+
+interface WallpaperAccountLimit {
+  ciyuanxi_id: string
+  upload_limit: number
+  remark: string
+  updated_by: string
+  updated_at: string
+  username: string
+  email: string
+  uploaded_count: number
+}
+
 const filters = [
   { value: 'all', label: '全部' },
   { value: 'pending', label: '待审核' },
@@ -276,6 +359,18 @@ function countByStatus(status: string): number {
 const wallpapers = ref<Wallpaper[]>([])
 const loading = ref(true)
 const activeFilter = ref('all')
+const wallpaperUploadLimit = ref(20)
+const wallpaperUploadLimitInput = ref(20)
+const limitLoading = ref(false)
+const limitSaving = ref(false)
+const accountLimits = ref<WallpaperAccountLimit[]>([])
+const accountLimitLoading = ref(false)
+const accountLimitSaving = ref(false)
+const accountLimitForm = ref({
+  ciyuanxi_id: '',
+  upload_limit: 20,
+  remark: '',
+})
 
 const pendingCount = computed(() => wallpapers.value.filter(w => w.status === 'pending').length)
 const filteredList = computed(() => {
@@ -292,6 +387,100 @@ async function loadList() {
     wallpapers.value = []
   }
   loading.value = false
+}
+
+async function loadWallpaperUploadLimit() {
+  limitLoading.value = true
+  const res = await adminApi<WallpaperUploadLimit>('get_wallpaper_upload_limit')
+  if (res.code === 200 && res.data) {
+    const limit = Number(res.data.wallpaper_upload_limit ?? 20)
+    wallpaperUploadLimit.value = Number.isFinite(limit) ? limit : 20
+    wallpaperUploadLimitInput.value = wallpaperUploadLimit.value
+  } else {
+    showToast(res.msg || '壁纸上传上限加载失败')
+  }
+  limitLoading.value = false
+}
+
+async function saveWallpaperUploadLimit() {
+  const limit = Number(wallpaperUploadLimitInput.value)
+  if (!Number.isInteger(limit) || limit < 0 || limit > 10000) {
+    showToast('上传上限需为 0 到 10000 的整数')
+    return
+  }
+  limitSaving.value = true
+  const res = await adminApi<WallpaperUploadLimit>('update_wallpaper_upload_limit', {
+    wallpaper_upload_limit: limit,
+  })
+  limitSaving.value = false
+  if (res.code === 200) {
+    wallpaperUploadLimit.value = Number(res.data?.wallpaper_upload_limit ?? limit)
+    wallpaperUploadLimitInput.value = wallpaperUploadLimit.value
+    showToast('壁纸上传上限已保存', 'success')
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
+
+async function loadWallpaperAccountLimits() {
+  accountLimitLoading.value = true
+  const res = await adminApi<WallpaperAccountLimit[]>('list_wallpaper_account_limits')
+  if (res.code === 200 && Array.isArray(res.data)) {
+    accountLimits.value = res.data
+  } else {
+    accountLimits.value = []
+    showToast(res.msg || '账号独立上限加载失败')
+  }
+  accountLimitLoading.value = false
+}
+
+async function saveWallpaperAccountLimit() {
+  const ciyuanxiId = accountLimitForm.value.ciyuanxi_id.trim()
+  const limit = Number(accountLimitForm.value.upload_limit)
+  if (!ciyuanxiId) {
+    showToast('请填写弦予号')
+    return
+  }
+  if (!Number.isInteger(limit) || limit < 0 || limit > 10000) {
+    showToast('账号上传上限需为 0 到 10000 的整数')
+    return
+  }
+  accountLimitSaving.value = true
+  const res = await adminApi('save_wallpaper_account_limit', {
+    ciyuanxi_id: ciyuanxiId,
+    upload_limit: limit,
+    remark: accountLimitForm.value.remark.trim(),
+  })
+  accountLimitSaving.value = false
+  if (res.code === 200) {
+    showToast('账号上传上限已保存', 'success')
+    accountLimitForm.value = { ciyuanxi_id: '', upload_limit: 20, remark: '' }
+    loadWallpaperAccountLimits()
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
+
+function fillAccountLimitForm(item: WallpaperAccountLimit) {
+  accountLimitForm.value = {
+    ciyuanxi_id: item.ciyuanxi_id,
+    upload_limit: Number(item.upload_limit || 0),
+    remark: item.remark || '',
+  }
+}
+
+async function deleteWallpaperAccountLimit(ciyuanxiId: string) {
+  if (!confirm(`确定恢复 ${ciyuanxiId} 使用全局上传上限吗？`)) return
+  const res = await adminApi('delete_wallpaper_account_limit', { ciyuanxi_id: ciyuanxiId })
+  if (res.code === 200) {
+    showToast('已恢复全局默认', 'success')
+    if (accountLimitForm.value.ciyuanxi_id === ciyuanxiId) {
+      accountLimitForm.value = { ciyuanxi_id: '', upload_limit: 20, remark: '' }
+    }
+    loadWallpaperAccountLimits()
+  } else {
+    showToast(res.msg || '操作失败')
+  }
 }
 
 function onImgError(e: Event) {
@@ -431,6 +620,8 @@ async function doAddWallpaper() {
 
 onMounted(() => {
   loadList()
+  loadWallpaperUploadLimit()
+  loadWallpaperAccountLimits()
 })
 </script>
 
@@ -491,6 +682,154 @@ onMounted(() => {
 }
 .btn-add:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2); }
 .btn-add:active { transform: scale(0.96); }
+
+.limit-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--white);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+.limit-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.limit-desc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.limit-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.limit-input {
+  width: 110px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+}
+.limit-input:focus {
+  border-color: var(--accent);
+}
+.btn-limit-save {
+  padding: 9px 14px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--white);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-limit-save:disabled,
+.limit-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.account-limit-card {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--white);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+}
+.account-limit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+.account-limit-form {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.account-id-input {
+  width: 180px;
+}
+.account-remark-input {
+  width: 240px;
+}
+.btn-limit-refresh {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--white);
+  color: var(--text-light);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-limit-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.account-limit-empty {
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.08);
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.account-limit-list {
+  display: grid;
+  gap: 8px;
+}
+.account-limit-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.7);
+}
+.account-limit-main {
+  min-width: 0;
+}
+.account-id {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.account-meta,
+.account-remark {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.account-limit-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.text-btn {
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.text-btn.danger {
+  color: #ef4444;
+}
 
 /* ===== 筛选栏 ===== */
 .filter-bar {

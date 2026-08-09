@@ -133,7 +133,7 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
         .map(|pl| pl.get("songs").and_then(|s| s.as_array()).map(|a| a.len() as i64).unwrap_or(0))
         .sum();
     let save = json!({
-        "version": 3,
+        "version": 4,
         "uploaded_at": now_str(),
         "timestamp": now_ts(),
         "stats": {
@@ -186,23 +186,6 @@ pub async fn file_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-pub async fn file_sync_status(body: &str, ctx: ReqCtx) -> Response {
-    let data = parse_body(body);
-    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
-    if ciyuanxi_id.is_empty() {
-        return ctx.err(400, "参数错误");
-    }
-    let meta_file = sync_dir(&ciyuanxi_id).join("meta.json");
-    let meta: Option<Value> = if meta_file.exists() {
-        std::fs::read_to_string(&meta_file)
-            .ok()
-            .and_then(|c| serde_json::from_str(&c).ok())
-    } else {
-        None
-    };
-    ctx.ok("ok", json!({ "has_data": meta.is_some(), "meta": meta }))
-}
-
 /// 读取插件/设置类的 JSON 快照文件
 fn read_snapshot(ciyuanxi_id: &str, name: &str) -> Result<Value, ()> {
     let file = sync_dir(ciyuanxi_id).join(name);
@@ -221,38 +204,6 @@ fn write_snapshot(ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
         return false;
     }
     std::fs::write(dir.join(name), serde_json::to_string(data).unwrap_or_default()).is_ok()
-}
-
-pub async fn plugin_sync_upload(body: &str, ctx: ReqCtx) -> Response {
-    let data = parse_body(body);
-    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
-    if ciyuanxi_id.is_empty() {
-        return ctx.err(400, "参数错误");
-    }
-    let plugins = data.get("plugins").cloned().unwrap_or(Value::Null);
-    let Some(arr) = plugins.as_array() else {
-        return ctx.err(400, "plugins 格式错误");
-    };
-    let user_plugins: Vec<Value> = arr
-        .iter()
-        .filter(|p| !bool_field(p, "isBuiltin"))
-        .cloned()
-        .collect();
-    let save = json!({
-        "version": 1,
-        "uploaded_at": now_str(),
-        "timestamp": now_ts(),
-        "stats": { "plugin_count": user_plugins.len() },
-        "plugins": user_plugins
-    });
-    if !write_snapshot(&ciyuanxi_id, "plugins.json", &save) {
-        return ctx.err(500, "文件写入失败");
-    }
-    ctx.ok("上传成功", json!({ "plugin_count": user_plugins.len() }))
-}
-
-fn bool_field(v: &Value, key: &str) -> bool {
-    matches!(v.get(key), Some(Value::Bool(true)))
 }
 
 pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
@@ -312,25 +263,6 @@ pub async fn plugin_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-pub async fn plugin_sync_status(body: &str, ctx: ReqCtx) -> Response {
-    let data = parse_body(body);
-    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
-    if ciyuanxi_id.is_empty() {
-        return ctx.err(400, "参数错误");
-    }
-    let meta: Option<Value> = read_snapshot(&ciyuanxi_id, "plugins.json").ok().and_then(|v| {
-        Some(json!({
-            "uploaded_at": v.get("uploaded_at").cloned(),
-            "timestamp": v.get("timestamp").cloned(),
-            "plugin_count": v.pointer("/stats/plugin_count").cloned().unwrap_or(json!(0))
-        }))
-    });
-    ctx.ok(
-        "ok",
-        json!({ "has_data": meta.is_some(), "meta": meta }),
-    )
-}
-
 fn settings_snapshot(ciyuanxi_id: &str) -> Option<Value> {
     read_snapshot(ciyuanxi_id, "settings.json").ok()
 }
@@ -366,26 +298,5 @@ pub async fn settings_sync_download(body: &str, ctx: ReqCtx) -> Response {
     match settings_snapshot(&ciyuanxi_id) {
         Some(v) => ctx.ok("获取成功", v),
         None => ctx.ok("暂无同步数据", json!({ "settings": null })),
-    }
-}
-
-pub async fn settings_sync_status(body: &str, ctx: ReqCtx) -> Response {
-    let data = parse_body(body);
-    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
-    if ciyuanxi_id.is_empty() {
-        return ctx.err(400, "参数错误");
-    }
-    match settings_snapshot(&ciyuanxi_id) {
-        Some(v) => ctx.ok(
-            "ok",
-            json!({
-                "has_data": true,
-                "meta": {
-                    "uploaded_at": v.get("uploaded_at").cloned().unwrap_or(json!("")),
-                    "timestamp": v.get("timestamp").cloned().unwrap_or(json!(0))
-                }
-            }),
-        ),
-        None => ctx.ok("ok", json!({ "has_data": false, "meta": null })),
     }
 }

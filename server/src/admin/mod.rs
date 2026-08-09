@@ -7,6 +7,7 @@ use sqlx::Column;
 use sqlx::MySqlPool;
 
 pub mod account;
+pub mod about;
 pub mod admins;
 pub mod announcement;
 pub mod audit;
@@ -186,6 +187,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "bind_email" => account::bind_email(body, &ctx, pool).await,
         "change_username" => account::change_username(body, &ctx, pool).await,
         "get_account_info" => account::get_account_info(body, &ctx, pool).await,
+        "get_about_config_admin" => about::get(body, &ctx, pool).await,
+        "save_about_config" => about::save(body, &ctx, pool).await,
         "add_admin" => admins::add_admin(body, &ctx, pool).await,
         "delete_admin" => admins::delete_admin(body, &ctx, pool).await,
         "list_admins" => admins::list_admins(body, &ctx, pool).await,
@@ -223,8 +226,11 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "list_operation_logs" => logs::list_operation_logs(body, &ctx, pool).await,
         "list_admin_login_logs" => logs::list_admin_login_logs(body, &ctx, pool).await,
         "list_feedback" => feedback::list_feedback(body, &ctx, pool).await,
+        "get_feedback_detail" => feedback::get_feedback_detail(body, &ctx, pool).await,
         "reply_feedback" => feedback::reply_feedback(body, &ctx, pool).await,
         "update_feedback_status" => feedback::update_feedback_status(body, &ctx, pool).await,
+        "get_feedback_limit" => feedback::get_feedback_limit(body, &ctx, pool).await,
+        "update_feedback_limit" => feedback::update_feedback_limit(body, &ctx, pool).await,
         "view_share_detail" => share::view_share_detail(body, &ctx, pool).await,
         "delete_expired_shares" => share::delete_expired_shares(body, &ctx, pool).await,
         // source / prettyid
@@ -241,6 +247,11 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "list_wallpapers" => wallpaper::list_wallpapers(body, &ctx, pool).await,
         "delete_wallpaper" => wallpaper::delete_wallpaper(body, &ctx, pool).await,
         "change_wallpaper_status" => wallpaper::change_wallpaper_status(body, &ctx, pool).await,
+        "get_wallpaper_upload_limit" => wallpaper::get_wallpaper_upload_limit(body, &ctx, pool).await,
+        "update_wallpaper_upload_limit" => wallpaper::update_wallpaper_upload_limit(body, &ctx, pool).await,
+        "list_wallpaper_account_limits" => wallpaper::list_wallpaper_account_limits(body, &ctx, pool).await,
+        "save_wallpaper_account_limit" => wallpaper::save_wallpaper_account_limit(body, &ctx, pool).await,
+        "delete_wallpaper_account_limit" => wallpaper::delete_wallpaper_account_limit(body, &ctx, pool).await,
         "add_announcement" => announcement::add(body, &ctx, pool).await,
         "update_announcement" => announcement::update(body, &ctx, pool).await,
         "delete_announcement" => announcement::delete(body, &ctx, pool).await,
@@ -253,6 +264,9 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "reject_avatar" => audit::reject_avatar(body, &ctx, pool).await,
         "approve_nickname" => audit::approve_nickname(body, &ctx, pool).await,
         "reject_nickname" => audit::reject_nickname(body, &ctx, pool).await,
+        "get_audit_external_config" => audit::get_audit_external_config(body, &ctx, pool).await,
+        "save_audit_external_config" => audit::save_audit_external_config(body, &ctx, pool).await,
+        "test_audit_external_config" => audit::test_audit_external_config(body, &ctx, pool).await,
         "list_notification_emails" => email::list_notification_emails(body, &ctx, pool).await,
         "add_notification_email" => email::add_notification_email(body, &ctx, pool).await,
         "delete_notification_email" => email::delete_notification_email(body, &ctx, pool).await,
@@ -263,6 +277,10 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "email_users_delete" => email::email_users_delete(body, &ctx, pool).await,
         "email_users_logs" => email::email_users_logs(body, &ctx, pool).await,
         "email_users_stats" => email::email_users_stats(body, &ctx, pool).await,
+        // email API config
+        "get_email_config" => email::get_email_config(body, &ctx, pool).await,
+        "update_email_config" => email::update_email_config(body, &ctx, pool).await,
+        "test_email_config" => email::test_email_config(body, &ctx, pool).await,
         // playlist
         "get_user_playlists" => playlist::get_user_playlists(body, &ctx, pool).await,
         "delete_user_playlist" => playlist::delete_user_playlist(body, &ctx, pool).await,

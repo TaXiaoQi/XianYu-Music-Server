@@ -361,7 +361,7 @@ pub async fn replace_user_id_to_ciyuanxi(_body: &str, ctx: &AdminCtx, pool: &MyS
                 if cid.is_empty() || cid == old_val {
                     continue;
                 }
-                let pk_val: i64 = match row.try_get(&*pk) {
+                let pk_val: i64 = match row.try_get(pk.as_str()) {
                     Ok(v) => v,
                     Err(_) => continue,
                 };

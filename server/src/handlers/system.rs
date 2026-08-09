@@ -6,6 +6,55 @@ use sqlx::Row;
 use crate::handlers::helpers::{compare_version_code, parse_body};
 use crate::response::ReqCtx;
 
+fn announcements_path() -> std::path::PathBuf {
+    std::path::Path::new("api").join("announcement.json")
+}
+
+fn about_config_path() -> std::path::PathBuf {
+    std::path::Path::new("api").join("about_config.json")
+}
+
+fn default_about_config() -> serde_json::Value {
+    json!({
+        "officialSiteUrl": "https://xy.zh2026.cn/ciyuanxi/",
+        "officialSiteText": "前往官网",
+        "updateEnabled": true,
+        "updateText": "检查更新",
+        "projectUrl": "https://github.com/TaXiaoQi/XianYu-Music-Desktop",
+        "projectText": "开源地址",
+        "referenceProjectUrl": "https://github.com/Billy636/XianYuMusic",
+        "referenceProjectText": "参考项目"
+    })
+}
+
+fn read_about_config() -> serde_json::Value {
+    let defaults = default_about_config();
+    let path = about_config_path();
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return defaults;
+    };
+    let Ok(serde_json::Value::Object(saved)) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return defaults;
+    };
+    let mut merged = defaults.as_object().cloned().unwrap_or_default();
+    for (key, value) in saved {
+        merged.insert(key, value);
+    }
+    serde_json::Value::Object(merged)
+}
+
+fn read_announcements() -> Vec<serde_json::Value> {
+    let path = announcements_path();
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(arr) = v.as_array() {
+                return arr.clone();
+            }
+        }
+    }
+    Vec::new()
+}
+
 pub async fn get_source_status(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     // 确保音源配置存在
     let _ = sqlx::query("DELETE FROM music_source_config")
@@ -184,6 +233,57 @@ pub async fn get_latest_version(ctx: ReqCtx, pool: &MySqlPool) -> Response {
         }
         None => ctx.json(200, "ok", Some(json!([]))),
     }
+}
+
+pub async fn get_announcement(ctx: ReqCtx) -> Response {
+    let mut list: Vec<serde_json::Value> = read_announcements()
+        .into_iter()
+        .filter(|item| item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false))
+        .collect();
+    list.sort_by(|a, b| {
+        let ta = a.get("updated_at")
+            .or_else(|| a.get("created_at"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let tb = b.get("updated_at")
+            .or_else(|| b.get("created_at"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        tb.cmp(ta)
+    });
+
+    let Some(item) = list.into_iter().next() else {
+        return ctx.json::<serde_json::Value>(200, "ok", None);
+    };
+
+    let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    if id.is_empty() || title.is_empty() || content.is_empty() {
+        return ctx.json::<serde_json::Value>(200, "ok", None);
+    }
+
+    ctx.json(
+        200,
+        "ok",
+        Some(json!({
+            "id": id,
+            "title": title,
+            "content": content,
+            "type": item.get("type").and_then(|v| v.as_str()).unwrap_or("info"),
+            "date": item.get("date").and_then(|v| v.as_str()).unwrap_or(""),
+            "actionUrl": item.get("actionUrl").and_then(|v| v.as_str()).unwrap_or(""),
+            "actionText": item.get("actionText").and_then(|v| v.as_str()).unwrap_or(""),
+            "updatedAt": item.get("updated_at")
+                .or_else(|| item.get("updatedAt"))
+                .and_then(|v| v.as_str())
+                .unwrap_or(""),
+        })),
+    )
+}
+
+pub async fn get_about_config(ctx: ReqCtx) -> Response {
+    ctx.json(200, "ok", Some(read_about_config()))
 }
 
 pub async fn get_server_load(ctx: ReqCtx, pool: &MySqlPool) -> Response {

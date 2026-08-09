@@ -24,7 +24,7 @@
           </div>
           <div class="card-body">
             <div class="field">
-              <label>新用户名</label>
+              <label class="required">新用户名</label>
               <input v-model="usernameForm.new_username" type="text" placeholder="请输入新用户名" autocomplete="off" />
             </div>
             <button class="btn-save" :disabled="usernameSaving" @click="submitUsername">
@@ -49,11 +49,11 @@
           </div>
           <div class="card-body">
             <div class="field">
-              <label>当前密码</label>
+              <label class="required">当前密码</label>
               <input v-model="passwordForm.old_password" type="password" placeholder="请输入当前密码" autocomplete="current-password" />
             </div>
             <div class="field">
-              <label>新密码</label>
+              <label class="required">新密码</label>
               <input v-model="passwordForm.new_password" type="password" placeholder="至少 6 个字符" autocomplete="new-password" />
               <Transition name="fade-up">
                 <div v-if="passwordForm.new_password" class="strength">
@@ -67,7 +67,7 @@
               </Transition>
             </div>
             <div class="field">
-              <label>确认新密码</label>
+              <label class="required">确认新密码</label>
               <input v-model="passwordForm.confirm_password" type="password" placeholder="再次输入新密码" autocomplete="new-password" />
               <span v-if="passwordForm.confirm_password && passwordForm.confirm_password !== passwordForm.new_password" class="hint hint-error">两次输入的密码不一致</span>
               <span v-else-if="passwordForm.confirm_password && passwordForm.confirm_password === passwordForm.new_password" class="hint hint-ok">两次密码一致</span>

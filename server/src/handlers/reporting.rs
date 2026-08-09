@@ -2,65 +2,8 @@ use axum::response::Response;
 use serde_json::json;
 use sqlx::MySqlPool;
 
-use crate::handlers::helpers::{int_of, parse_body, str_of};
+use crate::handlers::helpers::{parse_body, str_of};
 use crate::response::ReqCtx;
-
-/// source_call 音源调用上报
-pub async fn source_call(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    if data.is_null() {
-        return ctx.err(400, "参数错误");
-    }
-    let ip = ctx.client_ip.clone();
-    let result = sqlx::query(
-        "INSERT INTO source_call_log (ip, device_id, source_name, action, song_name, singer, status, result_status, error_msg, duration_ms, platform, source_type, request_params) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-    )
-    .bind(ip)
-    .bind(str_of(&data, "device_id"))
-    .bind(str_of(&data, "source_name"))
-    .bind(str_of(&data, "action"))
-    .bind(str_of(&data, "song_name"))
-    .bind(str_of(&data, "singer"))
-    .bind(int_of(&data, "status"))
-    .bind(str_of(&data, "result_status"))
-    .bind(str_of(&data, "error_msg"))
-    .bind(int_of(&data, "duration_ms"))
-    .bind(str_of(&data, "platform"))
-    .bind(str_of(&data, "source_type"))
-    .bind(body.to_string())
-    .execute(pool)
-    .await;
-
-    match result {
-        Ok(r) => ctx.json(200, "上报成功", Some(json!({ "id": r.last_insert_id() }))),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
-    }
-}
-
-/// login 登录上报
-pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    if data.is_null() {
-        return ctx.err(400, "参数错误");
-    }
-    let ip = ctx.client_ip.clone();
-    let result = sqlx::query(
-        "INSERT INTO login_log (ip, device_id, user_id, username, status, request_params) VALUES (?,?,?,?,?,?)",
-    )
-    .bind(ip)
-    .bind(str_of(&data, "device_id"))
-    .bind(str_of(&data, "user_id"))
-    .bind(str_of(&data, "username"))
-    .bind(int_of(&data, "status"))
-    .bind(body.to_string())
-    .execute(pool)
-    .await;
-
-    match result {
-        Ok(r) => ctx.json(200, "上报成功", Some(json!({ "id": r.last_insert_id() }))),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
-    }
-}
 
 /// error 错误上报
 pub async fn error(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {

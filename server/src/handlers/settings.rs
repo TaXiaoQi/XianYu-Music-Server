@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use sqlx::MySqlPool;
 use sqlx::Row;
 
+use crate::audit_policy::{self, AuditDecision};
 use crate::handlers::helpers::{parse_body, str_of};
 use crate::response::ReqCtx;
 
@@ -168,13 +169,45 @@ fn async_of_i64(v: &Value) -> i64 {
     }
 }
 
+async fn nickname_submit_block_message(pool: &MySqlPool, ciyuanxi_id: &str) -> Option<&'static str> {
+    let status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM user_nickname_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+    )
+    .bind(ciyuanxi_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    match status.as_deref() {
+        Some("pending") => Some("昵称正在审核中哦"),
+        Some(_) => Some("今日已修改过啦"),
+        None => None,
+    }
+}
+
+async fn avatar_submit_block_message(pool: &MySqlPool, ciyuanxi_id: &str) -> Option<&'static str> {
+    let status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM user_avatar_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+    )
+    .bind(ciyuanxi_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    match status.as_deref() {
+        Some("pending") => Some("头像正在审核中哦"),
+        Some(_) => Some("今日已修改过啦"),
+        None => None,
+    }
+}
+
 pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = extract_id(&data);
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "弦予号不能为空");
     }
-    let user = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+    let user = sqlx::query("SELECT username FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
         .await
@@ -183,28 +216,158 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     let Some(user) = user else {
         return ctx.err(404, "用户不存在");
     };
-    let user_id: i64 = user.get("id");
+    let current_username: String = user.get("username");
 
-    let mut sets: Vec<String> = vec![];
+    let mut nickname_submitted = false;
+    let mut avatar_submitted = false;
+    let mut nickname_auto_approved = false;
+    let mut avatar_auto_approved = false;
     if data.get("nickname").and_then(|v| v.as_str()).is_some() {
-        let v = str_of(&data, "nickname");
-        sets.push(format!("username = '{}'", v));
+        let nickname = str_of(&data, "nickname").trim().to_string();
+        let len = nickname.chars().count();
+        if nickname.is_empty() {
+            return ctx.err(400, "昵称不能为空");
+        }
+        if len < 2 || len > 20 {
+            return ctx.err(400, "昵称长度需为 2 到 20 个字符");
+        }
+        if nickname == current_username {
+            return ctx.err(400, "新昵称不能与当前昵称相同");
+        }
+        let exists = sqlx::query("SELECT id FROM app_users WHERE username = ? AND ciyuanxi_id != ? LIMIT 1")
+            .bind(&nickname)
+            .bind(&ciyuanxi_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        if exists {
+            return ctx.err(400, "昵称已被使用");
+        }
+        if let Some(msg) = nickname_submit_block_message(pool, &ciyuanxi_id).await {
+            return ctx.err(429, msg);
+        }
+        if data.get("avatar_url").and_then(|v| v.as_str()).is_some() {
+            let avatar_url = str_of(&data, "avatar_url").trim().to_string();
+            if avatar_url.is_empty() {
+                return ctx.err(400, "头像不能为空");
+            }
+            if let Some(msg) = avatar_submit_block_message(pool, &ciyuanxi_id).await {
+                return ctx.err(429, msg);
+            }
+        }
+        let audit = audit_policy::audit_text(
+            pool,
+            "nickname",
+            &nickname,
+            json!({ "ciyuanxi_id": ciyuanxi_id, "old_name": current_username }),
+        )
+        .await;
+        if audit.decision == AuditDecision::Pass {
+            let _ = sqlx::query("UPDATE app_users SET username = ? WHERE ciyuanxi_id = ?")
+                .bind(&nickname)
+                .bind(&ciyuanxi_id)
+                .execute(pool)
+                .await;
+            nickname_auto_approved = true;
+        } else if audit.decision == AuditDecision::Reject {
+            let _ = sqlx::query("DELETE FROM user_nickname_pending WHERE ciyuanxi_id = ? AND status = 'pending'")
+                .bind(&ciyuanxi_id)
+                .execute(pool)
+                .await;
+            let _ = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, status, reviewed_at, reviewed_by) VALUES (?, ?, 'rejected', NOW(), ?)")
+                .bind(&ciyuanxi_id)
+                .bind(&nickname)
+                .bind(format!("external:{}", audit.provider))
+                .execute(pool)
+                .await;
+            return ctx.err(400, if audit.reason.is_empty() { "改名未通过机审" } else { &audit.reason });
+        } else {
+            let _ = sqlx::query("DELETE FROM user_nickname_pending WHERE ciyuanxi_id = ? AND status = 'pending'")
+                .bind(&ciyuanxi_id)
+                .execute(pool)
+                .await;
+            let result = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, status) VALUES (?, ?, 'pending')")
+                .bind(&ciyuanxi_id)
+                .bind(&nickname)
+                .execute(pool)
+                .await;
+            if let Err(e) = result {
+                return ctx.err(500, &format!("服务器错误: {}", e));
+            }
+            nickname_submitted = true;
+        }
     }
     if data.get("avatar_url").and_then(|v| v.as_str()).is_some() {
-        let v = str_of(&data, "avatar_url");
-        sets.push(format!("avatar_url = '{}'", sql_escape(&v)));
+        let avatar_url = str_of(&data, "avatar_url").trim().to_string();
+        if avatar_url.is_empty() {
+            return ctx.err(400, "头像不能为空");
+        }
+        if let Some(msg) = avatar_submit_block_message(pool, &ciyuanxi_id).await {
+            return ctx.err(429, msg);
+        }
+        let audit = audit_policy::audit_image(
+            pool,
+            "avatar",
+            &avatar_url,
+            json!({ "ciyuanxi_id": ciyuanxi_id }),
+        )
+        .await;
+        if audit.decision == AuditDecision::Pass {
+            let _ = sqlx::query("UPDATE app_users SET avatar_url = ? WHERE ciyuanxi_id = ?")
+                .bind(&avatar_url)
+                .bind(&ciyuanxi_id)
+                .execute(pool)
+                .await;
+            avatar_auto_approved = true;
+        } else if audit.decision == AuditDecision::Reject {
+            let _ = sqlx::query("DELETE FROM user_avatar_pending WHERE ciyuanxi_id = ? AND status = 'pending'")
+                .bind(&ciyuanxi_id)
+                .execute(pool)
+                .await;
+            let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, status, reviewed_at, reviewed_by) VALUES (?, ?, 'rejected', NOW(), ?)")
+                .bind(&ciyuanxi_id)
+                .bind(&avatar_url)
+                .bind(format!("external:{}", audit.provider))
+                .execute(pool)
+                .await;
+            return ctx.err(400, if audit.reason.is_empty() { "头像未通过机审" } else { &audit.reason });
+        } else {
+            let _ = sqlx::query("DELETE FROM user_avatar_pending WHERE ciyuanxi_id = ? AND status = 'pending'")
+                .bind(&ciyuanxi_id)
+                .execute(pool)
+                .await;
+            let result = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, status) VALUES (?, ?, 'pending')")
+                .bind(&ciyuanxi_id)
+                .bind(&avatar_url)
+                .execute(pool)
+                .await;
+            if let Err(e) = result {
+                return ctx.err(500, &format!("服务器错误: {}", e));
+            }
+            avatar_submitted = true;
+        }
     }
-    if sets.is_empty() {
-        return ctx.err(400, "没有需要更新的字段");
+    if nickname_auto_approved || avatar_auto_approved {
+        return match (nickname_auto_approved, avatar_auto_approved, nickname_submitted, avatar_submitted) {
+            (true, true, _, _) => ctx.ok("头像和改名已通过机审并立即生效", json!({ "status": "approved" })),
+            (true, false, false, false) => ctx.ok("改名已通过机审并立即生效", json!({ "status": "approved" })),
+            (false, true, false, false) => ctx.ok("头像已通过机审并立即生效", json!({ "status": "approved" })),
+            (true, false, _, true) => ctx.ok("改名已通过机审，头像已提交人工审核", json!({ "status": "partial" })),
+            (false, true, true, _) => ctx.ok("头像已通过机审，改名已提交人工审核", json!({ "status": "partial" })),
+            _ => ctx.ok("资料已处理", json!({ "status": "partial" })),
+        };
     }
-    let sql = format!("UPDATE app_users SET {} WHERE id = ?", sets.join(", "));
-    let result = sqlx::query(&sql).bind(user_id).execute(pool).await;
-    match result {
-        Ok(_) => ctx.ok_empty("更新成功"),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+    match (nickname_submitted, avatar_submitted) {
+        (true, true) => ctx.ok("头像和改名申请已提交，等待管理员审核", json!({ "status": "pending" })),
+        (true, false) => ctx.ok("改名申请已提交，等待管理员审核", json!({ "status": "pending" })),
+        (false, true) => ctx.ok("头像已上传，等待管理员审核", json!({ "status": "pending" })),
+        (false, false) => ctx.err(400, "没有需要更新的字段"),
     }
 }
 
+#[allow(dead_code)]
 fn sql_escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
@@ -266,36 +429,68 @@ pub async fn change_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
 pub async fn get_avatar_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = extract_id(&data);
-    let row = sqlx::query("SELECT avatar_url FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "弦予号不能为空");
+    }
+    let user_exists = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
         .await
         .ok()
         .flatten();
+    if user_exists.is_none() {
+        return ctx.err(404, "用户不存在");
+    }
+    let row = sqlx::query(
+        "SELECT status, created_at FROM user_avatar_pending WHERE ciyuanxi_id = ? AND status IN ('pending', 'rejected') ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
     match row {
-        Some(r) => {
-            let avatar: String = r.get("avatar_url");
-            ctx.json(200, "ok", Some(json!({ "has_avatar": !avatar.is_empty() })))
-        }
-        None => ctx.err(404, "用户不存在"),
+        Some(r) => ctx.json(200, "ok", Some(json!({
+            "status": r.get::<String, _>("status"),
+            "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+        }))),
+        None => ctx.json(200, "ok", Some(json!({ "status": "none" }))),
     }
 }
 
 pub async fn get_nickname_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = extract_id(&data);
-    let row = sqlx::query("SELECT username FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "弦予号不能为空");
+    }
+    let user = sqlx::query("SELECT username FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
         .await
         .ok()
         .flatten();
+    let Some(user) = user else {
+        return ctx.err(404, "用户不存在");
+    };
+    let row = sqlx::query(
+        "SELECT status, nickname, created_at FROM user_nickname_pending WHERE ciyuanxi_id = ? AND status IN ('pending', 'rejected') ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
     match row {
-        Some(r) => {
-            let username: String = r.get("username");
-            ctx.json(200, "ok", Some(json!({ "nickname": username })))
-        }
-        None => ctx.err(404, "用户不存在"),
+        Some(r) => ctx.json(200, "ok", Some(json!({
+            "status": r.get::<String, _>("status"),
+            "nickname": r.get::<String, _>("nickname"),
+            "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+        }))),
+        None => ctx.json(200, "ok", Some(json!({
+            "status": "none",
+            "nickname": user.get::<String, _>("username"),
+        }))),
     }
 }
 
@@ -305,9 +500,9 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "弦予号不能为空");
     }
-    if let Some(v) = data.get("duration") {
+    if let Some(v) = data.get("duration").or_else(|| data.get("listen_duration")) {
         let seconds = v.as_f64().unwrap_or(0.0) as i64;
-        let _ = sqlx::query("UPDATE app_users SET listen_duration = listen_duration + ? WHERE ciyuanxi_id = ?")
+        let _ = sqlx::query("UPDATE app_users SET listen_duration = GREATEST(listen_duration, ?) WHERE ciyuanxi_id = ?")
             .bind(seconds)
             .bind(&ciyuanxi_id)
             .execute(pool)

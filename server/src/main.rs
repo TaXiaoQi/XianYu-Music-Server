@@ -1,6 +1,8 @@
 mod admin;
+mod audit_policy;
 mod config;
 mod db;
+mod debug;
 mod handlers;
 mod response;
 mod schema;
@@ -51,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api", get(handle_api).post(handle_api))
         .route("/api/", get(handle_api).post(handle_api))
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
+        .nest_service("/uploads", ServeDir::new("uploads"))
         .fallback_service(serve_dir)
         .layer(cors)
         .with_state(state);
@@ -61,11 +64,15 @@ async fn main() -> anyhow::Result<()> {
 
     let cfg = config.clone();
     let pool2 = pool.clone();
-    // 启动后台保证核心表存在（不阻塞 / 不等数据库就绪）
-    tokio::spawn(async move {
-        db::ping(&cfg, &pool2).await;
-        schema::ensure_schema(&pool2).await;
-    });
+    if config.local_debug_no_db {
+        tracing::warn!("local_debug_no_db enabled: skip database ping and schema initialization");
+    } else {
+        // 启动后台保证核心表存在（不阻塞 / 不等数据库就绪）
+        tokio::spawn(async move {
+            db::ping(&cfg, &pool2).await;
+            schema::ensure_schema(&pool2).await;
+        });
+    }
 
     axum::serve(listener, app).await?;
     Ok(())
@@ -98,11 +105,11 @@ async fn handle_api(
 
     // 签名验证（免签操作放行）
     let no_sign: [&str; 14] = [
-        "install", "check", "get_source_status", "upload_avatar", "upload_background",
-        "upload_playlist_cover", "debug_sign", "deduct_master_quota", "get_master_quota_usage",
-        "email_send_code", "email_register", "email_login", "email_reset_password", "email_get_profile",
+        "install", "check", "get_source_status", "upload_avatar",
+        "debug_sign", "deduct_master_quota", "get_master_quota_usage",
+        "get_captcha", "verify_captcha", "email_send_code", "email_register", "email_login", "email_reset_password", "email_get_profile",
     ];
-    if !no_sign.contains(&action.as_str()) {
+    if !state.config.local_debug_no_db && !no_sign.contains(&action.as_str()) {
         let timestamp = headers
             .get("x-timestamp")
             .map(|v| v.to_str().unwrap_or("").to_string())
@@ -132,6 +139,10 @@ async fn handle_api(
         raw_body
     };
 
+    if state.config.local_debug_no_db {
+        return debug::handle_api(&action, &body, ctx);
+    }
+
     handlers::dispatch(&action, &body, ctx, &state.pool).await
 }
 
@@ -157,6 +168,9 @@ async fn handle_admin_api(
 
     // 登录接口免鉴权
     if action == "admin_login" {
+        if state.config.local_debug_no_db {
+            return debug::handle_admin_login(&state.config);
+        }
         return admin::auth::admin_login(&raw_body, &state.config, &state.pool, &ip).await;
     }
 
@@ -176,5 +190,8 @@ async fn handle_admin_api(
         ip,
         config: (*state.config).clone(),
     };
+    if state.config.local_debug_no_db {
+        return debug::handle_admin_api(&action);
+    }
     admin::dispatch(&action, &raw_body, ctx, &state.pool).await
 }

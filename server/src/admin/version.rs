@@ -123,6 +123,26 @@ fn desktop_version_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("version.json")
 }
 
+fn safe_version_part(version: &str) -> String {
+    let s: String = version
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    if s.is_empty() { "latest".to_string() } else { s }
+}
+
+fn safe_file_ext(file_name: &str) -> String {
+    let ext = file_name
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_lowercase();
+    if ext.is_empty() { "bin".to_string() } else { ext }
+}
+
 /// 修改版本状态
 pub async fn change_version_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
@@ -207,11 +227,37 @@ pub async fn get_desktop_version(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
 pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let version = str_of(&data, "version").trim().to_string();
-    let download_url = str_of(&data, "download_url").trim().to_string();
+    let mut download_url = str_of(&data, "download_url").trim().to_string();
     let update_content = str_of(&data, "update_content").trim().to_string();
     let enabled = int_of(&data, "enabled") != 0;
+    let file_data = str_of(&data, "file_data").trim().to_string();
+    let file_name = str_of(&data, "file_name").trim().to_string();
     if version.is_empty() {
         return err(400, "版本号不能为空");
+    }
+    if !file_data.is_empty() {
+        let file_bytes = match base64::engine::general_purpose::STANDARD.decode(&file_data) {
+            Ok(b) => b,
+            Err(_) => return err(400, "安装包数据解码失败"),
+        };
+        if file_bytes.is_empty() {
+            return err(400, "安装包文件为空");
+        }
+        let upload_dir = std::path::Path::new("uploads").join("packages");
+        if let Err(e) = std::fs::create_dir_all(&upload_dir) {
+            return err(500, &format!("无法创建安装包目录: {}", e));
+        }
+        let ext = safe_file_ext(&file_name);
+        let ts = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
+        let new_filename = format!("desktop_v{}_{}.{}", safe_version_part(&version), ts, ext);
+        let target_path = upload_dir.join(&new_filename);
+        if std::fs::write(&target_path, &file_bytes).is_err() {
+            return err(500, "安装包保存失败，请检查目录权限");
+        }
+        download_url = format!("/uploads/packages/{}", new_filename);
+    }
+    if enabled && download_url.is_empty() {
+        return err(400, "启用更新时，请填写下载链接或上传安装包");
     }
     let out = json!({
         "version": version, "downloadUrl": download_url, "updateContent": update_content,

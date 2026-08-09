@@ -6,6 +6,11 @@ use sqlx::Row;
 use crate::handlers::helpers::{generate_ciyuanxi_id, parse_body, str_of};
 use crate::response::ReqCtx;
 
+const CAPTCHA_TTL_MINUTES: i64 = 5;
+const LOGIN_LOCK_THRESHOLD: i64 = 5;
+const LOGIN_LOCK_MINUTES: i64 = 15;
+const LOGIN_FAILURE_WINDOW_MINUTES: i64 = 30;
+
 fn rand_token() -> String {
     crate::handlers::helpers::random_hex(32)
 }
@@ -40,6 +45,198 @@ fn build_user_payload(
     })
 }
 
+pub async fn get_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let purpose = str_of(&data, "purpose").trim().to_string();
+    let purpose = if purpose.is_empty() { "auth".to_string() } else { purpose };
+    let ip = ctx.client_ip.clone();
+
+    let recent_count: i64 = sqlx::query(
+        "SELECT COUNT(*) AS cnt FROM human_captcha_challenges WHERE ip = ? AND created_at > DATE_SUB(NOW(), INTERVAL 60 SECOND)",
+    )
+    .bind(&ip)
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get("cnt"))
+    .unwrap_or(0);
+    if recent_count >= 20 {
+        return ctx.err(429, "请求过于频繁，请稍后再试");
+    }
+
+    let _ = sqlx::query("DELETE FROM human_captcha_challenges WHERE expires_at <= NOW() OR created_at < DATE_SUB(NOW(), INTERVAL 1 DAY)")
+        .execute(pool)
+        .await;
+
+    let left = crate::handlers::helpers::random_int(2, 9);
+    let right = crate::handlers::helpers::random_int(1, 9);
+    let captcha_id = crate::handlers::helpers::random_hex(16);
+    let answer = (left + right).to_string();
+    let question = format!("{} + {} = ?", left, right);
+
+    let result = sqlx::query(
+        "INSERT INTO human_captcha_challenges (captcha_id, purpose, answer, ip, expires_at) VALUES (?,?,?,?,DATE_ADD(NOW(), INTERVAL ? MINUTE))",
+    )
+    .bind(&captcha_id)
+    .bind(&purpose)
+    .bind(&answer)
+    .bind(&ip)
+    .bind(CAPTCHA_TTL_MINUTES)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(_) => ctx.ok(
+            "ok",
+            json!({
+                "captcha_id": captcha_id,
+                "question": question,
+                "expire_seconds": CAPTCHA_TTL_MINUTES * 60,
+            }),
+        ),
+        Err(e) => ctx.err(500, &format!("验证码生成失败: {}", e)),
+    }
+}
+
+pub async fn verify_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let captcha_id = str_of(&data, "captcha_id").trim().to_string();
+    let captcha_answer = str_of(&data, "captcha_answer").trim().to_string();
+    let purpose = str_of(&data, "purpose").trim().to_string();
+    let purpose = if purpose.is_empty() { "auth".to_string() } else { purpose };
+
+    if captcha_id.is_empty() || captcha_answer.is_empty() {
+        return ctx.err(400, "请完成人机验证");
+    }
+
+    let row = sqlx::query(
+        "SELECT answer, ip FROM human_captcha_challenges WHERE captcha_id = ? AND purpose = ? AND used = 0 AND expires_at > NOW() LIMIT 1",
+    )
+    .bind(&captcha_id)
+    .bind(&purpose)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    let Some(row) = row else {
+        return ctx.err(400, "人机验证已过期，请刷新后重试");
+    };
+
+    let expected: String = row.get("answer");
+    let ip: String = row.get("ip");
+    if ip != ctx.client_ip || expected.trim() != captcha_answer {
+        return ctx.err(400, "人机验证错误，请重新输入");
+    }
+
+    ctx.ok("验证通过", json!({ "verified": true }))
+}
+
+async fn require_captcha(data: &serde_json::Value, ctx: &ReqCtx, pool: &MySqlPool, purpose: &str) -> Option<Response> {
+    let captcha_id = str_of(data, "captcha_id").trim().to_string();
+    let captcha_answer = str_of(data, "captcha_answer").trim().to_string();
+    if captcha_id.is_empty() || captcha_answer.is_empty() {
+        return Some(ctx.err(400, "请完成人机验证"));
+    }
+
+    let row = sqlx::query(
+        "SELECT id, answer, ip FROM human_captcha_challenges WHERE captcha_id = ? AND purpose = ? AND used = 0 AND expires_at > NOW() LIMIT 1",
+    )
+    .bind(&captcha_id)
+    .bind(purpose)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    let Some(row) = row else {
+        return Some(ctx.err(400, "人机验证已过期，请刷新后重试"));
+    };
+
+    let id: i64 = row.get("id");
+    let expected: String = row.get("answer");
+    let ip: String = row.get("ip");
+    let _ = sqlx::query("UPDATE human_captcha_challenges SET used = 1 WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await;
+
+    if ip != ctx.client_ip || expected.trim() != captcha_answer {
+        return Some(ctx.err(400, "人机验证错误，请刷新后重试"));
+    }
+    None
+}
+
+fn normalize_rate_identifier(value: &str) -> String {
+    value.trim().to_lowercase()
+}
+
+async fn check_login_cooldown(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) -> Option<Response> {
+    let key = normalize_rate_identifier(identifier);
+    if key.is_empty() {
+        return None;
+    }
+    let row = sqlx::query(
+        "SELECT TIMESTAMPDIFF(SECOND, NOW(), locked_until) AS remain_seconds FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ? AND ip = ? AND locked_until IS NOT NULL AND locked_until > NOW() LIMIT 1",
+    )
+    .bind(&key)
+    .bind(&ctx.client_ip)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    if let Some(row) = row {
+        let remain_seconds: i64 = row.try_get("remain_seconds").unwrap_or(LOGIN_LOCK_MINUTES * 60);
+        let remain_minutes = ((remain_seconds.max(1) + 59) / 60).max(1);
+        return Some(ctx.err(429, &format!("登录失败次数过多，请约{}分钟后再试", remain_minutes)));
+    }
+    None
+}
+
+async fn record_login_failure(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) {
+    let key = normalize_rate_identifier(identifier);
+    if key.is_empty() {
+        return;
+    }
+    let current: i64 = sqlx::query(
+        "SELECT failed_count FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ? AND ip = ? AND updated_at > DATE_SUB(NOW(), INTERVAL ? MINUTE) LIMIT 1",
+    )
+    .bind(&key)
+    .bind(&ctx.client_ip)
+    .bind(LOGIN_FAILURE_WINDOW_MINUTES)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .and_then(|r| r.try_get("failed_count").ok())
+    .unwrap_or(0);
+    let next = current + 1;
+    let lock = next >= LOGIN_LOCK_THRESHOLD;
+    let _ = sqlx::query(
+        "INSERT INTO auth_rate_limits (action, identifier, ip, failed_count, locked_until, last_failed_at)
+         VALUES ('user_login', ?, ?, ?, IF(? = 1, DATE_ADD(NOW(), INTERVAL ? MINUTE), NULL), NOW())
+         ON DUPLICATE KEY UPDATE failed_count = VALUES(failed_count), locked_until = VALUES(locked_until), last_failed_at = NOW()",
+    )
+    .bind(&key)
+    .bind(&ctx.client_ip)
+    .bind(next)
+    .bind(if lock { 1 } else { 0 })
+    .bind(LOGIN_LOCK_MINUTES)
+    .execute(pool)
+    .await;
+}
+
+async fn clear_login_failures(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) {
+    let key = normalize_rate_identifier(identifier);
+    if key.is_empty() {
+        return;
+    }
+    let _ = sqlx::query("DELETE FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ? AND ip = ?")
+        .bind(&key)
+        .bind(&ctx.client_ip)
+        .execute(pool)
+        .await;
+}
+
 pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -62,6 +259,9 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
     if verify_code.is_empty() {
         return ctx.err(400, "请输入验证码");
+    }
+    if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
     }
 
     let _ip = ctx.client_ip.clone();
@@ -140,15 +340,23 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     .await;
 
     match result {
-        Ok(r) => ctx.json(
-            200,
-            "注册成功",
-            Some(json!({
-                "user_id": r.last_insert_id(),
-                "username": username,
-                "ciyuanxi_id": ciyuanxi_id
-            })),
-        ),
+        Ok(r) => {
+            let user_id = r.last_insert_id() as i64;
+            let token = rand_token();
+            let role = resolve_role(pool, &email).await;
+            let payload = build_user_payload(
+                user_id,
+                &username,
+                &email,
+                "",
+                &ciyuanxi_id,
+                1,
+                0,
+                &token,
+                &role,
+            );
+            ctx.json(200, "注册成功", Some(payload))
+        },
         Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
     }
 }
@@ -163,6 +371,12 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if username.is_empty() || password.is_empty() {
         return ctx.err(400, "用户名和密码不能为空");
     }
+    if let Some(resp) = check_login_cooldown(&username, &ctx, pool).await {
+        return resp;
+    }
+    if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
+    }
 
     let user = sqlx::query("SELECT * FROM app_users WHERE (username = ? OR email = ? OR ciyuanxi_id = ?)")
         .bind(&username)
@@ -173,10 +387,12 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         .ok()
         .flatten();
     let Some(user) = user else {
+        record_login_failure(&username, &ctx, pool).await;
         return ctx.err(401, "用户名或密码错误");
     };
     let stored: String = user.get("password");
     if !bcrypt::verify(&password, &stored).unwrap_or(false) {
+        record_login_failure(&username, &ctx, pool).await;
         return ctx.err(401, "用户名或密码错误");
     }
     let status: i64 = user.get("status");
@@ -192,6 +408,7 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let avatar_url: String = user.get("avatar_url");
     let ciyuanxi_id: String = user.get("ciyuanxi_id");
     let master_quota: i64 = user.get("master_quota");
+    clear_login_failures(&username, &ctx, pool).await;
 
     // 记录 APP 登录日志
     let _ = sqlx::query(
@@ -389,6 +606,9 @@ pub async fn login_by_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     if verify_code.is_empty() {
         return ctx.err(400, "请输入验证码");
     }
+    if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
+    }
     let code_row = sqlx::query(
         "SELECT * FROM email_verify_codes WHERE email = ? AND code = ? AND type = 'login' AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
     )
@@ -437,6 +657,9 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     if email.is_empty() || !email.contains('@') {
         return ctx.err(400, "邮箱格式不正确");
     }
+    if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
+    }
     let ip = ctx.client_ip.clone();
     let cnt1: i64 = sqlx::query("SELECT COUNT(*) as cnt FROM email_verify_codes WHERE email = ? AND created_at > DATE_SUB(NOW(), INTERVAL 60 SECOND)")
         .bind(&email)
@@ -464,17 +687,56 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         .bind(&ip)
         .execute(pool)
         .await;
-    // 发送邮件（简化：记录日志并返回成功）
-    let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,?,?,1,?,?)")
-        .bind(&email)
-        .bind(&format!("弦予APP - 验证码: {}", code))
-        .bind(0i64)
-        .bind(0i64)
-        .bind("")
-        .bind(&ip)
-        .execute(pool)
-        .await;
-    ctx.ok_empty("验证码已发送")
+
+    // 根据 type 构造邮件标题和正文
+    let type_label = match typ.as_str() {
+        "login" => "登录",
+        "reset_password" => "找回密码",
+        "delete_account" => "注销账号",
+        _ => "注册",
+    };
+    let title = format!("【弦予音乐】{}验证码", type_label);
+    let context = format!(
+        "您正在进行弦予音乐 APP 的{}操作。\n\n您的验证码是：{}\n\n验证码 10 分钟内有效，请勿泄露给他人。如非本人操作，请忽略此邮件。\n\n—— 弦予音乐",
+        type_label, code
+    );
+
+    // 调用外部邮箱 API 真正发送邮件
+    let send_result = crate::handlers::email_auth::call_email_api(
+        &ctx.config,
+        pool,
+        &title,
+        &context,
+        &email,
+    )
+    .await;
+
+    // 记录发送日志（status: 1=成功, 0=失败）
+    let (status_val, error_msg) = match &send_result {
+        Ok(()) => (1i64, String::new()),
+        Err(e) => {
+            eprintln!("[auth] send_verify_code 邮件发送失败 (email={}, type={}): {}", email, typ, e);
+            (0i64, e.clone())
+        }
+    };
+    let subject = format!("弦予APP - {}验证码: {}", type_label, code);
+    let _ = sqlx::query(
+        "INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,?,?,?,?,?)",
+    )
+    .bind(&email)
+    .bind(&subject)
+    .bind(0i64)
+    .bind(0i64)
+    .bind(status_val)
+    .bind(&error_msg)
+    .bind(&ip)
+    .execute(pool)
+    .await;
+
+    match send_result {
+        Ok(()) => ctx.ok_empty("验证码已发送，请查收邮件"),
+        Err(_) => ctx.err(500, "邮件发送失败，请稍后重试或检查邮箱地址"),
+    }
 }
 
 pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
@@ -490,6 +752,9 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     }
     if new_password.len() < 6 {
         return ctx.err(400, "新密码长度至少6位");
+    }
+    if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
     }
     let exists = sqlx::query("SELECT id FROM app_users WHERE email = ?")
         .bind(&email)
@@ -528,4 +793,131 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         .execute(pool)
         .await;
     ctx.ok_empty("密码修改成功")
+}
+
+pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let email = str_of(&data, "email").trim().to_string();
+    let verify_code = str_of(&data, "verify_code").trim().to_string();
+
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "账号标识不能为空");
+    }
+    if email.is_empty() || !email.contains('@') {
+        return ctx.err(400, "邮箱格式不正确");
+    }
+    if verify_code.is_empty() {
+        return ctx.err(400, "请输入邮箱验证码");
+    }
+
+    let user = sqlx::query("SELECT id, email FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return ctx.err(404, "账号不存在或已注销");
+    };
+
+    let user_id: i64 = user.get("id");
+    let registered_email: String = user.get("email");
+    if registered_email.trim().to_lowercase() != email.trim().to_lowercase() {
+        return ctx.err(400, "邮箱与当前账号不匹配");
+    }
+
+    let code_row = sqlx::query(
+        "SELECT * FROM email_verify_codes WHERE email = ? AND code = ? AND type = 'delete_account' AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&registered_email)
+    .bind(&verify_code)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    let Some(code_row) = code_row else {
+        return ctx.err(400, "验证码无效或已过期");
+    };
+
+    let code_id: i64 = code_row.get("id");
+    let _ = sqlx::query("UPDATE email_verify_codes SET used = 1 WHERE id = ?")
+        .bind(code_id)
+        .execute(pool)
+        .await;
+
+    let playlists = sqlx::query("SELECT id, cover_path FROM user_playlists WHERE user_id = ?")
+        .bind(&ciyuanxi_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+    for pl in &playlists {
+        let cover: String = pl.try_get("cover_path").unwrap_or_default();
+        if !cover.is_empty() {
+            let abs = std::path::Path::new("uploads").join("playlists").join(cover);
+            if abs.is_file() {
+                let _ = std::fs::remove_file(&abs);
+            }
+        }
+        let playlist_id: i64 = pl.get("id");
+        let _ = sqlx::query("DELETE FROM user_playlist_songs WHERE playlist_id = ?")
+            .bind(playlist_id)
+            .execute(pool)
+            .await;
+    }
+    let _ = sqlx::query("DELETE FROM user_playlist_songs WHERE user_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM user_playlists WHERE user_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM play_history WHERE user_id = ? OR ciyuanxi_id = ?")
+        .bind(user_id)
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM admin_app_login_log WHERE admin_id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM user_settings WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM user_avatar_pending WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM user_nickname_pending WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM user_feedback WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM master_quota_usage_log WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("UPDATE ciyuanxi_pretty_ids SET assigned_user_id = '0', assigned_at = NULL WHERE assigned_user_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM auth_rate_limits WHERE identifier = ? OR identifier = ?")
+        .bind(&ciyuanxi_id)
+        .bind(&registered_email)
+        .execute(pool)
+        .await;
+    let result = sqlx::query("DELETE FROM app_users WHERE id = ?")
+        .bind(user_id)
+        .execute(pool)
+        .await;
+
+    match result {
+        Ok(_) => ctx.ok_empty("账号已注销"),
+        Err(e) => ctx.err(500, &format!("注销失败: {}", e)),
+    }
 }

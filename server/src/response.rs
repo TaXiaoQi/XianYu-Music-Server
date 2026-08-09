@@ -12,6 +12,7 @@ pub struct ReqCtx {
     pub config: Config,
     pub encrypted: bool,
     pub client_ip: String,
+    pub base_url: String,
 }
 
 impl ReqCtx {
@@ -27,10 +28,34 @@ impl ReqCtx {
             headers.get("x-real-ip").and_then(|v| v.to_str().ok()),
             None,
         );
+        let host = headers
+            .get("x-forwarded-host")
+            .or_else(|| headers.get(axum::http::header::HOST))
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+        let scheme = headers
+            .get("x-forwarded-proto")
+            .and_then(|v| v.to_str().ok())
+            .map(|v| v.split(',').next().unwrap_or(v).trim().to_string())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| {
+                if host.starts_with("localhost") || host.starts_with("127.") || host.starts_with("0.0.0.0") {
+                    "http".to_string()
+                } else {
+                    "https".to_string()
+                }
+            });
+        let base_url = if host.is_empty() {
+            String::new()
+        } else {
+            format!("{}://{}", scheme, host)
+        };
         Self {
             config,
             encrypted,
             client_ip,
+            base_url,
         }
     }
 

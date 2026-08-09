@@ -59,6 +59,7 @@
             </span>
           </div>
           <p class="bind-desc">绑定邮箱后可用于接收系统通知、安全提醒等重要信息。</p>
+          <label class="bind-label required">邮箱地址</label>
           <div class="bind-form">
             <input
               v-model="emailInput"
@@ -358,6 +359,13 @@ onMounted(() => {
   color: var(--text-muted);
   line-height: 1.6;
   margin: 0 0 16px 0;
+}
+.bind-label {
+  display: inline-block;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light);
 }
 .bind-form {
   display: flex;

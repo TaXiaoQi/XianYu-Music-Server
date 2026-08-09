@@ -8,12 +8,18 @@
       </p>
       <div class="form-grid">
         <div class="form-group">
-          <label>版本号</label>
+          <label class="required">版本号</label>
           <input v-model="desktop.version" type="text" placeholder="如 1.2.0" />
         </div>
-        <div class="form-group">
-          <label>下载链接</label>
-          <input v-model="desktop.downloadUrl" type="text" placeholder="https://..." />
+        <div class="form-group form-group-full">
+          <label :class="{ required: desktopEnabled === 1 }">下载渠道</label>
+          <button type="button" class="channel-card" @click="openDesktopChannelModal">
+            <div>
+              <strong>{{ desktopChannelLabel }}</strong>
+              <p>{{ desktopChannelDesc }}</p>
+            </div>
+            <span>选择渠道</span>
+          </button>
         </div>
         <div class="form-group form-group-full">
           <label>更新内容</label>
@@ -34,6 +40,76 @@
         <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ desktop.updated_at }}</span>
       </div>
     </div>
+
+    <!-- 桌面端下载渠道弹窗 -->
+    <Transition name="modal">
+    <div v-if="desktopChannelModalVisible" class="modal-overlay" @click.self="closeDesktopChannelModal">
+      <div class="modal">
+        <div class="modal-header">
+          <span class="modal-title">选择下载渠道</span>
+          <button class="modal-close" @click="closeDesktopChannelModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="channel-options">
+            <button
+              type="button"
+              class="channel-option"
+              :class="{ active: desktopChannelMode === 'upload' }"
+              @click="desktopChannelMode = 'upload'"
+            >
+              <strong>上传安装包</strong>
+              <span>安装包保存到本服务端，并自动生成下发链接。</span>
+            </button>
+            <button
+              type="button"
+              class="channel-option"
+              :class="{ active: desktopChannelMode === 'link' }"
+              @click="desktopChannelMode = 'link'"
+            >
+              <strong>填写下载链接</strong>
+              <span>适合安装包已放在其它文件服务器或网盘直链。</span>
+            </button>
+          </div>
+
+          <div v-if="desktopChannelMode === 'upload'" class="form-group">
+            <label class="required">安装包</label>
+            <div
+              class="package-dropzone"
+              :class="{ dragging: desktopPackageDragging, selected: !!desktopPackageDraft.fileName }"
+              @click="triggerDesktopFileInput"
+              @dragover.prevent="desktopPackageDragging = true"
+              @dragleave.prevent="desktopPackageDragging = false"
+              @drop.prevent="onDesktopPackageDrop"
+            >
+              <input
+                ref="desktopFileInputRef"
+                type="file"
+                accept=".exe,.msi,.zip,.7z,.rar,.dmg,.pkg,.apk"
+                class="file-hidden"
+                @change="onDesktopFileChange"
+              />
+              <div class="dropzone-icon">⬆</div>
+              <strong>{{ desktopPackageDraft.fileName ? '已选择安装包' : '点击或拖拽安装包到此处' }}</strong>
+              <span>支持 EXE / MSI / ZIP / 7Z / RAR / DMG / PKG / APK</span>
+            </div>
+            <div v-if="desktopPackageDraft.fileName" class="file-info desktop-file-info">
+              已选择：{{ desktopPackageDraft.fileName }}（{{ formatFileSize(desktopPackageDraft.fileSize) }}）
+            </div>
+            <div class="hint">保存配置后，服务端会自动上传并生成下载链接。</div>
+          </div>
+
+          <div v-else class="form-group">
+            <label class="required">下载链接</label>
+            <input v-model="desktopChannelLinkDraft" type="text" placeholder="https://..." />
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" @click="closeDesktopChannelModal">取消</button>
+          <button class="btn btn-primary" @click="confirmDesktopChannel">确定</button>
+        </div>
+      </div>
+    </div>
+    </Transition>
 
     <!-- APP 版本管理 -->
     <div class="card">
@@ -104,6 +180,7 @@
     </div>
 
     <!-- 新增版本弹窗 -->
+    <Transition name="modal">
     <div v-if="addModalVisible" class="modal-overlay" @click.self="closeAddModal">
       <div class="modal">
         <div class="modal-header">
@@ -112,11 +189,11 @@
         </div>
         <div class="modal-body">
           <div class="form-group">
-            <label>软件名称</label>
+            <label class="required">软件名称</label>
             <input v-model="addForm.appName" type="text" placeholder="弦予·音乐" />
           </div>
           <div class="form-group">
-            <label>版本号</label>
+            <label class="required">版本号</label>
             <input v-model="addForm.versionCode" type="text" placeholder="1.0.0" />
           </div>
           <div class="form-group">
@@ -124,7 +201,7 @@
             <textarea v-model="addForm.updateContent" rows="3" placeholder="请输入更新内容"></textarea>
           </div>
           <div class="form-group">
-            <label>安装包</label>
+            <label class="required">安装包</label>
             <input type="file" accept=".apk" @change="onFileChange" />
           </div>
           <div v-if="uploadProgress !== null" class="upload-progress">
@@ -145,6 +222,7 @@
         </div>
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 
@@ -207,6 +285,39 @@ const desktop = ref<DesktopVersion>({
 })
 const desktopEnabled = ref(0)
 const desktopSaving = ref(false)
+const desktopChannelModalVisible = ref(false)
+const desktopChannelMode = ref<'link' | 'upload'>('link')
+const desktopChannelLinkDraft = ref('')
+const desktopFileInputRef = ref<HTMLInputElement | null>(null)
+const desktopPackageFile = ref<File | null>(null)
+const desktopPackageFileDraft = ref<File | null>(null)
+const desktopPackageDragging = ref(false)
+const desktopPackage = ref({
+  fileName: '',
+  fileSize: 0,
+  fileBase64: '',
+})
+const desktopPackageDraft = ref({
+  fileName: '',
+  fileSize: 0,
+  fileBase64: '',
+})
+
+const desktopChannelLabel = computed(() => {
+  if (desktopPackage.value.fileName) return '上传安装包'
+  if (desktop.value.downloadUrl) {
+    return desktop.value.downloadUrl.startsWith('/uploads/packages/') ? '服务器安装包' : '下载链接'
+  }
+  return '未选择下载渠道'
+})
+
+const desktopChannelDesc = computed(() => {
+  if (desktopPackage.value.fileName) {
+    return `已选择：${desktopPackage.value.fileName}（${formatFileSize(desktopPackage.value.fileSize)}）`
+  }
+  if (desktop.value.downloadUrl) return desktop.value.downloadUrl
+  return desktopEnabled.value === 1 ? '启用更新时，需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
+})
 
 async function loadDesktop() {
   const res = await adminApi<DesktopVersion>('get_desktop_version')
@@ -221,20 +332,122 @@ async function saveDesktop() {
     showToast('请填写版本号')
     return
   }
+  if (desktopEnabled.value === 1 && !desktop.value.downloadUrl.trim() && !desktopPackage.value.fileName) {
+    showToast('启用更新时，请填写下载链接或选择安装包')
+    return
+  }
   desktopSaving.value = true
+  let fileData = ''
+  if (desktopPackage.value.fileName) {
+    const file = desktopPackageFile.value
+    if (!file) {
+      desktopSaving.value = false
+      showToast('请选择安装包')
+      return
+    }
+    try {
+      fileData = await readFileAsBase64(file)
+    } catch {
+      desktopSaving.value = false
+      showToast('安装包读取失败')
+      return
+    }
+  }
   const res = await adminApi('save_desktop_version', {
     version: desktop.value.version.trim(),
     download_url: desktop.value.downloadUrl.trim(),
     update_content: desktop.value.updateContent.trim(),
     enabled: desktopEnabled.value,
+    file_name: desktopPackage.value.fileName,
+    file_data: fileData,
   })
   desktopSaving.value = false
   if (res.code === 200) {
     showToast('保存成功', 'success')
+    desktopPackage.value = { fileName: '', fileSize: 0, fileBase64: '' }
+    desktopPackageFile.value = null
+    desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
+    desktopPackageFileDraft.value = null
     loadDesktop()
   } else {
     showToast(res.msg || '保存失败')
   }
+}
+
+function openDesktopChannelModal() {
+  desktopChannelMode.value = desktop.value.downloadUrl && !desktopPackage.value.fileName ? 'link' : 'upload'
+  desktopChannelLinkDraft.value = desktop.value.downloadUrl
+  desktopPackageDraft.value = { ...desktopPackage.value }
+  desktopPackageFileDraft.value = desktopPackageFile.value
+  desktopChannelModalVisible.value = true
+}
+
+function closeDesktopChannelModal() {
+  desktopChannelModalVisible.value = false
+}
+
+function confirmDesktopChannel() {
+  if (desktopChannelMode.value === 'link') {
+    const url = desktopChannelLinkDraft.value.trim()
+    if (!url) {
+      showToast('请输入下载链接')
+      return
+    }
+    desktop.value.downloadUrl = url
+    desktopPackage.value = { fileName: '', fileSize: 0, fileBase64: '' }
+    desktopPackageFile.value = null
+    desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
+    desktopPackageFileDraft.value = null
+    if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
+  } else {
+    if (!desktopPackageDraft.value.fileName) {
+      showToast('请选择安装包')
+      return
+    }
+    desktopPackage.value = { ...desktopPackageDraft.value }
+    desktopPackageFile.value = desktopPackageFileDraft.value
+    desktop.value.downloadUrl = ''
+    desktopChannelLinkDraft.value = ''
+  }
+  desktopChannelModalVisible.value = false
+}
+
+function onDesktopFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files || input.files.length === 0) {
+    desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
+    desktopPackageFileDraft.value = null
+    return
+  }
+  setDesktopPackageFile(input.files[0])
+}
+
+function triggerDesktopFileInput() {
+  desktopFileInputRef.value?.click()
+}
+
+function onDesktopPackageDrop(e: DragEvent) {
+  desktopPackageDragging.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (!file) return
+  setDesktopPackageFile(file)
+}
+
+function setDesktopPackageFile(file: File) {
+  const ext = file.name.split('.').pop()?.toLowerCase() || ''
+  const allowed = ['exe', 'msi', 'zip', '7z', 'rar', 'dmg', 'pkg', 'apk']
+  if (!allowed.includes(ext)) {
+    showToast('不支持该安装包格式')
+    if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
+    return
+  }
+  desktopPackageFileDraft.value = file
+  desktopPackageDraft.value = {
+    fileName: file.name,
+    fileSize: file.size,
+    fileBase64: '',
+  }
+  desktopChannelLinkDraft.value = ''
 }
 
 // ===== APP 版本列表 =====
@@ -483,6 +696,43 @@ onMounted(() => {
 .form-group select:focus {
   border-color: var(--accent);
 }
+.channel-card {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--control-bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.channel-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-1px);
+}
+.channel-card strong {
+  display: block;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+.channel-card p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.channel-card > span {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 700;
+}
 .form-actions {
   margin-top: 12px;
   display: flex;
@@ -629,6 +879,89 @@ onMounted(() => {
 .modal-body .form-group textarea:focus {
   border-color: var(--accent);
 }
+.channel-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.channel-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--control-bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+.channel-option:hover,
+.channel-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.channel-option:hover {
+  transform: translateY(-1px);
+}
+.channel-option strong {
+  font-size: 14px;
+}
+.channel-option span {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.package-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 150px;
+  padding: 20px;
+  border: 1.5px dashed var(--border);
+  border-radius: 14px;
+  background: var(--control-bg);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.package-dropzone:hover,
+.package-dropzone.dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: var(--shadow-soft);
+  transform: translateY(-1px);
+}
+.package-dropzone.selected {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.dropzone-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 800;
+}
+.package-dropzone strong {
+  font-size: 14px;
+  color: var(--text);
+}
+.package-dropzone span {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.file-hidden {
+  display: none;
+}
 .modal-actions {
   display: flex;
   justify-content: flex-end;
@@ -665,8 +998,30 @@ onMounted(() => {
   font-size: 12px;
   color: var(--text-muted);
 }
+.hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
 
 @media (max-width: 768px) {
   .form-grid { grid-template-columns: 1fr; }
+  .channel-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .channel-options {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 弹窗淡进淡出 */
+.modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-enter-active .modal, .modal-leave-active .modal {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modal-enter-from .modal, .modal-leave-to .modal {
+  transform: scale(0.92) translateY(20px);
 }
 </style>

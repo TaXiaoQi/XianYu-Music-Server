@@ -62,46 +62,284 @@ fn is_valid_email(email: &str) -> bool {
         && rest.is_none()
 }
 
-/// 调用惜梦邮箱 API 发送邮件（主地址失败回退备用地址）
-async fn call_email_api(
-    config: &crate::config::Config,
-    title: &str,
-    context: &str,
-    recipient: &str,
-) -> bool {
+/// 邮箱运行时配置（优先从数据库读取，回退到环境变量）
+pub struct EmailRuntimeConfig {
+    pub provider: String, // "builtin"、"http_api" 或 "smtp"
+    // HTTP API 模式
+    pub api_primary: String,
+    pub api_backup: String,
+    // 通用
+    pub sender: String,
+    pub password: String,
+    // SMTP 模式
+    pub smtp_host: String,
+    pub smtp_port: u16,
+    pub smtp_username: String,
+    pub smtp_password: String,
+}
+
+/// 从 `server_settings` 表读取邮箱配置，留空的字段回退到环境变量默认值。
+pub async fn load_email_config(
+    pool: &MySqlPool,
+    fallback: &crate::config::Config,
+) -> EmailRuntimeConfig {
+    async fn read_setting(pool: &MySqlPool, key: &str) -> Option<String> {
+        sqlx::query("SELECT setting_value FROM server_settings WHERE setting_key = ? LIMIT 1")
+            .bind(key)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|row| row.try_get::<Option<String>, _>(0).ok().flatten())
+            .filter(|s| !s.trim().is_empty())
+    }
+
+    let provider = read_setting(pool, "email_provider")
+        .await
+        .unwrap_or_else(|| "builtin".to_string());
+
+    let api_primary = read_setting(pool, "email_api_primary")
+        .await
+        .unwrap_or_else(|| fallback.email_api_primary.clone());
+    let api_backup = read_setting(pool, "email_api_backup")
+        .await
+        .unwrap_or_else(|| fallback.email_api_backup.clone());
+    let sender = read_setting(pool, "email_sender")
+        .await
+        .unwrap_or_else(|| fallback.email_sender.clone());
+    let password = read_setting(pool, "email_password")
+        .await
+        .unwrap_or_else(|| fallback.email_password.clone());
+
+    let smtp_host = read_setting(pool, "smtp_host")
+        .await
+        .unwrap_or_default();
+    let smtp_port = read_setting(pool, "smtp_port")
+        .await
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(465);
+    let smtp_username = read_setting(pool, "smtp_username")
+        .await
+        .unwrap_or_else(|| sender.clone());
+    let smtp_password = read_setting(pool, "smtp_password")
+        .await
+        .unwrap_or_else(|| password.clone());
+
+    EmailRuntimeConfig {
+        provider,
+        api_primary,
+        api_backup,
+        sender,
+        password,
+        smtp_host,
+        smtp_port,
+        smtp_username,
+        smtp_password,
+    }
+}
+
+/// 通过 HTTP API 发送邮件（主地址失败回退备用地址）
+async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, context: &str, recipient: &str) -> Result<(), String> {
+    if cfg.api_primary.is_empty() && cfg.api_backup.is_empty() {
+        return Err("外部邮箱机 API 地址未配置".to_string());
+    }
+
     let client = match reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
     {
         Ok(c) => c,
-        Err(_) => return false,
+        Err(e) => return Err(format!("HTTP 客户端构建失败: {e}")),
     };
 
     let params = [
-        ("email", config.email_sender.as_str()),
-        ("password", config.email_password.as_str()),
+        ("email", cfg.sender.as_str()),
+        ("password", cfg.password.as_str()),
         ("title", title),
         ("context", context),
         ("recipient", recipient),
     ];
 
-    // 主地址
-    let resp = client.get(&config.email_api_primary).query(&params).send().await;
-    let body = match resp {
-        Ok(r) => r.text().await.unwrap_or_default(),
-        Err(_) => {
-            // 备用地址
-            match client.get(&config.email_api_backup).query(&params).send().await {
-                Ok(r) => r.text().await.unwrap_or_default(),
-                Err(_) => return false,
+    let body = if !cfg.api_primary.is_empty() {
+        match client.get(&cfg.api_primary).query(&params).send().await {
+            Ok(r) => r.text().await.unwrap_or_default(),
+            Err(e) => {
+                if cfg.api_backup.is_empty() {
+                    return Err(format!("邮箱 API 主地址请求失败，且备用地址未配置: {}", e));
+                }
+                match client.get(&cfg.api_backup).query(&params).send().await {
+                    Ok(r) => r.text().await.unwrap_or_default(),
+                    Err(e2) => {
+                        return Err(format!(
+                            "主地址和备用地址均请求失败。主: {}; 备: {}",
+                            e, e2
+                        ))
+                    }
+                }
             }
+        }
+    } else {
+        match client.get(&cfg.api_backup).query(&params).send().await {
+            Ok(r) => r.text().await.unwrap_or_default(),
+            Err(e) => return Err(format!("邮箱 API 备用地址请求失败: {}", e)),
         }
     };
 
     // 根据返回内容判断是否成功
     let ok_signals = ["success", "ok", "true", "1", "200", "发送成功"];
     let lower = body.to_lowercase();
-    ok_signals.iter().any(|s| lower.contains(s)) || !body.is_empty()
+    if ok_signals.iter().any(|s| lower.contains(s)) || !body.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("邮箱 API 返回未包含成功标识: {}", &body[..body.len().min(200)]))
+    }
+}
+
+/// 通过标准 SMTP 发送邮件
+async fn send_via_smtp(cfg: &EmailRuntimeConfig, title: &str, context: &str, recipient: &str) -> Result<(), String> {
+    use lettre::message::header::ContentType;
+    use lettre::message::{Mailbox, MultiPart, SinglePart};
+    use lettre::transport::smtp::authentication::Credentials;
+    use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+
+    if cfg.smtp_host.is_empty() {
+        return Err("SMTP 服务器地址未配置".to_string());
+    }
+
+    let from_mailbox = Mailbox::new(
+        Some("弦予音乐".to_string()),
+        cfg.sender
+            .parse()
+            .map_err(|e| format!("发件邮箱地址格式错误: {e}"))?,
+    );
+    let to_mailbox = Mailbox::new(None, recipient.parse().map_err(|e| format!("收件邮箱地址格式错误: {e}"))?);
+
+    // 构建纯文本邮件
+    let email = Message::builder()
+        .from(from_mailbox)
+        .to(to_mailbox)
+        .subject(title)
+        .multipart(
+            MultiPart::mixed().singlepart(
+                SinglePart::builder()
+                    .header(ContentType::TEXT_PLAIN)
+                    .body(context.to_string()),
+            ),
+        )
+        .map_err(|e| format!("邮件构建失败: {e}"))?;
+
+    // 根据端口选择 TLS 模式
+    // 465 → 隐式 TLS (Ssl)
+    // 587/25 → STARTTLS
+    let transport = if cfg.smtp_port == 465 {
+        AsyncSmtpTransport::<Tokio1Executor>::relay(&cfg.smtp_host)
+            .map_err(|e| format!("SMTP 连接构建失败: {e}"))?
+            .port(cfg.smtp_port)
+            .credentials(Credentials::new(
+                cfg.smtp_username.clone(),
+                cfg.smtp_password.clone(),
+            ))
+            .build()
+    } else {
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&cfg.smtp_host)
+            .map_err(|e| format!("SMTP 连接构建失败: {e}"))?
+            .port(cfg.smtp_port)
+            .credentials(Credentials::new(
+                cfg.smtp_username.clone(),
+                cfg.smtp_password.clone(),
+            ))
+            .build()
+    };
+
+    transport
+        .send(email)
+        .await
+        .map(|_| ())
+        .map_err(|e| format!("SMTP 发送失败: {e}"))
+}
+
+async fn create_builtin_mail_log(pool: &MySqlPool, recipient: &str, title: &str, detail: &str) -> Option<u64> {
+    sqlx::query(
+        "INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,0,?,'builtin')",
+    )
+    .bind(recipient)
+    .bind(title)
+    .bind(detail)
+    .execute(pool)
+    .await
+    .ok()
+    .map(|r| r.last_insert_id())
+}
+
+async fn update_builtin_mail_log(pool: &MySqlPool, id: Option<u64>, status: i32, detail: &str) {
+    if let Some(id) = id {
+        let _ = sqlx::query("UPDATE email_send_log SET status = ?, error_msg = ? WHERE id = ?")
+            .bind(status)
+            .bind(detail)
+            .bind(id)
+            .execute(pool)
+            .await;
+    }
+}
+
+/// 服务端内置邮箱机：统一记录发送日志，优先使用 SMTP 出口投递，失败后回退外部邮箱机 API。
+async fn send_via_builtin_mailer(
+    cfg: &EmailRuntimeConfig,
+    pool: &MySqlPool,
+    title: &str,
+    context: &str,
+    recipient: &str,
+) -> Result<(), String> {
+    let log_id = create_builtin_mail_log(pool, recipient, title, "内置邮箱机已接收，等待投递").await;
+    let mut errors = Vec::new();
+
+    if !cfg.smtp_host.is_empty() {
+        match send_via_smtp(cfg, title, context, recipient).await {
+            Ok(()) => {
+                update_builtin_mail_log(pool, log_id, 1, "内置邮箱机已通过 SMTP 出口投递").await;
+                return Ok(());
+            }
+            Err(e) => errors.push(format!("SMTP 出口失败: {}", e)),
+        }
+    } else {
+        errors.push("SMTP 出口未配置".to_string());
+    }
+
+    if !cfg.api_primary.is_empty() || !cfg.api_backup.is_empty() {
+        match send_via_http_api(cfg, title, context, recipient).await {
+            Ok(()) => {
+                update_builtin_mail_log(pool, log_id, 1, "内置邮箱机已回退外部 API 投递").await;
+                return Ok(());
+            }
+            Err(e) => errors.push(format!("外部 API 失败: {}", e)),
+        }
+    } else {
+        errors.push("外部 API 未配置".to_string());
+    }
+
+    let reason = errors.join("；");
+    update_builtin_mail_log(pool, log_id, 2, &reason).await;
+    Err(format!("内置邮箱机投递失败: {}", reason))
+}
+
+/// 统一邮件发送入口：根据 provider 配置分发到内置邮箱机、HTTP API 或 SMTP
+///
+/// 邮箱配置优先从数据库 `server_settings` 表读取，留空字段回退到环境变量默认值。
+/// 返回 `Ok(())` 表示发送成功，返回 `Err(reason)` 表示失败并附带原因。
+pub async fn call_email_api(
+    config: &crate::config::Config,
+    pool: &MySqlPool,
+    title: &str,
+    context: &str,
+    recipient: &str,
+) -> Result<(), String> {
+    let cfg = load_email_config(pool, config).await;
+
+    match cfg.provider.as_str() {
+        "builtin" => send_via_builtin_mailer(&cfg, pool, title, context, recipient).await,
+        "smtp" => send_via_smtp(&cfg, title, context, recipient).await,
+        _ => send_via_http_api(&cfg, title, context, recipient).await,
+    }
 }
 
 /// 写操作日志
@@ -159,12 +397,12 @@ pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         code
     );
 
-    let sent = call_email_api(&ctx.config, title, &context, &email).await;
-
-    if sent {
-        ctx.ok("验证码已发送，请查收邮件", Value::Null)
-    } else {
-        ctx.err(500, "邮件发送失败，请稍后重试")
+    match call_email_api(&ctx.config, pool, title, &context, &email).await {
+        Ok(()) => ctx.ok("验证码已发送，请查收邮件", Value::Null),
+        Err(e) => {
+            eprintln!("[email_auth] send_code 发送失败: {}", e);
+            ctx.err(500, "邮件发送失败，请稍后重试")
+        }
     }
 }
 
@@ -471,6 +709,7 @@ mod tests {
             email_sender: "test@localhost".into(),
             email_password: "pass".into(),
             static_dir: "".into(),
+            local_debug_no_db: false,
         }
     }
 

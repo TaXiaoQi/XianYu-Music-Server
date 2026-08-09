@@ -23,6 +23,8 @@ pub struct Config {
     pub email_password: String,
     #[serde(default)]
     pub static_dir: String,
+    #[serde(default)]
+    pub local_debug_no_db: bool,
 }
 
 impl Config {
@@ -33,6 +35,10 @@ impl Config {
             Config::from_env()
         };
         cfg.listen_addr = env::var("LISTEN_ADDR").unwrap_or(cfg.listen_addr);
+        cfg.local_debug_no_db = env::var("LOCAL_DEBUG_NO_DB")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+            .unwrap_or(cfg.local_debug_no_db);
         Ok(cfg)
     }
 
@@ -50,11 +56,15 @@ impl Config {
             admin_password: env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "adminadmin".into()),
             listen_addr: env::var("LISTEN_ADDR").unwrap_or_else(|_| "0.0.0.0:8080".into()),
             jwt_secret: env::var("JWT_SECRET").unwrap_or_else(|_| "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200".into()),
-            email_api_primary: env::var("EMAIL_API_PRIMARY").unwrap_or_else(|_| "http://a.bzxhkj.com/a".into()),
-            email_api_backup: env::var("EMAIL_API_BACKUP").unwrap_or_else(|_| "http://a.bzxhkj.com/b".into()),
-            email_sender: env::var("EMAIL_SENDER").unwrap_or_else(|_| "admin@bzxhkj.com".into()),
-            email_password: env::var("EMAIL_PASSWORD").unwrap_or_else(|_| "1183265081aA".into()),
+            email_api_primary: env::var("EMAIL_API_PRIMARY").unwrap_or_default(),
+            email_api_backup: env::var("EMAIL_API_BACKUP").unwrap_or_default(),
+            email_sender: env::var("EMAIL_SENDER").unwrap_or_else(|_| "no-reply@example.com".into()),
+            email_password: env::var("EMAIL_PASSWORD").unwrap_or_default(),
             static_dir: env::var("STATIC_DIR").unwrap_or_default(),
+            local_debug_no_db: env::var("LOCAL_DEBUG_NO_DB")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+                .unwrap_or(false),
         }
     }
 }

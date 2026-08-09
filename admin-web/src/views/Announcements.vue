@@ -126,16 +126,16 @@
           </div>
           <div class="modal-form">
             <div class="field">
-              <label>标题</label>
+              <label class="required">标题</label>
               <input v-model="form.title" type="text" placeholder="请输入公告标题" />
             </div>
             <div class="field">
-              <label>正文</label>
+              <label class="required">正文</label>
               <textarea v-model="form.content" rows="4" placeholder="请输入公告正文"></textarea>
             </div>
             <div class="field-row">
               <div class="field">
-                <label>类型</label>
+                <label class="required">类型</label>
                 <div class="type-picker">
                   <button
                     v-for="t in typeOptions"
@@ -154,7 +154,7 @@
               <input v-model="form.actionUrl" type="text" placeholder="https://..." />
             </div>
             <div v-if="!editingId" class="field">
-              <label>启用状态</label>
+              <label class="required">启用状态</label>
               <div class="type-picker">
                 <button class="type-option pick-enable" :class="{ active: form.enabled }" @click="form.enabled = true">
                   <span class="pick-dot"></span>启用

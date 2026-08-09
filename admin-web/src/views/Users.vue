@@ -99,15 +99,16 @@
     </div>
 
     <!-- 添加用户弹窗 -->
+    <Transition name="modal">
     <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
       <div class="modal">
         <h3>添加用户</h3>
         <div class="form-group">
-          <label>用户名 <span style="color:#c00">*</span></label>
+          <label class="required">用户名</label>
           <input v-model="addForm.username" type="text" placeholder="2-32 个字符" />
         </div>
         <div class="form-group">
-          <label>密码 <span style="color:#c00">*</span></label>
+          <label class="required">密码</label>
           <input v-model="addForm.password" type="password" placeholder="至少 6 位" />
         </div>
         <div class="form-group">
@@ -122,8 +123,10 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 修改邮箱弹窗 -->
+    <Transition name="modal">
     <div v-if="showEmailModal" class="modal-overlay" @click.self="showEmailModal = false">
       <div class="modal">
         <h3>修改用户邮箱</h3>
@@ -148,8 +151,10 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 重置听歌时长确认弹窗 -->
+    <Transition name="modal">
     <div v-if="showResetModal" class="modal-overlay" @click.self="showResetModal = false">
       <div class="modal">
         <h3>重置听歌时长</h3>
@@ -172,8 +177,10 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 查看插件弹窗 -->
+    <Transition name="modal">
     <div v-if="showPluginsModal" class="modal-overlay" @click.self="showPluginsModal = false">
       <div class="modal" style="max-width:700px;">
         <h3>用户插件 - {{ pluginsData.username }}</h3>
@@ -215,8 +222,10 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 头像大图查看弹窗 -->
+    <Transition name="modal">
     <div v-if="showAvatarModal" class="modal-overlay" @click.self="showAvatarModal = false">
       <div class="modal" style="width:300px;text-align:center;">
         <h3>{{ avatarViewUser?.username }} 的头像</h3>
@@ -234,6 +243,7 @@
         </div>
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 
@@ -725,5 +735,15 @@ onMounted(() => {
   gap: 12px;
   justify-content: flex-end;
   margin-top: 24px;
+}
+
+/* 弹窗淡进淡出 */
+.modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-enter-active .modal, .modal-leave-active .modal {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modal-enter-from .modal, .modal-leave-to .modal {
+  transform: scale(0.92) translateY(20px);
 }
 </style>

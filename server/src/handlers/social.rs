@@ -6,6 +6,30 @@ use sqlx::Row;
 use crate::handlers::helpers::{parse_body, str_of};
 use crate::response::ReqCtx;
 
+const MAX_FEEDBACK_LOG_CHARS: usize = 500_000;
+const DEFAULT_FEEDBACK_DAILY_LIMIT: i64 = 20;
+
+fn trim_feedback_log(value: String) -> String {
+    if value.chars().count() <= MAX_FEEDBACK_LOG_CHARS {
+        return value;
+    }
+    value.chars().take(MAX_FEEDBACK_LOG_CHARS).collect()
+}
+
+async fn get_feedback_daily_limit(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar::<_, Option<String>>(
+        "SELECT setting_value FROM server_settings WHERE setting_key = 'feedback_daily_limit' LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .flatten()
+    .and_then(|v| v.trim().parse::<i64>().ok())
+    .filter(|v| *v >= 0)
+    .unwrap_or(DEFAULT_FEEDBACK_DAILY_LIMIT)
+}
+
 pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -15,6 +39,19 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     let mut nickname = str_of(&data, "nickname").trim().to_string();
     let title = str_of(&data, "title").trim().to_string();
     let content = str_of(&data, "content").trim().to_string();
+    let raw_error_logs = str_of(&data, "error_logs");
+    let raw_all_logs = str_of(&data, "all_logs");
+    let error_logs = trim_feedback_log(raw_error_logs.clone());
+    let all_logs = trim_feedback_log(raw_all_logs.clone());
+    let log_meta = json!({
+        "has_error_logs": !error_logs.is_empty(),
+        "has_all_logs": !all_logs.is_empty(),
+        "error_logs_chars": error_logs.chars().count(),
+        "all_logs_chars": all_logs.chars().count(),
+        "error_logs_truncated": raw_error_logs.chars().count() > error_logs.chars().count(),
+        "all_logs_truncated": raw_all_logs.chars().count() > all_logs.chars().count(),
+    })
+    .to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "请先登录");
     }
@@ -30,6 +67,22 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     if content.chars().count() > 1000 {
         return ctx.err(400, "内容不能超过 1000 字");
     }
+    let daily_limit = get_feedback_daily_limit(pool).await;
+    if daily_limit > 0 {
+        let submitted_today: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM user_feedback WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY",
+        )
+        .bind(&ciyuanxi_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+        if submitted_today >= daily_limit {
+            return ctx.err(
+                429,
+                &format!("今日反馈提交次数已达上限（{} 条），请明天再试", daily_limit),
+            );
+        }
+    }
     if nickname.is_empty() {
         let row = sqlx::query("SELECT username FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
             .bind(&ciyuanxi_id)
@@ -42,11 +95,14 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         }
     }
     let ip = ctx.client_ip.clone();
-    let result = sqlx::query("INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, ip) VALUES (?,?,?,?,?)")
+    let result = sqlx::query("INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, error_logs, all_logs, log_meta, ip) VALUES (?,?,?,?,?,?,?,?)")
         .bind(&ciyuanxi_id)
         .bind(&nickname)
         .bind(&title)
         .bind(&content)
+        .bind(&error_logs)
+        .bind(&all_logs)
+        .bind(&log_meta)
         .bind(&ip)
         .execute(pool)
         .await;
@@ -83,44 +139,4 @@ pub async fn check_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
         }
         None => ctx.err(404, "用户不存在"),
     }
-}
-
-pub async fn create_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    if data.is_null() {
-        return ctx.err(400, "参数错误");
-    }
-    let mut identifier = str_of(&data, "ciyuanxi_id");
-    if identifier.is_empty() {
-        identifier = str_of(&data, "user_id");
-    }
-    if identifier.is_empty() {
-        return ctx.err(400, "用户标识不能为空");
-    }
-    let row = sqlx::query("SELECT id, ciyuanxi_id, username FROM app_users WHERE id = ? OR ciyuanxi_id = ? LIMIT 1")
-        .bind(&identifier)
-        .bind(&identifier)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-    let Some(row) = row else {
-        return ctx.err(404, "用户不存在");
-    };
-    let user_id: i64 = row.get("id");
-    let ciyuanxi_id: String = row.get("ciyuanxi_id");
-    if !ciyuanxi_id.is_empty() {
-        return ctx.json(200, "ok", Some(json!({ "user_id": user_id, "ciyuanxi_id": ciyuanxi_id })));
-    }
-    let new_id = format!(
-        "cx_{:06}{:04}",
-        user_id,
-        crate::handlers::helpers::random_int(0, 9999)
-    );
-    let _ = sqlx::query("UPDATE app_users SET ciyuanxi_id = ? WHERE id = ?")
-        .bind(&new_id)
-        .bind(user_id)
-        .execute(pool)
-        .await;
-    ctx.json(200, "创建成功", Some(json!({ "user_id": user_id, "ciyuanxi_id": new_id })))
 }

@@ -96,6 +96,7 @@
     </div>
 
     <!-- 详情弹窗 -->
+    <Transition name="modal">
     <div v-if="showDetailModal" class="modal-overlay" @click.self="showDetailModal = false">
       <div class="modal modal-wide">
         <div class="modal-header">
@@ -134,6 +135,7 @@
         </div>
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 
@@ -503,5 +505,15 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .detail-grid { grid-template-columns: 1fr; }
+}
+
+/* 弹窗淡进淡出 */
+.modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-enter-active .modal, .modal-leave-active .modal {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modal-enter-from .modal, .modal-leave-to .modal {
+  transform: scale(0.92) translateY(20px);
 }
 </style>

@@ -19,6 +19,41 @@
       </div>
     </Transition>
 
+    <!-- 提交限制配置 -->
+    <Transition name="fade-up" appear>
+      <div class="limit-panel">
+        <div class="limit-info">
+          <div class="limit-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              <path d="M12 8v4"/>
+              <path d="M12 16h.01"/>
+            </svg>
+          </div>
+          <div>
+            <h3>每日反馈提交上限</h3>
+            <p>当前每个用户每天最多可提交 {{ feedbackDailyLimit === 0 ? '不限' : `${feedbackDailyLimit} 条` }}反馈，修改后立即生效。</p>
+          </div>
+        </div>
+        <div class="limit-actions">
+          <input
+            v-model.number="feedbackLimitInput"
+            class="limit-input"
+            type="number"
+            min="0"
+            max="10000"
+            step="1"
+            :disabled="limitLoading || limitSaving"
+            @keyup.enter="saveFeedbackLimit"
+          />
+          <button class="btn-save-limit" :disabled="limitLoading || limitSaving" @click="saveFeedbackLimit">
+            <span v-if="limitSaving" class="btn-spinner dark"></span>
+            {{ limitSaving ? '保存中...' : '保存上限' }}
+          </button>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 统计卡片 -->
     <Transition name="fade-up" appear>
       <div class="stats-row">
@@ -96,6 +131,10 @@
             <div class="card-body">
               <h3 class="fb-title">{{ item.title || '无标题' }}</h3>
               <p class="fb-content">{{ item.content || '无内容' }}</p>
+              <div v-if="hasErrorLogs(item) || hasAllLogs(item)" class="log-summary">
+                <span v-if="hasErrorLogs(item)" class="log-chip">错误日志 {{ formatLogSize(item.error_logs_chars) }}</span>
+                <span v-if="hasAllLogs(item)" class="log-chip">全量日志 {{ formatLogSize(item.all_logs_chars) }}</span>
+              </div>
             </div>
 
             <!-- 管理员回复 -->
@@ -121,6 +160,10 @@
                 </span>
               </div>
               <div class="foot-actions">
+                <button v-if="hasErrorLogs(item) || hasAllLogs(item)" class="act-btn act-log" @click="openLogModal(item)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
+                  日志
+                </button>
                 <button class="act-btn act-reply" @click="openReplyModal(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
                   {{ item.admin_reply ? '修改回复' : '回复' }}
@@ -156,7 +199,7 @@
               <span>{{ replyTarget.nickname || '匿名用户' }} · {{ replyTarget.ciyuanxi_id || '-' }}</span>
             </div>
             <div class="field">
-              <label>回复内容</label>
+              <label class="required">回复内容</label>
               <textarea v-model="replyText" rows="5" placeholder="请输入回复内容..." autofocus></textarea>
             </div>
           </div>
@@ -166,6 +209,52 @@
               <span v-if="replying" class="btn-spinner"></span>
               {{ replying ? '提交中...' : '发送回复' }}
             </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 日志弹窗 -->
+    <Transition name="modal">
+      <div v-if="logModalVisible" class="modal-backdrop" @click.self="closeLogModal">
+        <div class="modal-dialog log-dialog">
+          <div class="modal-head">
+            <h3>反馈日志</h3>
+            <button class="modal-close" @click="closeLogModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="logTarget" class="reply-target-info">
+              <strong>{{ logTarget.title || '无标题' }}</strong>
+              <span>{{ logTarget.nickname || '匿名用户' }} · {{ logTarget.ciyuanxi_id || '-' }}</span>
+            </div>
+            <div class="log-tabs">
+              <button
+                class="log-tab"
+                :class="{ active: activeLogTab === 'error' }"
+                :disabled="!logTarget?.error_logs"
+                @click="activeLogTab = 'error'"
+              >
+                错误日志
+              </button>
+              <button
+                class="log-tab"
+                :class="{ active: activeLogTab === 'all' }"
+                :disabled="!logTarget?.all_logs"
+                @click="activeLogTab = 'all'"
+              >
+                全量日志
+              </button>
+            </div>
+            <div v-if="logLoading" class="state-box compact">
+              <div class="spinner"></div>
+              <span>正在加载日志...</span>
+            </div>
+            <pre v-else class="log-content">{{ currentLogText || '暂无日志内容' }}</pre>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeLogModal">关闭</button>
           </div>
         </div>
       </div>
@@ -185,6 +274,13 @@ interface Feedback {
   content: string
   status: string
   admin_reply: string | null
+  error_logs?: string | null
+  all_logs?: string | null
+  log_meta?: string | null
+  error_logs_chars?: number
+  all_logs_chars?: number
+  has_error_logs?: number | string | boolean
+  has_all_logs?: number | string | boolean
   replied_at: string | null
   replied_by: string
   ip: string
@@ -201,11 +297,19 @@ interface FbStats {
   rejected: number
 }
 
+interface FeedbackLimit {
+  feedback_daily_limit: number
+}
+
 // ===== 状态 =====
 const loading = ref(true)
 const feedbackList = ref<Feedback[]>([])
 const activeFilter = ref('all')
 const stats = ref<FbStats>({ total: 0, pending: 0, processing: 0, resolved: 0, rejected: 0 })
+const limitLoading = ref(false)
+const limitSaving = ref(false)
+const feedbackDailyLimit = ref(20)
+const feedbackLimitInput = ref(20)
 
 const statusMap: Record<string, string> = {
   pending: '待处理',
@@ -216,6 +320,25 @@ const statusMap: Record<string, string> = {
 
 function statusLabel(s: string): string {
   return statusMap[s] || s
+}
+
+function formatLogSize(chars?: number | string): string {
+  const n = Number(chars || 0)
+  if (n <= 0) return ''
+  if (n < 1024) return `${n} 字`
+  return `${(n / 1024).toFixed(1)}K 字`
+}
+
+function truthyFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === '1'
+}
+
+function hasErrorLogs(item: Feedback): boolean {
+  return truthyFlag(item.has_error_logs) || !!item.error_logs
+}
+
+function hasAllLogs(item: Feedback): boolean {
+  return truthyFlag(item.has_all_logs) || !!item.all_logs
 }
 
 const filteredList = computed(() => {
@@ -238,6 +361,39 @@ async function loadList() {
     feedbackList.value = []
   }
   loading.value = false
+}
+
+async function loadFeedbackLimit() {
+  limitLoading.value = true
+  const res = await adminApi<FeedbackLimit>('get_feedback_limit')
+  if (res.code === 200 && res.data) {
+    const limit = Number(res.data.feedback_daily_limit ?? 20)
+    feedbackDailyLimit.value = Number.isFinite(limit) ? limit : 20
+    feedbackLimitInput.value = feedbackDailyLimit.value
+  } else {
+    showToast(res.msg || '反馈上限加载失败')
+  }
+  limitLoading.value = false
+}
+
+async function saveFeedbackLimit() {
+  const limit = Number(feedbackLimitInput.value)
+  if (!Number.isInteger(limit) || limit < 0 || limit > 10000) {
+    showToast('每日上限需为 0 到 10000 的整数')
+    return
+  }
+  limitSaving.value = true
+  const res = await adminApi<FeedbackLimit>('update_feedback_limit', {
+    feedback_daily_limit: limit,
+  })
+  limitSaving.value = false
+  if (res.code === 200) {
+    feedbackDailyLimit.value = Number(res.data?.feedback_daily_limit ?? limit)
+    feedbackLimitInput.value = feedbackDailyLimit.value
+    showToast('反馈提交上限已保存', 'success')
+  } else {
+    showToast(res.msg || '保存失败')
+  }
 }
 
 // ===== 状态变更 =====
@@ -322,7 +478,42 @@ async function doReply() {
   }
 }
 
+// ===== 日志弹窗 =====
+const logModalVisible = ref(false)
+const logTarget = ref<Feedback | null>(null)
+const logLoading = ref(false)
+const activeLogTab = ref<'error' | 'all'>('error')
+
+const currentLogText = computed(() => {
+  if (!logTarget.value) return ''
+  return activeLogTab.value === 'error'
+    ? (logTarget.value.error_logs || '')
+    : (logTarget.value.all_logs || '')
+})
+
+async function openLogModal(item: Feedback) {
+  logModalVisible.value = true
+  logTarget.value = item
+  activeLogTab.value = hasErrorLogs(item) ? 'error' : 'all'
+  logLoading.value = true
+  const res = await adminApi<Feedback>('get_feedback_detail', { id: item.id })
+  logLoading.value = false
+  if (res.code === 200 && res.data) {
+    logTarget.value = res.data
+    activeLogTab.value = res.data.error_logs ? 'error' : 'all'
+  } else {
+    showToast(res.msg || '日志加载失败')
+  }
+}
+
+function closeLogModal() {
+  if (logLoading.value) return
+  logModalVisible.value = false
+  logTarget.value = null
+}
+
 onMounted(() => {
+  loadFeedbackLimit()
   loadList()
 })
 </script>
@@ -390,6 +581,94 @@ onMounted(() => {
 .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
 .spinning { animation: spin 0.8s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* ===== 提交限制配置 ===== */
+.limit-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  box-shadow: 0 6px 20px rgba(15, 23, 42, 0.04);
+}
+.limit-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.limit-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #4f46e5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.limit-info h3 {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 0 0 4px 0;
+}
+.limit-info p {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+.limit-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.limit-input {
+  width: 110px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.limit-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.08);
+}
+.limit-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.btn-save-limit {
+  height: 38px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 16px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.btn-save-limit:hover { opacity: 0.86; transform: translateY(-1px); }
+.btn-save-limit:active { transform: scale(0.96); }
+.btn-save-limit:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 
 /* ===== 统计卡片 ===== */
 .stats-row {
@@ -490,6 +769,22 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.log-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.log-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f4f4f5;
+  color: #52525b;
+  font-size: 11px;
+  font-weight: 600;
+}
 
 /* 管理员回复 */
 .reply-section {
@@ -551,6 +846,8 @@ onMounted(() => {
 .act-btn:active { transform: scale(0.95); }
 .act-reply { background: #eff6ff; color: #2563eb; }
 .act-reply:hover { background: #dbeafe; }
+.act-log { background: #f4f4f5; color: #52525b; }
+.act-log:hover { background: #e4e4e7; }
 .act-resolve { background: #f0fdf4; color: #16a34a; }
 .act-resolve:hover { background: #dcfce7; }
 .act-reject { background: #fef2f2; color: #dc2626; }
@@ -574,6 +871,9 @@ onMounted(() => {
   max-width: 480px;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+.log-dialog {
+  max-width: min(920px, calc(100vw - 40px));
 }
 .modal-head {
   display: flex;
@@ -628,6 +928,43 @@ onMounted(() => {
   box-sizing: border-box;
 }
 .field textarea:focus { border-color: var(--accent); }
+.log-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.log-tab {
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-light);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.log-tab.active {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.log-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.log-content {
+  max-height: 520px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #0f172a;
+  color: #e5e7eb;
+  padding: 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 .modal-foot {
   display: flex;
   justify-content: flex-end;
@@ -670,6 +1007,10 @@ onMounted(() => {
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
 }
+.btn-spinner.dark {
+  border-color: rgba(255,255,255,0.35);
+  border-top-color: #fff;
+}
 
 /* ===== 空状态 / 加载 ===== */
 .state-box {
@@ -681,6 +1022,9 @@ onMounted(() => {
   color: var(--text-muted);
   gap: 12px;
   font-size: 14px;
+}
+.state-box.compact {
+  padding: 24px 20px;
 }
 .state-empty { padding: 48px 20px; }
 .empty-icon { color: #d0d0d0; margin-bottom: 4px; }

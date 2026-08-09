@@ -46,19 +46,19 @@ XianYu-Music-Server/
 
 ### APP API (`/api`)
 
-面向移动端 APP 的接口，共 74 个路由，需要签名验证 (部分免签)：
+面向移动端 APP 的接口，当前保留 54 个有效 action，通过 `/api?action=...` 统一入口分发。默认需要签名验证，少量公开或调试接口免签；完整清单见 `server/API.md`。
 
 | 模块 | 文件 | 功能 |
 |------|------|------|
-| 认证 | `handlers/auth.rs` | 注册、登录、验证码、密码重置 |
-| 设置 | `handlers/settings.rs` | 用户设置、个人信息 |
-| 歌单 | `handlers/playlist.rs` | 歌单 CRUD、收藏 |
-| 上报 | `handlers/reporting.rs` | 音源调用、登录、错误上报 |
-| 社交 | `handlers/social.rs` | 分享、动态 |
-| 同步 | `handlers/sync.rs` | 数据同步 |
-| 系统 | `handlers/system.rs` | Banner、版本、音源状态 |
-| 上传 | `handlers/upload.rs` | 头像、背景、封面上传 |
-| 聊天 | `handlers/chat.rs` | 聊天消息 |
+| 上报 | `handlers/reporting.rs` | 错误上报、连通性检查、安装初始化 |
+| 系统 | `handlers/system.rs` | 音源状态、版本、公告、关于配置、服务负载、排行榜 |
+| 认证 | `handlers/auth.rs` | 注册、登录、验证码、密码重置、注销、TV 登录 |
+| 设置 | `handlers/settings.rs` | 用户资料、设置、审核状态、听歌统计、主站配额 |
+| 社交 | `handlers/social.rs` | 反馈提交、溯源 ID 检查 |
+| 壁纸 | `handlers/wallpaper.rs` | 壁纸列表、我的壁纸、壁纸上传 |
+| 歌单 | `handlers/playlist.rs` | 删除歌单 |
+| 同步 | `handlers/sync.rs` | 歌单同步、插件同步、设置同步 |
+| 上传 | `handlers/upload.rs` | 头像上传 |
 | 邮箱认证 | `handlers/email_auth.rs` | 邮箱注册、登录、验证码、找回密码、用户信息 |
 
 ### 后台 Admin (`/admin/api`)
@@ -109,7 +109,7 @@ XianYu-Music-Server/
 
 ### 邮箱注册登录测试模块
 
-独立于后台管理系统的用户侧页面，通过惜梦邮箱 API 发送验证码，支持注册、登录、找回密码：
+独立于后台管理系统的用户侧页面，通过服务端内置邮箱机发送验证码，支持注册、登录、找回密码。邮箱机支持内置投递、外部 HTTP API 和标准 SMTP 三种模式，详细配置见 [`docs/BUILTIN_MAILER.md`](docs/BUILTIN_MAILER.md)：
 
 | 页面 | 路由 | 文件 | 功能 |
 |------|------|------|------|
@@ -134,6 +134,26 @@ cd server
 cargo run --release
 # 服务监听 0.0.0.0:8081
 ```
+
+### 无数据库本地调试
+
+只需要验证服务端是否能启动、客户端是否能连通、后台页面是否能打开时，可以开启无数据库调试模式：
+
+```bash
+cd server
+# PowerShell
+$env:LOCAL_DEBUG_NO_DB="1"; cargo run
+```
+
+也可以在 `server/config.json` 中设置：
+
+```json
+{
+  "local_debug_no_db": true
+}
+```
+
+开启后服务端会跳过数据库 ping 和建表流程，但 APP 侧常用流程仍会按真实接口形态返回数据。验证码、邮箱验证码、注册、登录、资料、设置、同步、反馈、TV 登录等模拟状态会写入 `server/data/debug/state.json`，用于本地连续测试；默认调试账号为 `debug-user`，密码为 `123456`。后台登录会进入调试账号 `debug-admin`，仪表盘、版本、公告、关于页配置等页面也会返回本地 mock 数据。运行根目录 `clean.bat` 会一并清理 `server/data/debug`，用于重置本地模拟状态。
 
 ### 启动前端
 
@@ -203,9 +223,9 @@ cd server && cargo build --release
   "admin_password": "adminadmin",
   "listen_addr": "0.0.0.0:8081",
   "jwt_secret": "your_jwt_secret",
-  "email_api_primary": "http://a.bzxhkj.com/a",
-  "email_api_backup": "http://a.bzxhkj.com/b",
-  "email_sender": "admin@bzxhkj.com",
+  "email_api_primary": "",
+  "email_api_backup": "",
+  "email_sender": "no-reply@example.com",
   "email_password": "your_email_password",
   "static_dir": "../admin-web/dist"
 }
@@ -213,11 +233,13 @@ cd server && cargo build --release
 
 | 字段 | 说明 |
 |------|------|
-| `email_api_primary` | 惜梦邮箱 API 主调用地址 |
-| `email_api_backup` | 惜梦邮箱 API 备用地址 |
+| `email_api_primary` | 外部邮箱机 API 主调用地址，可留空 |
+| `email_api_backup` | 外部邮箱机 API 备用地址，可留空 |
 | `email_sender` | 发件邮箱地址 |
-| `email_password` | 发件邮箱调用密码 |
+| `email_password` | 发件邮箱授权码或外部 API 调用密码 |
 | `static_dir` | 前端静态文件目录，留空则默认 `../admin-web/dist`。Rust 服务端直接托管前端，无需 Nginx |
+
+邮箱发送推荐使用后台「系统管理 -> 邮箱机设置」配置，服务端默认发送方式为内置邮箱机。更多说明见 [`docs/BUILTIN_MAILER.md`](docs/BUILTIN_MAILER.md)。
 
 首次启动时，服务会自动创建全部 33 张数据库表 (含 `CREATE TABLE IF NOT EXISTS`)。
 

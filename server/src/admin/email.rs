@@ -276,3 +276,117 @@ pub async fn email_users_stats(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         "total_users": total, "active_users": active, "disabled_users": disabled, "today_users": today
     }))
 }
+
+// ============================================================
+//  邮箱 API 配置管理
+// ============================================================
+
+/// 写入或更新 server_settings 值（不存在则 INSERT）
+async fn upsert_setting(pool: &MySqlPool, key: &str, value: &str) {
+    let _ = sqlx::query(
+        "INSERT INTO server_settings (setting_key, setting_value, description) VALUES (?, ?, '') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await;
+}
+
+/// 获取邮箱机配置（密码字段脱敏）
+pub async fn get_email_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let cfg = crate::handlers::email_auth::load_email_config(pool, &ctx.config).await;
+    let has_password = !cfg.password.is_empty();
+    let has_smtp_password = !cfg.smtp_password.is_empty();
+
+    ok("ok", json!({
+        "email_provider": cfg.provider,
+        "email_api_primary": cfg.api_primary,
+        "email_api_backup": cfg.api_backup,
+        "email_sender": cfg.sender,
+        "email_password": if has_password { "********".to_string() } else { String::new() },
+        "has_password": has_password,
+        "smtp_host": cfg.smtp_host,
+        "smtp_port": cfg.smtp_port,
+        "smtp_username": cfg.smtp_username,
+        "smtp_password": if has_smtp_password { "********".to_string() } else { String::new() },
+        "has_smtp_password": has_smtp_password,
+    }))
+}
+
+/// 保存邮箱机配置（密码为空时保留原值）
+pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+
+    let provider = str_of(&data, "email_provider").trim().to_string();
+    let provider = if provider.is_empty() { "builtin".to_string() } else { provider };
+    if !matches!(provider.as_str(), "builtin" | "http_api" | "smtp") {
+        return err(400, "邮箱机发送方式不正确");
+    }
+
+    let api_primary = str_of(&data, "email_api_primary").trim().to_string();
+    let api_backup = str_of(&data, "email_api_backup").trim().to_string();
+    let sender = str_of(&data, "email_sender").trim().to_string();
+    let password = str_of(&data, "email_password").trim().to_string();
+
+    let smtp_host = str_of(&data, "smtp_host").trim().to_string();
+    let smtp_port = str_of(&data, "smtp_port").trim().to_string();
+    let smtp_username = str_of(&data, "smtp_username").trim().to_string();
+    let smtp_password = str_of(&data, "smtp_password").trim().to_string();
+
+    upsert_setting(pool, "email_provider", &provider).await;
+    upsert_setting(pool, "email_api_primary", &api_primary).await;
+    upsert_setting(pool, "email_api_backup", &api_backup).await;
+    upsert_setting(pool, "email_sender", &sender).await;
+    upsert_setting(pool, "smtp_host", &smtp_host).await;
+    upsert_setting(pool, "smtp_port", &smtp_port).await;
+    upsert_setting(pool, "smtp_username", &smtp_username).await;
+
+    // 通用密码为空时保留原值
+    if !password.is_empty() && password != "********" {
+        upsert_setting(pool, "email_password", &password).await;
+    }
+    // SMTP 密码为空时保留原值
+    if !smtp_password.is_empty() && smtp_password != "********" {
+        upsert_setting(pool, "smtp_password", &smtp_password).await;
+    }
+
+    log_operation(
+        pool, ctx, "保存邮箱配置",
+        &format!("方式:{} 外部API:{} SMTP:{}", provider, api_primary, smtp_host),
+        "",
+    ).await;
+
+    ok("邮箱机配置已保存", Value::Null)
+}
+
+/// 发送测试邮件（使用当前配置）
+pub async fn test_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let recipient = str_of(&data, "email").trim().to_string();
+
+    if recipient.is_empty() || !is_valid_email(&recipient) {
+        return err(400, "请输入合法的测试收件邮箱");
+    }
+
+    let title = "【弦予音乐】测试邮件";
+    let context = "这是一封来自弦予音乐后台管理系统的测试邮件。\n\n如果您收到此邮件，说明当前邮箱机配置正常工作。\n\n—— 弦予音乐";
+
+    match crate::handlers::email_auth::call_email_api(
+        &ctx.config,
+        pool,
+        title,
+        context,
+        &recipient,
+    )
+    .await
+    {
+        Ok(()) => {
+            log_operation(pool, ctx, "发送测试邮件", &recipient, "").await;
+            ok("测试邮件已发送，请查收", Value::Null)
+        }
+        Err(e) => {
+            eprintln!("[admin] test_email_config 发送失败: {}", e);
+            err(500, &format!("邮件发送失败: {}", e))
+        }
+    }
+}

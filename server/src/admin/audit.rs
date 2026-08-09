@@ -4,7 +4,8 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use super::{err, log_operation, ok, AdminCtx};
-use crate::handlers::helpers::{int_of, parse_body};
+use crate::audit_policy::{self, AuditExternalConfig};
+use crate::handlers::helpers::{bool_of, int_of, parse_body, str_of};
 
 /// 确保头像审核表存在
 async fn ensure_avatar_table(pool: &MySqlPool) {
@@ -13,6 +14,58 @@ async fn ensure_avatar_table(pool: &MySqlPool) {
             let _ = sqlx::query(stmt).execute(pool).await;
         }
     }
+}
+
+pub async fn get_audit_external_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let mut cfg = audit_policy::load_config(pool).await;
+    cfg.api_key = String::new();
+    ok("ok", json!(cfg))
+}
+
+pub async fn save_audit_external_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let current = audit_policy::load_config(pool).await;
+    let mut cfg = AuditExternalConfig {
+        enabled: bool_of(&data, "enabled"),
+        provider: str_of(&data, "provider").trim().to_string(),
+        endpoint: str_of(&data, "endpoint").trim().to_string(),
+        api_key: str_of(&data, "api_key").trim().to_string(),
+        nickname_enabled: bool_of(&data, "nickname_enabled"),
+        avatar_enabled: bool_of(&data, "avatar_enabled"),
+        wallpaper_enabled: bool_of(&data, "wallpaper_enabled"),
+        timeout_ms: int_of(&data, "timeout_ms").max(1000).min(30000) as u64,
+        fail_to_manual: bool_of(&data, "fail_to_manual"),
+    };
+    if cfg.provider.is_empty() {
+        cfg.provider = "generic".to_string();
+    }
+    if cfg.timeout_ms == 0 {
+        cfg.timeout_ms = 5000;
+    }
+    if cfg.api_key.is_empty() {
+        cfg.api_key = current.api_key;
+    }
+    if let Err(e) = audit_policy::save_config(pool, &cfg).await {
+        return err(500, &format!("保存审核配置失败: {}", e));
+    }
+    log_operation(pool, ctx, "保存外部审核配置", &format!("启用:{} 服务:{}", cfg.enabled, cfg.provider), "").await;
+    ok("审核配置已保存", json!(cfg))
+}
+
+pub async fn test_audit_external_config(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let text = str_of(&data, "text");
+    let text = if text.trim().is_empty() { "弦予音乐测试内容" } else { text.as_str() };
+    let result = audit_policy::audit_text(pool, "nickname", text, json!({ "source": "admin_test" })).await;
+    ok("测试完成", json!({
+        "decision": match result.decision {
+            crate::audit_policy::AuditDecision::Pass => "pass",
+            crate::audit_policy::AuditDecision::Reject => "reject",
+            crate::audit_policy::AuditDecision::Manual => "manual",
+        },
+        "reason": result.reason,
+        "provider": result.provider,
+    }))
 }
 
 /// 待审核头像列表 + 统计

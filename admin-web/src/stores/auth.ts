@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { adminApi, getToken, setToken, clearToken, getAdminUser, setAdminUser } from '@/api/client'
+import { clearAdminActivity, markAdminActivity } from '@/utils/adminIdleLogout'
 
 export interface AdminUser {
   id: number
@@ -22,6 +23,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (res.code === 200 && res.data) {
       token.value = res.data.token
       setToken(res.data.token)
+      markAdminActivity()
       const u: AdminUser = {
         id: res.data.admin_id,
         username: res.data.username,
@@ -39,6 +41,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = null
     user.value = null
     clearToken()
+    clearAdminActivity()
   }
 
   return { token, user, isLoggedIn, login, logout }

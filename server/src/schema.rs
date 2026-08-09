@@ -1,4 +1,5 @@
 use sqlx::MySqlPool;
+use sqlx::Row;
 use tracing::warn;
 
 /// 全部建表语句（供启动初始化和后台修复共用）
@@ -13,9 +14,35 @@ pub async fn ensure_schema(pool: &MySqlPool) {
             warn!("schema init failed: {} -> {}", &stmt[..stmt.len().min(80)], e);
         }
     }
+    ensure_feedback_log_columns(pool).await;
 }
 
-static TABLE_STATEMENTS: [&str; 33] = [
+async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: &str) {
+    let exists: i64 = sqlx::query(
+        "SELECT COUNT(*) AS cnt FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+    )
+    .bind(table)
+    .bind(column)
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get("cnt"))
+    .unwrap_or(0);
+    if exists > 0 {
+        return;
+    }
+    let sql = format!("ALTER TABLE `{}` ADD COLUMN `{}` {}", table, column, definition);
+    if let Err(e) = sqlx::query(&sql).execute(pool).await {
+        warn!("schema alter failed: {} -> {}", sql, e);
+    }
+}
+
+async fn ensure_feedback_log_columns(pool: &MySqlPool) {
+    ensure_column(pool, "user_feedback", "error_logs", "LONGTEXT").await;
+    ensure_column(pool, "user_feedback", "all_logs", "LONGTEXT").await;
+    ensure_column(pool, "user_feedback", "log_meta", "TEXT").await;
+}
+
+static TABLE_STATEMENTS: &[&str] = &[
         "CREATE TABLE IF NOT EXISTS `source_call_log` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `ip` varchar(45) NOT NULL DEFAULT '',
@@ -113,6 +140,34 @@ static TABLE_STATEMENTS: [&str; 33] = [
             KEY `idx_code` (`code`),
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `human_captcha_challenges` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `captcha_id` varchar(64) NOT NULL DEFAULT '',
+            `purpose` varchar(32) NOT NULL DEFAULT 'auth',
+            `answer` varchar(16) NOT NULL DEFAULT '',
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `used` tinyint(1) NOT NULL DEFAULT 0,
+            `expires_at` datetime NOT NULL,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_captcha_id` (`captcha_id`),
+            KEY `idx_purpose_ip` (`purpose`, `ip`),
+            KEY `idx_expires_at` (`expires_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `auth_rate_limits` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `action` varchar(32) NOT NULL DEFAULT '',
+            `identifier` varchar(128) NOT NULL DEFAULT '',
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `failed_count` int(11) NOT NULL DEFAULT 0,
+            `locked_until` datetime DEFAULT NULL,
+            `last_failed_at` datetime DEFAULT NULL,
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_action_identifier_ip` (`action`, `identifier`, `ip`),
+            KEY `idx_locked_until` (`locked_until`),
+            KEY `idx_updated_at` (`updated_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `admin_users` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `username` varchar(64) NOT NULL DEFAULT '',
@@ -150,6 +205,33 @@ static TABLE_STATEMENTS: [&str; 33] = [
             PRIMARY KEY (`id`),
             KEY `idx_admin_id` (`admin_id`),
             KEY `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `server_settings` (
+            `setting_key` varchar(64) NOT NULL DEFAULT '',
+            `setting_value` text,
+            `description` varchar(255) NOT NULL DEFAULT '',
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`setting_key`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('feedback_daily_limit', '20', '每个用户每天可提交的问题反馈数量上限，0 表示不限制')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('wallpaper_upload_limit', '20', '每个用户最多可上传的壁纸数量，0 表示不限制')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('email_api_primary', '', '邮箱发送 API 主地址，留空则使用环境变量默认值')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('email_api_backup', '', '邮箱发送 API 备用地址，留空则使用环境变量默认值')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('email_sender', '', '发件邮箱地址，留空则使用环境变量默认值')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('email_password', '', '发件邮箱密码/授权码，留空则使用环境变量默认值')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('email_provider', 'builtin', '邮件发送方式：builtin=内置邮箱机，http_api=外部HTTP API，smtp=标准SMTP')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_host', '', 'SMTP 服务器地址，如 smtp.qq.com')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_port', '465', 'SMTP 端口，SSL通常465，STARTTLS通常587')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_username', '', 'SMTP 登录用户名，通常与发件邮箱相同')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_password', '', 'SMTP 登录密码/授权码，留空则使用 email_password 的值')",
+        "CREATE TABLE IF NOT EXISTS `wallpaper_upload_limits` (
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `upload_limit` int(11) NOT NULL DEFAULT 20,
+            `remark` varchar(255) NOT NULL DEFAULT '',
+            `updated_by` varchar(64) NOT NULL DEFAULT '',
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`ciyuanxi_id`),
+            KEY `idx_upload_limit` (`upload_limit`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `email_templates` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
@@ -215,48 +297,6 @@ static TABLE_STATEMENTS: [&str; 33] = [
             `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`ciyuanxi_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        "CREATE TABLE IF NOT EXISTS `chat_channels` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `channel_key` varchar(32) NOT NULL DEFAULT '',
-            `name` varchar(100) NOT NULL DEFAULT '',
-            `description` varchar(255) NOT NULL DEFAULT '',
-            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `uk_channel_key` (`channel_key`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        "CREATE TABLE IF NOT EXISTS `chat_messages` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `channel_id` bigint(20) unsigned NOT NULL DEFAULT 0,
-            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
-            `username` varchar(64) NOT NULL DEFAULT '',
-            `avatar_url` LONGTEXT,
-            `role` varchar(32) NOT NULL DEFAULT 'member',
-            `msg_type` varchar(16) NOT NULL DEFAULT 'text',
-            `content` text,
-            `extra` text,
-            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            KEY `idx_channel_id` (`channel_id`),
-            KEY `idx_ciyuanxi_id` (`ciyuanxi_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        "CREATE TABLE IF NOT EXISTS `chat_user_remarks` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `owner_ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
-            `target_ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
-            `remark` varchar(64) NOT NULL DEFAULT '',
-            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `uk_owner_target` (`owner_ciyuanxi_id`,`target_ciyuanxi_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        "CREATE TABLE IF NOT EXISTS `chat_channel_remarks` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
-            `channel_id` bigint(20) unsigned NOT NULL DEFAULT 0,
-            `remark` varchar(64) NOT NULL DEFAULT '',
-            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `uk_ciyuanxi_channel` (`ciyuanxi_id`,`channel_id`)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `tv_login_codes` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `code` varchar(64) NOT NULL DEFAULT '',
@@ -280,6 +320,9 @@ static TABLE_STATEMENTS: [&str; 33] = [
             `nickname` varchar(64) NOT NULL DEFAULT '',
             `title` varchar(60) NOT NULL DEFAULT '',
             `content` text,
+            `error_logs` LONGTEXT,
+            `all_logs` LONGTEXT,
+            `log_meta` text,
             `status` varchar(16) NOT NULL DEFAULT 'pending',
             `admin_reply` text,
             `replied_at` datetime DEFAULT NULL,

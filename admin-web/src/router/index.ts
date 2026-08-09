@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { getToken } from '@/api/client'
+import { isAdminSessionExpired, logoutByIdleTimeout, markAdminActivity } from '@/utils/adminIdleLogout'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -79,6 +80,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '公告管理' },
       },
       {
+        path: 'about-config',
+        name: 'AboutConfig',
+        component: () => import('@/views/AboutConfig.vue'),
+        meta: { title: '关于页配置' },
+      },
+      {
         path: 'wallpapers',
         name: 'Wallpapers',
         component: () => import('@/views/Wallpapers.vue'),
@@ -88,7 +95,13 @@ const routes: RouteRecordRaw[] = [
         path: 'avatar-audit',
         name: 'AvatarAudit',
         component: () => import('@/views/AvatarAudit.vue'),
-        meta: { title: '头像审核' },
+        meta: { title: '头像/改名审核' },
+      },
+      {
+        path: 'email-config',
+        name: 'EmailConfig',
+        component: () => import('@/views/EmailConfig.vue'),
+        meta: { title: '邮箱API配置' },
       },
       {
         path: 'feedback',
@@ -155,9 +168,15 @@ router.beforeEach((to, _from, next) => {
 
   if (!isPublic && !hasToken) {
     next('/login')
+  } else if (!isPublic && hasToken && isAdminSessionExpired()) {
+    logoutByIdleTimeout()
+    next(false)
   } else if (isPublic && hasToken && to.path === '/login') {
     next('/dashboard')
   } else {
+    if (!isPublic && hasToken) {
+      markAdminActivity()
+    }
     next()
   }
 })

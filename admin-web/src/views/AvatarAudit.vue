@@ -5,7 +5,7 @@
       <div class="page-header">
         <div class="header-info">
           <h2 class="page-title">
-            头像审核
+            头像/改名审核
             <span v-if="avatarStats.pending > 0" class="pending-badge">{{ avatarStats.pending }} 项待审核</span>
           </h2>
           <p class="page-desc">
@@ -62,6 +62,59 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 外部审核策略 -->
+    <section class="audit-policy-card">
+      <div class="policy-head">
+        <div>
+          <h3>外部审核策略</h3>
+          <p>开启后，昵称、头像、壁纸会先走外部机审；机审无法判断或服务失败时，再进入人工审核队列。</p>
+        </div>
+        <label class="switch-line">
+          <input v-model="auditConfig.enabled" type="checkbox" />
+          <span>{{ auditConfig.enabled ? '已启用' : '未启用' }}</span>
+        </label>
+      </div>
+
+      <div class="policy-grid">
+        <label>
+          <span :class="{ required: auditConfig.enabled }">服务类型</span>
+          <select v-model="auditConfig.provider">
+            <option value="generic">通用 HTTP</option>
+            <option value="aliyun">阿里云内容安全</option>
+            <option value="tencent">腾讯云内容安全</option>
+          </select>
+        </label>
+        <label>
+          <span :class="{ required: auditConfig.enabled }">审核接口地址</span>
+          <input v-model.trim="auditConfig.endpoint" placeholder="https://example.com/audit" />
+        </label>
+        <label>
+          <span>接口密钥</span>
+          <input v-model.trim="auditConfig.api_key" type="password" placeholder="留空则保留原密钥" />
+        </label>
+        <label>
+          <span :class="{ required: auditConfig.enabled }">超时时间</span>
+          <input v-model.number="auditConfig.timeout_ms" type="number" min="1000" max="30000" />
+        </label>
+      </div>
+
+      <div class="policy-options">
+        <label><input v-model="auditConfig.nickname_enabled" type="checkbox" /> 改名机审</label>
+        <label><input v-model="auditConfig.avatar_enabled" type="checkbox" /> 头像机审</label>
+        <label><input v-model="auditConfig.wallpaper_enabled" type="checkbox" /> 壁纸机审</label>
+        <label><input v-model="auditConfig.fail_to_manual" type="checkbox" /> 失败转人工</label>
+      </div>
+
+      <div class="policy-actions">
+        <input v-model.trim="auditTestText" class="test-input" placeholder="测试文本，例如：测试昵称" />
+        <button class="btn btn-primary btn-sm" @click="saveAuditConfig" :disabled="auditSaving">保存策略</button>
+        <button class="btn btn-sm" @click="testAuditConfig" :disabled="auditTesting">测试连接</button>
+      </div>
+      <p class="policy-tip">
+        通用 HTTP 服务需返回 <code>{"decision":"pass|reject|review","reason":"原因"}</code>。阿里云可先通过网关或函数计算适配为该格式。
+      </p>
+    </section>
 
     <!-- 加载中 -->
     <div v-if="loading" class="state-box">
@@ -232,12 +285,71 @@ interface NicknamePending {
   [key: string]: any
 }
 
+interface AuditExternalConfig {
+  enabled: boolean
+  provider: string
+  endpoint: string
+  api_key: string
+  nickname_enabled: boolean
+  avatar_enabled: boolean
+  wallpaper_enabled: boolean
+  timeout_ms: number
+  fail_to_manual: boolean
+}
+
 // ===== 状态 =====
 const loading = ref(true)
 const nickLoaded = ref(false)
 const avatarList = ref<AvatarPending[]>([])
 const nicknameList = ref<NicknamePending[]>([])
 const avatarStats = reactive({ pending: 0, approved: 0, rejected: 0 })
+const auditSaving = ref(false)
+const auditTesting = ref(false)
+const auditTestText = ref('测试昵称')
+const auditConfig = reactive<AuditExternalConfig>({
+  enabled: false,
+  provider: 'generic',
+  endpoint: '',
+  api_key: '',
+  nickname_enabled: true,
+  avatar_enabled: true,
+  wallpaper_enabled: true,
+  timeout_ms: 5000,
+  fail_to_manual: true,
+})
+
+async function loadAuditConfig() {
+  const res = await adminApi<AuditExternalConfig>('get_audit_external_config')
+  if (res.code === 200 && res.data) {
+    Object.assign(auditConfig, res.data, { api_key: '' })
+  }
+}
+
+async function saveAuditConfig() {
+  auditSaving.value = true
+  const res = await adminApi<AuditExternalConfig>('save_audit_external_config', auditConfig as any)
+  auditSaving.value = false
+  if (res.code === 200) {
+    auditConfig.api_key = ''
+    showToast('外部审核策略已保存', 'success')
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
+
+async function testAuditConfig() {
+  auditTesting.value = true
+  const res = await adminApi<{ decision: string; reason: string; provider: string }>('test_audit_external_config', {
+    text: auditTestText.value || '测试昵称',
+  })
+  auditTesting.value = false
+  if (res.code === 200 && res.data) {
+    const label = res.data.decision === 'pass' ? '通过' : res.data.decision === 'reject' ? '拒绝' : '转人工'
+    showToast(`测试结果：${label}${res.data.reason ? '，' + res.data.reason : ''}`, 'success')
+  } else {
+    showToast(res.msg || '测试失败')
+  }
+}
 
 // ===== 加载数据 =====
 async function loadAvatars() {
@@ -265,7 +377,7 @@ async function loadNicknames() {
 
 async function loadAll() {
   loading.value = true
-  await Promise.all([loadAvatars(), loadNicknames()])
+  await Promise.all([loadAvatars(), loadNicknames(), loadAuditConfig()])
   loading.value = false
 }
 
@@ -426,6 +538,105 @@ onMounted(() => {
 .stat-approved .stat-icon { background: #f0fdf4; color: #16a34a; }
 .stat-rejected .stat-icon { background: #fef2f2; color: #dc2626; }
 .stat-nickname .stat-icon { background: #eff6ff; color: #2563eb; }
+
+/* ===== 外部审核策略 ===== */
+.audit-policy-card {
+  margin-bottom: 24px;
+  padding: 18px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  box-shadow: var(--shadow-soft);
+}
+.policy-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+.policy-head h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+.policy-head p,
+.policy-tip {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 13px;
+  line-height: 1.7;
+}
+.switch-line {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.policy-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.policy-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-light);
+  font-weight: 700;
+}
+.policy-grid input,
+.policy-grid select,
+.test-input {
+  height: 38px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  color: var(--text);
+  padding: 0 12px;
+  outline: none;
+}
+.policy-grid input:focus,
+.policy-grid select:focus,
+.test-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.policy-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 14px;
+  color: var(--text-light);
+  font-size: 13px;
+}
+.policy-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.policy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.test-input {
+  min-width: 240px;
+}
+.policy-tip {
+  margin-top: 10px;
+}
+.policy-tip code {
+  color: var(--accent);
+}
 
 .stat-pending.pulse { border-color: #fbbf24; }
 .stat-pending.pulse .stat-icon { animation: iconPulse 2s ease-in-out infinite; }
