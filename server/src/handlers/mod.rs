@@ -20,6 +20,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     match action {
         // reporting
         "error" => reporting::error(body, ctx, pool).await,
+        "open" => reporting::app_open(body, ctx, pool).await,
         "check" => reporting::check(ctx, pool).await,
         "install" => reporting::install(ctx, pool).await,
         // system
@@ -28,6 +29,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_latest_version" => system::get_latest_version(ctx, pool).await,
         "get_announcement" => system::get_announcement(ctx).await,
         "get_about_config" => system::get_about_config(ctx).await,
+        "get_user_agreement" => system::get_user_agreement(ctx, pool).await,
         "get_server_load" => system::get_server_load(ctx, pool).await,
         "get_leaderboard" => system::get_leaderboard(body, ctx, pool).await,
         // auth

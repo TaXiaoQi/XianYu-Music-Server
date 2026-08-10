@@ -8,6 +8,7 @@ use sqlx::MySqlPool;
 
 pub mod account;
 pub mod about;
+pub mod agreement;
 pub mod admins;
 pub mod announcement;
 pub mod audit;
@@ -190,6 +191,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "get_account_info" => account::get_account_info(body, &ctx, pool).await,
         "get_about_config_admin" => about::get(body, &ctx, pool).await,
         "save_about_config" => about::save(body, &ctx, pool).await,
+        "get_user_agreement_admin" => agreement::get(body, &ctx, pool).await,
+        "save_user_agreement" => agreement::save(body, &ctx, pool).await,
         "add_admin" => admins::add_admin(body, &ctx, pool).await,
         "delete_admin" => admins::delete_admin(body, &ctx, pool).await,
         "list_admins" => admins::list_admins(body, &ctx, pool).await,
@@ -207,6 +210,10 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "change_user_email" => account::change_user_email(body, &ctx, pool).await,
         "reset_listen_duration" => account::reset_listen_duration(body, &ctx, pool).await,
         "change_ciyuanxi_id" => prettyid::change_ciyuanxi_id(body, &ctx, pool).await,
+        "list_banned_devices" => users::list_banned_devices(body, &ctx, pool).await,
+        "ban_device" => users::ban_device(body, &ctx, pool).await,
+        "unban_device" => users::unban_device(body, &ctx, pool).await,
+        "get_user_devices" => users::get_user_devices(body, &ctx, pool).await,
         // db
         "repair_database" => db::repair_database(body, &ctx, pool).await,
         "view_table" => db::view_table(body, &ctx, pool).await,

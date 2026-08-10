@@ -18,6 +18,7 @@
       <button class="btn btn-danger" @click="batchToggle(0)" :disabled="batchLoading">一键全禁</button>
       <button class="btn btn-primary" @click="showAddModal = true">+ 添加用户</button>
       <button class="btn btn-dark" @click="deleteEmptyPlaylists" :disabled="batchLoading">一键删除空的我喜欢的音乐歌单</button>
+      <button class="btn btn-warning" @click="openBannedDevicesModal">设备封禁管理</button>
     </div>
 
     <!-- 用户表格 -->
@@ -36,6 +37,7 @@
               <th>邮箱验证</th>
               <th>状态</th>
               <th>听歌时长</th>
+              <th>设备ID</th>
               <th>注册时间</th>
               <th>操作</th>
             </tr>
@@ -64,8 +66,17 @@
                 <span :class="['badge', u.status != 0 ? 'badge-success' : 'badge-error']">
                   {{ u.status != 0 ? '正常' : '禁用' }}
                 </span>
+                <div v-if="u.status == 0 && u.ban_reason" style="margin-top:4px;font-size:11px;color:#e74c3c;max-width:160px;word-break:break-all;">
+                  原因：{{ u.ban_reason }}
+                </div>
               </td>
               <td>{{ formatDuration(u.listen_duration) }}</td>
+              <td>
+                <span v-if="u.last_device_id" class="device-id-cell" @click="openDeviceModal(u)" :title="u.last_device_id">
+                  {{ u.last_device_id.substring(0, 8) }}...
+                </span>
+                <span v-else style="color:#ccc;">-</span>
+              </td>
               <td>{{ u.created_at }}</td>
               <td>
                 <div class="row-actions">
@@ -75,6 +86,7 @@
                   <button class="btn btn-sm" @click="openEmailModal(u)">改邮箱</button>
                   <button class="btn btn-sm" @click="openResetModal(u)">重置时长</button>
                   <button class="btn btn-sm" @click="viewPlugins(u)">插件</button>
+                  <button class="btn btn-sm" @click="openDeviceModal(u)">设备</button>
                   <button v-if="u.avatar_url" class="btn btn-sm btn-danger" @click="deleteAvatar(u)">删头像</button>
                   <button class="btn btn-sm btn-danger" @click="deleteUser(u)">删除</button>
                 </div>
@@ -244,6 +256,126 @@
       </div>
     </div>
     </Transition>
+
+    <!-- 设备信息弹窗 -->
+    <Transition name="modal">
+    <div v-if="showDeviceModal" class="modal-overlay" @click.self="showDeviceModal = false">
+      <div class="modal" style="max-width:700px;">
+        <h3>设备信息 - {{ deviceData.username }}</h3>
+        <div v-if="deviceLoading" class="empty">加载中...</div>
+        <div v-else>
+          <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;flex-wrap:wrap;">
+            <span>弦予号: {{ deviceData.ciyuanxi_id || '-' }}</span>
+            <span v-if="deviceData.last_device_id">设备ID: {{ deviceData.last_device_id }}</span>
+            <span v-if="deviceData.is_banned" style="color:#e74c3c;font-weight:600;">设备已封禁</span>
+          </div>
+
+          <div v-if="deviceData.last_device_id" style="margin-bottom:16px;">
+            <button
+              v-if="!deviceData.is_banned"
+              class="btn btn-danger btn-sm"
+              @click="banUserDevice(deviceData.last_device_id, deviceData.username)"
+            >封禁此设备</button>
+            <button
+              v-else
+              class="btn btn-success btn-sm"
+              @click="unbanUserDevice(deviceData.last_device_id)"
+            >解封此设备</button>
+          </div>
+
+          <div v-if="deviceData.login_logs && deviceData.login_logs.length > 0" style="margin-bottom:16px;">
+            <h4 style="font-size:13px;margin-bottom:8px;">登录记录</h4>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>设备ID</th><th>IP</th><th>时间</th></tr></thead>
+                <tbody>
+                  <tr v-for="(log, i) in deviceData.login_logs" :key="'l'+i">
+                    <td style="font-size:11px;">{{ log.device_id }}</td>
+                    <td>{{ log.ip }}</td>
+                    <td>{{ log.created_at }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div v-if="deviceData.open_logs && deviceData.open_logs.length > 0">
+            <h4 style="font-size:13px;margin-bottom:8px;">启动记录</h4>
+            <div class="table-wrapper">
+              <table>
+                <thead><tr><th>设备ID</th><th>IP</th><th>版本</th><th>时间</th></tr></thead>
+                <tbody>
+                  <tr v-for="(log, i) in deviceData.open_logs" :key="'o'+i">
+                    <td style="font-size:11px;">{{ log.device_id }}</td>
+                    <td>{{ log.ip }}</td>
+                    <td>{{ log.app_version }}</td>
+                    <td>{{ log.created_at }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div v-if="!deviceData.last_device_id" class="empty">该用户暂无设备记录</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" @click="showDeviceModal = false">关闭</button>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
+    <!-- 设备封禁管理弹窗 -->
+    <Transition name="modal">
+    <div v-if="showBannedModal" class="modal-overlay" @click.self="showBannedModal = false">
+      <div class="modal" style="max-width:700px;">
+        <h3>设备封禁管理</h3>
+
+        <!-- 手动添加封禁 -->
+        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+          <input
+            v-model="banDeviceInput"
+            type="text"
+            placeholder="输入设备ID"
+            style="flex:1;min-width:200px;"
+          />
+          <input
+            v-model="banReasonInput"
+            type="text"
+            placeholder="封禁原因（必填）"
+            style="flex:1;min-width:200px;"
+          />
+          <button class="btn btn-danger" @click="manualBanDevice">封禁</button>
+        </div>
+
+        <div v-if="bannedLoading" class="empty">加载中...</div>
+        <div v-else-if="bannedDevices.length === 0" class="empty">暂无封禁设备</div>
+        <div v-else class="table-wrapper">
+          <table>
+            <thead>
+              <tr><th>ID</th><th>设备ID</th><th>原因</th><th>操作人</th><th>封禁时间</th><th>操作</th></tr>
+            </thead>
+            <tbody>
+              <tr v-for="d in bannedDevices" :key="d.id">
+                <td>{{ d.id }}</td>
+                <td style="font-size:11px;word-break:break-all;">{{ d.device_id }}</td>
+                <td>{{ d.reason || '-' }}</td>
+                <td>{{ d.banned_by }}</td>
+                <td>{{ d.created_at }}</td>
+                <td>
+                  <button class="btn btn-sm btn-success" @click="unbanDeviceById(d.id, d.device_id)">解封</button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn" @click="showBannedModal = false">关闭</button>
+        </div>
+      </div>
+    </div>
+    </Transition>
   </div>
 </template>
 
@@ -357,10 +489,20 @@ function formatScriptSize(bytes: number | undefined): string {
 // ===== 行操作 =====
 async function toggleStatus(u: User) {
   const newStatus = u.status != 0 ? 0 : 1
-  const res = await adminApi('toggle_user_status', { id: u.id, status: newStatus })
+  let reason = ''
+  if (newStatus === 0) {
+    const input = prompt(`请输入封禁用户 "${u.username}" 的原因：`)
+    reason = (input || '').trim()
+    if (!reason) {
+      showToast('封禁原因不能为空')
+      return
+    }
+  }
+  const res = await adminApi('toggle_user_status', { id: u.id, status: newStatus, reason })
   if (res.code === 200) {
     showToast(newStatus ? '已启用' : '已禁用', 'success')
     u.status = newStatus
+    u.ban_reason = newStatus ? '' : reason
   } else {
     showToast(res.msg || '操作失败')
   }
@@ -391,9 +533,18 @@ async function deleteAvatar(u: User) {
 // ===== 批量操作 =====
 async function batchToggle(status: number) {
   const label = status ? '全开' : '全禁'
+  let reason = ''
+  if (!status) {
+    const input = prompt('请输入批量封禁所有用户的原因：')
+    reason = (input || '').trim()
+    if (!reason) {
+      showToast('封禁原因不能为空')
+      return
+    }
+  }
   if (!confirm(`确定${label}所有用户状态吗？`)) return
   batchLoading.value = true
-  const res = await adminApi('batch_toggle_user_status', { status })
+  const res = await adminApi('batch_toggle_user_status', { status, reason })
   batchLoading.value = false
   if (res.code === 200) {
     showToast(res.msg || `已${label}`, 'success')
@@ -561,6 +712,104 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
+// ===== 设备管理 =====
+const showDeviceModal = ref(false)
+const deviceLoading = ref(false)
+const deviceData = ref<any>({})
+const showBannedModal = ref(false)
+const bannedLoading = ref(false)
+const bannedDevices = ref<any[]>([])
+const banDeviceInput = ref('')
+const banReasonInput = ref('')
+
+async function openDeviceModal(u: User) {
+  showDeviceModal.value = true
+  deviceLoading.value = true
+  deviceData.value = { username: u.username }
+  const res = await adminApi('get_user_devices', { user_id: u.id })
+  if (res.code === 200 && res.data) {
+    deviceData.value = res.data
+  } else {
+    showToast(res.msg || '加载设备信息失败')
+  }
+  deviceLoading.value = false
+}
+
+async function banUserDevice(deviceId: string, username: string) {
+  const input = prompt(`请输入封禁用户 "${username}" 的设备 (${deviceId.substring(0, 16)}...) 的原因：`)
+  const reason = (input || '').trim()
+  if (!reason) {
+    showToast('封禁原因不能为空')
+    return
+  }
+  if (!confirm(`确定封禁用户 "${username}" 的设备 (${deviceId.substring(0, 16)}...) 吗？\n封禁后该设备将无法登录。`)) return
+  const res = await adminApi('ban_device', { device_id: deviceId, reason })
+  if (res.code === 200) {
+    showToast('设备已封禁', 'success')
+    deviceData.value.is_banned = true
+  } else {
+    showToast(res.msg || '操作失败')
+  }
+}
+
+async function unbanUserDevice(deviceId: string) {
+  const res = await adminApi('unban_device', { device_id: deviceId })
+  if (res.code === 200) {
+    showToast('设备已解封', 'success')
+    deviceData.value.is_banned = false
+  } else {
+    showToast(res.msg || '操作失败')
+  }
+}
+
+async function openBannedDevicesModal() {
+  showBannedModal.value = true
+  await loadBannedDevices()
+}
+
+async function loadBannedDevices() {
+  bannedLoading.value = true
+  const res = await adminApi('list_banned_devices', { page: 1, page_size: 100 })
+  if (res.code === 200 && res.data) {
+    bannedDevices.value = res.data.list || []
+  } else {
+    bannedDevices.value = []
+  }
+  bannedLoading.value = false
+}
+
+async function manualBanDevice() {
+  const deviceId = banDeviceInput.value.trim()
+  if (!deviceId) {
+    showToast('请输入设备ID')
+    return
+  }
+  const reason = banReasonInput.value.trim()
+  if (!reason) {
+    showToast('封禁原因不能为空')
+    return
+  }
+  const res = await adminApi('ban_device', { device_id: deviceId, reason })
+  if (res.code === 200) {
+    showToast('设备已封禁', 'success')
+    banDeviceInput.value = ''
+    banReasonInput.value = ''
+    await loadBannedDevices()
+  } else {
+    showToast(res.msg || '操作失败')
+  }
+}
+
+async function unbanDeviceById(id: number, deviceId: string) {
+  const res = await adminApi('unban_device', { id, device_id: deviceId })
+  if (res.code === 200) {
+    showToast('设备已解封', 'success')
+    await loadBannedDevices()
+  } else {
+    showToast(res.msg || '操作失败')
+  }
+}
+
 // ===== 初始化 =====
 onMounted(() => {
   loadUsers()
@@ -605,6 +854,22 @@ onMounted(() => {
 }
 .btn-dark:hover { background: #000; border-color: #000; }
 .btn-dark:disabled { opacity: 0.6; cursor: not-allowed; }
+.btn-warning {
+  background: #f39c12;
+  color: #fff;
+  border-color: #f39c12;
+}
+.btn-warning:hover { background: #e67e22; border-color: #e67e22; }
+
+/* 设备ID单元格 */
+.device-id-cell {
+  font-size: 11px;
+  font-family: monospace;
+  cursor: pointer;
+  color: var(--primary);
+  transition: opacity 0.15s;
+}
+.device-id-cell:hover { opacity: 0.7; }
 
 /* 表格 */
 .table-wrapper {

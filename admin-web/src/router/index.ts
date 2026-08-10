@@ -239,6 +239,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '人机验证设置' },
       },
       {
+        path: 'user-agreement',
+        name: 'UserAgreement',
+        component: () => import('@/views/UserAgreement.vue'),
+        meta: { title: '用户协议' },
+      },
+      {
         path: 'feedback',
         name: 'Feedback',
         component: () => import('@/views/Feedback.vue'),

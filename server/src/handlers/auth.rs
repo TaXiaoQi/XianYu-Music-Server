@@ -11,6 +11,28 @@ const LOGIN_LOCK_THRESHOLD: i64 = 5;
 const LOGIN_LOCK_MINUTES: i64 = 15;
 const LOGIN_FAILURE_WINDOW_MINUTES: i64 = 30;
 
+/// 检查设备是否被封禁，返回 Some(错误响应) 表示已封禁
+async fn check_device_ban(device_id: &str, ctx: &ReqCtx, pool: &MySqlPool) -> Option<Response> {
+    if device_id.trim().is_empty() {
+        return None;
+    }
+    let banned = sqlx::query("SELECT reason FROM banned_devices WHERE device_id = ? LIMIT 1")
+        .bind(device_id.trim())
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    if let Some(row) = banned {
+        let reason: String = row.try_get::<String, _>("reason").unwrap_or_default();
+        let reason = reason.trim();
+        if reason.is_empty() {
+            return Some(ctx.err(403, "该设备已被封禁，请联系管理员"));
+        }
+        return Some(ctx.err(403, &format!("该设备已被封禁，原因：{}。如有疑问请联系管理员", reason)));
+    }
+    None
+}
+
 fn rand_token() -> String {
     crate::handlers::helpers::random_hex(32)
 }
@@ -287,6 +309,12 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return resp;
     }
 
+    // 检查设备是否被封禁
+    let reg_device_id = str_of(&data, "device_id").trim().to_string();
+    if let Some(resp) = check_device_ban(&reg_device_id, &ctx, pool).await {
+        return resp;
+    }
+
     let _ip = ctx.client_ip.clone();
 
     // 验证邮箱验证码
@@ -353,12 +381,13 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         Err(_) => return ctx.err(500, "密码加密失败"),
     };
     let result = sqlx::query(
-        "INSERT INTO app_users (username, password, email, email_verified, status, ciyuanxi_id) VALUES (?,?,?,1,1,?)",
+        "INSERT INTO app_users (username, password, email, email_verified, status, ciyuanxi_id, last_device_id) VALUES (?,?,?,1,1,?,?)",
     )
     .bind(&username)
     .bind(&hashed)
     .bind(&email)
     .bind(&ciyuanxi_id)
+    .bind(&reg_device_id)
     .execute(pool)
     .await;
 
@@ -420,7 +449,16 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
     let status: i64 = user.get("status");
     if status == 0 {
-        return ctx.err(403, "账号已被禁用，请联系管理员");
+        let ban_reason: String = user.try_get::<String, _>("ban_reason").unwrap_or_default();
+        let reason = ban_reason.trim();
+        if reason.is_empty() {
+            return ctx.err(403, "账号已被封禁，请联系管理员");
+        }
+        return ctx.err(403, &format!("账号已被封禁，原因：{}。如有疑问请联系管理员", reason));
+    }
+    let login_device_id = str_of(&data, "device_id").trim().to_string();
+    if let Some(resp) = check_device_ban(&login_device_id, &ctx, pool).await {
+        return resp;
     }
     let email: String = user.get("email");
     let role = resolve_role(pool, &email).await;
@@ -448,6 +486,15 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     .bind("user_login")
     .execute(pool)
     .await;
+
+    // 更新用户最后登录设备ID
+    if !login_device_id.is_empty() {
+        let _ = sqlx::query("UPDATE app_users SET last_device_id = ? WHERE id = ?")
+            .bind(&login_device_id)
+            .bind(user_id)
+            .execute(pool)
+            .await;
+    }
 
     let payload = build_user_payload(user_id, &uname, &email, &avatar_url, &ciyuanxi_id, status, master_quota, &token, &role);
     ctx.json(200, "登录成功", Some(payload))
@@ -660,7 +707,12 @@ pub async fn login_by_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     };
     let status: i64 = user.get("status");
     if status == 0 {
-        return ctx.err(403, "账号已被禁用，请联系管理员");
+        let ban_reason: String = user.try_get::<String, _>("ban_reason").unwrap_or_default();
+        let reason = ban_reason.trim();
+        if reason.is_empty() {
+            return ctx.err(403, "账号已被封禁，请联系管理员");
+        }
+        return ctx.err(403, &format!("账号已被封禁，原因：{}。如有疑问请联系管理员", reason));
     }
     let token = rand_token();
     let user_id: i64 = user.get("id");

@@ -286,6 +286,11 @@ pub async fn get_about_config(ctx: ReqCtx) -> Response {
     ctx.json(200, "ok", Some(read_about_config()))
 }
 
+pub async fn get_user_agreement(ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let (title, content) = crate::admin::agreement::load_user_agreement(pool).await;
+    ctx.json(200, "ok", Some(json!({ "title": title, "content": content })))
+}
+
 pub async fn get_server_load(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let q = sqlx::query("SELECT COUNT(*) as cnt FROM app_users")
         .fetch_one(pool)
@@ -333,36 +338,111 @@ fn loadavg() -> (f64, f64) {
 pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let kind = data.get("type").and_then(|v| v.as_str()).unwrap_or("listen").to_string();
-    let limit = data.get("limit").and_then(|v| v.as_i64()).unwrap_or(20).min(100);
-    let rows = match kind.as_str() {
-        "listen" => sqlx::query(
-            "SELECT ciyuanxi_id, username, listen_duration FROM app_users WHERE status = 1 AND listen_duration > 0 ORDER BY listen_duration DESC LIMIT ?",
-        )
-        .bind(limit)
-        .fetch_all(pool)
-        .await,
-        _ => sqlx::query(
-            "SELECT ciyuanxi_id, username, unique_songs_count FROM app_users WHERE status = 1 AND unique_songs_count > 0 ORDER BY unique_songs_count DESC LIMIT ?",
-        )
-        .bind(limit)
-        .fetch_all(pool)
-        .await,
+    let limit = data.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 100);
+    let ciyuanxi_id = data.get("ciyuanxi_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    let order_col = if kind == "listen" { "listen_duration" } else { "unique_songs_count" };
+
+    // 查询 Top N 用户
+    let sql = format!(
+        "SELECT ciyuanxi_id, username, avatar_url, {} AS value \
+         FROM app_users WHERE status = 1 AND {} > 0 \
+         ORDER BY {} DESC, username ASC LIMIT ?",
+        order_col, order_col, order_col
+    );
+    let rows = match sqlx::query(&sql).bind(limit).fetch_all(pool).await {
+        Ok(rows) => rows,
+        Err(e) => return ctx.err(500, &format!("查询失败: {}", e)),
     };
-    match rows {
-        Ok(rows) => {
-            let mut list = vec![];
-            for row in rows {
-                let ciyuanxi_id: String = row.get("ciyuanxi_id");
-                let username: String = row.get("username");
-                let value: i64 = if kind == "listen" {
-                    row.get("listen_duration")
-                } else {
-                    row.get("unique_songs_count")
-                };
-                list.push(json!({ "ciyuanxi_id": ciyuanxi_id, "username": username, "value": value }));
-            }
-            ctx.json(200, "ok", Some(json!({ "type": kind, "list": list })))
+
+    let mut leaderboard: Vec<serde_json::Value> = Vec::new();
+    let mut me_in_list: Option<serde_json::Value> = None;
+
+    for (i, row) in rows.iter().enumerate() {
+        let rank = (i + 1) as u32;
+        let uid: String = row.get("ciyuanxi_id");
+        let username: String = row.get("username");
+        let avatar: String = row.get::<Option<String>, _>("avatar_url")
+            .unwrap_or_default();
+        let value: i64 = row.get("value");
+        let is_me = !ciyuanxi_id.is_empty() && uid == ciyuanxi_id;
+
+        let entry = json!({
+            "rank": rank,
+            "username": username,
+            "nickname": username,
+            "avatar": avatar,
+            "duration": value,
+            "is_me": is_me,
+        });
+        if is_me {
+            me_in_list = Some(entry.clone());
         }
-        Err(_) => ctx.err(500, "查询失败"),
+        leaderboard.push(entry);
     }
+
+    // 当前用户不在 Top N 时，单独查询排名
+    let mut me = me_in_list;
+    if !ciyuanxi_id.is_empty() && me.is_none() {
+        let user_row = sqlx::query(&format!(
+            "SELECT username, avatar_url, {} AS value \
+             FROM app_users WHERE ciyuanxi_id = ? AND status = 1 LIMIT 1",
+            order_col
+        ))
+        .bind(&ciyuanxi_id)
+        .fetch_optional(pool)
+        .await;
+
+        if let Ok(Some(row)) = user_row {
+            let username: String = row.get("username");
+            let avatar: String = row.get::<Option<String>, _>("avatar_url")
+                .unwrap_or_default();
+            let value: i64 = row.get("value");
+
+            if value > 0 {
+                let rank_row = sqlx::query(&format!(
+                    "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND {} > ?",
+                    order_col
+                ))
+                .bind(value)
+                .fetch_one(pool)
+                .await;
+
+                let rank = if let Ok(r) = rank_row {
+                    r.get::<i64, _>("cnt") as u32 + 1
+                } else {
+                    0
+                };
+
+                me = Some(json!({
+                    "rank": rank,
+                    "username": username,
+                    "nickname": username,
+                    "avatar": avatar,
+                    "duration": value,
+                    "is_me": true,
+                }));
+            }
+        }
+    }
+
+    // 统计参与排行的总用户数
+    let total_users = sqlx::query(&format!(
+        "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND {} > 0",
+        order_col
+    ))
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get::<i64, _>("cnt") as u32)
+    .unwrap_or(leaderboard.len() as u32);
+
+    ctx.json(
+        200,
+        "ok",
+        Some(json!({
+            "leaderboard": leaderboard,
+            "me": me,
+            "total_users": total_users,
+        })),
+    )
 }

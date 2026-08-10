@@ -168,6 +168,14 @@ fn about_config() -> Value {
     })
 }
 
+fn user_agreement() -> Value {
+    json!({
+        "title": crate::admin::agreement::DEFAULT_USER_AGREEMENT_TITLE,
+        "content": crate::admin::agreement::DEFAULT_USER_AGREEMENT_CONTENT,
+        "debug": true
+    })
+}
+
 fn require_captcha(data: &Value, ctx: &ReqCtx, state: &mut Value, purpose: &str) -> Option<Response> {
     let captcha_id = str_of(data, "captcha_id").trim().to_string();
     let captcha_answer = str_of(data, "captcha_answer").trim().to_string();
@@ -316,6 +324,7 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             "updatedAt": now_string()
         }))),
         "get_about_config" => ctx.json(200, "ok", Some(about_config())),
+        "get_user_agreement" => ctx.json(200, "ok", Some(user_agreement())),
         "get_server_load" => ctx.json(200, "ok", Some(json!({
             "cpu": 0,
             "memory": 0,
@@ -743,6 +752,27 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             let _ = save_state(&state);
             ctx.ok("登录成功", json!({ "ciyuanxi_id": ciyuanxi_id, "debug": true }))
         }
+        "get_leaderboard" => {
+            let ciyuanxi_id = extract_id(&data);
+            let leaderboard = vec![
+                json!({ "rank": 1, "username": "音乐达人", "nickname": "音乐达人", "avatar": "", "duration": 86400, "is_me": false }),
+                json!({ "rank": 2, "username": "听歌王者", "nickname": "听歌王者", "avatar": "", "duration": 72000, "is_me": false }),
+                json!({ "rank": 3, "username": "旋律收藏家", "nickname": "旋律收藏家", "avatar": "", "duration": 54000, "is_me": false }),
+                json!({ "rank": 4, "username": "深夜电台", "nickname": "深夜电台", "avatar": "", "duration": 36000, "is_me": false }),
+                json!({ "rank": 5, "username": "通勤伴侣", "nickname": "通勤伴侣", "avatar": "", "duration": 18000, "is_me": false }),
+            ];
+            let me = if !ciyuanxi_id.is_empty() {
+                Some(json!({ "rank": 42, "username": "debug-user", "nickname": "本地调试用户", "avatar": "", "duration": 3600, "is_me": true }))
+            } else {
+                None
+            };
+            ctx.ok("ok", json!({
+                "leaderboard": leaderboard,
+                "me": me,
+                "total_users": 42,
+                "debug": true,
+            }))
+        }
         _ => ctx.json(200, "本地调试模式：接口已连通", Some(json!({
             "action": action,
             "debug": true
@@ -798,6 +828,8 @@ pub fn handle_admin_api(action: &str) -> Response {
         })),
         "get_about_config_admin" => admin::ok("ok", about_config()),
         "save_about_config" => admin::ok("本地调试模式：配置已模拟保存", about_config()),
+        "get_user_agreement_admin" => admin::ok("ok", user_agreement()),
+        "save_user_agreement" => admin::ok("本地调试模式：用户协议已模拟保存", user_agreement()),
         "list_versions" => admin::ok("ok", json!({
             "total": 1,
             "total_pages": 1,
@@ -855,6 +887,20 @@ pub fn handle_admin_api(action: &str) -> Response {
         "list_error_logs" | "list_app_login_log" | "list_operation_logs" | "list_admin_login_logs" | "list_feedback" => {
             admin::ok("ok", json!({ "total": 0, "total_pages": 0, "list": [] }))
         }
+        "list_banned_devices" => admin::ok("ok", json!({
+            "total": 0, "total_pages": 0, "list": [], "debug": true
+        })),
+        "ban_device" => admin::ok("已封禁", json!({ "debug": true })),
+        "unban_device" => admin::ok("已解封", json!({ "debug": true })),
+        "get_user_devices" => admin::ok("ok", json!({
+            "username": "debug-user",
+            "ciyuanxi_id": "1000",
+            "last_device_id": "",
+            "is_banned": false,
+            "login_logs": [],
+            "open_logs": [],
+            "debug": true,
+        })),
         "get_audit_external_config" => admin::ok("ok", json!({
             "enabled": false,
             "provider": "generic",

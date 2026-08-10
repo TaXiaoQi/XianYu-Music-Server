@@ -15,6 +15,8 @@ pub async fn ensure_schema(pool: &MySqlPool) {
         }
     }
     ensure_feedback_log_columns(pool).await;
+    ensure_column(pool, "app_users", "last_device_id", "varchar(128) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "app_users", "ban_reason", "varchar(255) NOT NULL DEFAULT ''").await;
 }
 
 async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: &str) {
@@ -110,6 +112,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `email` varchar(128) NOT NULL DEFAULT '',
             `email_verified` tinyint(1) NOT NULL DEFAULT 0,
             `status` tinyint(1) NOT NULL DEFAULT 1,
+            `ban_reason` varchar(255) NOT NULL DEFAULT '',
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `avatar_url` LONGTEXT,
             `background_url` LONGTEXT,
@@ -540,5 +543,28 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_admin_id` (`admin_id`),
             KEY `idx_created_at` (`created_at`),
             KEY `idx_ip` (`ip`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `app_open_log` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `device_id` varchar(128) NOT NULL DEFAULT '',
+            `app_version` varchar(32) NOT NULL DEFAULT '',
+            `os_version` varchar(32) NOT NULL DEFAULT '',
+            `device_model` varchar(64) NOT NULL DEFAULT '',
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_device_id` (`device_id`),
+            KEY `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `banned_devices` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `device_id` varchar(128) NOT NULL DEFAULT '',
+            `reason` varchar(255) NOT NULL DEFAULT '',
+            `banned_by` varchar(64) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_device_id` (`device_id`),
+            KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];

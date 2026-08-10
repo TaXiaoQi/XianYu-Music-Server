@@ -71,26 +71,41 @@ pub async fn toggle_user_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     let data = parse_body(body);
     let id = int_of(&data, "id");
     let status = int_of(&data, "status");
-    let _ = sqlx::query("UPDATE app_users SET status = ? WHERE id = ?")
+    let reason = str_of(&data, "reason").trim().to_string();
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    if status == 0 && reason.is_empty() {
+        return err(400, "封禁原因不能为空");
+    }
+    let ban_reason = if status == 0 { reason.as_str() } else { "" };
+    let _ = sqlx::query("UPDATE app_users SET status = ?, ban_reason = ? WHERE id = ?")
         .bind(status)
+        .bind(ban_reason)
         .bind(id)
         .execute(pool)
         .await;
-    log_operation(pool, ctx, "更新用户状态", &format!("用户ID:{}", id), &format!("状态改为:{}", if status != 0 { "正常" } else { "禁用" })).await;
+    log_operation(pool, ctx, "更新用户状态", &format!("用户ID:{}", id), &format!("状态改为:{} 原因:{}", if status != 0 { "正常" } else { "禁用" }, ban_reason)).await;
     ok("操作成功", Value::Null)
 }
 
 pub async fn batch_toggle_user_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let status = int_of(&data, "status");
-    let r = sqlx::query("UPDATE app_users SET status = ?")
+    let reason = str_of(&data, "reason").trim().to_string();
+    if status == 0 && reason.is_empty() {
+        return err(400, "封禁原因不能为空");
+    }
+    let ban_reason = if status == 0 { reason.as_str() } else { "" };
+    let r = sqlx::query("UPDATE app_users SET status = ?, ban_reason = ?")
         .bind(status)
+        .bind(ban_reason)
         .execute(pool)
         .await;
     match r {
         Ok(res) => {
             let count = res.rows_affected();
-            log_operation(pool, ctx, "批量更新用户状态", "全部用户", &format!("状态改为:{} 影响:{}人", if status != 0 { "正常" } else { "禁用" }, count)).await;
+            log_operation(pool, ctx, "批量更新用户状态", "全部用户", &format!("状态改为:{} 原因:{} 影响:{}人", if status != 0 { "正常" } else { "禁用" }, ban_reason, count)).await;
             ok(&format!("成功更新{}个用户状态", count), Value::Null)
         }
         Err(e) => err(500, &format!("操作失败: {}", e)),
@@ -383,6 +398,171 @@ pub async fn replace_user_id_to_ciyuanxi(_body: &str, ctx: &AdminCtx, pool: &MyS
     }
     log_operation(pool, ctx, "一键替换 user_id 为 ciyuanxi_id", "replace_user_id_to_ciyuanxi", &format!("{:?}", report.len())).await;
     ok("替换完成", json!({ "report": report, "total_columns": report.len() }))
+}
+
+/// 获取封禁设备列表
+pub async fn list_banned_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let page = int_of(&data, "page").max(1);
+    let page_size = {
+        let ps = int_of(&data, "page_size");
+        if ps == 0 { 20 } else { ps.clamp(1, 100) }
+    };
+    let offset = (page - 1) * page_size;
+    let keyword = str_of(&data, "keyword").trim().to_string();
+
+    let (total, rows) = if keyword.is_empty() {
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM banned_devices")
+            .fetch_one(pool).await.unwrap_or(0);
+        let rows = sqlx::query("SELECT * FROM banned_devices ORDER BY created_at DESC LIMIT ? OFFSET ?")
+            .bind(page_size).bind(offset).fetch_all(pool).await;
+        (total, rows)
+    } else {
+        let pat = format!("%{}%", keyword);
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM banned_devices WHERE device_id LIKE ? OR reason LIKE ?")
+            .bind(&pat).bind(&pat).fetch_one(pool).await.unwrap_or(0);
+        let rows = sqlx::query("SELECT * FROM banned_devices WHERE device_id LIKE ? OR reason LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+            .bind(&pat).bind(&pat).bind(page_size).bind(offset).fetch_all(pool).await;
+        (total, rows)
+    };
+
+    match rows {
+        Ok(rows) => {
+            let list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
+            ok("ok", json!({ "total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "list": list }))
+        }
+        Err(e) => err(500, &format!("查询失败: {}", e)),
+    }
+}
+
+/// 封禁设备
+pub async fn ban_device(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    let reason = str_of(&data, "reason").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+    if reason.is_empty() {
+        return err(400, "封禁原因不能为空");
+    }
+    let result = sqlx::query("INSERT IGNORE INTO banned_devices (device_id, reason, banned_by) VALUES (?, ?, ?)")
+        .bind(&device_id)
+        .bind(&reason)
+        .bind(&ctx.username)
+        .execute(pool)
+        .await;
+    match result {
+        Ok(res) => {
+            if res.rows_affected() == 0 {
+                return ok("该设备已在封禁列表中", Value::Null);
+            }
+            log_operation(pool, ctx, "封禁设备", &format!("设备ID:{}", device_id), &format!("原因:{} 操作人:{}", reason, ctx.username)).await;
+            ok("已封禁", Value::Null)
+        }
+        Err(e) => err(500, &format!("操作失败: {}", e)),
+    }
+}
+
+/// 解封设备
+pub async fn unban_device(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    let id = int_of(&data, "id");
+    if device_id.is_empty() && id <= 0 {
+        return err(400, "需要提供设备ID或记录ID");
+    }
+    let result = if id > 0 {
+        sqlx::query("DELETE FROM banned_devices WHERE id = ?").bind(id).execute(pool).await
+    } else {
+        sqlx::query("DELETE FROM banned_devices WHERE device_id = ?").bind(&device_id).execute(pool).await
+    };
+    match result {
+        Ok(res) => {
+            if res.rows_affected() == 0 {
+                return ok("该设备不在封禁列表中", Value::Null);
+            }
+            log_operation(pool, ctx, "解封设备", &format!("设备ID:{} ID:{}", device_id, id), &format!("操作人:{}", ctx.username)).await;
+            ok("已解封", Value::Null)
+        }
+        Err(e) => err(500, &format!("操作失败: {}", e)),
+    }
+}
+
+/// 查询用户关联的设备ID列表
+pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let user_id = int_of(&data, "user_id");
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    if user_id <= 0 && ciyuanxi_id.is_empty() {
+        return err(400, "需要提供用户ID或弦予号");
+    }
+
+    // 从 app_users 获取最后登录设备
+    let user_row = if user_id > 0 {
+        sqlx::query("SELECT ciyuanxi_id, username, last_device_id FROM app_users WHERE id = ? LIMIT 1")
+            .bind(user_id).fetch_optional(pool).await
+    } else {
+        sqlx::query("SELECT ciyuanxi_id, username, last_device_id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+            .bind(&ciyuanxi_id).fetch_optional(pool).await
+    };
+
+    let user_row = match user_row {
+        Ok(Some(r)) => r,
+        _ => return err(404, "用户不存在"),
+    };
+
+    let username: String = user_row.get("username");
+    let user_ciyuanxi_id: String = user_row.get("ciyuanxi_id");
+    let last_device_id: String = user_row.get("last_device_id");
+
+    // 查询该设备的登录记录
+    let login_logs = if !last_device_id.is_empty() {
+        sqlx::query("SELECT device_id, ip, created_at FROM admin_app_login_log WHERE device_id = ? ORDER BY created_at DESC LIMIT 20")
+            .bind(&last_device_id).fetch_all(pool).await
+    } else {
+        Ok(vec![])
+    };
+
+    // 查询该设备的启动记录
+    let open_logs = if !last_device_id.is_empty() {
+        sqlx::query("SELECT device_id, ip, app_version, created_at FROM app_open_log WHERE device_id = ? ORDER BY created_at DESC LIMIT 20")
+            .bind(&last_device_id).fetch_all(pool).await
+    } else {
+        Ok(vec![])
+    };
+
+    // 检查设备是否被封禁
+    let is_banned = if !last_device_id.is_empty() {
+        sqlx::query("SELECT id FROM banned_devices WHERE device_id = ? LIMIT 1")
+            .bind(&last_device_id).fetch_optional(pool).await
+            .ok().flatten().is_some()
+    } else {
+        false
+    };
+
+    let login_list: Vec<Value> = login_logs.unwrap_or_default().iter().map(|r| json!({
+        "device_id": r.try_get::<String, _>("device_id").unwrap_or_default(),
+        "ip": r.try_get::<String, _>("ip").unwrap_or_default(),
+        "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+    })).collect();
+
+    let open_list: Vec<Value> = open_logs.unwrap_or_default().iter().map(|r| json!({
+        "device_id": r.try_get::<String, _>("device_id").unwrap_or_default(),
+        "ip": r.try_get::<String, _>("ip").unwrap_or_default(),
+        "app_version": r.try_get::<String, _>("app_version").unwrap_or_default(),
+        "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+    })).collect();
+
+    ok("ok", json!({
+        "username": username,
+        "ciyuanxi_id": user_ciyuanxi_id,
+        "last_device_id": last_device_id,
+        "is_banned": is_banned,
+        "login_logs": login_list,
+        "open_logs": open_list,
+    }))
 }
 
 async fn lookup_ciyuanxi(pool: &MySqlPool, user_id: &str) -> Option<String> {

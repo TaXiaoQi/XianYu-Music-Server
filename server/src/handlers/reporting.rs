@@ -67,3 +67,31 @@ pub async fn install(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
     ctx.json(200, "安装完成", Some(json!([])))
 }
+
+/// open 客户端启动上报
+pub async fn app_open(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    let device_id = str_of(&data, "device_id");
+    if device_id.is_empty() {
+        return ctx.err(400, "设备标识不能为空");
+    }
+    let result = sqlx::query(
+        "INSERT INTO app_open_log (device_id, app_version, os_version, device_model, ip, ciyuanxi_id) VALUES (?,?,?,?,?,?)",
+    )
+    .bind(&device_id)
+    .bind(str_of(&data, "app_version"))
+    .bind(str_of(&data, "os_version"))
+    .bind(str_of(&data, "device_model"))
+    .bind(&ctx.client_ip)
+    .bind(str_of(&data, "ciyuanxi_id"))
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(_) => ctx.ok_empty("ok"),
+        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+    }
+}

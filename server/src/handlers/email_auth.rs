@@ -796,6 +796,25 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(403, "账号已被禁用，请联系管理员");
     }
 
+    // 检查设备封禁
+    let login_device_id = str_of(&data, "device_id").trim().to_string();
+    if !login_device_id.is_empty() {
+        let banned = sqlx::query("SELECT reason FROM banned_devices WHERE device_id = ? LIMIT 1")
+            .bind(&login_device_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+        if let Some(row) = banned {
+            let reason: String = row.try_get::<String, _>("reason").unwrap_or_default();
+            let reason = reason.trim();
+            if reason.is_empty() {
+                return ctx.err(403, "该设备已被封禁，请联系管理员");
+            }
+            return ctx.err(403, &format!("该设备已被封禁，原因：{}。如有疑问请联系管理员", reason));
+        }
+    }
+
     let uid: i64 = row.try_get("id").unwrap_or(0);
     let user_email: String = row.try_get("email").unwrap_or_default();
     let nickname: String = row.try_get("nickname").unwrap_or_default();

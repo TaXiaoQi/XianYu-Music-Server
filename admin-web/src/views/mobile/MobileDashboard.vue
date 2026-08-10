@@ -45,9 +45,9 @@
         <small>今日搜索 {{ stats.today_hot_search_count ?? 0 }} 次</small>
       </div>
       <div class="stat-card">
-        <span>播放过的用户</span>
+        <span>今日用户</span>
         <strong>{{ stats.active_users ?? 0 }}</strong>
-        <small>累计播放用户</small>
+        <small>今日活跃设备数</small>
       </div>
     </section>
 

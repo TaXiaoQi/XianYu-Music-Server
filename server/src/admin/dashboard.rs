@@ -81,7 +81,7 @@ pub async fn dashboard_stats(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         "total_shares": safe_count(pool, "SELECT COUNT(*) FROM share_log").await,
         "today_shares": safe_count(pool, &format!("SELECT COUNT(*) FROM share_log WHERE DATE(created_at) = '{}'", today)).await,
         "yesterday_shares": safe_count(pool, &format!("SELECT COUNT(*) FROM share_log WHERE DATE(created_at) = '{}'", yesterday)).await,
-        "active_users": safe_count(pool, "SELECT COUNT(DISTINCT user_id) FROM play_history WHERE user_id > 0").await,
+        "active_users": safe_count(pool, &format!("SELECT COUNT(DISTINCT device_id) FROM app_open_log WHERE DATE(created_at) = '{}' AND device_id != ''", today)).await,
         "source_distribution": source_distribution,
         "today_hot_search_keyword": today_hot_search_keyword,
         "today_hot_search_count": today_hot_search_count,
