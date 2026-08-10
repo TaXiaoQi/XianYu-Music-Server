@@ -1,0 +1,16 @@
+[Unit]
+Description=XianYu Music Server
+After=network.target mysql.service
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/xymusic.example.com/server
+ExecStart=/www/wwwroot/xymusic.example.com/server/server
+Restart=always
+RestartSec=3
+User=www
+Group=www
+Environment=RUST_LOG=info
+
+[Install]
+WantedBy=multi-user.target

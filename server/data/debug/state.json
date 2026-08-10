@@ -1,0 +1,328 @@
+{
+  "captchas": [],
+  "email_codes": [],
+  "feedback": [],
+  "file_sync": {},
+  "listen_stats": [
+    {
+      "action": "open",
+      "created_at": "2026-08-10 16:23:43",
+      "data": {
+        "app_version": "1.1.3-beta3",
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "device_model": "Windows PC (x64)",
+        "os_version": "Windows NT 10.0"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:24:07",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 31,
+        "source": "酷狗音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:24:15",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 30,
+        "source": "酷我音乐"
+      }
+    },
+    {
+      "action": "report_user_behavior",
+      "created_at": "2026-08-10 16:24:17",
+      "data": {
+        "action": "switch",
+        "app_version": "1.1.3-beta3",
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "listen_duration": 0,
+        "play_count": 0,
+        "singer": "薛之谦",
+        "song_hash": "plugin://酷狗音乐/D174CBA0884A80F5F8BCE2E513E34AC7",
+        "song_id": "plugin://酷狗音乐/D174CBA0884A80F5F8BCE2E513E34AC7",
+        "song_name": "演员",
+        "source": "酷狗音乐"
+      }
+    },
+    {
+      "action": "report_user_behavior",
+      "created_at": "2026-08-10 16:24:48",
+      "data": {
+        "action": "play",
+        "app_version": "1.1.3-beta3",
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "listen_duration": 30,
+        "play_count": 1,
+        "singer": "薛之谦",
+        "song_hash": "plugin://酷我音乐/6468891",
+        "song_id": "plugin://酷我音乐/6468891",
+        "song_name": "演员",
+        "source": "酷我音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:25:09",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 0,
+        "source": "小秋音乐"
+      }
+    },
+    {
+      "action": "report_user_behavior",
+      "created_at": "2026-08-10 16:25:18",
+      "data": {
+        "action": "switch",
+        "app_version": "1.1.3-beta3",
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "listen_duration": 30,
+        "play_count": 0,
+        "singer": "薛之谦",
+        "song_hash": "plugin://酷我音乐/6468891",
+        "song_id": "plugin://酷我音乐/6468891",
+        "song_name": "演员",
+        "source": "酷我音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:25:29",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 44,
+        "source": "小枸音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:25:30",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 0,
+        "source": "小秋音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:25:33",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 31,
+        "source": "酷狗音乐"
+      }
+    },
+    {
+      "action": "report_user_behavior",
+      "created_at": "2026-08-10 16:25:35",
+      "data": {
+        "action": "switch",
+        "app_version": "1.1.3-beta3",
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "listen_duration": 17,
+        "play_count": 0,
+        "singer": "薛之谦",
+        "song_hash": "plugin://酷我音乐/6468891",
+        "song_id": "plugin://酷我音乐/6468891",
+        "song_name": "演员",
+        "source": "酷我音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:25:59",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 30,
+        "source": "小蜗音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:00",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 44,
+        "source": "小枸音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:01",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 0,
+        "source": "小秋音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:03",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 0,
+        "source": "小秋音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:05",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 30,
+        "source": "小芸音乐"
+      }
+    },
+    {
+      "action": "report_user_behavior",
+      "created_at": "2026-08-10 16:26:05",
+      "data": {
+        "action": "play",
+        "app_version": "1.1.3-beta3",
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "listen_duration": 30,
+        "play_count": 1,
+        "singer": "薛之谦",
+        "song_hash": "plugin://酷狗音乐/D174CBA0884A80F5F8BCE2E513E34AC7",
+        "song_id": "plugin://酷狗音乐/D174CBA0884A80F5F8BCE2E513E34AC7",
+        "song_name": "演员",
+        "source": "酷狗音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:07",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 0,
+        "source": "小秋音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:09",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 0,
+        "source": "小秋音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:10",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 0,
+        "source": "小秋音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:28",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 20,
+        "source": "酷狗音乐(赞助版)[永久]"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:33",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 30,
+        "source": "小蜗音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:35",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 4,
+        "source": "小蜗音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:37",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 15,
+        "source": "小蜗音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:43",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 0,
+        "source": "小秋音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:44",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 30,
+        "source": "小芸音乐"
+      }
+    },
+    {
+      "action": "search",
+      "created_at": "2026-08-10 16:26:48",
+      "data": {
+        "device_id": "ee9c8e81-811d-42ba-82d6-fc2bc120b776",
+        "keyword": "薛之谦",
+        "result_count": 20,
+        "source": "酷狗音乐(赞助版)[永久]"
+      }
+    }
+  ],
+  "plugins": {},
+  "quota_usage": {},
+  "settings": {},
+  "settings_sync": {},
+  "tv_codes": [],
+  "users": [
+    {
+      "avatar_url": "",
+      "ciyuanxi_id": "1000",
+      "created_at": "2026-08-10 16:23:43",
+      "email": "debug@example.local",
+      "id": 1,
+      "master_quota": 0,
+      "nickname": "本地调试用户",
+      "password": "123456",
+      "role": "member",
+      "status": 1,
+      "username": "debug-user"
+    }
+  ]
+}
