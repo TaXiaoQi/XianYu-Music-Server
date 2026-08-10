@@ -86,7 +86,9 @@
 
 ## 生产构建
 
-构建后台静态文件：
+在本地或构建机完成前端和后端打包，再把产物上传到生产服务器。
+
+### 构建后台静态文件
 
 ```bash
 cd admin-web
@@ -94,26 +96,22 @@ npm install
 npm run build
 ```
 
-产物目录：
+构建产物在 `admin-web/dist/`，上传时需要完整保留该目录内的文件。
 
-```text
-admin-web/dist/
-```
-
-构建服务端：
+### 构建服务端
 
 ```bash
 cd server
 cargo build --release
 ```
 
-产物位置：
+Linux 生产环境使用：
 
 ```text
 server/target/release/server
 ```
 
-Windows 环境为：
+Windows 服务器使用：
 
 ```text
 server/target/release/server.exe
@@ -121,7 +119,19 @@ server/target/release/server.exe
 
 ## 生产部署
 
-推荐目录结构：
+以下步骤以 Linux + Nginx + systemd 为例，域名示例为 `xymusic.example.com`，服务端监听 `127.0.0.1:8081` 或 `0.0.0.0:8081`。
+
+### 准备目录
+
+在服务器创建站点目录：
+
+```bash
+mkdir -p /www/wwwroot/xymusic.example.com/admin-web/dist
+mkdir -p /www/wwwroot/xymusic.example.com/server
+mkdir -p /www/wwwroot/xymusic.example.com/beifen
+```
+
+最终目录建议如下：
 
 ```text
 /www/wwwroot/xymusic.example.com/
@@ -133,17 +143,130 @@ server/target/release/server.exe
 └── nginx.conf
 ```
 
-Nginx 配置要点：
+### 上传文件
 
-- `root` 指向 `admin-web/dist`
-- `/api` 反向代理到 `127.0.0.1:8081`
-- `/admin/api` 反向代理到 `127.0.0.1:8081`
-- `/uploads` 反向代理或映射到服务端上传目录
-- SPA 路由使用 `try_files $uri $uri/ /index.html`
+上传后台构建产物：
 
-服务端建议用 systemd 或 supervisor 守护。启动进程时，工作目录保持在 `server/`，让程序能读取同目录下的 `config.json`。
+```text
+本地 admin-web/dist/* -> 服务器 /www/wwwroot/xymusic.example.com/admin-web/dist/
+```
 
-systemd 示例：
+上传服务端二进制：
+
+```text
+本地 server/target/release/server -> 服务器 /www/wwwroot/xymusic.example.com/server/server
+```
+
+给服务端二进制添加执行权限：
+
+```bash
+chmod +x /www/wwwroot/xymusic.example.com/server/server
+```
+
+### 写入服务端配置
+
+在服务器创建：
+
+```text
+/www/wwwroot/xymusic.example.com/server/config.json
+```
+
+示例：
+
+```json
+{
+  "db_host": "127.0.0.1",
+  "db_port": 3306,
+  "db_name": "chexian",
+  "db_user": "chexian",
+  "db_pass": "your_password",
+  "db_charset": "utf8mb4",
+  "api_secret": "replace_with_random_api_secret",
+  "api_timestamp_tolerance": 300,
+  "admin_username": "admin",
+  "admin_password": "replace_with_admin_password",
+  "listen_addr": "127.0.0.1:8081",
+  "jwt_secret": "replace_with_random_jwt_secret",
+  "email_api_primary": "",
+  "email_api_backup": "",
+  "email_sender": "no-reply@example.com",
+  "email_password": "",
+  "captcha_secret": "",
+  "turnstile_secret": "",
+  "hcaptcha_secret": "",
+  "local_debug_no_db": false
+}
+```
+
+生产环境必须修改：
+
+- `db_pass`
+- `api_secret`
+- `admin_password`
+- `jwt_secret`
+
+`listen_addr` 推荐使用 `127.0.0.1:8081`，由 Nginx 代理到公网。首次启动时服务端会自动建表并写入默认配置。
+
+### 配置 Nginx
+
+Nginx 站点配置示例：
+
+```nginx
+server {
+    listen 80;
+    server_name xymusic.example.com;
+
+    root /www/wwwroot/xymusic.example.com/admin-web/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /admin/api {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /uploads {
+        proxy_pass http://127.0.0.1:8081;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+检查并重载 Nginx：
+
+```bash
+nginx -t
+systemctl reload nginx
+```
+
+如果使用 HTTPS，先完成证书配置，再将 `listen 80` 调整为对应的 HTTPS 配置。
+
+### 配置 systemd
+
+创建服务文件：
+
+```bash
+vim /etc/systemd/system/xianyu-music-server.service
+```
+
+写入：
 
 ```ini
 [Unit]
@@ -160,15 +283,54 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
+启动并设置开机自启：
+
+```bash
+systemctl daemon-reload
+systemctl enable xianyu-music-server
+systemctl start xianyu-music-server
+```
+
+查看运行状态和日志：
+
+```bash
+systemctl status xianyu-music-server
+journalctl -u xianyu-music-server -f
+```
+
+### 首次访问
+
+打开：
+
+```text
+https://xymusic.example.com/login
+```
+
+使用 `config.json` 中的 `admin_username` 和 `admin_password` 登录后台。首次登录后建议立即修改后台密码。
+
 ## 部署后检查
 
-部署完成后依次检查：
+按下面顺序检查：
 
 1. 访问后台登录页，确认静态资源正常加载。
 2. 登录后台，检查仪表盘是否能加载数据。
-3. 在后台配置邮箱机并发送测试邮件。
-4. 如启用人机验证，在后台保存 Turnstile 或 hCaptcha 配置后，测试客户端登录、注册、找回密码弹窗。
-5. 客户端服务器 API 地址填写到 `/api`，不要填写 `/admin/api`。
+3. 打开 `https://xymusic.example.com/api?action=check`，确认 API 能返回服务端响应。
+4. 在后台「系统管理 -> 邮箱机设置」配置邮箱机并发送测试邮件。
+5. 如启用人机验证，在后台「系统管理 -> 人机验证设置」保存 Turnstile 或 hCaptcha 配置。
+6. 在客户端服务器 API 地址中填写 `https://xymusic.example.com/api`，不要填写 `/admin/api`。
+7. 测试客户端登录、注册、找回密码和发送邮箱验证码流程。
+
+### 更新发布
+
+后续更新时，按下面顺序替换产物：
+
+1. 重新构建 `admin-web/dist/` 和 `server/target/release/server`。
+2. 上传新的 `admin-web/dist/` 覆盖旧静态文件。
+3. 停止服务端：`systemctl stop xianyu-music-server`。
+4. 替换 `/www/wwwroot/xymusic.example.com/server/server`。
+5. 确认 `config.json` 不被覆盖。
+6. 启动服务端：`systemctl start xianyu-music-server`。
+7. 查看日志：`journalctl -u xianyu-music-server -f`。
 
 ## 安全说明
 
