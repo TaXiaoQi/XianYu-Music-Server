@@ -86,9 +86,144 @@
 
 ## 生产构建
 
-在本地或构建机完成前端和后端打包，再把产物上传到生产服务器。
+项目现在提供多种构建方式。你的服务器是 Linux 时，优先看“Windows 构建 Linux 包”或“WSL 构建 Linux 包”。
 
-### 构建后台静态文件
+### 方式一：Windows 构建 Linux 包
+
+适合在 Windows 开发机上直接生成 Linux 服务器可用的部署包。运行：
+
+```bat
+build-linux.cmd
+```
+
+也可以运行中文入口：
+
+```bat
+交叉编译Linux.bat
+```
+
+`交叉编译Linux.bat` 只是调用 `build-linux.cmd`，推荐优先运行 `build-linux.cmd`，因为英文文件名更不容易受编码影响。
+
+第一次运行前需要准备：
+
+| 工具 | 用途 | 安装方式 |
+|---|---|---|
+| Node.js | 构建后台前端 | 安装 Node.js 18+ |
+| Rust | 编译服务端 | 安装 Rust |
+| Zig | Windows 交叉编译 Linux 的链接器 | `winget install zig.zig` |
+| cargo-zigbuild | Rust 交叉编译工具 | 脚本会自动安装，也可手动执行 `cargo install cargo-zigbuild` |
+| Linux target | Rust Linux 编译目标 | 脚本会自动执行 `rustup target add x86_64-unknown-linux-musl` |
+
+如果脚本提示：
+
+```text
+[ERROR] Zig was not found.
+```
+
+先在 PowerShell 执行：
+
+```powershell
+winget install zig.zig
+```
+
+安装完成后重新打开命令窗口，再运行：
+
+```bat
+build-linux.cmd
+```
+
+构建完成后会生成：
+
+```text
+deploy-linux/
+├── server/
+│   ├── server
+│   ├── config.json
+│   └── uploads/
+├── admin-web/dist/
+├── start-server-linux.sh
+└── xianyu-music-server.service
+```
+
+把整个 `deploy-linux/` 上传到 Linux 服务器即可。
+
+上传后在 Linux 服务器执行：
+
+```bash
+chmod +x server/server
+chmod +x start-server-linux.sh
+./start-server-linux.sh
+```
+
+如果要用 systemd 后台运行，修改并复制 `xianyu-music-server.service` 到 `/etc/systemd/system/`。
+
+### 方式二：WSL 构建 Linux 包
+
+这是最稳的 Windows 构建方式，因为 WSL 本身就是 Linux 环境，生成的二进制天然适配 Linux 服务器。
+
+先在 Windows PowerShell 管理员窗口安装 WSL：
+
+```powershell
+wsl --install -d Ubuntu
+```
+
+重启后打开 Ubuntu，安装环境：
+
+```bash
+sudo apt update
+sudo apt install -y curl build-essential pkg-config
+
+# 安装 Rust
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+
+# 安装 Node.js 18 (Ubuntu/Debian)
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+进入项目目录。Windows 的 D 盘在 WSL 里是 `/mnt/d/`：
+
+```bash
+cd "/mnt/d/Program Files/MC/开发端/开发组/弦予音乐/XianYu-Music-Server"
+```
+
+运行 Linux 构建脚本：
+
+```bash
+chmod +x 构建部署包.sh
+./构建部署包.sh
+```
+
+构建完成后会生成 `deploy/`，把整个 `deploy/` 上传到 Linux 服务器。
+
+### 方式三：Linux 服务器直接构建
+
+适合服务器性能足够、能安装编译环境的情况。把源码上传到 Linux 服务器后安装环境：
+
+```bash
+sudo apt update
+sudo apt install -y curl build-essential pkg-config
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt-get install -y nodejs
+```
+
+然后运行：
+
+```bash
+chmod +x 构建部署包.sh
+./构建部署包.sh
+```
+
+输出目录是 `deploy/`。
+
+### 方式四：手动构建
+
+如果不使用脚本，也可以手动构建。
+
+构建后台前端：
 
 ```bash
 cd admin-web
@@ -96,26 +231,25 @@ npm install
 npm run build
 ```
 
-构建产物在 `admin-web/dist/`，上传时需要完整保留该目录内的文件。
-
-### 构建服务端
+构建当前系统对应的服务端：
 
 ```bash
 cd server
 cargo build --release
 ```
 
-Linux 生产环境使用：
+构建产物路径：
 
-```text
-server/target/release/server
-```
+| 平台 | 路径 |
+|---|---|
+| Linux | `server/target/release/server` |
+| Windows | `server/target/release/server.exe` |
 
-Windows 服务器使用：
+注意：在 Windows 直接执行 `cargo build --release` 得到的是 `server.exe`，只能给 Windows 服务器用，不能上传到 Linux 服务器运行。Linux 服务器要用上面的 `build-linux.cmd`、WSL 或 Linux 直接构建。
 
-```text
-server/target/release/server.exe
-```
+### 方式五：Windows 服务器构建
+
+在 Windows 上运行 `构建部署包.bat`，自动构建前端和 Windows 服务端，打包到 `deploy/` 目录。
 
 ## 生产部署
 
@@ -144,6 +278,8 @@ mkdir -p /www/wwwroot/xymusic.example.com/beifen
 ```
 
 ### 上传文件
+
+如果用「方式一」在服务器上构建，跳过上传步骤，直接从 `deploy/` 目录复制文件。
 
 上传后台构建产物：
 
@@ -207,6 +343,21 @@ chmod +x /www/wwwroot/xymusic.example.com/server/server
 
 `listen_addr` 推荐使用 `127.0.0.1:8081`，由 Nginx 代理到公网。首次启动时服务端会自动建表并写入默认配置。
 
+### 无数据库启动
+
+服务端支持在没有数据库的情况下启动，自动进入本地缓存模式。所有数据暂存在 `server/data/debug/state.json`，后续可在后台「配置文件管理」页面配置数据库连接，然后点击「迁移本地缓存」将数据导入数据库。
+
+### 测试启动
+
+在正式配置 systemd 之前，先手动测试启动：
+
+```bash
+cd /www/wwwroot/xymusic.example.com/server
+./server
+```
+
+看到服务端正常监听后，按 `Ctrl+C` 停止，继续配置 Nginx 和 systemd。
+
 ### 配置 Nginx
 
 Nginx 站点配置示例：
@@ -260,28 +411,38 @@ systemctl reload nginx
 
 ### 配置 systemd
 
-创建服务文件：
+项目根目录已提供 `xianyu-music-server.service` 模板文件，复制到服务器后修改路径即可：
 
 ```bash
-vim /etc/systemd/system/xianyu-music-server.service
+# 复制模板（Windows 构建 Linux 包时在 deploy-linux/ 目录中，Linux 构建时在 deploy/ 目录中）
+sudo cp xianyu-music-server.service /etc/systemd/system/
+
+# 修改 WorkingDirectory 和 ExecStart 路径
+sudo vim /etc/systemd/system/xianyu-music-server.service
 ```
 
-写入：
+模板内容：
 
 ```ini
 [Unit]
 Description=XianYu Music Server
-After=network.target
+After=network.target mysql.service
 
 [Service]
+Type=simple
 WorkingDirectory=/www/wwwroot/xymusic.example.com/server
 ExecStart=/www/wwwroot/xymusic.example.com/server/server
 Restart=always
 RestartSec=3
+User=www
+Group=www
+Environment=RUST_LOG=info
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+根据实际情况修改 `WorkingDirectory`、`ExecStart`、`User`、`Group`。
 
 启动并设置开机自启：
 
@@ -324,13 +485,28 @@ https://xymusic.example.com/login
 
 后续更新时，按下面顺序替换产物：
 
-1. 重新构建 `admin-web/dist/` 和 `server/target/release/server`。
+1. 重新构建 `admin-web/dist/` 和 `server/target/release/server`（运行 `构建部署包.sh` 或 `交叉编译Linux.bat`）。
 2. 上传新的 `admin-web/dist/` 覆盖旧静态文件。
 3. 停止服务端：`systemctl stop xianyu-music-server`。
 4. 替换 `/www/wwwroot/xymusic.example.com/server/server`。
 5. 确认 `config.json` 不被覆盖。
 6. 启动服务端：`systemctl start xianyu-music-server`。
 7. 查看日志：`journalctl -u xianyu-music-server -f`。
+
+## 构建脚本说明
+
+| 脚本 | 平台 | 说明 |
+|---|---|---|
+| `build-linux.cmd` | Windows | 在 Windows 上交叉编译 Linux 部署包，输出到 `deploy-linux/` |
+| `交叉编译Linux.bat` | Windows | 中文入口，实际调用 `build-linux.cmd` |
+| `start-server-linux.sh` | Linux | Linux 部署包里的启动脚本 |
+| `构建部署包.sh` | Linux | 在 Linux 上构建前端 + Rust 服务端，打包到 `deploy/` |
+| `一键启动服务端.sh` | Linux | 在 Linux 上启动服务端，兼容开发和部署目录 |
+| `构建部署包.bat` | Windows | 构建 Windows 版前端 + 服务端，打包到 `deploy/` |
+| `一键启动服务端.bat` | Windows | 在 Windows 上启动服务端 |
+| `start.bat` | Windows | 本地开发模式，启动前端 dev server + 后端 |
+| `clean.bat` | Windows | 清理构建缓存 |
+| `cross-compile-android.bat` | Windows | 交叉编译 Android aarch64 版本 |
 
 ## 安全说明
 
