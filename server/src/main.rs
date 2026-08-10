@@ -18,6 +18,7 @@ use config::Config;
 use sqlx::MySqlPool;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
@@ -25,6 +26,7 @@ use tower_http::services::ServeDir;
 pub struct AppState {
     pub pool: MySqlPool,
     pub config: Arc<Config>,
+    pub db_ready: bool,
 }
 
 #[tokio::main]
@@ -32,9 +34,25 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let config = Arc::new(Config::load()?);
     let pool = db::connect(&config).await?;
+    let db_ready = if config.local_debug_no_db {
+        false
+    } else {
+        match tokio::time::timeout(Duration::from_secs(3), sqlx::query("SELECT 1").execute(&pool)).await {
+            Ok(Ok(_)) => true,
+            Ok(Err(e)) => {
+                tracing::warn!("database unavailable, fallback to local cache mode: {}", e);
+                false
+            }
+            Err(_) => {
+                tracing::warn!("database unavailable, fallback to local cache mode: connection timeout");
+                false
+            }
+        }
+    };
     let state = AppState {
         pool,
         config: config.clone(),
+        db_ready,
     };
 
     let cors = CorsLayer::permissive();
@@ -55,8 +73,8 @@ async fn main() -> anyhow::Result<()> {
 
     let cfg = config.clone();
     let pool2 = pool.clone();
-    if config.local_debug_no_db {
-        tracing::warn!("local_debug_no_db enabled: skip database ping and schema initialization");
+    if !db_ready {
+        tracing::warn!("database is not ready: use local cache mode and skip schema initialization");
     } else {
         // 启动后台保证核心表存在（不阻塞 / 不等数据库就绪）
         tokio::spawn(async move {
@@ -140,7 +158,7 @@ async fn handle_api(
         raw_body
     };
 
-    if state.config.local_debug_no_db {
+    if !state.db_ready {
         return debug::handle_api(&action, &body, ctx);
     }
 
@@ -169,8 +187,8 @@ async fn handle_admin_api(
 
     // 登录接口免鉴权
     if action == "admin_login" {
-        if state.config.local_debug_no_db {
-            return debug::handle_admin_login(&state.config);
+        if !state.db_ready {
+            return debug::handle_admin_login(&raw_body, &state.config);
         }
         return admin::auth::admin_login(&raw_body, &state.config, &state.pool, &ip).await;
     }
@@ -184,6 +202,21 @@ async fn handle_admin_api(
         Some(c) => c,
         None => return admin::err(401, "未登录或登录已过期"),
     };
+    if !state.db_ready {
+        let config_ctx = admin::AdminCtx {
+            id: claims.sub,
+            username: claims.username,
+            role: claims.role,
+            ip: ip.clone(),
+            config: (*state.config).clone(),
+        };
+        return match action.as_str() {
+            "get_server_config_file" => admin::config_file::get_no_db(&raw_body, &config_ctx).await,
+            "save_server_config_file" => admin::config_file::save_no_db(&raw_body, &config_ctx).await,
+            "migrate_local_cache_to_database" => admin::config_file::migrate_local_cache_to_database(&raw_body, &config_ctx).await,
+            _ => debug::handle_admin_api(&action),
+        };
+    }
     let ctx = admin::AdminCtx {
         id: claims.sub,
         username: claims.username,

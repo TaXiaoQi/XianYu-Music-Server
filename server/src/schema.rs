@@ -557,6 +557,21 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_device_id` (`device_id`),
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `user_announcement_confirmations` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `device_id` varchar(128) NOT NULL DEFAULT '',
+            `announcement_id` varchar(64) NOT NULL DEFAULT '',
+            `announcement_title` varchar(255) NOT NULL DEFAULT '',
+            `announcement_updated_at` varchar(32) NOT NULL DEFAULT '',
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `confirmed_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_user_announcement_version` (`ciyuanxi_id`, `device_id`, `announcement_id`, `announcement_updated_at`),
+            KEY `idx_ciyuanxi_id` (`ciyuanxi_id`),
+            KEY `idx_announcement_id` (`announcement_id`),
+            KEY `idx_confirmed_at` (`confirmed_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `banned_devices` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
             `device_id` varchar(128) NOT NULL DEFAULT '',

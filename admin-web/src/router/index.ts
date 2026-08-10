@@ -112,6 +112,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '人机验证设置', mobile: true },
       },
       {
+        path: 'config-file',
+        name: 'MobileConfigFile',
+        component: () => import('@/views/ConfigFile.vue'),
+        meta: { title: '配置文件管理', mobile: true },
+      },
+      {
         path: 'admins',
         name: 'MobileAdmins',
         component: () => import('@/views/mobile/MobileAdmins.vue'),
@@ -237,6 +243,12 @@ const routes: RouteRecordRaw[] = [
         name: 'TurnstileConfig',
         component: () => import('@/views/TurnstileConfig.vue'),
         meta: { title: '人机验证设置' },
+      },
+      {
+        path: 'config-file',
+        name: 'ConfigFile',
+        component: () => import('@/views/ConfigFile.vue'),
+        meta: { title: '配置文件管理' },
       },
       {
         path: 'user-agreement',

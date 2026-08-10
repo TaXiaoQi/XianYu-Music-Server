@@ -13,6 +13,7 @@ pub mod admins;
 pub mod announcement;
 pub mod audit;
 pub mod auth;
+pub mod config_file;
 pub mod dashboard;
 pub mod db;
 pub mod email;
@@ -191,6 +192,9 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "get_account_info" => account::get_account_info(body, &ctx, pool).await,
         "get_about_config_admin" => about::get(body, &ctx, pool).await,
         "save_about_config" => about::save(body, &ctx, pool).await,
+        "get_server_config_file" => config_file::get(body, &ctx, pool).await,
+        "save_server_config_file" => config_file::save(body, &ctx, pool).await,
+        "migrate_local_cache_to_database" => config_file::migrate_local_cache_to_database(body, &ctx).await,
         "get_user_agreement_admin" => agreement::get(body, &ctx, pool).await,
         "save_user_agreement" => agreement::save(body, &ctx, pool).await,
         "add_admin" => admins::add_admin(body, &ctx, pool).await,

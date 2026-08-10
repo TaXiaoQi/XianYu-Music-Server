@@ -780,12 +780,21 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-pub fn handle_admin_login(cfg: &Config) -> Response {
-    let token = admin::sign_token(cfg, 1, "debug-admin", "super_admin");
+pub fn handle_admin_login(body: &str, cfg: &Config) -> Response {
+    let data = parse_body(body);
+    let username = str_of(&data, "username").trim().to_string();
+    let password = str_of(&data, "password").to_string();
+    if username.is_empty() || password.is_empty() {
+        return admin::err(400, "请输入用户名和密码");
+    }
+    if username != cfg.admin_username.as_str() || password != cfg.admin_password.as_str() {
+        return admin::err(401, "用户名或密码错误");
+    }
+    let token = admin::sign_token(cfg, 1, &username, "super_admin");
     admin::ok("本地调试登录成功", json!({
         "token": token,
         "admin_id": 1,
-        "username": "debug-admin",
+        "username": username,
         "role": "super_admin",
         "expires_in": 86400,
         "debug": true

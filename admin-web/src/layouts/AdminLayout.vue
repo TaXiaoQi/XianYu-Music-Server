@@ -47,6 +47,7 @@
             <li><router-link to="/api-test">接口测试</router-link></li>
             <li><router-link to="/email-config">邮箱机设置</router-link></li>
             <li><router-link to="/turnstile-config">人机验证设置</router-link></li>
+            <li><router-link to="/config-file">配置文件管理</router-link></li>
             <li><router-link to="/user-agreement">用户协议</router-link></li>
           </ul>
         </li>

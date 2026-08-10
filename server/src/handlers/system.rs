@@ -3,7 +3,7 @@ use serde_json::json;
 use sqlx::MySqlPool;
 use sqlx::Row;
 
-use crate::handlers::helpers::{compare_version_code, parse_body};
+use crate::handlers::helpers::{compare_version_code, parse_body, str_of};
 use crate::response::ReqCtx;
 
 fn announcements_path() -> std::path::PathBuf {
@@ -235,7 +235,41 @@ pub async fn get_latest_version(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
 }
 
-pub async fn get_announcement(ctx: ReqCtx) -> Response {
+fn announcement_version(item: &serde_json::Value) -> String {
+    item.get("updated_at")
+        .or_else(|| item.get("updatedAt"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
+}
+
+async fn announcement_confirmed(pool: &MySqlPool, ciyuanxi_id: &str, device_id: &str, announcement_id: &str, version: &str) -> bool {
+    if ciyuanxi_id.is_empty() && device_id.is_empty() {
+        return false;
+    }
+    sqlx::query(
+        "SELECT id FROM user_announcement_confirmations
+         WHERE announcement_id = ? AND announcement_updated_at = ?
+           AND ((? <> '' AND ciyuanxi_id = ?) OR (? <> '' AND device_id = ?))
+         LIMIT 1",
+    )
+    .bind(announcement_id)
+    .bind(version)
+    .bind(ciyuanxi_id)
+    .bind(ciyuanxi_id)
+    .bind(device_id)
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .is_some()
+}
+
+pub async fn get_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let device_id = str_of(&data, "device_id").trim().to_string();
     let mut list: Vec<serde_json::Value> = read_announcements()
         .into_iter()
         .filter(|item| item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false))
@@ -259,7 +293,11 @@ pub async fn get_announcement(ctx: ReqCtx) -> Response {
     let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
     let content = item.get("content").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let updated_at = announcement_version(&item);
     if id.is_empty() || title.is_empty() || content.is_empty() {
+        return ctx.json::<serde_json::Value>(200, "ok", None);
+    }
+    if announcement_confirmed(pool, &ciyuanxi_id, &device_id, &id, &updated_at).await {
         return ctx.json::<serde_json::Value>(200, "ok", None);
     }
 
@@ -274,12 +312,58 @@ pub async fn get_announcement(ctx: ReqCtx) -> Response {
             "date": item.get("date").and_then(|v| v.as_str()).unwrap_or(""),
             "actionUrl": item.get("actionUrl").and_then(|v| v.as_str()).unwrap_or(""),
             "actionText": item.get("actionText").and_then(|v| v.as_str()).unwrap_or(""),
-            "updatedAt": item.get("updated_at")
-                .or_else(|| item.get("updatedAt"))
-                .and_then(|v| v.as_str())
-                .unwrap_or(""),
+            "updatedAt": updated_at,
         })),
     )
+}
+
+pub async fn confirm_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let announcement_id = str_of(&data, "announcement_id").trim().to_string();
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    let client_updated_at = str_of(&data, "announcement_updated_at").trim().to_string();
+
+    if announcement_id.is_empty() {
+        return ctx.err(400, "公告 ID 不能为空");
+    }
+    if ciyuanxi_id.is_empty() && device_id.is_empty() {
+        return ctx.err(400, "缺少用户或设备标识");
+    }
+
+    let list = read_announcements();
+    let Some(item) = list
+        .iter()
+        .find(|item| item.get("id").and_then(|v| v.as_str()).unwrap_or("") == announcement_id)
+    else {
+        return ctx.err(404, "公告不存在");
+    };
+
+    let title = item.get("title").and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let updated_at = announcement_version(item);
+    if !client_updated_at.is_empty() && client_updated_at != updated_at {
+        return ctx.err(409, "公告已更新，请重新阅读");
+    }
+
+    let result = sqlx::query(
+        "INSERT INTO user_announcement_confirmations
+         (ciyuanxi_id, device_id, announcement_id, announcement_title, announcement_updated_at, ip)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE confirmed_at = CURRENT_TIMESTAMP, announcement_title = VALUES(announcement_title), ip = VALUES(ip)",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(&device_id)
+    .bind(&announcement_id)
+    .bind(&title)
+    .bind(&updated_at)
+    .bind(&ctx.client_ip)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(_) => ctx.ok("确认成功", json!({ "announcement_id": announcement_id, "updatedAt": updated_at })),
+        Err(e) => ctx.err(500, &format!("记录公告确认失败: {}", e)),
+    }
 }
 
 pub async fn get_about_config(ctx: ReqCtx) -> Response {
