@@ -34,20 +34,11 @@
     </section>
 
     <section v-if="!loading && !loadError" class="mobile-stats-grid">
-      <div class="stat-card">
-        <span>总用户</span>
-        <strong>{{ stats.total_users ?? 0 }}</strong>
-        <small>今日新增 {{ stats.today_users ?? 0 }}</small>
-      </div>
-      <div class="stat-card">
-        <span>今日热搜</span>
-        <strong class="hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</strong>
-        <small>今日搜索 {{ stats.today_hot_search_count ?? 0 }} 次</small>
-      </div>
-      <div class="stat-card">
-        <span>今日用户</span>
-        <strong>{{ stats.active_users ?? 0 }}</strong>
-        <small>今日活跃设备数</small>
+      <div v-for="item in summaryCards" :key="item.label" class="stat-card" :class="item.className">
+        <span class="stat-bg-icon" v-html="item.icon"></span>
+        <span class="stat-label">{{ item.label }}</span>
+        <strong :class="{ 'hot-keyword': item.isKeyword }">{{ item.value }}</strong>
+        <small>{{ item.sub }}</small>
       </div>
     </section>
 
@@ -100,8 +91,11 @@ interface SourceDistributionItem {
 interface DashboardStats {
   total_users?: number
   today_users?: number
+  yesterday_users?: number
   active_users?: number
   today_source_calls?: number
+  total_shares?: number
+  today_shares?: number
   source_distribution?: SourceDistributionItem[]
   today_hot_search_keyword?: string
   today_hot_search_count?: number
@@ -117,6 +111,12 @@ const loadError = ref('')
 const publicApiUrl = ref('')
 const today = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })
 const sourceColors = ['#EC4141', '#f97316', '#facc15', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899']
+const summaryIcons = {
+  users: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9.5" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/><path d="M8.5 11h5"/></svg>',
+  active: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8 4-16 3 8h4"/><path d="M12 2v2"/><path d="M12 20v2"/></svg>',
+  share: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.59 13.51l6.83 3.98"/><path d="M15.41 6.51 8.59 10.49"/></svg>',
+}
 
 const sourceItems = computed(() => {
   const rows = stats.value.source_distribution || []
@@ -143,6 +143,41 @@ const sourceRingStyle = computed(() => {
   })
   return `conic-gradient(${parts.join(', ')})`
 })
+
+const summaryCards = computed(() => [
+  {
+    label: '总用户数',
+    value: stats.value.total_users ?? 0,
+    sub: `今日新增 ${stats.value.today_users ?? 0} · 昨日 ${stats.value.yesterday_users ?? 0}`,
+    icon: summaryIcons.users,
+    className: 'stat-users',
+    isKeyword: false,
+  },
+  {
+    label: '今日热搜',
+    value: stats.value.today_hot_search_keyword || '暂无',
+    sub: `今日搜索 ${stats.value.today_hot_search_count ?? 0} 次`,
+    icon: summaryIcons.search,
+    className: 'stat-search',
+    isKeyword: true,
+  },
+  {
+    label: '今日用户',
+    value: stats.value.active_users ?? 0,
+    sub: '今日活跃设备数',
+    icon: summaryIcons.active,
+    className: 'stat-active',
+    isKeyword: false,
+  },
+  {
+    label: '今日分享',
+    value: stats.value.today_shares ?? 0,
+    sub: `总计 ${stats.value.total_shares ?? 0} 次`,
+    icon: summaryIcons.share,
+    className: 'stat-share',
+    isKeyword: false,
+  },
+])
 
 const noticeItems = computed(() => [
   { label: '新壁纸审核', count: stats.value.pending_wallpapers ?? 0, to: '/m/wallpapers', className: 'wallpaper' },
@@ -189,7 +224,6 @@ onMounted(async () => {
 }
 .hero-card,
 .state-card,
-.stat-card,
 .api-card,
 .mobile-section {
   border: 1px solid var(--border);
@@ -318,23 +352,75 @@ onMounted(async () => {
 }
 .mobile-stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
 }
 .stat-card {
+  position: relative;
+  min-height: 118px;
   min-width: 0;
-  padding: 12px 10px;
+  overflow: hidden;
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--stat-color, #EC4141) 14%, transparent), transparent 58%),
+    var(--card);
+  box-shadow: var(--shadow-soft);
+  isolation: isolate;
 }
-.stat-card span {
+.stat-card::after {
+  content: '';
+  position: absolute;
+  inset: auto -24px -34px auto;
+  width: 104px;
+  height: 104px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--stat-color, #EC4141) 13%, transparent);
+  z-index: -1;
+}
+.stat-card.stat-users {
+  --stat-color: #EC4141;
+}
+.stat-card.stat-search {
+  --stat-color: #f97316;
+}
+.stat-card.stat-active {
+  --stat-color: #22c55e;
+}
+.stat-card.stat-share {
+  --stat-color: #3b82f6;
+}
+.stat-bg-icon {
+  position: absolute;
+  right: -5px;
+  bottom: -6px;
+  width: 74px;
+  height: 74px;
+  color: var(--stat-color, #EC4141);
+  opacity: 0.13;
+  pointer-events: none;
+}
+.stat-bg-icon :deep(svg) {
+  width: 100%;
+  height: 100%;
+}
+.stat-label {
   display: block;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 700;
 }
 .stat-card strong {
   display: block;
-  margin: 7px 0 4px;
-  font-size: 22px;
+  max-width: 100%;
+  margin: 14px 0 7px;
+  overflow: hidden;
+  color: var(--accent);
+  font-size: 26px;
   line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .stat-card small {
   display: block;
@@ -348,7 +434,7 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 18px;
+  font-size: 22px;
 }
 .mobile-section {
   padding: 16px;

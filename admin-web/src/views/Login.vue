@@ -4,7 +4,7 @@
       <h1>弦予音乐</h1>
       <p class="subtitle">后台管理系统</p>
       <div v-if="timeoutTip" class="timeout-tip">登录已过期，请重新登录</div>
-      <form @submit.prevent="handleLogin">
+      <form :key="formKey" autocomplete="off" @submit.prevent="handleLogin">
         <div class="form-group">
           <label class="required">管理员账号</label>
           <input
@@ -12,7 +12,8 @@
             type="text"
             placeholder="请输入用户名"
             required
-            autocomplete="username"
+            autocomplete="off"
+            name="admin_login_username"
             :disabled="loading"
           />
         </div>
@@ -23,7 +24,8 @@
             type="password"
             placeholder="请输入密码"
             required
-            autocomplete="current-password"
+            autocomplete="new-password"
+            name="admin_login_password"
             :disabled="loading"
           />
         </div>
@@ -36,10 +38,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { showToast } from '@/api/client'
+import { CLEAR_LOGIN_FORM_KEY } from '@/utils/adminIdleLogout'
 
 const router = useRouter()
 const route = useRoute()
@@ -49,11 +52,30 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const timeoutTip = ref(false)
+const formKey = ref(0)
+
+function clearLoginForm() {
+  username.value = ''
+  password.value = ''
+  formKey.value += 1
+  sessionStorage.removeItem(CLEAR_LOGIN_FORM_KEY)
+}
+
+function handleClearLoginFormEvent() {
+  clearLoginForm()
+  timeoutTip.value = true
+}
 
 onMounted(() => {
-  if (route.query.timeout) {
+  window.addEventListener('admin-login-form-clear', handleClearLoginFormEvent)
+  if (route.query.timeout || sessionStorage.getItem(CLEAR_LOGIN_FORM_KEY)) {
     timeoutTip.value = true
+    clearLoginForm()
   }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('admin-login-form-clear', handleClearLoginFormEvent)
 })
 
 async function handleLogin() {

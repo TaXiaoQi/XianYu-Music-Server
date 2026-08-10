@@ -4,6 +4,7 @@ import { clearToken, getToken } from '@/api/client'
 const ADMIN_IDLE_TIMEOUT_MS = 20 * 60 * 1000
 const CHECK_INTERVAL_MS = 30 * 1000
 const LAST_ACTIVE_KEY = 'admin_last_active_at'
+export const CLEAR_LOGIN_FORM_KEY = 'admin_clear_login_form'
 const ACTIVITY_EVENTS = ['mousedown', 'mousemove', 'keydown', 'scroll', 'touchstart', 'click', 'wheel']
 
 let checkTimer: number | null = null
@@ -45,6 +46,8 @@ export function isAdminSessionExpired(): boolean {
 export function logoutByIdleTimeout(router?: Router): void {
   clearToken()
   clearAdminActivity()
+  sessionStorage.setItem(CLEAR_LOGIN_FORM_KEY, String(Date.now()))
+  window.dispatchEvent(new CustomEvent('admin-login-form-clear'))
   if (window.location.pathname === '/login') return
   const target = { path: '/login', query: { timeout: '1' } }
   if (router) {
