@@ -46,6 +46,7 @@
             <li><router-link to="/database">数据库管理</router-link></li>
             <li><router-link to="/api-test">接口测试</router-link></li>
             <li><router-link to="/email-config">邮箱机设置</router-link></li>
+            <li><router-link to="/turnstile-config">人机验证设置</router-link></li>
           </ul>
         </li>
 

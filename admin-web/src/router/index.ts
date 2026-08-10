@@ -106,6 +106,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '邮箱机设置', mobile: true },
       },
       {
+        path: 'turnstile-config',
+        name: 'MobileTurnstileConfig',
+        component: () => import('@/views/TurnstileConfig.vue'),
+        meta: { title: '人机验证设置', mobile: true },
+      },
+      {
         path: 'admins',
         name: 'MobileAdmins',
         component: () => import('@/views/mobile/MobileAdmins.vue'),
@@ -225,6 +231,12 @@ const routes: RouteRecordRaw[] = [
         name: 'EmailConfig',
         component: () => import('@/views/EmailConfig.vue'),
         meta: { title: '邮箱API配置' },
+      },
+      {
+        path: 'turnstile-config',
+        name: 'TurnstileConfig',
+        component: () => import('@/views/TurnstileConfig.vue'),
+        meta: { title: '人机验证设置' },
       },
       {
         path: 'feedback',

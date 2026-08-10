@@ -22,6 +22,7 @@ pub mod prettyid;
 pub mod proxy;
 pub mod share;
 pub mod source;
+pub mod turnstile;
 pub mod users;
 pub mod version;
 pub mod wallpaper;
@@ -281,6 +282,11 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "get_email_config" => email::get_email_config(body, &ctx, pool).await,
         "update_email_config" => email::update_email_config(body, &ctx, pool).await,
         "test_email_config" => email::test_email_config(body, &ctx, pool).await,
+        // captcha config
+        "get_captcha_config" => turnstile::get_captcha_config(body, &ctx, pool).await,
+        "save_captcha_config" => turnstile::save_captcha_config(body, &ctx, pool).await,
+        "get_turnstile_config" => turnstile::get_turnstile_config(body, &ctx, pool).await,
+        "save_turnstile_config" => turnstile::save_turnstile_config(body, &ctx, pool).await,
         // playlist
         "get_user_playlists" => playlist::get_user_playlists(body, &ctx, pool).await,
         "delete_user_playlist" => playlist::delete_user_playlist(body, &ctx, pool).await,

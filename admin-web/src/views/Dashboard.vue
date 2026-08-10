@@ -77,6 +77,7 @@
         <router-link to="/version" class="btn btn-primary">版本管理</router-link>
         <router-link to="/about-config" class="btn">关于页设置</router-link>
         <router-link to="/email-config" class="btn">邮箱机管理</router-link>
+        <router-link to="/turnstile-config" class="btn">人机验证</router-link>
         <router-link to="/database" class="btn">数据库管理</router-link>
       </div>
     </div>

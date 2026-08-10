@@ -104,10 +104,10 @@ async fn handle_api(
     let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
 
     // 签名验证（免签操作放行）
-    let no_sign: [&str; 14] = [
+    let no_sign: [&str; 16] = [
         "install", "check", "get_source_status", "upload_avatar",
         "debug_sign", "deduct_master_quota", "get_master_quota_usage",
-        "get_captcha", "verify_captcha", "email_send_code", "email_register", "email_login", "email_reset_password", "email_get_profile",
+        "get_captcha", "verify_captcha", "email_send_code", "email_get_captcha_config", "email_get_turnstile_config", "email_register", "email_login", "email_reset_password", "email_get_profile",
     ];
     if !state.config.local_debug_no_db && !no_sign.contains(&action.as_str()) {
         let timestamp = headers

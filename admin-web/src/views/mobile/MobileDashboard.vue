@@ -57,6 +57,7 @@
         <router-link to="/m/announcements" class="danger-link">公告管理</router-link>
         <router-link to="/m/version" class="danger-link">版本管理</router-link>
         <router-link to="/m/email-config">邮箱机设置</router-link>
+        <router-link to="/m/turnstile-config">人机验证</router-link>
         <router-link to="/m/database">数据库管理</router-link>
       </div>
     </section>

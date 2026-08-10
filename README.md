@@ -1,213 +1,37 @@
-# 弦予音乐服务器 (XianYu-Music-Server)
+# 弦予音乐服务端
 
-音乐服务平台后端 + 后台管理系统，已完成从 PHP 到 Rust + TypeScript 的全栈重构。
+弦予音乐服务端包含 Rust API 服务、Vue 管理后台和配套部署配置，负责客户端账号体系、邮箱验证码、用户资料、同步、壁纸、反馈、公告、版本管理、后台管理等功能。项目已从旧版 PHP 后端迁移为 Rust + TypeScript 架构。
+
+## 项目组成
+
+| 目录 | 说明 |
+|---|---|
+| `server/` | Rust 后端服务，基于 Axum、SQLx、MySQL |
+| `admin-web/` | Vue 3 + TypeScript 管理后台 |
+| `docs/` | 独立功能配置文档 |
+| `nginx.conf` | 生产环境 Nginx 示例配置 |
 
 ## 技术栈
 
-| 层 | 技术 | 说明 |
-|----|------|------|
-| 后端 | Rust + Axum + SQLx | 异步 Web 框架，MySQL 连接池 |
-| 前端 | Vue 3 + TypeScript + Vite | SPA 单页应用，Pinia 状态管理 |
-| 数据库 | MySQL 8.0 | utf8mb4 编码 |
-| 部署 | Nginx 反向代理 | 静态文件 + API 代理 |
+| 层级 | 技术 |
+|---|---|
+| 后端 | Rust、Axum、SQLx |
+| 管理后台 | Vue 3、TypeScript、Vite、Pinia |
+| 数据库 | MySQL 8.0+，`utf8mb4` 编码 |
+| 部署 | Nginx 反向代理 + systemd 或 supervisor 守护进程 |
 
-## 项目结构
+## 运行要求
 
-```
-XianYu-Music-Server/
-├── server/                 # Rust 后端
-│   ├── src/
-│   │   ├── admin/          # 后台管理模块 (19 个文件)
-│   │   ├── handlers/       # APP API 处理器 (12 个文件)
-│   │   ├── config.rs       # 配置加载
-│   │   ├── db.rs           # 数据库连接
-│   │   ├── main.rs         # 入口，路由注册
-│   │   ├── schema.rs       # 建表语句 (33 张表)
-│   │   ├── sign.rs         # 签名验证 + AES 加解密
-│   │   └── response.rs     # 统一响应封装
-│   ├── Cargo.toml
-│   ├── config.json         # 运行配置 (含密钥，勿入库)
-│   └── target/             # 编译产物 (勿入库)
-├── admin-web/              # TypeScript 前端
-│   ├── src/
-│   │   ├── api/client.ts   # API 客户端 (JWT 鉴权)
-│   │   ├── api/email.ts    # 邮箱模块 API 客户端
-│   │   ├── layouts/        # 布局组件
-│   │   ├── router/         # 路由配置 (15 后台页面 + 4 邮箱页面)
-│   │   ├── stores/         # Pinia 状态管理
-│   │   └── views/          # 页面组件 (20 个)
-│   ├── vite.config.ts
-│   └── dist/               # 构建产物 (勿入库)
-├── nginx.conf              # Nginx 配置
-└── .gitignore
-```
-
-## 后端模块
-
-### APP API (`/api`)
-
-面向移动端 APP 的接口，当前保留 54 个有效 action，通过 `/api?action=...` 统一入口分发。默认需要签名验证，少量公开或调试接口免签；完整清单见 `server/API.md`。
-
-| 模块 | 文件 | 功能 |
-|------|------|------|
-| 上报 | `handlers/reporting.rs` | 错误上报、连通性检查、安装初始化 |
-| 系统 | `handlers/system.rs` | 音源状态、版本、公告、关于配置、服务负载、排行榜 |
-| 认证 | `handlers/auth.rs` | 注册、登录、验证码、密码重置、注销、TV 登录 |
-| 设置 | `handlers/settings.rs` | 用户资料、设置、审核状态、听歌统计、主站配额 |
-| 社交 | `handlers/social.rs` | 反馈提交、溯源 ID 检查 |
-| 壁纸 | `handlers/wallpaper.rs` | 壁纸列表、我的壁纸、壁纸上传 |
-| 歌单 | `handlers/playlist.rs` | 删除歌单 |
-| 同步 | `handlers/sync.rs` | 歌单同步、插件同步、设置同步 |
-| 上传 | `handlers/upload.rs` | 头像上传 |
-| 邮箱认证 | `handlers/email_auth.rs` | 邮箱注册、登录、验证码、找回密码、用户信息 |
-
-### 后台 Admin (`/admin/api`)
-
-面向管理后台的接口，共 66 个路由，JWT 鉴权：
-
-| 模块 | 文件 | 功能 |
-|------|------|------|
-| 仪表盘 | `admin/dashboard.rs` | 统计概览 |
-| 用户管理 | `admin/users.rs` | 用户列表、状态切换、配额 |
-| 管理员 | `admin/admins.rs` | 管理员 CRUD、状态切换 |
-| 账户 | `admin/account.rs` | 个人信息、邮箱绑定 |
-| 认证 | `admin/auth.rs` | 登录、登出、改密 |
-| 版本 | `admin/version.rs` | APP 版本 + 桌面端更新 |
-| 公告 | `admin/announcement.rs` | 公告 CRUD |
-| 壁纸 | `admin/wallpaper.rs` | 壁纸 CRUD |
-| 审核 | `admin/audit.rs` | 头像、昵称审核 |
-| 日志 | `admin/logs.rs` | 报错日志、APP 登录日志、操作日志、后台登录日志 |
-| 反馈 | `admin/feedback.rs` | 反馈列表、回复、状态 |
-| 数据库 | `admin/db.rs` | 表状态、修复、备份、恢复 |
-| 音源 | `admin/source.rs` | 音源配置、开关 |
-| 邮件 | `admin/email.rs` | 通知邮箱、邮件用户管理 |
-| 分享 | `admin/share.rs` | 分享详情、清理过期 |
-| 歌单 | `admin/playlist.rs` | 用户歌单管理 |
-| 溯源ID | `admin/prettyid.rs` | 溯源 ID 变更 |
-| 接口测试 | `admin/proxy.rs` | API 代理测试 |
-
-## 前端页面
-
-| 页面 | 路由 | 文件 | 状态 |
-|------|------|------|------|
-| 登录 | `/login` | `Login.vue` | 已完成 |
-| 仪表盘 | `/dashboard` | `Dashboard.vue` | 已完成 |
-| 用户管理 | `/users` | `Users.vue` | 已完成 |
-| 报错日志 | `/error-log` | `ErrorLog.vue` | 已完成 |
-| APP登录日志 | `/app-login-log` | `AppLoginLog.vue` | 已完成 |
-| 版本管理 | `/version` | `Version.vue` | 已完成 |
-| 公告管理 | `/announcements` | `Announcements.vue` | 已完成 |
-| 壁纸管理 | `/wallpapers` | `Wallpapers.vue` | 已完成 |
-| 头像审核 | `/avatar-audit` | `AvatarAudit.vue` | 已完成 |
-| 反馈与建议 | `/feedback` | `Feedback.vue` | 已完成 |
-| 管理员管理 | `/admins` | `Admins.vue` | 已完成 |
-| 账户管理 | `/account` | `Account.vue` | 已完成 |
-| 修改密码 | `/password` | `Password.vue` | 已完成 |
-| 后台日志 | `/logs` | `Logs.vue` | 已完成 |
-| 数据库管理 | `/database` | `Database.vue` | 已完成 |
-| 接口测试 | `/api-test` | `ApiTest.vue` | 已完成 |
-
-### 邮箱注册登录测试模块
-
-独立于后台管理系统的用户侧页面，通过服务端内置邮箱机发送验证码，支持注册、登录、找回密码。邮箱机支持内置投递、外部 HTTP API 和标准 SMTP 三种模式，详细配置见 [`docs/BUILTIN_MAILER.md`](docs/BUILTIN_MAILER.md)：
-
-| 页面 | 路由 | 文件 | 功能 |
-|------|------|------|------|
-| 邮箱登录 | `/email/login` | `email/EmailLogin.vue` | 邮箱+密码登录，JWT 鉴权 |
-| 邮箱注册 | `/email/register` | `email/EmailRegister.vue` | 邮箱+验证码+密码注册 |
-| 找回密码 | `/email/forgot` | `email/EmailForgot.vue` | 验证码重置密码 |
-| 用户主页 | `/email/home` | `email/EmailHome.vue` | 个人资料 + 活动日志 |
-
-## 本地开发
-
-### 前置条件
-
-- Rust (stable)
+- Rust stable
 - Node.js 18+
 - MySQL 8.0+
+- Nginx
+- 可访问的 SMTP 服务或邮件 API，用于注册、找回密码等验证码邮件
+- 如启用第三方人机验证，需要提前准备 Turnstile 或 hCaptcha 的 `Site Key` 和 `Secret Key`
 
-### 启动后端
+## 配置需求
 
-```bash
-cd server
-# 编辑 config.json 配置数据库连接
-cargo run --release
-# 服务监听 0.0.0.0:8081
-```
-
-### 无数据库本地调试
-
-只需要验证服务端是否能启动、客户端是否能连通、后台页面是否能打开时，可以开启无数据库调试模式：
-
-```bash
-cd server
-# PowerShell
-$env:LOCAL_DEBUG_NO_DB="1"; cargo run
-```
-
-也可以在 `server/config.json` 中设置：
-
-```json
-{
-  "local_debug_no_db": true
-}
-```
-
-开启后服务端会跳过数据库 ping 和建表流程，但 APP 侧常用流程仍会按真实接口形态返回数据。验证码、邮箱验证码、注册、登录、资料、设置、同步、反馈、TV 登录等模拟状态会写入 `server/data/debug/state.json`，用于本地连续测试；默认调试账号为 `debug-user`，密码为 `123456`。后台登录会进入调试账号 `debug-admin`，仪表盘、版本、公告、关于页配置等页面也会返回本地 mock 数据。运行根目录 `clean.bat` 会一并清理 `server/data/debug`，用于重置本地模拟状态。
-
-### 启动前端
-
-```bash
-cd admin-web
-npm install
-npm run dev
-# 开发服务器 http://localhost:3000
-# API 自动代理到 127.0.0.1:8081
-```
-
-### 生产构建
-
-```bash
-# 前端
-cd admin-web && npm run build
-# 产物: admin-web/dist/
-
-# 后端
-cd server && cargo build --release
-# 产物: server/target/release/server (或 server.exe)
-```
-
-## 生产部署
-
-### 目录结构
-
-```
-/www/wwwroot/xymusic.zh2026.cn/
-├── admin-web/dist/        # 前端静态文件
-├── server/
-│   ├── server             # Rust 二进制
-│   └── config.json        # 配置文件
-├── beifen/                # 数据库备份目录
-└── nginx.conf             # Nginx 配置
-```
-
-### Nginx 配置要点
-
-- `root` 指向 `admin-web/dist`
-- `/api`、`/admin/api`、`/uploads` 反向代理到 `127.0.0.1:8081`
-- `/ws` 代理到 WebSocket 服务 `127.0.0.1:9501`
-- SPA 路由回退: `try_files $uri $uri/ /index.html`
-
-### 启动服务
-
-```bash
-# 使用 systemd 或 supervisor 守护进程
-./server  # 读取同目录 config.json
-```
-
-## 配置说明
-
-`server/config.json`:
+服务端启动时读取 `server/config.json`，也支持部分环境变量覆盖。生产环境至少需要配置数据库、接口密钥、后台账号、JWT 密钥和监听地址。
 
 ```json
 {
@@ -226,28 +50,129 @@ cd server && cargo build --release
   "email_api_primary": "",
   "email_api_backup": "",
   "email_sender": "no-reply@example.com",
-  "email_password": "your_email_password"
+  "email_password": "",
+  "captcha_secret": "",
+  "turnstile_secret": "",
+  "hcaptcha_secret": "",
+  "local_debug_no_db": false
 }
 ```
 
 | 字段 | 说明 |
-|------|------|
-| `email_api_primary` | 外部邮箱机 API 主调用地址，可留空 |
-| `email_api_backup` | 外部邮箱机 API 备用地址，可留空 |
-| `email_sender` | 发件邮箱地址 |
-| `email_password` | 发件邮箱授权码或外部 API 调用密码 |
+|---|---|
+| `db_*` | MySQL 连接信息 |
+| `api_secret` | 客户端 API 签名密钥，客户端与服务端必须一致 |
+| `api_timestamp_tolerance` | 签名时间戳容忍秒数 |
+| `admin_username` / `admin_password` | 初始后台管理员账号 |
+| `listen_addr` | 服务端监听地址 |
+| `jwt_secret` | 用户与邮箱模块 JWT 签名密钥 |
+| `email_*` | 邮件发送的环境兜底配置，推荐在后台页面配置 |
+| `captcha_secret` | 通用人机验证 Secret 环境兜底 |
+| `turnstile_secret` | Turnstile 专用 Secret 环境兜底 |
+| `hcaptcha_secret` | hCaptcha 专用 Secret 环境兜底 |
+| `local_debug_no_db` | 无数据库本地调试模式，生产环境保持 `false` |
 
-邮箱发送推荐使用后台「系统管理 -> 邮箱机设置」配置，服务端默认发送方式为内置邮箱机。更多说明见 [`docs/BUILTIN_MAILER.md`](docs/BUILTIN_MAILER.md)。
+首次启动时，服务端会自动创建所需数据库表，并插入部分默认配置项。
 
-首次启动时，服务会自动创建全部 33 张数据库表 (含 `CREATE TABLE IF NOT EXISTS`)。
+## 功能配置文档
 
-## 安全特性
+详细功能配置都放在 `docs/` 下，主文档只保留入口链接。
 
-- APP API 签名验证 (HMAC-SHA256 + 时间戳 + Nonce)
-- 请求体 AES-256-CBC 加解密支持
-- 后台 JWT 鉴权 (24 小时有效期)
-- 邮箱模块独立 JWT 鉴权 (7 天有效期，与后台 token 隔离)
-- 密码 bcrypt 哈希存储
-- 邮箱验证码 60 秒频率限制 + 5 分钟有效期
-- Nginx 敏感文件/目录访问控制
-- 数据库备份文件名注入防护
+| 配置项 | 文档 |
+|---|---|
+| 邮箱机、SMTP、外部邮件 API | [内置邮箱机使用说明](docs/BUILTIN_MAILER.md) |
+| Turnstile / hCaptcha 人机验证 | [人机验证配置说明](docs/HUMAN_CAPTCHA.md) |
+| APP API action 清单 | [服务端 API 文档](server/API.md) |
+
+## 生产构建
+
+构建后台静态文件：
+
+```bash
+cd admin-web
+npm install
+npm run build
+```
+
+产物目录：
+
+```text
+admin-web/dist/
+```
+
+构建服务端：
+
+```bash
+cd server
+cargo build --release
+```
+
+产物位置：
+
+```text
+server/target/release/server
+```
+
+Windows 环境为：
+
+```text
+server/target/release/server.exe
+```
+
+## 生产部署
+
+推荐目录结构：
+
+```text
+/www/wwwroot/xymusic.example.com/
+├── admin-web/dist/
+├── server/
+│   ├── server
+│   └── config.json
+├── beifen/
+└── nginx.conf
+```
+
+Nginx 配置要点：
+
+- `root` 指向 `admin-web/dist`
+- `/api` 反向代理到 `127.0.0.1:8081`
+- `/admin/api` 反向代理到 `127.0.0.1:8081`
+- `/uploads` 反向代理或映射到服务端上传目录
+- SPA 路由使用 `try_files $uri $uri/ /index.html`
+
+服务端建议用 systemd 或 supervisor 守护。启动进程时，工作目录保持在 `server/`，让程序能读取同目录下的 `config.json`。
+
+systemd 示例：
+
+```ini
+[Unit]
+Description=XianYu Music Server
+After=network.target
+
+[Service]
+WorkingDirectory=/www/wwwroot/xymusic.example.com/server
+ExecStart=/www/wwwroot/xymusic.example.com/server/server
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+## 部署后检查
+
+部署完成后依次检查：
+
+1. 访问后台登录页，确认静态资源正常加载。
+2. 登录后台，检查仪表盘是否能加载数据。
+3. 在后台配置邮箱机并发送测试邮件。
+4. 如启用人机验证，在后台保存 Turnstile 或 hCaptcha 配置后，测试客户端登录、注册、找回密码弹窗。
+5. 客户端服务器 API 地址填写到 `/api`，不要填写 `/admin/api`。
+
+## 安全说明
+
+- `config.json` 包含数据库密码、签名密钥和 JWT 密钥，不要提交到公开仓库。
+- `api_secret` 和 `jwt_secret` 生产环境必须改为随机长字符串。
+- 后台初始密码部署后应立即修改。
+- 邮箱授权码、人机验证 Secret 只保存在服务端或后台配置中，不要写入客户端。

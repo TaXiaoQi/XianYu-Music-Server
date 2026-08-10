@@ -322,7 +322,14 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             "user_count": get_array(&load_state(), "users").len(),
             "debug": true
         }))),
+        "email_get_captcha_config" | "email_get_turnstile_config" => ctx.ok("ok", json!({
+            "enabled": false,
+            "provider": "off",
+            "site_key": "",
+            "debug": true
+        })),
         "send_verify_code" | "email_send_code" => {
+            // 本地调试模式：Turnstile 未启用，直接放行
             let mut state = load_state();
             let email = str_of(&data, "email").trim().to_string();
             let typ = {

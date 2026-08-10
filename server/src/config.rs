@@ -22,6 +22,12 @@ pub struct Config {
     pub email_sender: String,
     pub email_password: String,
     #[serde(default)]
+    pub captcha_secret: String,
+    #[serde(default)]
+    pub turnstile_secret: String,
+    #[serde(default)]
+    pub hcaptcha_secret: String,
+    #[serde(default)]
     pub local_debug_no_db: bool,
 }
 
@@ -33,6 +39,9 @@ impl Config {
             Config::from_env()
         };
         cfg.listen_addr = env::var("LISTEN_ADDR").unwrap_or(cfg.listen_addr);
+        cfg.captcha_secret = env::var("CAPTCHA_SECRET").unwrap_or(cfg.captcha_secret);
+        cfg.turnstile_secret = env::var("TURNSTILE_SECRET").unwrap_or(cfg.turnstile_secret);
+        cfg.hcaptcha_secret = env::var("HCAPTCHA_SECRET").unwrap_or(cfg.hcaptcha_secret);
         cfg.local_debug_no_db = env::var("LOCAL_DEBUG_NO_DB")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
@@ -58,6 +67,9 @@ impl Config {
             email_api_backup: env::var("EMAIL_API_BACKUP").unwrap_or_default(),
             email_sender: env::var("EMAIL_SENDER").unwrap_or_else(|_| "no-reply@example.com".into()),
             email_password: env::var("EMAIL_PASSWORD").unwrap_or_default(),
+            captcha_secret: env::var("CAPTCHA_SECRET").unwrap_or_default(),
+            turnstile_secret: env::var("TURNSTILE_SECRET").unwrap_or_default(),
+            hcaptcha_secret: env::var("HCAPTCHA_SECRET").unwrap_or_default(),
             local_debug_no_db: env::var("LOCAL_DEBUG_NO_DB")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))

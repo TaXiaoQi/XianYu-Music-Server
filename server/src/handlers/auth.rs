@@ -132,6 +132,29 @@ pub async fn verify_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
 }
 
 async fn require_captcha(data: &serde_json::Value, ctx: &ReqCtx, pool: &MySqlPool, purpose: &str) -> Option<Response> {
+    let captcha_config = crate::handlers::email_auth::load_captcha_config(pool, &ctx.config).await;
+    let use_provider_captcha = captcha_config.enabled
+        && !captcha_config.site_key.trim().is_empty()
+        && !captcha_config.secret.trim().is_empty();
+    if use_provider_captcha {
+        let captcha_token = {
+            let token = str_of(data, "captcha_token");
+            if token.trim().is_empty() {
+                str_of(data, "turnstile_token")
+            } else {
+                token
+            }
+        };
+        match crate::handlers::email_auth::verify_captcha_token(&captcha_config, &captcha_token, &ctx.client_ip).await {
+            Ok(true) => return None,
+            Ok(false) => return Some(ctx.err(400, "请先完成人机验证")),
+            Err(e) => {
+                eprintln!("[auth] 人机验证校验失败: {}", e);
+                return Some(ctx.err(500, "人机验证服务暂不可用，请稍后重试"));
+            }
+        }
+    }
+
     let captcha_id = str_of(data, "captcha_id").trim().to_string();
     let captcha_answer = str_of(data, "captcha_answer").trim().to_string();
     if captcha_id.is_empty() || captcha_answer.is_empty() {

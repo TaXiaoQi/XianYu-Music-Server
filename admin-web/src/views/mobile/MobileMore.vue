@@ -30,6 +30,7 @@ const groups = [
       { to: '/m/account', label: '账户管理', desc: '查看当前账户资料' },
       { to: '/m/password', label: '修改密码', desc: '更新后台登录密码' },
       { to: '/m/email-config', label: '邮箱机设置', desc: '配置邮箱 API 或 SMTP' },
+      { to: '/m/turnstile-config', label: '人机验证设置', desc: '配置 Turnstile / hCaptcha' },
     ],
   },
   {

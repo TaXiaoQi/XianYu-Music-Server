@@ -77,6 +77,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "upload_avatar" => upload::upload_avatar(body, ctx, pool).await,
         // email auth (邮箱注册登录测试)
         "email_send_code" => email_auth::send_code(body, ctx, pool).await,
+        "email_get_captcha_config" => email_auth::get_captcha_config(body, ctx, pool).await,
+        "email_get_turnstile_config" => email_auth::get_turnstile_config(body, ctx, pool).await,
         "email_register" => email_auth::register(body, ctx, pool).await,
         "email_login" => email_auth::login(body, ctx, pool).await,
         "email_reset_password" => email_auth::reset_password(body, ctx, pool).await,

@@ -14,10 +14,14 @@
           <label>邮箱地址</label>
           <div class="input-with-btn">
             <input v-model="email" type="email" placeholder="请输入邮箱" required :disabled="loading" />
-            <button type="button" class="code-btn" :disabled="countdown > 0 || sendingCode" @click="handleSendCode">
+            <button type="button" class="code-btn" :disabled="countdown > 0 || sendingCode || (!!captchaSiteKey && !captchaToken)" @click="handleSendCode">
               {{ countdown > 0 ? `${countdown}s` : '获取验证码' }}
             </button>
           </div>
+        </div>
+        <div v-if="captchaSiteKey" class="field verification-field" :style="{ animationDelay: '80ms' }">
+          <label>人机验证</label>
+          <div ref="captchaEl" class="turnstile-box"></div>
         </div>
         <div class="field" :style="{ animationDelay: '80ms' }">
           <label>邮箱验证码</label>
@@ -49,11 +53,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { nextTick, ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { sendCode, emailRegister, getEmailToken, emailToast } from '@/api/email'
+import { sendCode, emailRegister, getEmailToken, getCaptchaConfig, emailToast } from '@/api/email'
 
 const router = useRouter()
+const captchaProvider = ref<'turnstile' | 'hcaptcha' | 'off' | string>('off')
+const captchaSiteKey = ref('')
+const captchaEl = ref<HTMLElement | null>(null)
+const captchaToken = ref('')
+const captchaWidgetId = ref<string | number | null>(null)
 const email = ref('')
 const code = ref('')
 const password = ref('')
@@ -63,9 +72,21 @@ const loading = ref(false)
 const sendingCode = ref(false)
 const countdown = ref(0)
 
-onMounted(() => {
+onMounted(async () => {
   if (getEmailToken()) {
     router.replace('/email/home')
+    return
+  }
+  // 运行时从后端获取人机验证配置
+  try {
+    const res = await getCaptchaConfig()
+    if (res.code === 200 && res.data?.enabled && res.data.site_key) {
+      captchaProvider.value = res.data.provider || 'turnstile'
+      captchaSiteKey.value = res.data.site_key
+      renderCaptcha()
+    }
+  } catch {
+    // 获取失败时静默跳过，不影响正常注册流程
   }
 })
 
@@ -77,14 +98,68 @@ function startCountdown() {
   }, 1000)
 }
 
+function captchaGlobal(): any {
+  return captchaProvider.value === 'hcaptcha' ? (window as any).hcaptcha : (window as any).turnstile
+}
+
+function loadCaptchaScript(): Promise<void> {
+  if (!captchaSiteKey.value || captchaGlobal()) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const provider = captchaProvider.value === 'hcaptcha' ? 'hcaptcha' : 'turnstile'
+    const existing = document.querySelector<HTMLScriptElement>(`script[data-captcha-provider="${provider}"]`)
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true })
+      existing.addEventListener('error', () => reject(new Error('captcha load failed')), { once: true })
+      return
+    }
+    const script = document.createElement('script')
+    script.src = provider === 'hcaptcha'
+      ? 'https://js.hcaptcha.com/1/api.js?render=explicit'
+      : 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+    script.async = true
+    script.defer = true
+    script.dataset.captchaProvider = provider
+    script.onload = () => resolve()
+    script.onerror = () => reject(new Error('captcha load failed'))
+    document.head.appendChild(script)
+  })
+}
+
+async function renderCaptcha() {
+  if (!captchaSiteKey.value) return
+  await nextTick()
+  if (!captchaEl.value || captchaWidgetId.value != null) return
+  try {
+    await loadCaptchaScript()
+    const captcha = captchaGlobal()
+    captchaWidgetId.value = captcha.render(captchaEl.value, {
+      sitekey: captchaSiteKey.value,
+      callback: (token: string) => { captchaToken.value = token },
+      'expired-callback': () => { captchaToken.value = '' },
+      'error-callback': () => { captchaToken.value = '' },
+    })
+  } catch {
+    emailToast('人机验证加载失败，请刷新页面重试')
+  }
+}
+
+function resetCaptcha() {
+  const captcha = captchaGlobal()
+  if (!captchaSiteKey.value || captchaWidgetId.value == null || !captcha) return
+  captchaToken.value = ''
+  captcha.reset(captchaWidgetId.value)
+}
+
 async function handleSendCode() {
   const e = email.value.trim()
   if (!e) { emailToast('请输入邮箱地址'); return }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) { emailToast('邮箱格式不正确'); return }
+  if (captchaSiteKey.value && !captchaToken.value) { emailToast('请先完成人机验证'); return }
 
   sendingCode.value = true
-  const res = await sendCode(e)
+  const res = await sendCode(e, captchaToken.value)
   sendingCode.value = false
+  resetCaptcha()
 
   if (res.code === 200) {
     emailToast(res.msg || '验证码已发送', 'success')
@@ -223,6 +298,13 @@ async function handleRegister() {
   cursor: not-allowed;
   border-color: #ccc;
   color: #999;
+}
+
+.verification-field {
+  margin-top: -4px;
+}
+.turnstile-box {
+  min-height: 65px;
 }
 
 .submit-btn {

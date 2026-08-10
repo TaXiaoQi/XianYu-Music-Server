@@ -69,8 +69,24 @@ async function emailApi<T = any>(action: string, data: Record<string, any> = {})
 }
 
 /** 发送验证码 */
-export async function sendCode(email: string): Promise<EmailApiResponse> {
-  return emailApi('email_send_code', { email })
+export async function sendCode(email: string, captchaToken = ''): Promise<EmailApiResponse> {
+  return emailApi('email_send_code', { email, captcha_token: captchaToken, turnstile_token: captchaToken })
+}
+
+export interface CaptchaConfig {
+  enabled: boolean
+  provider: 'turnstile' | 'hcaptcha' | 'off' | string
+  site_key: string
+}
+
+/** 获取人机验证配置（公开接口，仅返回 enabled、provider 和 site_key） */
+export async function getCaptchaConfig(): Promise<EmailApiResponse<CaptchaConfig>> {
+  return emailApi('email_get_captcha_config', {})
+}
+
+/** 兼容旧函数名 */
+export async function getTurnstileConfig(): Promise<EmailApiResponse<CaptchaConfig>> {
+  return getCaptchaConfig()
 }
 
 /** 注册 */

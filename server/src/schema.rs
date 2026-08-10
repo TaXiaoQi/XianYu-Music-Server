@@ -225,6 +225,13 @@ static TABLE_STATEMENTS: &[&str] = &[
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_username', '', 'SMTP 登录用户名，通常与发件邮箱相同')",
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_password', '', 'SMTP 登录密码/授权码，留空则使用 email_password 的值')",
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('smtp_accounts', '[]', '内置邮箱机 SMTP 账号池 JSON，支持多个邮箱轮换发送')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('captcha_enabled', '0', '是否启用人机验证：1=启用，0=关闭')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('captcha_provider', 'turnstile', '人机验证服务商：turnstile、hcaptcha、off')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('captcha_site_key', '', '人机验证 Site Key（前端展示用）')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('captcha_secret', '', '人机验证 Secret Key（后端校验用，留空则回退环境变量）')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('turnstile_enabled', '0', '是否启用 Cloudflare Turnstile 人机验证：1=启用，0=关闭')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('turnstile_site_key', '', 'Cloudflare Turnstile Site Key（前端展示用）')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('turnstile_secret', '', 'Cloudflare Turnstile Secret Key（后端校验用，留空则回退环境变量 TURNSTILE_SECRET）')",
         "CREATE TABLE IF NOT EXISTS `wallpaper_upload_limits` (
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `upload_limit` int(11) NOT NULL DEFAULT 20,
