@@ -70,6 +70,12 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
             .bind(&ciyuanxi_id)
             .execute(pool)
             .await;
+        let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, status, reviewed_at, reviewed_by) VALUES (?, ?, 'approved', NOW(), ?)")
+            .bind(&ciyuanxi_id)
+            .bind(&avatar_data)
+            .bind(format!("external:{}", audit.provider))
+            .execute(pool)
+            .await;
         return ctx.ok("头像已通过机审并立即生效", json!({ "status": "approved" }));
     }
     if audit.decision == AuditDecision::Reject {

@@ -21,6 +21,10 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "app_users", "master_quota", "int(11) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "last_device_id", "varchar(128) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "ban_reason", "varchar(255) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "app_users", "listen_duration", "int(11) unsigned NOT NULL DEFAULT 0").await;
+    ensure_column(pool, "app_users", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;
+    ensure_column(pool, "app_users", "background_url", "LONGTEXT NULL").await;
+    ensure_column(pool, "app_users", "signature", "varchar(255) NOT NULL DEFAULT ''").await;
 }
 
 async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: &str) {

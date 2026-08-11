@@ -330,7 +330,7 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let Some(code_row) = code_row else {
         return ctx.err(400, "验证码无效或已过期");
     };
-    let code_id: i64 = code_row.get("id");
+    let code_id: i64 = code_row.try_get("id").unwrap_or(0);
     let _ = sqlx::query("UPDATE email_verify_codes SET used = 1 WHERE id = ?")
         .bind(code_id)
         .execute(pool)
@@ -705,7 +705,7 @@ pub async fn login_by_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     let Some(code_row) = code_row else {
         return ctx.err(400, "验证码无效或已过期");
     };
-    let code_id: i64 = code_row.get("id");
+    let code_id: i64 = code_row.try_get("id").unwrap_or(0);
     let _ = sqlx::query("UPDATE email_verify_codes SET used = 1 WHERE id = ?")
         .bind(code_id)
         .execute(pool)
@@ -867,7 +867,7 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     let Some(code_row) = code_row else {
         return ctx.err(400, "验证码无效或已过期");
     };
-    let code_id: i64 = code_row.get("id");
+    let code_id: i64 = code_row.try_get("id").unwrap_or(0);
     let _ = sqlx::query("UPDATE email_verify_codes SET used = 1 WHERE id = ?")
         .bind(code_id)
         .execute(pool)
@@ -889,6 +889,7 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
     let email = str_of(&data, "email").trim().to_string();
     let verify_code = str_of(&data, "verify_code").trim().to_string();
+    let password = str_of(&data, "password").trim().to_string();
 
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "账号标识不能为空");
@@ -899,8 +900,11 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     if verify_code.is_empty() {
         return ctx.err(400, "请输入邮箱验证码");
     }
+    if password.is_empty() {
+        return ctx.err(400, "请输入登录密码");
+    }
 
-    let user = sqlx::query("SELECT id, email FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+    let user = sqlx::query("SELECT id, email, password FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
         .await
@@ -910,10 +914,16 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         return ctx.err(404, "账号不存在或已注销");
     };
 
-    let user_id: i64 = user.get("id");
-    let registered_email: String = user.get("email");
+    let user_id: i64 = user.try_get("id").unwrap_or(0);
+    let registered_email: String = user.try_get("email").unwrap_or_default();
     if registered_email.trim().to_lowercase() != email.trim().to_lowercase() {
         return ctx.err(400, "邮箱与当前账号不匹配");
+    }
+
+    // 验证登录密码（双重验证：密码 + 邮箱验证码）
+    let stored_password: String = user.try_get("password").unwrap_or_default();
+    if !stored_password.is_empty() && !bcrypt::verify(&password, &stored_password).unwrap_or(false) {
+        return ctx.err(400, "登录密码错误");
     }
 
     let code_row = sqlx::query(
@@ -929,7 +939,7 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         return ctx.err(400, "验证码无效或已过期");
     };
 
-    let code_id: i64 = code_row.get("id");
+    let code_id: i64 = code_row.try_get("id").unwrap_or(0);
     let _ = sqlx::query("UPDATE email_verify_codes SET used = 1 WHERE id = ?")
         .bind(code_id)
         .execute(pool)
@@ -948,7 +958,7 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 let _ = std::fs::remove_file(&abs);
             }
         }
-        let playlist_id: i64 = pl.get("id");
+        let playlist_id: i64 = pl.try_get("id").unwrap_or(0);
         let _ = sqlx::query("DELETE FROM user_playlist_songs WHERE playlist_id = ?")
             .bind(playlist_id)
             .execute(pool)

@@ -1,23 +1,25 @@
 <template>
-  <div class="mobile-dashboard">
-    <!-- 标题区（扁平，无卡片） -->
-    <div class="dsh-head">
-      <div class="dsh-head-l">
-        <div class="dsh-head-label">Dashboard Overview</div>
-        <div class="dsh-head-title">数据<em>概览</em></div>
-        <div class="dsh-head-date">{{ today }}</div>
-      </div>
-      <div class="dsh-head-r">
-        <span class="dsh-live-dot"></span>
-        <span>实时同步</span>
+  <div class="mobile-page mobile-dashboard">
+    <!-- 标题区 -->
+    <div class="mobile-card dsh-head-card">
+      <div class="dsh-head">
+        <div class="dsh-head-l">
+          <div class="dsh-head-label">Dashboard Overview</div>
+          <div class="dsh-head-title">数据<em>概览</em></div>
+          <div class="dsh-head-date">{{ today }}</div>
+        </div>
+        <div class="dsh-head-r">
+          <span class="dsh-live-dot"></span>
+          <span>实时同步</span>
+        </div>
       </div>
     </div>
 
     <div v-if="loading" class="state-text">加载中...</div>
     <div v-else-if="loadError" class="state-text error">{{ loadError }}</div>
 
-    <!-- 今日音源调用占比（扁平，无卡片包裹） -->
-    <div v-if="!loading && !loadError" class="source-section">
+    <!-- 今日音源调用占比 -->
+    <div v-if="!loading && !loadError" class="mobile-card source-section">
       <div class="source-head">
         <div>
           <h3>今日音源调用占比</h3>
@@ -44,32 +46,34 @@
       </div>
     </div>
 
-    <!-- 统计卡片（扁平，无单独卡片包裹） -->
-    <div v-if="!loading && !loadError" class="stats-grid">
-      <div class="stat-item">
-        <div class="stat-label">总用户数</div>
-        <div class="stat-value">{{ stats.total_users ?? 0 }}</div>
-        <div class="stat-sub">今日新增 {{ stats.today_users ?? 0 }} · 昨日 {{ stats.yesterday_users ?? 0 }}</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">今日热搜</div>
-        <div class="stat-value hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</div>
-        <div class="stat-sub">今日搜索 {{ stats.today_hot_search_count ?? 0 }} 次</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">今日用户</div>
-        <div class="stat-value">{{ stats.active_users ?? 0 }}</div>
-        <div class="stat-sub">今日活跃设备数</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-label">今日分享</div>
-        <div class="stat-value">{{ stats.today_shares ?? 0 }}</div>
-        <div class="stat-sub">总计 {{ stats.total_shares ?? 0 }} 次</div>
+    <!-- 数据概览 -->
+    <div v-if="!loading && !loadError" class="stats-section">
+      <div class="mobile-grid stats-grid">
+        <div class="stat-item">
+          <div class="stat-label">总用户数</div>
+          <div class="stat-value">{{ stats.total_users ?? 0 }}</div>
+          <div class="stat-sub">今日新增 {{ stats.today_users ?? 0 }} · 昨日 {{ stats.yesterday_users ?? 0 }}</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">今日热搜</div>
+          <div class="stat-value hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</div>
+          <div class="stat-sub">今日搜索 {{ stats.today_hot_search_count ?? 0 }} 次</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">今日用户</div>
+          <div class="stat-value">{{ stats.active_users ?? 0 }}</div>
+          <div class="stat-sub">今日活跃设备数</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-label">今日分享</div>
+          <div class="stat-value">{{ stats.today_shares ?? 0 }}</div>
+          <div class="stat-sub">总计 {{ stats.total_shares ?? 0 }} 次</div>
+        </div>
       </div>
     </div>
 
     <!-- 消息通知 -->
-    <div v-if="!loading && !loadError" class="notice-section">
+    <div v-if="!loading && !loadError" class="mobile-card notice-section">
       <div class="notice-head">
         <div>
           <h3>消息通知</h3>
@@ -90,8 +94,8 @@
     </div>
 
     <!-- 常用操作 -->
-    <div class="quick-section">
-      <h3>常用操作</h3>
+    <div class="mobile-card quick-section">
+      <h3 class="mobile-card-title">常用操作</h3>
       <div class="quick-grid">
         <router-link to="/m/announcements" class="mobile-btn primary">公告管理</router-link>
         <router-link to="/m/version" class="mobile-btn primary">版本管理</router-link>
@@ -102,7 +106,7 @@
     </div>
 
     <!-- 服务器 API -->
-    <div class="api-section">
+    <div class="mobile-card api-section">
       <div class="api-head">
         <div>
           <h3>服务器 API</h3>
@@ -251,18 +255,18 @@ onMounted(async () => {
 
 <style scoped>
 .mobile-dashboard {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
-/* 标题区 — 扁平，无卡片 */
+/* 标题区 */
+.dsh-head-card {
+  padding: 18px 16px;
+}
 .dsh-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--border);
+  gap: 12px;
 }
 .dsh-head-label {
   font-size: 10px;
@@ -328,7 +332,7 @@ onMounted(async () => {
   color: #EC4141;
 }
 
-/* 今日音源调用占比 — 扁平，无卡片包裹 */
+/* 今日音源调用占比 */
 .source-section {
   display: flex;
   flex-direction: column;
@@ -441,22 +445,24 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-/* 统计卡片 — 扁平，无单独卡片包裹 */
+/* 数据概览 */
+.stats-section {
+  display: flex;
+  flex-direction: column;
+}
 .stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  overflow: hidden;
+  gap: 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
 }
 .stat-item {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 16px 14px;
-  background: var(--card);
+  padding: 8px 0;
+  background: transparent;
   min-width: 0;
 }
 .stat-label {
@@ -484,7 +490,7 @@ onMounted(async () => {
   white-space: nowrap;
 }
 
-/* 消息通知 — 扁平列表 */
+/* 消息通知 */
 .notice-section {
   display: flex;
   flex-direction: column;

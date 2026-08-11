@@ -270,6 +270,12 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 .bind(&ciyuanxi_id)
                 .execute(pool)
                 .await;
+            let _ = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, status, reviewed_at, reviewed_by) VALUES (?, ?, 'approved', NOW(), ?)")
+                .bind(&ciyuanxi_id)
+                .bind(&nickname)
+                .bind(format!("external:{}", audit.provider))
+                .execute(pool)
+                .await;
             nickname_auto_approved = true;
         } else if audit.decision == AuditDecision::Reject {
             let _ = sqlx::query("DELETE FROM user_nickname_pending WHERE ciyuanxi_id = ? AND status = 'pending'")
@@ -318,6 +324,12 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
             let _ = sqlx::query("UPDATE app_users SET avatar_url = ? WHERE ciyuanxi_id = ?")
                 .bind(&avatar_url)
                 .bind(&ciyuanxi_id)
+                .execute(pool)
+                .await;
+            let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, status, reviewed_at, reviewed_by) VALUES (?, ?, 'approved', NOW(), ?)")
+                .bind(&ciyuanxi_id)
+                .bind(&avatar_url)
+                .bind(format!("external:{}", audit.provider))
                 .execute(pool)
                 .await;
             avatar_auto_approved = true;
@@ -441,6 +453,19 @@ pub async fn get_avatar_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
     if user_exists.is_none() {
         return ctx.err(404, "用户不存在");
     }
+    let today_status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM user_avatar_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    let today_block_message = match today_status.as_deref() {
+        Some("pending") => "头像正在审核中哦",
+        Some(_) => "今日已修改过啦",
+        None => "",
+    };
     let row = sqlx::query(
         "SELECT status, created_at FROM user_avatar_pending WHERE ciyuanxi_id = ? AND status IN ('pending', 'rejected') ORDER BY id DESC LIMIT 1",
     )
@@ -453,8 +478,14 @@ pub async fn get_avatar_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
         Some(r) => ctx.json(200, "ok", Some(json!({
             "status": r.get::<String, _>("status"),
             "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+            "today_blocked": today_status.is_some(),
+            "block_message": today_block_message,
         }))),
-        None => ctx.json(200, "ok", Some(json!({ "status": "none" }))),
+        None => ctx.json(200, "ok", Some(json!({
+            "status": "none",
+            "today_blocked": today_status.is_some(),
+            "block_message": today_block_message,
+        }))),
     }
 }
 
@@ -473,6 +504,19 @@ pub async fn get_nickname_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     let Some(user) = user else {
         return ctx.err(404, "用户不存在");
     };
+    let today_status = sqlx::query_scalar::<_, String>(
+        "SELECT status FROM user_nickname_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    let today_block_message = match today_status.as_deref() {
+        Some("pending") => "昵称正在审核中哦",
+        Some(_) => "今日已修改过啦",
+        None => "",
+    };
     let row = sqlx::query(
         "SELECT status, nickname, created_at FROM user_nickname_pending WHERE ciyuanxi_id = ? AND status IN ('pending', 'rejected') ORDER BY id DESC LIMIT 1",
     )
@@ -486,10 +530,14 @@ pub async fn get_nickname_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
             "status": r.get::<String, _>("status"),
             "nickname": r.get::<String, _>("nickname"),
             "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+            "today_blocked": today_status.is_some(),
+            "block_message": today_block_message,
         }))),
         None => ctx.json(200, "ok", Some(json!({
             "status": "none",
             "nickname": user.get::<String, _>("username"),
+            "today_blocked": today_status.is_some(),
+            "block_message": today_block_message,
         }))),
     }
 }
