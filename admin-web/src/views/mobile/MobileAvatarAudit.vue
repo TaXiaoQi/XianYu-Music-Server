@@ -18,7 +18,9 @@
         <button class="mobile-btn primary" @click="saveConfig">保存配置</button>
         <button class="mobile-btn" @click="testConfig">测试配置</button>
       </div>
-      <pre v-if="testText" class="mobile-code">{{ testText }}</pre>
+      <transition name="expand">
+        <pre v-if="testText" class="mobile-code">{{ testText }}</pre>
+      </transition>
     </section>
     <div class="mobile-tabs">
       <button class="mobile-btn" :class="{ primary: tab === 'avatar' }" @click="tab = 'avatar'">头像 {{ avatars.length }}</button>

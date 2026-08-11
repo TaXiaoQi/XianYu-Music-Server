@@ -16,7 +16,9 @@
         <div class="mobile-item-title">{{ e.error_message || e.message || '错误日志' }}</div>
         <div class="mobile-item-sub">{{ e.device_model || '-' }} · {{ e.platform || '-' }} · {{ e.error_time || e.created_at || '-' }}</div>
         <pre v-if="e.error_stack" class="mobile-code">{{ e.error_stack }}</pre>
-        <pre v-if="detailId === e.id" class="mobile-code">{{ detailText }}</pre>
+        <transition name="expand">
+          <pre v-if="detailId === e.id" class="mobile-code">{{ detailText }}</pre>
+        </transition>
         <div class="mobile-actions">
           <button class="mobile-btn" @click="detail(e)">详情</button>
           <button class="mobile-btn danger" @click="remove(e)">删除</button>
@@ -29,6 +31,7 @@
 import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
+import { mobileConfirm } from '@/utils/mobileDialog'
 const loading = ref(false), list = ref<any[]>([])
 const page = ref(1), totalPages = ref(1)
 const stats = ref<any>({})
@@ -56,6 +59,6 @@ async function detail(e: any) {
   detailText.value = res.code === 200 ? JSON.stringify(res.data || {}, null, 2) : (res.msg || '加载详情失败')
 }
 async function remove(e: any) { const res = await adminApi('delete_error', { id: e.id }); res.code === 200 ? (showToast('已删除', 'success'), load()) : showToast(res.msg || '删除失败') }
-async function clearAll() { if (!confirm('确认清空所有报错日志？')) return; const res = await adminApi('clear_all_errors'); res.code === 200 ? (showToast('已清空', 'success'), load()) : showToast(res.msg || '清空失败') }
+async function clearAll() { if (!(await mobileConfirm('确认清空所有报错日志？'))) return; const res = await adminApi('clear_all_errors'); res.code === 200 ? (showToast('已清空', 'success'), load()) : showToast(res.msg || '清空失败') }
 onMounted(loadAll)
 </script>

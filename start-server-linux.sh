@@ -23,6 +23,7 @@ echo "========================================"
 echo "XianYu Music Server"
 echo "========================================"
 echo "Work directory: $(pwd)"
+echo "Admin URL: http://SERVER_IP:8081/login"
 echo "Press Ctrl+C to stop."
 echo ""
 

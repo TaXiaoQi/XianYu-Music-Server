@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -60,13 +60,16 @@ async fn main() -> anyhow::Result<()> {
 
     let cors = CorsLayer::permissive();
     let pool = state.pool.clone();
+    let static_dir = config.static_dir.clone();
+    let index_file = format!("{}/index.html", static_dir.trim_end_matches(|c| c == '/' || c == '\\'));
 
     let app = Router::new()
         .route("/api", get(handle_api).post(handle_api))
         .route("/api/", get(handle_api).post(handle_api))
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
+        .route("/admin/api/", get(handle_admin_api).post(handle_admin_api))
         .nest_service("/uploads", ServeDir::new("uploads"))
-        .fallback(not_found)
+        .fallback_service(ServeDir::new(static_dir).not_found_service(ServeFile::new(index_file)))
         .layer(cors)
         .with_state(state);
 
@@ -88,15 +91,6 @@ async fn main() -> anyhow::Result<()> {
 
     axum::serve(listener, app).await?;
     Ok(())
-}
-
-async fn not_found() -> Response {
-    (
-        StatusCode::NOT_FOUND,
-        [(axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8")],
-        Body::from(r#"{"code":404,"msg":"接口不存在","data":null}"#),
-    )
-        .into_response()
 }
 
 async fn handle_api(

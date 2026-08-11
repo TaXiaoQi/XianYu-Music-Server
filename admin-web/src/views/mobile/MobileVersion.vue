@@ -61,6 +61,7 @@
 import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
+import { mobileConfirm } from '@/utils/mobileDialog'
 const loading = ref(false)
 const desktopSaving = ref(false)
 const appUploading = ref(false)
@@ -153,7 +154,7 @@ async function changeStatus(v: any, status: string) {
   if (res.code === 200) { v.status = status; showToast('状态已更新', 'success') } else showToast(res.msg || '更新失败')
 }
 async function deleteVersion(v: any) {
-  if (!confirm(`确认删除版本 ${v.version_code}？`)) return
+  if (!(await mobileConfirm(`确认删除版本 ${v.version_code}？`))) return
   const res = await adminApi('delete_version', { id: v.id })
   if (res.code === 200) { showToast('已删除', 'success'); loadAll() } else showToast(res.msg || '删除失败')
 }

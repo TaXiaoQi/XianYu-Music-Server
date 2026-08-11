@@ -32,6 +32,7 @@ const groups = [
       { to: '/m/email-config', label: '邮箱机设置', desc: '配置邮箱 API 或 SMTP' },
       { to: '/m/turnstile-config', label: '人机验证设置', desc: '配置 Turnstile / hCaptcha' },
       { to: '/m/config-file', label: '配置文件管理', desc: '维护服务端 config.json' },
+      { to: '/m/user-agreement', label: '用户协议', desc: '维护注册和登录页协议内容' },
     ],
   },
   {

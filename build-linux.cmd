@@ -102,6 +102,8 @@ echo On Linux run:
 echo   chmod +x server/server
 echo   chmod +x start-server-linux.sh
 echo   ./start-server-linux.sh
+echo Then open:
+echo   http://SERVER_IP:8081/login
 echo ============================================
 echo.
 pause

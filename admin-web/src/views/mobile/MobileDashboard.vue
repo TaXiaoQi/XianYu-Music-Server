@@ -93,11 +93,11 @@
     <div class="quick-section">
       <h3>常用操作</h3>
       <div class="quick-grid">
-        <router-link to="/m/announcements" class="quick-btn primary">公告管理</router-link>
-        <router-link to="/m/version" class="quick-btn primary">版本管理</router-link>
-        <router-link to="/m/email-config" class="quick-btn">邮箱机设置</router-link>
-        <router-link to="/m/turnstile-config" class="quick-btn">人机验证</router-link>
-        <router-link to="/m/database" class="quick-btn">数据库管理</router-link>
+        <router-link to="/m/announcements" class="mobile-btn primary">公告管理</router-link>
+        <router-link to="/m/version" class="mobile-btn primary">版本管理</router-link>
+        <router-link to="/m/email-config" class="mobile-btn">邮箱机设置</router-link>
+        <router-link to="/m/turnstile-config" class="mobile-btn">人机验证</router-link>
+        <router-link to="/m/database" class="mobile-btn">数据库管理</router-link>
       </div>
     </div>
 
@@ -111,11 +111,11 @@
       </div>
       <div class="api-copy-row">
         <code>{{ publicApiUrl }}</code>
-        <button class="copy-btn" @click="copyApiUrl">复制 API</button>
+        <button class="mobile-btn primary" @click="copyApiUrl">复制 API</button>
       </div>
       <div class="api-copy-row api-secret-row">
         <code>{{ clientApiSecret || '未读取到客户端 API 签名密钥' }}</code>
-        <button class="copy-btn" :disabled="!clientApiSecret" @click="copyApiSecret">复制密钥</button>
+        <button class="mobile-btn primary" :disabled="!clientApiSecret" @click="copyApiSecret">复制密钥</button>
       </div>
       <p class="api-hint">客户端会自动拼接 <code>?action=xxx</code>，所以服务器 API 只需要填到 <code>/api</code>。</p>
     </div>
@@ -125,6 +125,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import './MobilePage.css'
 
 interface SourceDistributionItem {
   source_name: string
@@ -578,23 +579,12 @@ onMounted(async () => {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
-.quick-btn {
+.quick-grid .mobile-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--control-bg);
-  color: var(--text);
   text-decoration: none;
-  font-size: 13px;
-  font-weight: 800;
-}
-.quick-btn.primary {
-  border-color: #EC4141;
-  background: #EC4141;
-  color: #fff;
 }
 
 /* 服务器 API */
@@ -633,19 +623,6 @@ onMounted(async () => {
 }
 .api-secret-row {
   margin-top: 0;
-}
-.copy-btn {
-  flex: 0 0 auto;
-  border: none;
-  border-radius: 999px;
-  padding: 8px 14px;
-  background: #EC4141;
-  color: #fff;
-  font-weight: 800;
-  font-size: 12px;
-}
-.copy-btn:disabled {
-  opacity: 0.5;
 }
 .api-hint {
   color: var(--text-light);

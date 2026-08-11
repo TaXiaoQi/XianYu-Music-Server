@@ -29,6 +29,12 @@ pub struct Config {
     pub hcaptcha_secret: String,
     #[serde(default)]
     pub local_debug_no_db: bool,
+    #[serde(default = "default_static_dir")]
+    pub static_dir: String,
+}
+
+fn default_static_dir() -> String {
+    "../admin-web/dist".into()
 }
 
 impl Config {
@@ -42,6 +48,7 @@ impl Config {
         cfg.captcha_secret = env::var("CAPTCHA_SECRET").unwrap_or(cfg.captcha_secret);
         cfg.turnstile_secret = env::var("TURNSTILE_SECRET").unwrap_or(cfg.turnstile_secret);
         cfg.hcaptcha_secret = env::var("HCAPTCHA_SECRET").unwrap_or(cfg.hcaptcha_secret);
+        cfg.static_dir = env::var("STATIC_DIR").unwrap_or(cfg.static_dir);
         cfg.local_debug_no_db = env::var("LOCAL_DEBUG_NO_DB")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
@@ -70,6 +77,7 @@ impl Config {
             captcha_secret: env::var("CAPTCHA_SECRET").unwrap_or_default(),
             turnstile_secret: env::var("TURNSTILE_SECRET").unwrap_or_default(),
             hcaptcha_secret: env::var("HCAPTCHA_SECRET").unwrap_or_default(),
+            static_dir: env::var("STATIC_DIR").unwrap_or_else(|_| default_static_dir()),
             local_debug_no_db: env::var("LOCAL_DEBUG_NO_DB")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))

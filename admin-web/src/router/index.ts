@@ -118,6 +118,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '配置文件管理', mobile: true },
       },
       {
+        path: 'user-agreement',
+        name: 'MobileUserAgreement',
+        component: () => import('@/views/mobile/MobileUserAgreement.vue'),
+        meta: { title: '用户协议', mobile: true },
+      },
+      {
         path: 'admins',
         name: 'MobileAdmins',
         component: () => import('@/views/mobile/MobileAdmins.vue'),

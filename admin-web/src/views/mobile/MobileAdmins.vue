@@ -20,11 +20,12 @@
 import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
+import { mobileConfirm } from '@/utils/mobileDialog'
 const loading = ref(false), list = ref<any[]>([])
 const form = ref({ username: '', password: '', role: 'admin' })
 async function load() { loading.value = true; const res = await adminApi<any>('list_admins'); list.value = res.code === 200 && res.data ? (res.data.list || []) : []; loading.value = false }
 async function add() { const res = await adminApi('add_admin', form.value); if (res.code === 200) { showToast('已新增', 'success'); form.value = { username: '', password: '', role: 'admin' }; load() } else showToast(res.msg || '新增失败') }
 async function toggle(a: any) { const res = await adminApi('toggle_admin_status', { id: a.id }); if (res.code === 200) { a.status = a.status == 1 ? 0 : 1; showToast('已更新', 'success') } else showToast(res.msg || '操作失败') }
-async function remove(a: any) { if (!confirm('确认删除管理员？')) return; const res = await adminApi('delete_admin', { id: a.id }); if (res.code === 200) { showToast('已删除', 'success'); load() } else showToast(res.msg || '删除失败') }
+async function remove(a: any) { if (!(await mobileConfirm('确认删除管理员？'))) return; const res = await adminApi('delete_admin', { id: a.id }); if (res.code === 200) { showToast('已删除', 'success'); load() } else showToast(res.msg || '删除失败') }
 onMounted(load)
 </script>

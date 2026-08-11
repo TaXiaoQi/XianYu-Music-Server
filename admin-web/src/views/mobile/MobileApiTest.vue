@@ -6,7 +6,9 @@
       <textarea v-model="body" class="mobile-textarea" placeholder='JSON 参数，例如 {"page":1}'></textarea>
       <button class="mobile-btn primary" :disabled="running" @click="run">发送测试</button>
     </div>
-    <pre v-if="result" class="mobile-code">{{ result }}</pre>
+    <transition name="expand">
+      <pre v-if="result" class="mobile-code">{{ result }}</pre>
+    </transition>
   </div>
 </template>
 <script setup lang="ts">

@@ -15,15 +15,17 @@
       <span>密码和密钥不会明文回显，留空表示保留原值。</span>
     </section>
 
-    <section v-if="migrateResult" class="mobile-card">
-      <h3 class="mobile-card-title">最近一次迁移结果</h3>
-      <div class="mobile-grid">
-        <div class="mobile-stat"><span>用户成功</span><strong>{{ migrateResult.users.ok }}</strong></div>
-        <div class="mobile-stat"><span>设置成功</span><strong>{{ migrateResult.settings.ok }}</strong></div>
-        <div class="mobile-stat"><span>反馈成功</span><strong>{{ migrateResult.feedback.ok }}</strong></div>
-        <div class="mobile-stat"><span>需重启</span><strong>{{ migrateResult.need_restart ? '是' : '否' }}</strong></div>
-      </div>
-    </section>
+    <transition name="expand">
+      <section v-if="migrateResult" class="mobile-card">
+        <h3 class="mobile-card-title">最近一次迁移结果</h3>
+        <div class="mobile-grid">
+          <div class="mobile-stat"><span>用户成功</span><strong>{{ migrateResult.users.ok }}</strong></div>
+          <div class="mobile-stat"><span>设置成功</span><strong>{{ migrateResult.settings.ok }}</strong></div>
+          <div class="mobile-stat"><span>反馈成功</span><strong>{{ migrateResult.feedback.ok }}</strong></div>
+          <div class="mobile-stat"><span>需重启</span><strong>{{ migrateResult.need_restart ? '是' : '否' }}</strong></div>
+        </div>
+      </section>
+    </transition>
 
     <div v-if="loading" class="mobile-empty">加载中...</div>
 
@@ -80,6 +82,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
+import { mobileConfirm } from '@/utils/mobileDialog'
 
 interface ServerConfigForm {
   db_host: string
@@ -229,7 +232,7 @@ function validate(): string {
 async function save() {
   const msg = validate()
   if (msg) return showToast(msg)
-  if (!confirm('确定保存服务端配置文件吗？数据库连接、监听地址和密钥类配置需要重启服务端后才会完全生效。')) return
+  if (!(await mobileConfirm('确定保存服务端配置文件吗？数据库连接、监听地址和密钥类配置需要重启服务端后才会完全生效。'))) return
   saving.value = true
   try {
     const res = await adminApi<Partial<ServerConfigForm & SecretFlags>>('save_server_config_file', {
@@ -249,7 +252,7 @@ async function save() {
 }
 
 async function migrateCache() {
-  if (!confirm('迁移前请先保存正确的数据库连接配置。确定要把本地缓存数据迁移到数据库吗？')) return
+  if (!(await mobileConfirm('迁移前请先保存正确的数据库连接配置。确定要把本地缓存数据迁移到数据库吗？'))) return
   migrating.value = true
   try {
     const res = await adminApi<MigrateResult>('migrate_local_cache_to_database')

@@ -24,7 +24,9 @@
           <button class="mobile-btn" @click="changeStatus(f, 'processing')">处理中</button>
           <button class="mobile-btn primary" @click="changeStatus(f, 'resolved')">解决</button>
         </div>
-        <pre v-if="detailId === f.id" class="mobile-code">{{ detailText }}</pre>
+        <transition name="expand">
+          <pre v-if="detailId === f.id" class="mobile-code">{{ detailText }}</pre>
+        </transition>
       </div>
     </div>
   </div>

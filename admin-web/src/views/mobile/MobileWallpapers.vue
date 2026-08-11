@@ -48,6 +48,7 @@
 import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
+import { mobileConfirm } from '@/utils/mobileDialog'
 const loading = ref(false), uploading = ref(false), list = ref<any[]>([])
 const imageFile = ref<File | null>(null)
 const previewUrl = ref('')
@@ -126,7 +127,7 @@ async function uploadWallpaper() {
   } else showToast(res.msg || '上传失败')
 }
 async function change(w: any, status: string) { const res = await adminApi('change_wallpaper_status', { id: w.id, status }); if (res.code === 200) { w.status = status; showToast('已处理', 'success') } else showToast(res.msg || '操作失败') }
-async function remove(w: any) { if (!confirm('确认删除壁纸？')) return; const res = await adminApi('delete_wallpaper', { id: w.id }); if (res.code === 200) { showToast('已删除', 'success'); load() } else showToast(res.msg || '删除失败') }
+async function remove(w: any) { if (!(await mobileConfirm('确认删除壁纸？'))) return; const res = await adminApi('delete_wallpaper', { id: w.id }); if (res.code === 200) { showToast('已删除', 'success'); load() } else showToast(res.msg || '删除失败') }
 onMounted(() => { load(); loadLimits() })
 </script>
 <style scoped>

@@ -2,6 +2,10 @@
 
 弦予音乐服务端包含 Rust API 服务、Vue 管理后台和配套部署配置，负责客户端账号体系、邮箱验证码、用户资料、同步、壁纸、反馈、公告、版本管理、后台管理等功能。项目已从旧版 PHP 后端迁移为 Rust + TypeScript 架构。
 
+## 最简部署入口
+
+只想快速上线时，优先看 [最简部署](QUICK_DEPLOY.md)：运行 `build-linux.cmd`，上传 `deploy-linux/`，在服务器执行 `./start-server-linux.sh`，即可通过 `http://服务器IP:8081/login` 访问后台。
+
 ## 项目组成
 
 | 目录 | 说明 |

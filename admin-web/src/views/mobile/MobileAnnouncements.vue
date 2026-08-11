@@ -32,6 +32,7 @@
 import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
+import { mobileConfirm } from '@/utils/mobileDialog'
 const loading = ref(false), saving = ref(false)
 const list = ref<any[]>([])
 const editingId = ref(0)
@@ -60,6 +61,6 @@ async function save() {
   if (res.code === 200) { showToast(editingId.value ? '已保存' : '已发布', 'success'); resetForm(); loadList() } else showToast(res.msg || '保存失败')
 }
 async function toggle(a: any) { const enabled = a.enabled ? 0 : 1; const res = await adminApi('toggle_announcement', { id: a.id, enabled }); if (res.code === 200) { a.enabled = enabled; showToast('已更新', 'success') } else showToast(res.msg || '操作失败') }
-async function remove(a: any) { if (!confirm('确认删除公告？')) return; const res = await adminApi('delete_announcement', { id: a.id }); if (res.code === 200) { showToast('已删除', 'success'); loadList() } else showToast(res.msg || '删除失败') }
+async function remove(a: any) { if (!(await mobileConfirm('确认删除公告？'))) return; const res = await adminApi('delete_announcement', { id: a.id }); if (res.code === 200) { showToast('已删除', 'success'); loadList() } else showToast(res.msg || '删除失败') }
 onMounted(loadList)
 </script>

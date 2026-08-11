@@ -11,10 +11,12 @@
         <button class="mobile-btn" @click="viewTable(t)">查看</button>
       </div>
     </section>
-    <section v-if="tableText" class="mobile-card">
-      <h3 class="mobile-card-title">表内容预览</h3>
-      <pre class="mobile-code">{{ tableText }}</pre>
-    </section>
+    <transition name="expand">
+      <section v-if="tableText" class="mobile-card">
+        <h3 class="mobile-card-title">表内容预览</h3>
+        <pre class="mobile-code">{{ tableText }}</pre>
+      </section>
+    </transition>
     <section class="mobile-card">
       <h3 class="mobile-card-title">备份文件</h3>
       <div v-for="b in backups" :key="b.name" class="backup-row">
@@ -26,16 +28,19 @@
         </div>
       </div>
     </section>
-    <section v-if="backupText" class="mobile-card">
-      <h3 class="mobile-card-title">备份内容预览</h3>
-      <pre class="mobile-code">{{ backupText }}</pre>
-    </section>
+    <transition name="expand">
+      <section v-if="backupText" class="mobile-card">
+        <h3 class="mobile-card-title">备份内容预览</h3>
+        <pre class="mobile-code">{{ backupText }}</pre>
+      </section>
+    </transition>
   </div>
 </template>
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
+import { mobileConfirm } from '@/utils/mobileDialog'
 const tables = ref<any[]>([]), backups = ref<any[]>([])
 const tableText = ref('')
 const backupText = ref('')
@@ -52,11 +57,11 @@ async function viewBackup(b: any) {
   backupText.value = res.code === 200 ? (res.data?.content || JSON.stringify(res.data || {}, null, 2)) : (res.msg || '查看失败')
 }
 async function restoreBackup(b: any) {
-  if (!confirm(`确认恢复备份 ${b.name}？当前数据会被覆盖。`)) return
+  if (!(await mobileConfirm(`确认恢复备份 ${b.name}？当前数据会被覆盖。`))) return
   const res = await adminApi('restore_backup', { filename: b.name })
   res.code === 200 ? showToast('恢复完成', 'success') : showToast(res.msg || '恢复失败')
 }
-async function removeBackup(b: any) { if (!confirm('确认删除备份？')) return; const res = await adminApi('delete_backup', { filename: b.name }); res.code === 200 ? (showToast('已删除', 'success'), load()) : showToast(res.msg || '删除失败') }
+async function removeBackup(b: any) { if (!(await mobileConfirm('确认删除备份？'))) return; const res = await adminApi('delete_backup', { filename: b.name }); res.code === 200 ? (showToast('已删除', 'success'), load()) : showToast(res.msg || '删除失败') }
 onMounted(load)
 </script>
 <style scoped>
