@@ -4,6 +4,7 @@ mod config;
 mod db;
 mod debug;
 mod handlers;
+mod rate_limit;
 mod response;
 mod schema;
 mod sign;
@@ -27,6 +28,7 @@ pub struct AppState {
     pub pool: MySqlPool,
     pub config: Arc<Config>,
     pub db_ready: bool,
+    pub rate_limiter: Arc<rate_limit::ApiRateLimiter>,
 }
 
 #[tokio::main]
@@ -53,6 +55,7 @@ async fn main() -> anyhow::Result<()> {
         pool,
         config: config.clone(),
         db_ready,
+        rate_limiter: Arc::new(rate_limit::ApiRateLimiter::default()),
     };
 
     let cors = CorsLayer::permissive();
@@ -159,7 +162,30 @@ async fn handle_api(
     };
 
     if !state.db_ready {
+        if let Some(resp) = rate_limit::check_api_rate_limit(
+            &state.rate_limiter,
+            None,
+            &action,
+            &body,
+            &ctx,
+        )
+        .await
+        {
+            return resp;
+        }
         return debug::handle_api(&action, &body, ctx);
+    }
+
+    if let Some(resp) = rate_limit::check_api_rate_limit(
+        &state.rate_limiter,
+        Some(&state.pool),
+        &action,
+        &body,
+        &ctx,
+    )
+    .await
+    {
+        return resp;
     }
 
     handlers::dispatch(&action, &body, ctx, &state.pool).await

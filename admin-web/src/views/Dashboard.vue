@@ -116,8 +116,12 @@
         <code>{{ publicApiUrl }}</code>
         <button class="btn btn-primary btn-sm" @click="copyApiUrl">复制 API</button>
       </div>
+      <div class="api-copy-row api-secret-row">
+        <code>{{ clientApiSecret || '未读取到客户端 API 签名密钥' }}</code>
+        <button class="btn btn-primary btn-sm" :disabled="!clientApiSecret" @click="copyApiSecret">复制密钥</button>
+      </div>
       <div class="api-hint">
-        客户端会自动拼接 <code>?action=xxx</code>，所以只需要填到 <code>/api</code>，不要填写 <code>/admin/api</code>。
+        客户端会自动拼接 <code>?action=xxx</code>，所以服务器 API 只需要填到 <code>/api</code>；密钥只需填写 <code>api_secret</code> 的值，不要填写 <code>jwt_secret</code>。
       </div>
     </div>
   </div>
@@ -152,6 +156,7 @@ interface DashboardStats {
   pending_avatars?: number
   pending_nicknames?: number
   pending_feedback?: number
+  api_secret?: string
 }
 
 const stats = ref<DashboardStats>({})
@@ -223,6 +228,8 @@ const noticeItems = computed(() => [
 
 const noticeTotal = computed(() => noticeItems.value.reduce((sum, item) => sum + Number(item.count || 0), 0))
 
+const clientApiSecret = computed(() => normalizeApiSecret(stats.value.api_secret || ''))
+
 function resolvePublicApiUrl(): string {
   const { protocol, hostname, port } = window.location
   const apiPort = port === '3000' ? '8081' : port
@@ -231,17 +238,38 @@ function resolvePublicApiUrl(): string {
 }
 
 async function copyApiUrl() {
+  await copyText(publicApiUrl.value, '服务器 API 已复制')
+}
+
+async function copyApiSecret() {
+  if (!clientApiSecret.value) {
+    showToast('未读取到客户端 API 签名密钥', 'error')
+    return
+  }
+  await copyText(clientApiSecret.value, '客户端 API 签名密钥已复制')
+}
+
+function normalizeApiSecret(value: string): string {
+  const text = String(value || '').trim()
+  if (!text) return ''
+  const line = text.split(/\r?\n/).find((item) => /^api_secret\b/i.test(item.trim()))
+  const source = line || text
+  const match = source.match(/^api_secret\s*[:=]?\s*["']?([^"'\s]+)["']?/i)
+  return (match?.[1] || source).trim()
+}
+
+async function copyText(text: string, successMessage: string) {
   try {
-    await navigator.clipboard.writeText(publicApiUrl.value)
-    showToast('服务器 API 已复制', 'success')
+    await navigator.clipboard.writeText(text)
+    showToast(successMessage, 'success')
   } catch {
     const input = document.createElement('input')
-    input.value = publicApiUrl.value
+    input.value = text
     document.body.appendChild(input)
     input.select()
     document.execCommand('copy')
     input.remove()
-    showToast('服务器 API 已复制', 'success')
+    showToast(successMessage, 'success')
   }
 }
 
@@ -515,6 +543,10 @@ onMounted(async () => {
   white-space: nowrap;
   color: var(--text);
   font-size: 14px;
+}
+
+.api-secret-row {
+  margin-top: 10px;
 }
 
 .api-hint {

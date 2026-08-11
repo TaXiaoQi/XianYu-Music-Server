@@ -14,7 +14,7 @@ async fn safe_count(pool: &MySqlPool, sql: &str) -> i64 {
 }
 
 /// 后台仪表盘统计数据
-pub async fn dashboard_stats(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let yesterday = (chrono::Local::now() - chrono::Duration::days(1))
         .format("%Y-%m-%d")
@@ -89,6 +89,7 @@ pub async fn dashboard_stats(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         "pending_avatars": safe_count(pool, "SELECT COUNT(*) FROM user_avatar_pending WHERE status = 'pending'").await,
         "pending_nicknames": safe_count(pool, "SELECT COUNT(*) FROM user_nickname_pending WHERE status = 'pending'").await,
         "pending_feedback": safe_count(pool, "SELECT COUNT(*) FROM user_feedback WHERE status = 'pending'").await,
+        "api_secret": ctx.config.api_secret.clone(),
     });
 
     ok("ok", stats)

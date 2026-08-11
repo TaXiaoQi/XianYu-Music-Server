@@ -15,6 +15,10 @@ pub async fn ensure_schema(pool: &MySqlPool) {
         }
     }
     ensure_feedback_log_columns(pool).await;
+    ensure_column(pool, "app_users", "email_verified", "tinyint(1) NOT NULL DEFAULT 0").await;
+    ensure_column(pool, "app_users", "ciyuanxi_id", "varchar(32) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "app_users", "avatar_url", "LONGTEXT NULL").await;
+    ensure_column(pool, "app_users", "master_quota", "int(11) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "last_device_id", "varchar(128) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "ban_reason", "varchar(255) NOT NULL DEFAULT ''").await;
 }
@@ -170,6 +174,39 @@ static TABLE_STATEMENTS: &[&str] = &[
             UNIQUE KEY `uk_action_identifier_ip` (`action`, `identifier`, `ip`),
             KEY `idx_locked_until` (`locked_until`),
             KEY `idx_updated_at` (`updated_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `api_rate_events` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `level` varchar(16) NOT NULL DEFAULT '',
+            `action` varchar(64) NOT NULL DEFAULT '',
+            `identity_type` varchar(32) NOT NULL DEFAULT '',
+            `identity` varchar(128) NOT NULL DEFAULT '',
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `request_count` int(11) NOT NULL DEFAULT 0,
+            `threshold_count` int(11) NOT NULL DEFAULT 0,
+            `window_seconds` int(11) NOT NULL DEFAULT 0,
+            `reason` varchar(255) NOT NULL DEFAULT '',
+            `blocked_until` datetime DEFAULT NULL,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_level_created` (`level`, `created_at`),
+            KEY `idx_action_created` (`action`, `created_at`),
+            KEY `idx_identity_created` (`identity_type`, `identity`, `created_at`),
+            KEY `idx_ip_created` (`ip`, `created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `api_temp_blocks` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `identity_type` varchar(32) NOT NULL DEFAULT '',
+            `identity` varchar(128) NOT NULL DEFAULT '',
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `reason` varchar(255) NOT NULL DEFAULT '',
+            `expires_at` datetime NOT NULL,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_identity` (`identity_type`, `identity`),
+            KEY `idx_expires_at` (`expires_at`),
+            KEY `idx_ip` (`ip`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `admin_users` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,

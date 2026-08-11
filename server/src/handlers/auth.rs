@@ -460,15 +460,15 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if let Some(resp) = check_device_ban(&login_device_id, &ctx, pool).await {
         return resp;
     }
-    let email: String = user.get("email");
+    let email: String = user.try_get::<String, _>("email").unwrap_or_default();
     let role = resolve_role(pool, &email).await;
     let token = rand_token();
 
-    let user_id: i64 = user.get("id");
-    let uname: String = user.get("username");
-    let avatar_url: String = user.get("avatar_url");
-    let ciyuanxi_id: String = user.get("ciyuanxi_id");
-    let master_quota: i64 = user.get("master_quota");
+    let user_id: i64 = user.try_get::<i64, _>("id").unwrap_or(0);
+    let uname: String = user.try_get::<String, _>("username").unwrap_or_default();
+    let avatar_url: String = user.try_get::<Option<String>, _>("avatar_url").ok().flatten().unwrap_or_default();
+    let ciyuanxi_id: String = user.try_get::<String, _>("ciyuanxi_id").unwrap_or_default();
+    let master_quota: i64 = user.try_get::<i64, _>("master_quota").unwrap_or(0);
     clear_login_failures(&username, &ctx, pool).await;
 
     // 记录 APP 登录日志
@@ -564,8 +564,8 @@ pub async fn poll_tv_login_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     let role = resolve_role(pool, &email).await;
     let user_id: i64 = user.get("id");
     let uname: String = user.get("username");
-    let avatar_url: String = user.get("avatar_url");
-    let master_quota: i64 = user.get("master_quota");
+    let avatar_url: String = user.try_get::<Option<String>, _>("avatar_url").ok().flatten().unwrap_or_default();
+    let master_quota: i64 = user.try_get::<i64, _>("master_quota").unwrap_or(0);
     let mut payload = build_user_payload(user_id, &uname, &email, &avatar_url, &ciyuanxi_id, user_status, master_quota, &token, &role);
     payload["status"] = json!("logged_in");
     ctx.json(200, "登录成功", Some(payload))
