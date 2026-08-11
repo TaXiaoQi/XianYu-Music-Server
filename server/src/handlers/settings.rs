@@ -500,15 +500,39 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "弦予号不能为空");
     }
-    if let Some(v) = data.get("duration").or_else(|| data.get("listen_duration")) {
-        let seconds = v.as_f64().unwrap_or(0.0) as i64;
-        let _ = sqlx::query("UPDATE app_users SET listen_duration = GREATEST(listen_duration, ?) WHERE ciyuanxi_id = ?")
-            .bind(seconds)
-            .bind(&ciyuanxi_id)
-            .execute(pool)
-            .await;
+    let seconds = data
+        .get("duration")
+        .or_else(|| data.get("listen_duration"))
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0)
+        .max(0.0) as i64;
+    let unique_songs_count = data
+        .get("unique_songs_count")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .unwrap_or(0)
+        .max(0);
+
+    if seconds <= 0 && unique_songs_count <= 0 {
+        return ctx.ok_empty("ok");
     }
-    ctx.ok_empty("ok")
+
+    let result = sqlx::query(
+        "UPDATE app_users \
+         SET listen_duration = GREATEST(listen_duration, ?), \
+             unique_songs_count = GREATEST(unique_songs_count, ?) \
+         WHERE ciyuanxi_id = ?",
+    )
+    .bind(seconds)
+    .bind(unique_songs_count)
+    .bind(&ciyuanxi_id)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(r) if r.rows_affected() > 0 => ctx.ok_empty("ok"),
+        Ok(_) => ctx.err(404, "用户不存在"),
+        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+    }
 }
 
 pub async fn deduct_master_quota(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {

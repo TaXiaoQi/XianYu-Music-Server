@@ -4,28 +4,30 @@
       <h1>弦予音乐</h1>
       <p class="subtitle">后台管理系统</p>
       <div v-if="timeoutTip" class="timeout-tip">登录已过期，请重新登录</div>
-      <form :key="formKey" autocomplete="off" @submit.prevent="handleLogin">
+      <form autocomplete="on" @submit.prevent="handleLogin">
         <div class="form-group">
-          <label class="required">管理员账号</label>
+          <label class="required" for="admin-username">管理员账号</label>
           <input
+            id="admin-username"
             v-model="username"
             type="text"
             placeholder="请输入用户名"
             required
-            autocomplete="off"
-            name="admin_login_username"
+            autocomplete="username"
+            name="username"
             :disabled="loading"
           />
         </div>
         <div class="form-group">
-          <label class="required">登录密码</label>
+          <label class="required" for="admin-password">登录密码</label>
           <input
+            id="admin-password"
             v-model="password"
             type="password"
             placeholder="请输入密码"
             required
-            autocomplete="new-password"
-            name="admin_login_password"
+            autocomplete="current-password"
+            name="password"
             :disabled="loading"
           />
         </div>
@@ -52,12 +54,10 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const timeoutTip = ref(false)
-const formKey = ref(0)
 
 function clearLoginForm() {
   username.value = ''
   password.value = ''
-  formKey.value += 1
   sessionStorage.removeItem(CLEAR_LOGIN_FORM_KEY)
 }
 

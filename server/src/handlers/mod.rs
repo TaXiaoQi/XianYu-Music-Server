@@ -20,6 +20,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     match action {
         // reporting
         "error" => reporting::error(body, ctx, pool).await,
+        "report_user_behavior" => reporting::report_user_behavior(body, ctx, pool).await,
         "open" => reporting::app_open(body, ctx, pool).await,
         "check" => reporting::check(ctx, pool).await,
         "install" => reporting::install(ctx, pool).await,

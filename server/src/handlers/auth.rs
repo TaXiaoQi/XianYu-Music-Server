@@ -443,7 +443,21 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(401, "用户名或密码错误");
     };
     let stored: String = user.get("password");
-    if !bcrypt::verify(&password, &stored).unwrap_or(false) {
+    let mut password_ok = bcrypt::verify(&password, &stored).unwrap_or(false);
+    if !password_ok && stored == password {
+        password_ok = true;
+        if let Ok(hashed) = bcrypt::hash(&password, 10) {
+            let user_id: i64 = user.try_get::<i64, _>("id").unwrap_or(0);
+            if user_id > 0 {
+                let _ = sqlx::query("UPDATE app_users SET password = ? WHERE id = ?")
+                    .bind(hashed)
+                    .bind(user_id)
+                    .execute(pool)
+                    .await;
+            }
+        }
+    }
+    if !password_ok {
         record_login_failure(&username, &ctx, pool).await;
         return ctx.err(401, "用户名或密码错误");
     }

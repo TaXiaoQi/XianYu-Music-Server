@@ -2,7 +2,7 @@ use axum::response::Response;
 use serde_json::json;
 use sqlx::MySqlPool;
 
-use crate::handlers::helpers::{parse_body, str_of};
+use crate::handlers::helpers::{int_of, parse_body, str_of};
 use crate::response::ReqCtx;
 
 /// error 错误上报
@@ -92,6 +92,43 @@ pub async fn app_open(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
 
     match result {
         Ok(_) => ctx.ok_empty("ok"),
+        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+    }
+}
+
+/// report_user_behavior 播放行为上报
+///
+/// 客户端播放/切歌时会上报本次播放时长。排行榜依赖 app_users.listen_duration，
+/// 因此这里必须同步写入账号表；否则正式服务会把该 action 当作未知操作，
+/// 播放统计被客户端静默吞掉，排行榜一直没有数据。
+pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
+    if ciyuanxi_id.is_empty() {
+        // 未登录播放不参与账号排行榜，但不应打断客户端播放流程。
+        return ctx.ok_empty("ok");
+    }
+
+    let duration = int_of(&data, "listen_duration").max(0);
+    if duration <= 0 {
+        return ctx.ok_empty("ok");
+    }
+
+    let result = sqlx::query(
+        "UPDATE app_users SET listen_duration = GREATEST(listen_duration, ?) WHERE ciyuanxi_id = ?",
+    )
+    .bind(duration)
+    .bind(&ciyuanxi_id)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(r) if r.rows_affected() > 0 => ctx.ok_empty("ok"),
+        Ok(_) => ctx.err(404, "用户不存在"),
         Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
     }
 }

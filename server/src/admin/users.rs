@@ -170,7 +170,14 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     if !email.is_empty() && !crate::admin::is_valid_email(&email) {
         return err(400, "邮箱格式不正确");
     }
-    // 用户名唯一性
+    // 用户名唯一性：与客户端注册保持一致，同时检查管理员表和普通用户表
+    let admin_exists = sqlx::query("SELECT id FROM admin_users WHERE username = ? LIMIT 1")
+        .bind(&username)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
     let exists = sqlx::query("SELECT id FROM app_users WHERE username = ? LIMIT 1")
         .bind(&username)
         .fetch_optional(pool)
@@ -178,10 +185,17 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         .ok()
         .flatten()
         .is_some();
-    if exists {
+    if admin_exists || exists {
         return err(409, "用户名已存在");
     }
     if !email.is_empty() {
+        let admin_email_exists = sqlx::query("SELECT id FROM admin_users WHERE email = ? LIMIT 1")
+            .bind(&email)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
         let exists = sqlx::query("SELECT id FROM app_users WHERE email = ? LIMIT 1")
             .bind(&email)
             .fetch_optional(pool)
@@ -189,7 +203,7 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
             .ok()
             .flatten()
             .is_some();
-        if exists {
+        if admin_email_exists || exists {
             return err(409, "邮箱已被使用");
         }
     }
