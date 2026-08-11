@@ -7,7 +7,7 @@
     <section class="mobile-card">
       <h3 class="mobile-card-title">数据表</h3>
       <div v-for="t in tables" :key="t.name || t.table_name" class="backup-row">
-        <span>{{ t.name || t.table_name }} · {{ t.rows ?? t.count ?? '-' }} 行</span>
+        <span class="backup-name">{{ t.name || t.table_name }} · {{ t.rows ?? t.count ?? '-' }} 行</span>
         <button class="mobile-btn" @click="viewTable(t)">查看</button>
       </div>
     </section>
@@ -18,7 +18,7 @@
     <section class="mobile-card">
       <h3 class="mobile-card-title">备份文件</h3>
       <div v-for="b in backups" :key="b.name" class="backup-row">
-        <span>{{ b.name }}</span>
+        <span class="backup-name">{{ b.name }}</span>
         <div class="row-actions">
           <button class="mobile-btn" @click="viewBackup(b)">查看</button>
           <button class="mobile-btn" @click="restoreBackup(b)">恢复</button>
@@ -61,5 +61,6 @@ onMounted(load)
 </script>
 <style scoped>
 .backup-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--border);font-size:12px;word-break:break-all}
+.backup-name{min-width:0;overflow-wrap:anywhere}
 .row-actions{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
 </style>

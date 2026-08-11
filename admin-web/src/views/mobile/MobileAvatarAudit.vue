@@ -21,16 +21,27 @@
       <pre v-if="testText" class="mobile-code">{{ testText }}</pre>
     </section>
     <div class="mobile-tabs">
-      <button class="mobile-btn" :class="{ primary: tab === 'avatar' }" @click="tab = 'avatar'">头像</button>
-      <button class="mobile-btn" :class="{ primary: tab === 'nickname' }" @click="tab = 'nickname'">改名</button>
+      <button class="mobile-btn" :class="{ primary: tab === 'avatar' }" @click="tab = 'avatar'">头像 {{ avatars.length }}</button>
+      <button class="mobile-btn" :class="{ primary: tab === 'nickname' }" @click="tab = 'nickname'">改名 {{ nicknames.length }}</button>
     </div>
     <div v-if="loading" class="mobile-empty">加载中...</div>
-    <div v-else-if="currentList.length === 0" class="mobile-empty">暂无待审核</div>
+    <div v-else-if="currentList.length === 0" class="mobile-empty">
+      {{ tab === 'avatar' ? '暂无待审核头像' : '暂无待审核改名申请' }}
+    </div>
     <div v-else class="mobile-list">
       <div v-for="item in currentList" :key="item.id" class="mobile-item">
-        <img v-if="tab === 'avatar' && (item.avatar_url || item.new_avatar)" :src="item.avatar_url || item.new_avatar" class="avatar-img" />
-        <div class="mobile-item-title">{{ item.username || item.user_id || '-' }}</div>
-        <div class="mobile-item-sub" v-if="tab === 'nickname'">新昵称：{{ item.new_nickname || item.nickname || '-' }}</div>
+        <img v-if="tab === 'avatar' && (item.avatar_data || item.avatar_url || item.new_avatar)" :src="item.avatar_data || item.avatar_url || item.new_avatar" class="avatar-img" />
+        <template v-if="tab === 'nickname'">
+          <div class="mobile-item-title">弦予号：{{ item.ciyuanxi_id || item.user_id || '-' }}</div>
+          <div class="nickname-change">
+            <span class="nickname-old">{{ item.old_name || '未知' }}</span>
+            <span class="nickname-arrow">→</span>
+            <span class="nickname-new">{{ item.new_name || item.new_nickname || item.nickname || '-' }}</span>
+          </div>
+        </template>
+        <template v-else>
+          <div class="mobile-item-title">{{ item.username || item.ciyuanxi_id || item.user_id || '-' }}</div>
+        </template>
         <div class="mobile-item-sub">{{ item.created_at || '-' }}</div>
         <div class="mobile-actions">
           <button class="mobile-btn primary" @click="approve(item)">通过</button>
@@ -66,4 +77,36 @@ async function approve(i: any) { const res = await adminApi(tab.value === 'avata
 async function reject(i: any) { const res = await adminApi(tab.value === 'avatar' ? 'reject_avatar' : 'reject_nickname', { id: i.id }); if (res.code === 200) { showToast('已拒绝', 'success'); load() } else showToast(res.msg || '操作失败') }
 onMounted(() => { loadConfig(); load() })
 </script>
-<style scoped>.avatar-img{width:92px;height:92px;border-radius:50%;object-fit:cover;margin-bottom:10px;background:var(--control-bg)}</style>
+<style scoped>
+.avatar-img{width:92px;height:92px;border-radius:50%;object-fit:cover;margin-bottom:10px;background:var(--control-bg)}
+.nickname-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+}
+.nickname-old,
+.nickname-new {
+  min-width: 0;
+  flex: 1;
+  font-size: 13px;
+  font-weight: 800;
+  word-break: break-word;
+}
+.nickname-old {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+.nickname-arrow {
+  flex: 0 0 auto;
+  color: #EC4141;
+  font-weight: 900;
+}
+.nickname-new {
+  color: var(--text);
+}
+</style>

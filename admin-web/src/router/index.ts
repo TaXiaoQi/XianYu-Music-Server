@@ -108,13 +108,13 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'turnstile-config',
         name: 'MobileTurnstileConfig',
-        component: () => import('@/views/TurnstileConfig.vue'),
+        component: () => import('@/views/mobile/MobileTurnstileConfig.vue'),
         meta: { title: '人机验证设置', mobile: true },
       },
       {
         path: 'config-file',
         name: 'MobileConfigFile',
-        component: () => import('@/views/ConfigFile.vue'),
+        component: () => import('@/views/mobile/MobileConfigFile.vue'),
         meta: { title: '配置文件管理', mobile: true },
       },
       {
