@@ -71,6 +71,8 @@ md5(x-timestamp + x-nonce + raw_body + api_secret)
 | action | 处理函数 | 说明 |
 |--------|----------|------|
 | `error` | `reporting::error` | 错误上报 |
+| `report_user_behavior` | `reporting::report_user_behavior` | 播放行为上报 |
+| `open` | `reporting::app_open` | 客户端启动上报 |
 | `check` | `reporting::check` | 服务连通性检查 |
 | `install` | `reporting::install` | 安装初始化 |
 
@@ -82,7 +84,9 @@ md5(x-timestamp + x-nonce + raw_body + api_secret)
 | `get_version_status` | `system::get_version_status` | 获取版本状态 |
 | `get_latest_version` | `system::get_latest_version` | 获取最新版本 |
 | `get_announcement` | `system::get_announcement` | 获取公告 |
+| `confirm_announcement` | `system::confirm_announcement` | 确认公告 |
 | `get_about_config` | `system::get_about_config` | 获取关于页配置 |
+| `get_user_agreement` | `system::get_user_agreement` | 获取用户协议 |
 | `get_server_load` | `system::get_server_load` | 获取服务负载 |
 | `get_leaderboard` | `system::get_leaderboard` | 获取排行榜 |
 
@@ -164,10 +168,69 @@ md5(x-timestamp + x-nonce + raw_body + api_secret)
 | action | 处理函数 | 说明 |
 |--------|----------|------|
 | `email_send_code` | `email_auth::send_code` | 发送邮箱验证码 |
+| `email_get_captcha_config` | `email_auth::get_captcha_config` | 获取邮箱验证码配置 |
+| `email_get_turnstile_config` | `email_auth::get_turnstile_config` | 获取 Turnstile 配置 |
 | `email_register` | `email_auth::register` | 邮箱注册 |
 | `email_login` | `email_auth::login` | 邮箱登录 |
 | `email_reset_password` | `email_auth::reset_password` | 邮箱重置密码 |
 | `email_get_profile` | `email_auth::get_profile` | 获取邮箱用户资料 |
+
+## 排行榜接口
+
+### `get_leaderboard`
+
+获取听歌排行榜，支持按时间周期筛选。
+
+**请求参数：**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `type` | string | 否 | 排行类型：`listen`（听歌时长，默认）、`songs`（听歌数量） |
+| `period` | string | 否 | 时间周期：`daily`（日榜）、`weekly`（周榜）、`total`（总榜，默认） |
+| `limit` | int | 否 | 返回条目数，默认 50，范围 1~100 |
+| `ciyuanxi_id` | string | 否 | 当前用户弦予号，用于标记本人排名 |
+
+**period 说明：**
+
+| 值 | 数据来源 | 说明 |
+|------|----------|------|
+| `daily` | `listen_daily_stats` 今天 | 当日听歌时长排行 |
+| `weekly` | `listen_daily_stats` 本周一~今天 | 本周累计听歌时长排行 |
+| `total` | `app_users` 累计值 | 历史总听歌时长排行 |
+
+**响应示例：**
+
+```json
+{
+  "code": 200,
+  "msg": "ok",
+  "data": {
+    "leaderboard": [
+      {
+        "rank": 1,
+        "username": "user123",
+        "nickname": "user123",
+        "avatar": "https://...",
+        "duration": 3600,
+        "is_me": false
+      }
+    ],
+    "me": {
+      "rank": 5,
+      "username": "myuser",
+      "nickname": "myuser",
+      "avatar": "https://...",
+      "duration": 1800,
+      "is_me": true
+    },
+    "total_users": 50,
+    "period": "daily"
+  }
+}
+```
+
+- `me` 为 `null` 时表示当前用户无排行数据。
+- 日榜/周榜依赖 `listen_daily_stats` 表，该表由 `report_listen_stats` 和 `report_user_behavior` 在客户端上报播放数据时同步写入。
 
 ## 已清理的旧接口范围
 

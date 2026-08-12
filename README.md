@@ -51,6 +51,7 @@
   "admin_password": "adminadmin",
   "listen_addr": "0.0.0.0:8081",
   "jwt_secret": "your_jwt_secret",
+  "static_dir": "../admin-web/dist",
   "email_api_primary": "",
   "email_api_backup": "",
   "email_sender": "no-reply@example.com",
@@ -70,6 +71,7 @@
 | `admin_username` / `admin_password` | 初始后台管理员账号 |
 | `listen_addr` | 服务端监听地址 |
 | `jwt_secret` | 用户与邮箱模块 JWT 签名密钥 |
+| `static_dir` | 后台前端静态文件目录，相对路径从 `server/` 目录算起 |
 | `email_*` | 邮件发送的环境兜底配置，推荐在后台页面配置 |
 | `captcha_secret` | 通用人机验证 Secret 环境兜底 |
 | `turnstile_secret` | Turnstile 专用 Secret 环境兜底 |
@@ -327,6 +329,7 @@ chmod +x /www/wwwroot/xymusic.example.com/server/server
   "admin_password": "replace_with_admin_password",
   "listen_addr": "127.0.0.1:8081",
   "jwt_secret": "replace_with_random_jwt_secret",
+  "static_dir": "../admin-web/dist",
   "email_api_primary": "",
   "email_api_backup": "",
   "email_sender": "no-reply@example.com",
