@@ -1,4 +1,4 @@
-use sqlx::MySqlPool;
+﻿use sqlx::MySqlPool;
 use sqlx::Row;
 use tracing::warn;
 
@@ -26,6 +26,36 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "app_users", "background_url", "LONGTEXT NULL").await;
     ensure_column(pool, "app_users", "signature", "varchar(255) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "listen_daily_stats", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;
+    ensure_default_admin(pool).await;
+}
+
+/// 确保至少有一个管理员账号，如果 admin_users 表为空则创建默认 admin
+async fn ensure_default_admin(pool: &MySqlPool) {
+    let count: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM admin_users")
+        .fetch_one(pool)
+        .await
+        .map(|r| r.get("cnt"))
+        .unwrap_or(0);
+    if count > 0 {
+        return;
+    }
+    // 使用 bcrypt 哈希默认密码 adminadmin
+    let hash = match bcrypt::hash("adminadmin", 10) {
+        Ok(h) => h,
+        Err(e) => {
+            warn!("failed to hash default admin password: {}", e);
+            return;
+        }
+    };
+    let _ = sqlx::query(
+        "INSERT IGNORE INTO admin_users (username, password, email, role, status) VALUES (?, ?, ?, ?, 1)",
+    )
+    .bind("admin")
+    .bind(&hash)
+    .bind("admin@xymusic.com")
+    .bind("super_admin")
+    .execute(pool)
+    .await;
 }
 
 async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: &str) {
@@ -55,7 +85,7 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
 
 static TABLE_STATEMENTS: &[&str] = &[
         "CREATE TABLE IF NOT EXISTS `source_call_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ip` varchar(45) NOT NULL DEFAULT '',
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `source_name` varchar(64) NOT NULL DEFAULT '',
@@ -79,7 +109,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_source_type` (`source_type`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `login_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ip` varchar(45) NOT NULL DEFAULT '',
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `user_id` varchar(64) NOT NULL DEFAULT '',
@@ -93,7 +123,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ip` (`ip`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `error_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ip` varchar(45) NOT NULL DEFAULT '',
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `app_version` varchar(32) NOT NULL DEFAULT '',
@@ -115,7 +145,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_platform` (`platform`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `app_users` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `username` varchar(64) NOT NULL DEFAULT '',
             `password` varchar(255) NOT NULL DEFAULT '',
             `email` varchar(128) NOT NULL DEFAULT '',
@@ -139,7 +169,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ciyuanxi_id` (`ciyuanxi_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `email_verify_codes` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `email` varchar(128) NOT NULL DEFAULT '',
             `code` varchar(8) NOT NULL DEFAULT '',
             `type` varchar(32) NOT NULL DEFAULT 'register',
@@ -153,7 +183,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `human_captcha_challenges` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `captcha_id` varchar(64) NOT NULL DEFAULT '',
             `purpose` varchar(32) NOT NULL DEFAULT 'auth',
             `answer` varchar(16) NOT NULL DEFAULT '',
@@ -167,7 +197,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_expires_at` (`expires_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `auth_rate_limits` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `action` varchar(32) NOT NULL DEFAULT '',
             `identifier` varchar(128) NOT NULL DEFAULT '',
             `ip` varchar(45) NOT NULL DEFAULT '',
@@ -181,7 +211,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_updated_at` (`updated_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `api_rate_events` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `level` varchar(16) NOT NULL DEFAULT '',
             `action` varchar(64) NOT NULL DEFAULT '',
             `identity_type` varchar(32) NOT NULL DEFAULT '',
@@ -200,7 +230,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ip_created` (`ip`, `created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `api_temp_blocks` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `identity_type` varchar(32) NOT NULL DEFAULT '',
             `identity` varchar(128) NOT NULL DEFAULT '',
             `ip` varchar(45) NOT NULL DEFAULT '',
@@ -214,7 +244,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ip` (`ip`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `admin_users` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `username` varchar(64) NOT NULL DEFAULT '',
             `password` varchar(255) NOT NULL DEFAULT '',
             `email` varchar(128) NOT NULL DEFAULT '',
@@ -226,8 +256,8 @@ static TABLE_STATEMENTS: &[&str] = &[
             UNIQUE KEY `uk_username` (`username`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `admin_operation_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `admin_id` bigint(20) unsigned NOT NULL DEFAULT 0,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `admin_id` bigint(20) NOT NULL DEFAULT 0,
             `admin_username` varchar(64) NOT NULL DEFAULT '',
             `action` varchar(128) NOT NULL DEFAULT '',
             `target` varchar(255) NOT NULL DEFAULT '',
@@ -240,8 +270,8 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `admin_login_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `admin_id` bigint(20) unsigned NOT NULL DEFAULT 0,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `admin_id` bigint(20) NOT NULL DEFAULT 0,
             `admin_username` varchar(64) NOT NULL DEFAULT '',
             `ip` varchar(45) NOT NULL DEFAULT '',
             `user_agent` varchar(255) NOT NULL DEFAULT '',
@@ -287,7 +317,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_upload_limit` (`upload_limit`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `email_templates` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `name` varchar(128) NOT NULL DEFAULT '',
             `subject` varchar(255) NOT NULL DEFAULT '',
             `body` text,
@@ -299,11 +329,11 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_is_default` (`is_default`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `email_send_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `email` varchar(128) NOT NULL DEFAULT '',
             `subject` varchar(255) NOT NULL DEFAULT '',
-            `interface_id` bigint(20) unsigned NOT NULL DEFAULT 0,
-            `template_id` bigint(20) unsigned NOT NULL DEFAULT 0,
+            `interface_id` bigint(20) NOT NULL DEFAULT 0,
+            `template_id` bigint(20) NOT NULL DEFAULT 0,
             `status` tinyint(1) NOT NULL DEFAULT 1,
             `error_msg` text,
             `ip` varchar(45) NOT NULL DEFAULT '',
@@ -328,7 +358,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `download_url` varchar(512) NOT NULL DEFAULT '',
             `update_content` text,
             `status` varchar(32) NOT NULL DEFAULT 'normal',
-            `file_size` bigint(20) unsigned NOT NULL DEFAULT 0,
+            `file_size` bigint(20) NOT NULL DEFAULT 0,
             `message` varchar(512) NOT NULL DEFAULT '',
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
@@ -351,7 +381,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             PRIMARY KEY (`ciyuanxi_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `tv_login_codes` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `code` varchar(64) NOT NULL DEFAULT '',
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `status` varchar(16) NOT NULL DEFAULT 'pending',
@@ -368,7 +398,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_status` (`status`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_feedback` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `nickname` varchar(64) NOT NULL DEFAULT '',
             `title` varchar(60) NOT NULL DEFAULT '',
@@ -389,7 +419,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_playlists` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `user_id` varchar(32) NOT NULL DEFAULT '0' COMMENT '所属用户弦予号(ciyuanxi_id)',
             `name` varchar(100) NOT NULL DEFAULT '',
             `description` varchar(500) NOT NULL DEFAULT '',
@@ -405,8 +435,8 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_playlist_songs` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `playlist_id` bigint(20) unsigned NOT NULL DEFAULT 0,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `playlist_id` bigint(20) NOT NULL DEFAULT 0,
             `user_id` varchar(32) NOT NULL DEFAULT '0',
             `song_hash` varchar(64) NOT NULL DEFAULT '',
             `song_name` varchar(200) NOT NULL DEFAULT '',
@@ -425,7 +455,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_user_id` (`user_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_avatar_pending` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `avatar_data` LONGTEXT NOT NULL,
             `status` varchar(16) NOT NULL DEFAULT 'pending',
@@ -437,7 +467,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_status` (`status`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_nickname_pending` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `nickname` varchar(64) NOT NULL DEFAULT '',
             `status` varchar(16) NOT NULL DEFAULT 'pending',
@@ -477,7 +507,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_uploaded_by` (`uploaded_by`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `email_test_users` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `email` varchar(128) NOT NULL DEFAULT '',
             `nickname` varchar(64) NOT NULL DEFAULT '',
             `password` varchar(255) NOT NULL DEFAULT '',
@@ -488,7 +518,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             UNIQUE KEY `uk_email` (`email`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `email_test_codes` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `email` varchar(128) NOT NULL DEFAULT '',
             `code` varchar(8) NOT NULL DEFAULT '',
             `type` varchar(32) NOT NULL DEFAULT 'register',
@@ -499,8 +529,8 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_email` (`email`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `email_test_logs` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `user_id` bigint(20) unsigned NOT NULL DEFAULT 0,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) NOT NULL DEFAULT 0,
             `email` varchar(128) NOT NULL DEFAULT '',
             `action` varchar(64) NOT NULL DEFAULT '',
             `detail` varchar(255) NOT NULL DEFAULT '',
@@ -509,7 +539,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `share_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `share_id` varchar(16) NOT NULL DEFAULT '',
             `song_name` varchar(255) NOT NULL DEFAULT '',
             `singer` varchar(255) NOT NULL DEFAULT '',
@@ -527,7 +557,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_expired_at` (`expired_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `ciyuanxi_pretty_ids` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `assigned_user_id` varchar(32) NOT NULL DEFAULT '0',
             `assigned_at` datetime DEFAULT NULL,
@@ -537,7 +567,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_assigned_user_id` (`assigned_user_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `master_quota_usage_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `deducted_count` int(11) NOT NULL DEFAULT 1,
             `remaining_after` int(11) NOT NULL DEFAULT 0,
@@ -553,8 +583,8 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_reason` (`reason`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `play_history` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `user_id` bigint(20) unsigned NOT NULL DEFAULT 0,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `user_id` bigint(20) NOT NULL DEFAULT 0,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `song_hash` varchar(64) NOT NULL DEFAULT '',
             `song_name` varchar(200) NOT NULL DEFAULT '',
@@ -569,8 +599,8 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_played_at` (`played_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `admin_app_login_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
-            `admin_id` bigint(20) unsigned NOT NULL DEFAULT 0,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `admin_id` bigint(20) NOT NULL DEFAULT 0,
             `admin_username` varchar(64) NOT NULL DEFAULT '',
             `ip` varchar(45) NOT NULL DEFAULT '',
             `user_agent` varchar(255) NOT NULL DEFAULT '',
@@ -587,7 +617,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ip` (`ip`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `app_open_log` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `app_version` varchar(32) NOT NULL DEFAULT '',
             `os_version` varchar(32) NOT NULL DEFAULT '',
@@ -600,7 +630,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_announcement_confirmations` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `announcement_id` varchar(64) NOT NULL DEFAULT '',
@@ -615,7 +645,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_confirmed_at` (`confirmed_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `listen_daily_stats` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `stat_date` date NOT NULL,
             `listen_duration` int(11) unsigned NOT NULL DEFAULT 0,
@@ -626,7 +656,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_stat_date` (`stat_date`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `banned_devices` (
-            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `reason` varchar(255) NOT NULL DEFAULT '',
             `banned_by` varchar(64) NOT NULL DEFAULT '',
