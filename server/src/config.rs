@@ -31,6 +31,10 @@ pub struct Config {
     pub local_debug_no_db: bool,
     #[serde(default = "default_static_dir")]
     pub static_dir: String,
+    /// 公网访问地址，用于拼接壁纸等资源的完整 URL（如 https://xymusic.example.com）
+    /// 当请求头中无法获取 Host 时，使用此配置作为兜底
+    #[serde(default)]
+    pub public_base_url: String,
 }
 
 fn default_static_dir() -> String {
@@ -49,6 +53,7 @@ impl Config {
         cfg.turnstile_secret = env::var("TURNSTILE_SECRET").unwrap_or(cfg.turnstile_secret);
         cfg.hcaptcha_secret = env::var("HCAPTCHA_SECRET").unwrap_or(cfg.hcaptcha_secret);
         cfg.static_dir = env::var("STATIC_DIR").unwrap_or(cfg.static_dir);
+        cfg.public_base_url = env::var("PUBLIC_BASE_URL").unwrap_or(cfg.public_base_url);
         cfg.local_debug_no_db = env::var("LOCAL_DEBUG_NO_DB")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
@@ -82,6 +87,7 @@ impl Config {
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
                 .unwrap_or(false),
+            public_base_url: env::var("PUBLIC_BASE_URL").unwrap_or_default(),
         }
     }
 }

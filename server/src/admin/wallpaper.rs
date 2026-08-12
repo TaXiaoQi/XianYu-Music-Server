@@ -48,6 +48,25 @@ fn wallpaper_dir() -> std::path::PathBuf {
     std::path::Path::new("uploads").join("wallpapers")
 }
 
+/// 将相对路径拼接为完整 URL（与 handlers::wallpaper::public_url 逻辑一致）
+/// 优先使用 base_url（从请求头构造），其次使用 config_public_base_url（配置兜底）
+fn full_url(base_url: &str, config_public_base_url: &str, url: &str) -> String {
+    if url.is_empty() {
+        return String::new();
+    }
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return url.to_string();
+    }
+    let base = if !base_url.is_empty() {
+        base_url
+    } else if !config_public_base_url.is_empty() {
+        config_public_base_url
+    } else {
+        return url.to_string();
+    };
+    format!("{}{}", base.trim_end_matches('/'), url)
+}
+
 /// 保存压缩图片：统一转 JPG，最大宽度 max_w，质量 quality
 fn compress_and_save_image(bytes: &[u8], target: &std::path::Path, max_w: u32, quality: u32) -> bool {
     use image::GenericImageView;
@@ -142,7 +161,21 @@ pub async fn list_wallpapers(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
         .fetch_all(pool).await;
     match rows {
         Ok(rows) => {
-            let arr: Vec<Value> = rows.iter().map(|r| crate::admin::row_to_value(r)).collect();
+            let base_url = &ctx.base_url;
+            let config_url = &ctx.config.public_base_url;
+            let arr: Vec<Value> = rows.iter().map(|r| {
+                let mut v = crate::admin::row_to_value(r);
+                // 将 image_url / thumbnail_url 从相对路径转为完整 URL
+                if let Some(obj) = v.as_object_mut() {
+                    if let Some(url) = obj.get("image_url").and_then(|v| v.as_str()) {
+                        obj.insert("image_url".to_string(), Value::String(full_url(base_url, config_url, url)));
+                    }
+                    if let Some(url) = obj.get("thumbnail_url").and_then(|v| v.as_str()) {
+                        obj.insert("thumbnail_url".to_string(), Value::String(full_url(base_url, config_url, url)));
+                    }
+                }
+                v
+            }).collect();
             log_operation(pool, ctx, "查看壁纸列表", "", "").await;
             ok("ok", json!(arr))
         }

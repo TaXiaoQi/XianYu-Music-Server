@@ -47,7 +47,7 @@ impl ReqCtx {
                 }
             });
         let base_url = if host.is_empty() {
-            String::new()
+            config.public_base_url.clone()
         } else {
             format!("{}://{}", scheme, host)
         };

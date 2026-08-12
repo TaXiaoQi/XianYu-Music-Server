@@ -45,10 +45,14 @@ fn public_url(ctx: &ReqCtx, url: String) -> String {
     if url.starts_with("http://") || url.starts_with("https://") {
         return url;
     }
-    if ctx.base_url.is_empty() {
+    let base = if !ctx.base_url.is_empty() {
+        &ctx.base_url
+    } else if !ctx.config.public_base_url.is_empty() {
+        &ctx.config.public_base_url
+    } else {
         return url;
-    }
-    format!("{}{}", ctx.base_url.trim_end_matches('/'), url)
+    };
+    format!("{}{}", base.trim_end_matches('/'), url)
 }
 
 fn data_url_to_bytes(data_url: &str) -> Option<Vec<u8>> {

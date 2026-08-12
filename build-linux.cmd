@@ -130,6 +130,7 @@ exit /b 0
 >> "%DEPLOY_SERVER%\config.json" echo   "turnstile_secret": "",
 >> "%DEPLOY_SERVER%\config.json" echo   "hcaptcha_secret": "",
 >> "%DEPLOY_SERVER%\config.json" echo   "captcha_secret": "",
+>> "%DEPLOY_SERVER%\config.json" echo   "public_base_url": "",
 >> "%DEPLOY_SERVER%\config.json" echo   "static_dir": "../admin-web/dist",
 >> "%DEPLOY_SERVER%\config.json" echo   "local_debug_no_db": false
 >> "%DEPLOY_SERVER%\config.json" echo }

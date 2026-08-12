@@ -47,6 +47,7 @@ pub struct AdminCtx {
     pub role: String,
     pub ip: String,
     pub config: crate::config::Config,
+    pub base_url: String,
 }
 
 /// 签发 JWT（24 小时时效）

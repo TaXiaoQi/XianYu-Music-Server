@@ -63,6 +63,9 @@ async fn main() -> anyhow::Result<()> {
     let static_dir = config.static_dir.clone();
     let index_file = format!("{}/index.html", static_dir.trim_end_matches(|c| c == '/' || c == '\\'));
 
+    // 确保 uploads 目录及子目录存在
+    let _ = std::fs::create_dir_all("uploads/wallpapers");
+
     let app = Router::new()
         .route("/api", get(handle_api).post(handle_api))
         .route("/api/", get(handle_api).post(handle_api))
@@ -185,6 +188,33 @@ async fn handle_api(
     handlers::dispatch(&action, &body, ctx, &state.pool).await
 }
 
+/// 从请求头构造 base_url，用于后台拼接完整图片 URL
+/// 优先使用请求头中的 Host，若无法获取则使用 config.public_base_url 兜底
+fn build_base_url(headers: &HeaderMap, config: &Config) -> String {
+    let host = headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get(axum::http::header::HOST))
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+    if host.is_empty() {
+        return config.public_base_url.clone();
+    }
+    let scheme = headers
+        .get("x-forwarded-proto")
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.split(',').next().unwrap_or(v).trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            if host.starts_with("localhost") || host.starts_with("127.") || host.starts_with("0.0.0.0") {
+                "http".to_string()
+            } else {
+                "https".to_string()
+            }
+        });
+    format!("{}://{}", scheme, host)
+}
+
 /// 后台接口统一入口：`admin_login` 免鉴权，其余需 Bearer JWT
 async fn handle_admin_api(
     State(state): State<AppState>,
@@ -223,12 +253,14 @@ async fn handle_admin_api(
         None => return admin::err(401, "未登录或登录已过期"),
     };
     if !state.db_ready {
+        let base_url = build_base_url(&headers, &state.config);
         let config_ctx = admin::AdminCtx {
             id: claims.sub,
             username: claims.username,
             role: claims.role,
             ip: ip.clone(),
             config: (*state.config).clone(),
+            base_url,
         };
         return match action.as_str() {
             "get_server_config_file" => admin::config_file::get_no_db(&raw_body, &config_ctx).await,
@@ -237,12 +269,14 @@ async fn handle_admin_api(
             _ => debug::handle_admin_api(&action),
         };
     }
+    let base_url = build_base_url(&headers, &state.config);
     let ctx = admin::AdminCtx {
         id: claims.sub,
         username: claims.username,
         role: claims.role,
         ip,
         config: (*state.config).clone(),
+        base_url,
     };
     if state.config.local_debug_no_db {
         return debug::handle_admin_api(&action);

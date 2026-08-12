@@ -36,6 +36,7 @@ fn default_config(ctx: &AdminCtx) -> Value {
         "hcaptcha_secret": ctx.config.hcaptcha_secret.clone(),
         "static_dir": "../admin-web/dist",
         "local_debug_no_db": ctx.config.local_debug_no_db,
+        "public_base_url": ctx.config.public_base_url.clone(),
     })
 }
 
@@ -136,6 +137,7 @@ fn merge_config_from_body(body: &str, ctx: &AdminCtx) -> Result<Value, String> {
         "email_api_backup",
         "email_sender",
         "static_dir",
+        "public_base_url",
     ];
     for key in string_keys {
         set_string(map, &data, key);
