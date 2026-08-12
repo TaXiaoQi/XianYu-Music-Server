@@ -576,6 +576,20 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     .execute(pool)
     .await;
 
+    // 同步写入每日统计（用于日榜/周榜）
+    let _ = sqlx::query(
+        "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
+         VALUES (?, CURDATE(), ?, ?) \
+         ON DUPLICATE KEY UPDATE \
+             listen_duration = GREATEST(listen_duration, VALUES(listen_duration)), \
+             unique_songs_count = GREATEST(unique_songs_count, VALUES(unique_songs_count))",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(seconds)
+    .bind(unique_songs_count)
+    .execute(pool)
+    .await;
+
     match result {
         Ok(r) if r.rows_affected() > 0 => ctx.ok_empty("ok"),
         Ok(_) => ctx.err(404, "用户不存在"),

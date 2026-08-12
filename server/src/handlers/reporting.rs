@@ -126,6 +126,17 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     .execute(pool)
     .await;
 
+    // 同步写入每日统计（用于日榜/周榜）
+    let _ = sqlx::query(
+        "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration) \
+         VALUES (?, CURDATE(), ?) \
+         ON DUPLICATE KEY UPDATE listen_duration = GREATEST(listen_duration, VALUES(listen_duration))",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(duration)
+    .execute(pool)
+    .await;
+
     match result {
         Ok(r) if r.rows_affected() > 0 => ctx.ok_empty("ok"),
         Ok(_) => ctx.err(404, "用户不存在"),

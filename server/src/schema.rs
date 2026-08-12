@@ -25,6 +25,7 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "app_users", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "background_url", "LONGTEXT NULL").await;
     ensure_column(pool, "app_users", "signature", "varchar(255) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "listen_daily_stats", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;
 }
 
 async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: &str) {
@@ -612,6 +613,17 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ciyuanxi_id` (`ciyuanxi_id`),
             KEY `idx_announcement_id` (`announcement_id`),
             KEY `idx_confirmed_at` (`confirmed_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `listen_daily_stats` (
+            `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `stat_date` date NOT NULL,
+            `listen_duration` int(11) unsigned NOT NULL DEFAULT 0,
+            `unique_songs_count` int(11) unsigned NOT NULL DEFAULT 0,
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_user_date` (`ciyuanxi_id`, `stat_date`),
+            KEY `idx_stat_date` (`stat_date`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `banned_devices` (
             `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,

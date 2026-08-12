@@ -422,19 +422,133 @@ fn loadavg() -> (f64, f64) {
 pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let kind = data.get("type").and_then(|v| v.as_str()).unwrap_or("listen").to_string();
+    let period = data.get("period").and_then(|v| v.as_str()).unwrap_or("total").to_string();
     let limit = data.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 100);
     let ciyuanxi_id = data.get("ciyuanxi_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
     let order_col = if kind == "listen" { "listen_duration" } else { "unique_songs_count" };
 
+    // 根据 period 构建不同的查询
+    let (top_sql, count_sql, me_sql, me_count_sql) = match period.as_str() {
+        "daily" => {
+            let day_filter = "stat_date = CURDATE()";
+            (
+                format!(
+                    "SELECT d.ciyuanxi_id, u.username, u.avatar_url, SUM(d.{}) AS value \
+                     FROM listen_daily_stats d \
+                     INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
+                     WHERE {} \
+                     GROUP BY d.ciyuanxi_id, u.username, u.avatar_url \
+                     HAVING value > 0 \
+                     ORDER BY value DESC, u.username ASC LIMIT ?",
+                    order_col, day_filter
+                ),
+                format!(
+                    "SELECT COUNT(*) AS cnt FROM ( \
+                     SELECT d.ciyuanxi_id \
+                     FROM listen_daily_stats d \
+                     INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
+                     WHERE {} \
+                     GROUP BY d.ciyuanxi_id \
+                     HAVING SUM(d.{}) > 0 \
+                     ) AS sub",
+                    day_filter, order_col
+                ),
+                format!(
+                    "SELECT u.username, u.avatar_url, COALESCE(SUM(d.{}), 0) AS value \
+                     FROM app_users u \
+                     LEFT JOIN listen_daily_stats d ON d.ciyuanxi_id = u.ciyuanxi_id AND {} \
+                     WHERE u.ciyuanxi_id = ? AND u.status = 1 \
+                     GROUP BY u.ciyuanxi_id, u.username, u.avatar_url",
+                    order_col, day_filter
+                ),
+                format!(
+                    "SELECT COUNT(*) AS cnt FROM ( \
+                     SELECT d.ciyuanxi_id \
+                     FROM listen_daily_stats d \
+                     INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
+                     WHERE {} \
+                     GROUP BY d.ciyuanxi_id \
+                     HAVING SUM(d.{}) > ? \
+                     ) AS sub",
+                    day_filter, order_col
+                ),
+            )
+        }
+        "weekly" => {
+            // 本周一 ~ 今天
+            let week_filter = "stat_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND stat_date <= CURDATE()";
+            (
+                format!(
+                    "SELECT d.ciyuanxi_id, u.username, u.avatar_url, SUM(d.{}) AS value \
+                     FROM listen_daily_stats d \
+                     INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
+                     WHERE {} \
+                     GROUP BY d.ciyuanxi_id, u.username, u.avatar_url \
+                     HAVING value > 0 \
+                     ORDER BY value DESC, u.username ASC LIMIT ?",
+                    order_col, week_filter
+                ),
+                format!(
+                    "SELECT COUNT(*) AS cnt FROM ( \
+                     SELECT d.ciyuanxi_id \
+                     FROM listen_daily_stats d \
+                     INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
+                     WHERE {} \
+                     GROUP BY d.ciyuanxi_id \
+                     HAVING SUM(d.{}) > 0 \
+                     ) AS sub",
+                    week_filter, order_col
+                ),
+                format!(
+                    "SELECT u.username, u.avatar_url, COALESCE(SUM(d.{}), 0) AS value \
+                     FROM app_users u \
+                     LEFT JOIN listen_daily_stats d ON d.ciyuanxi_id = u.ciyuanxi_id AND {} \
+                     WHERE u.ciyuanxi_id = ? AND u.status = 1 \
+                     GROUP BY u.ciyuanxi_id, u.username, u.avatar_url",
+                    order_col, week_filter
+                ),
+                format!(
+                    "SELECT COUNT(*) AS cnt FROM ( \
+                     SELECT d.ciyuanxi_id \
+                     FROM listen_daily_stats d \
+                     INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
+                     WHERE {} \
+                     GROUP BY d.ciyuanxi_id \
+                     HAVING SUM(d.{}) > ? \
+                     ) AS sub",
+                    week_filter, order_col
+                ),
+            )
+        }
+        _ => {
+            // total
+            (
+                format!(
+                    "SELECT ciyuanxi_id, username, avatar_url, {} AS value \
+                     FROM app_users WHERE status = 1 AND {} > 0 \
+                     ORDER BY {} DESC, username ASC LIMIT ?",
+                    order_col, order_col, order_col
+                ),
+                format!(
+                    "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND {} > 0",
+                    order_col
+                ),
+                format!(
+                    "SELECT username, avatar_url, {} AS value \
+                     FROM app_users WHERE ciyuanxi_id = ? AND status = 1 LIMIT 1",
+                    order_col
+                ),
+                format!(
+                    "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND {} > ?",
+                    order_col
+                ),
+            )
+        }
+    };
+
     // 查询 Top N 用户
-    let sql = format!(
-        "SELECT ciyuanxi_id, username, avatar_url, {} AS value \
-         FROM app_users WHERE status = 1 AND {} > 0 \
-         ORDER BY {} DESC, username ASC LIMIT ?",
-        order_col, order_col, order_col
-    );
-    let rows = match sqlx::query(&sql).bind(limit).fetch_all(pool).await {
+    let rows = match sqlx::query(&top_sql).bind(limit).fetch_all(pool).await {
         Ok(rows) => rows,
         Err(e) => return ctx.err(500, &format!("查询失败: {}", e)),
     };
@@ -468,14 +582,10 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     // 当前用户不在 Top N 时，单独查询排名
     let mut me = me_in_list;
     if !ciyuanxi_id.is_empty() && me.is_none() {
-        let user_row = sqlx::query(&format!(
-            "SELECT username, avatar_url, {} AS value \
-             FROM app_users WHERE ciyuanxi_id = ? AND status = 1 LIMIT 1",
-            order_col
-        ))
-        .bind(&ciyuanxi_id)
-        .fetch_optional(pool)
-        .await;
+        let user_row = sqlx::query(&me_sql)
+            .bind(&ciyuanxi_id)
+            .fetch_optional(pool)
+            .await;
 
         if let Ok(Some(row)) = user_row {
             let username: String = row.get("username");
@@ -484,13 +594,10 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             let value: i64 = row.get("value");
 
             if value > 0 {
-                let rank_row = sqlx::query(&format!(
-                    "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND {} > ?",
-                    order_col
-                ))
-                .bind(value)
-                .fetch_one(pool)
-                .await;
+                let rank_row = sqlx::query(&me_count_sql)
+                    .bind(value)
+                    .fetch_one(pool)
+                    .await;
 
                 let rank = if let Ok(r) = rank_row {
                     r.get::<i64, _>("cnt") as u32 + 1
@@ -511,14 +618,11 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     }
 
     // 统计参与排行的总用户数
-    let total_users = sqlx::query(&format!(
-        "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND {} > 0",
-        order_col
-    ))
-    .fetch_one(pool)
-    .await
-    .map(|r| r.get::<i64, _>("cnt") as u32)
-    .unwrap_or(leaderboard.len() as u32);
+    let total_users = sqlx::query(&count_sql)
+        .fetch_one(pool)
+        .await
+        .map(|r| r.get::<i64, _>("cnt") as u32)
+        .unwrap_or(leaderboard.len() as u32);
 
     ctx.json(
         200,
@@ -527,6 +631,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             "leaderboard": leaderboard,
             "me": me,
             "total_users": total_users,
+            "period": period,
         })),
     )
 }
