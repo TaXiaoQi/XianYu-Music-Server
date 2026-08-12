@@ -47,26 +47,26 @@
     </div>
 
     <!-- 数据概览 -->
-    <div v-if="!loading && !loadError" class="stats-section">
-      <div class="mobile-grid stats-grid">
-        <div class="stat-item">
-          <div class="stat-label">总用户数</div>
-          <div class="stat-value">{{ stats.total_users ?? 0 }}</div>
+    <div v-if="!loading && !loadError" class="mobile-card stats-section">
+      <div class="mobile-grid">
+        <div class="mobile-stat">
+          <span>总用户数</span>
+          <strong>{{ stats.total_users ?? 0 }}</strong>
           <div class="stat-sub">今日新增 {{ stats.today_users ?? 0 }} · 昨日 {{ stats.yesterday_users ?? 0 }}</div>
         </div>
-        <div class="stat-item">
-          <div class="stat-label">今日热搜</div>
-          <div class="stat-value hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</div>
+        <div class="mobile-stat">
+          <span>今日热搜</span>
+          <strong class="hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</strong>
           <div class="stat-sub">今日搜索 {{ stats.today_hot_search_count ?? 0 }} 次</div>
         </div>
-        <div class="stat-item">
-          <div class="stat-label">今日用户</div>
-          <div class="stat-value">{{ stats.active_users ?? 0 }}</div>
+        <div class="mobile-stat">
+          <span>今日用户</span>
+          <strong>{{ stats.active_users ?? 0 }}</strong>
           <div class="stat-sub">今日活跃设备数</div>
         </div>
-        <div class="stat-item">
-          <div class="stat-label">今日分享</div>
-          <div class="stat-value">{{ stats.today_shares ?? 0 }}</div>
+        <div class="mobile-stat">
+          <span>今日分享</span>
+          <strong>{{ stats.today_shares ?? 0 }}</strong>
           <div class="stat-sub">总计 {{ stats.total_shares ?? 0 }} 次</div>
         </div>
       </div>
@@ -450,39 +450,17 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
 }
-.stats-grid {
+.stats-section .mobile-grid {
   gap: 10px;
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  overflow: visible;
 }
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 0;
-  background: transparent;
-  min-width: 0;
-}
-.stat-label {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-weight: 700;
-}
-.stat-value {
-  font-size: 24px;
-  font-weight: 700;
-  line-height: 1;
+.stats-section .mobile-stat strong {
   color: var(--accent);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .hot-keyword {
-  font-size: 20px;
+  font-size: 20px !important;
 }
 .stat-sub {
+  margin-top: 6px;
   font-size: 10px;
   color: var(--text-light);
   overflow: hidden;

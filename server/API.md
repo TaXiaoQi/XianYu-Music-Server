@@ -102,6 +102,7 @@ md5(x-timestamp + x-nonce + raw_body + api_secret)
 | `send_verify_code` | `auth::send_verify_code` | 发送验证码 |
 | `reset_password` | `auth::reset_password` | 重置密码 |
 | `delete_account` | `auth::delete_account` | 注销账号 |
+| `preverify_delete_account` | `auth::preverify_delete_account` | 预验证注销凭据 |
 | `generate_tv_login_code` | `auth::generate_tv_login_code` | 生成 TV 登录码 |
 | `poll_tv_login_status` | `auth::poll_tv_login_status` | 轮询 TV 登录状态 |
 | `scan_tv_login` | `auth::scan_tv_login` | 扫描 TV 登录码 |

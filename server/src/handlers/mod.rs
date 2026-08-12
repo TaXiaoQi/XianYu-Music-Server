@@ -43,6 +43,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "send_verify_code" => auth::send_verify_code(body, ctx, pool).await,
         "reset_password" => auth::reset_password(body, ctx, pool).await,
         "delete_account" => auth::delete_account(body, ctx, pool).await,
+        "preverify_delete_account" => auth::preverify_delete_account(body, ctx, pool).await,
         "generate_tv_login_code" => auth::generate_tv_login_code(body, ctx, pool).await,
         "poll_tv_login_status" => auth::poll_tv_login_status(body, ctx, pool).await,
         "scan_tv_login" => auth::scan_tv_login(body, ctx, pool).await,

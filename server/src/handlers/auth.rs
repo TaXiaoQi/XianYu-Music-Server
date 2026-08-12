@@ -1020,3 +1020,63 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         Err(e) => ctx.err(500, &format!("注销失败: {}", e)),
     }
 }
+
+/// 预验证注销凭据（密码 + 邮箱验证码），仅校验不执行实际注销。
+/// 用于客户端弹出二级确认弹窗时提前验证，减少用户确认后的等待时间。
+pub async fn preverify_delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let email = str_of(&data, "email").trim().to_string();
+    let verify_code = str_of(&data, "verify_code").trim().to_string();
+    let password = str_of(&data, "password").trim().to_string();
+
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "账号标识不能为空");
+    }
+    if email.is_empty() || !email.contains('@') {
+        return ctx.err(400, "邮箱格式不正确");
+    }
+    if verify_code.is_empty() {
+        return ctx.err(400, "请输入邮箱验证码");
+    }
+    if password.is_empty() {
+        return ctx.err(400, "请输入登录密码");
+    }
+
+    let user = sqlx::query("SELECT id, email, password FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return ctx.err(404, "账号不存在或已注销");
+    };
+
+    let registered_email: String = user.try_get("email").unwrap_or_default();
+    if registered_email.trim().to_lowercase() != email.trim().to_lowercase() {
+        return ctx.err(400, "邮箱与当前账号不匹配");
+    }
+
+    // 验证登录密码
+    let stored_password: String = user.try_get("password").unwrap_or_default();
+    if !stored_password.is_empty() && !bcrypt::verify(&password, &stored_password).unwrap_or(false) {
+        return ctx.err(400, "登录密码错误");
+    }
+
+    // 验证邮箱验证码（仅校验，不标记为已使用，留给实际注销接口标记）
+    let code_row = sqlx::query(
+        "SELECT id FROM email_verify_codes WHERE email = ? AND code = ? AND type = 'delete_account' AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&registered_email)
+    .bind(&verify_code)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    if code_row.is_none() {
+        return ctx.err(400, "验证码无效或已过期");
+    }
+
+    ctx.ok_empty("凭据验证通过")
+}
