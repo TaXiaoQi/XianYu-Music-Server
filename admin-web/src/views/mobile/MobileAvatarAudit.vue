@@ -54,7 +54,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
 const tab = ref<'avatar' | 'nickname'>('avatar')
@@ -74,10 +74,14 @@ async function testConfig() {
   const res = await adminApi<any>('test_audit_external_config', { scene: tab.value, text: '测试内容' })
   testText.value = res.code === 200 ? JSON.stringify(res.data || {}, null, 2) : (res.msg || '测试失败')
 }
-async function load() { loading.value = true; const [a,n] = await Promise.all([adminApi<any>('list_avatar_pending'), adminApi<any[]>('list_nickname_pending')]); avatars.value = a.code === 200 && a.data ? (a.data.list || []) : []; nicknames.value = n.code === 200 && n.data ? n.data : []; loading.value = false }
+async function load(silent = false) { if (!silent) loading.value = true; const [a,n] = await Promise.all([adminApi<any>('list_avatar_pending'), adminApi<any[]>('list_nickname_pending')]); avatars.value = a.code === 200 && a.data ? (a.data.list || []) : []; nicknames.value = n.code === 200 && n.data ? n.data : []; if (!silent) loading.value = false }
 async function approve(i: any) { const res = await adminApi(tab.value === 'avatar' ? 'approve_avatar' : 'approve_nickname', { id: i.id }); if (res.code === 200) { showToast('已通过', 'success'); load() } else showToast(res.msg || '操作失败') }
 async function reject(i: any) { const res = await adminApi(tab.value === 'avatar' ? 'reject_avatar' : 'reject_nickname', { id: i.id }); if (res.code === 200) { showToast('已拒绝', 'success'); load() } else showToast(res.msg || '操作失败') }
-onMounted(() => { loadConfig(); load() })
+let pollTimer: ReturnType<typeof setInterval> | null = null
+function startPolling() { stopPolling(); pollTimer = setInterval(() => load(true), 30000) }
+function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }
+onMounted(() => { loadConfig(); load(); startPolling() })
+onUnmounted(() => stopPolling())
 </script>
 <style scoped>
 .avatar-img{width:92px;height:92px;border-radius:50%;object-fit:cover;margin-bottom:10px;background:var(--control-bg)}

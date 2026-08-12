@@ -45,7 +45,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
 import { mobileConfirm } from '@/utils/mobileDialog'
@@ -56,7 +56,7 @@ const form = ref({ title: '', description: '', category: '' })
 const globalLimit = ref(20)
 const accountLimit = ref({ ciyuanxi_id: '', upload_limit: 20, remark: '' })
 const accountLimits = ref<any[]>([])
-async function load() { loading.value = true; const res = await adminApi<any[]>('list_wallpapers'); list.value = res.code === 200 && res.data ? res.data : []; loading.value = false }
+async function load(silent = false) { if (!silent) loading.value = true; const res = await adminApi<any[]>('list_wallpapers'); list.value = res.code === 200 && res.data ? res.data : []; if (!silent) loading.value = false }
 async function loadLimits() {
   const [g, a] = await Promise.all([adminApi<any>('get_wallpaper_upload_limit'), adminApi<any[]>('list_wallpaper_account_limits')])
   if (g.code === 200 && g.data) globalLimit.value = Number(g.data.wallpaper_upload_limit ?? 20)
@@ -128,7 +128,11 @@ async function uploadWallpaper() {
 }
 async function change(w: any, status: string) { const res = await adminApi('change_wallpaper_status', { id: w.id, status }); if (res.code === 200) { w.status = status; showToast('已处理', 'success') } else showToast(res.msg || '操作失败') }
 async function remove(w: any) { if (!(await mobileConfirm('确认删除壁纸？'))) return; const res = await adminApi('delete_wallpaper', { id: w.id }); if (res.code === 200) { showToast('已删除', 'success'); load() } else showToast(res.msg || '删除失败') }
-onMounted(() => { load(); loadLimits() })
+onMounted(() => { load(); loadLimits(); startPolling() })
+onUnmounted(() => stopPolling())
+let pollTimer: ReturnType<typeof setInterval> | null = null
+function startPolling() { stopPolling(); pollTimer = setInterval(() => load(true), 30000) }
+function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }
 </script>
 <style scoped>
 .wallpaper-img{width:100%;max-height:220px;object-fit:cover;border-radius:14px;margin-bottom:10px;background:var(--control-bg)}

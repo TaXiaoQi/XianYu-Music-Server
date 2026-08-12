@@ -284,7 +284,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 
 interface Wallpaper {
@@ -378,15 +378,15 @@ const filteredList = computed(() => {
   return wallpapers.value.filter(w => w.status === activeFilter.value)
 })
 
-async function loadList() {
-  loading.value = true
+async function loadList(silent = false) {
+  if (!silent) loading.value = true
   const res = await adminApi<Wallpaper[]>('list_wallpapers')
   if (res.code === 200 && res.data) {
     wallpapers.value = Array.isArray(res.data) ? res.data : []
   } else {
     wallpapers.value = []
   }
-  loading.value = false
+  if (!silent) loading.value = false
 }
 
 async function loadWallpaperUploadLimit() {
@@ -622,7 +622,16 @@ onMounted(() => {
   loadList()
   loadWallpaperUploadLimit()
   loadWallpaperAccountLimits()
+  startPolling()
 })
+
+onUnmounted(() => {
+  stopPolling()
+})
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+function startPolling() { stopPolling(); pollTimer = setInterval(() => loadList(true), 30000) }
+function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null } }
 </script>
 
 <style scoped>

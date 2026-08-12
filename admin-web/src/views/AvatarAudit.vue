@@ -12,7 +12,7 @@
             审核用户上传的头像和改名申请。通过后头像将更新为用户的新头像，改名申请通过后用户名将立即生效。
           </p>
         </div>
-        <button class="btn-refresh" @click="loadAll" :disabled="loading">
+        <button class="btn-refresh" @click="loadAll()" :disabled="loading">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ spinning: loading }">
             <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
           </svg>
@@ -262,7 +262,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 
 interface AvatarPending {
@@ -375,10 +375,10 @@ async function loadNicknames() {
   nickLoaded.value = true
 }
 
-async function loadAll() {
-  loading.value = true
+async function loadAll(silent = false) {
+  if (!silent) loading.value = true
   await Promise.all([loadAvatars(), loadNicknames(), loadAuditConfig()])
-  loading.value = false
+  if (!silent) loading.value = false
 }
 
 // ===== 头像审核 =====
@@ -437,8 +437,31 @@ function onImgError(e: Event) {
   img.style.display = 'none'
 }
 
+// ===== 自动刷新 =====
+const POLL_INTERVAL = 30000 // 30秒
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startPolling() {
+  stopPolling()
+  pollTimer = setInterval(() => {
+    loadAll(true) // 静默刷新，不显示 loading
+  }, POLL_INTERVAL)
+}
+
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
 onMounted(() => {
   loadAll()
+  startPolling()
+})
+
+onUnmounted(() => {
+  stopPolling()
 })
 </script>
 
