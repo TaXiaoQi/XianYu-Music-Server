@@ -177,7 +177,12 @@ pub async fn reset_listen_duration(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     if ciyuanxi_id.is_empty() {
         return err(400, "用户参数错误");
     }
-    let _ = sqlx::query("UPDATE app_users SET listen_duration = 0, unique_songs_count = 0 WHERE ciyuanxi_id = ?")
+    let _ = sqlx::query("UPDATE app_users SET listen_duration = 0, unique_songs_count = 0, listen_stats_reset_at = NOW() WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    // 清理每日统计表，确保日榜/周榜也从零开始
+    let _ = sqlx::query("DELETE FROM listen_daily_stats WHERE ciyuanxi_id = ?")
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;

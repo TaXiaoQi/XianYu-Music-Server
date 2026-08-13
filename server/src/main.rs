@@ -205,13 +205,7 @@ fn build_base_url(headers: &HeaderMap, config: &Config) -> String {
         .and_then(|v| v.to_str().ok())
         .map(|v| v.split(',').next().unwrap_or(v).trim().to_string())
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| {
-            if host.starts_with("localhost") || host.starts_with("127.") || host.starts_with("0.0.0.0") {
-                "http".to_string()
-            } else {
-                "https".to_string()
-            }
-        });
+        .unwrap_or_else(|| "http".to_string());
     format!("{}://{}", scheme, host)
 }
 

@@ -20,23 +20,43 @@ fn sanitize_filename(name: &str) -> bool {
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
+/// 从 CREATE TABLE 语句中提取表名（如 `CREATE TABLE IF NOT EXISTS \`listen_daily_stats\` ( ...` → `listen_daily_stats`）
+fn extract_table_name(stmt: &str) -> String {
+    let first_line = stmt.lines().next().unwrap_or("");
+    // 移除 "CREATE TABLE IF NOT EXISTS" 前缀
+    let after_prefix = first_line
+        .trim()
+        .trim_start_matches("CREATE TABLE IF NOT EXISTS")
+        .trim();
+    // 提取反引号中的表名
+    if let Some(start) = after_prefix.find('`') {
+        if let Some(end) = after_prefix[start + 1..].find('`') {
+            return after_prefix[start + 1..start + 1 + end].to_string();
+        }
+    }
+    // 回退：移除反引号并截断到第一个空格或括号
+    after_prefix
+        .trim_matches('`')
+        .split(|c: char| c.is_whitespace() || c == '(')
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
 /// 数据库表状态检查
-pub async fn list_tables(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+pub async fn list_tables(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let schema_tables = crate::schema::table_statements();
     let mut result: Vec<Value> = Vec::new();
+    let db_name = &ctx.config.db_name;
     for stmt in schema_tables {
-        let name = stmt
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .trim_start_matches("CREATE TABLE IF NOT EXISTS")
-            .trim_matches('`')
-            .trim()
-            .to_string();
+        let name = extract_table_name(stmt);
+        if name.is_empty() || name.starts_with("INSERT") || name.starts_with("VALUES") {
+            continue; // 跳过非 CREATE TABLE 语句（如 server_settings 的 INSERT）
+        }
         let exists: bool = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
         )
+        .bind(db_name)
         .bind(&name)
         .fetch_one(pool)
         .await
@@ -106,32 +126,21 @@ pub async fn repair_database(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     let mut created: Vec<String> = Vec::new();
     let mut errors: Vec<Value> = Vec::new();
     for stmt in crate::schema::table_statements() {
-        let name = stmt
-            .lines()
-            .next()
-            .unwrap_or("")
-            .trim()
-            .trim_start_matches("CREATE TABLE IF NOT EXISTS")
-            .trim_matches('`')
-            .trim()
-            .to_string();
+        let name = extract_table_name(stmt);
         match sqlx::query(stmt).execute(pool).await {
             Ok(_) => created.push(name.clone()),
             Err(e) => errors.push(json!({ "table": name, "msg": e.to_string() })),
         }
     }
+    // 同时执行 ensure_schema 以补充缺失列和默认数据
+    crate::schema::ensure_schema(pool).await;
     log_operation(pool, ctx, "修复数据库", "", &format!("created={} errors={}", created.len(), errors.len())).await;
     ok("修复完成", json!({
         "created_tables": created,
-        "added_columns": Value::Array(vec![]),
-        "added_indexes": Value::Array(vec![]),
-        "dropped_tables": Value::Array(vec![]),
         "errors": errors,
         "summary": {
             "created_tables_count": created.len(),
-            "added_columns_count": 0,
-            "added_indexes_count": 0,
-            "dropped_tables_count": 0,
+            "errors_count": errors.len(),
         }
     }))
 }
@@ -149,15 +158,19 @@ pub async fn view_table(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respons
     {
         return err(400, "无效的表名");
     }
+    let db_name = &ctx.config.db_name;
+    tracing::info!("view_table: db_name={}, table_name={}", db_name, table_name);
     let exists: Option<String> = sqlx::query_scalar::<_, String>(
-        "SELECT table_name FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?",
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
     )
+    .bind(db_name)
     .bind(&table_name)
     .fetch_optional(pool)
     .await
     .ok()
     .flatten();
     if exists.is_none() {
+        tracing::warn!("view_table: table not found in information_schema: db_name={}, table_name={}", db_name, table_name);
         return err(400, "表不存在");
     }
     let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM `{}`", table_name))
