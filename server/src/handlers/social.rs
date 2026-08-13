@@ -1,9 +1,9 @@
 use axum::response::Response;
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::MySqlPool;
 use sqlx::Row;
 
-use crate::handlers::helpers::{parse_body, str_of};
+use crate::handlers::helpers::{int_of, parse_body, str_of};
 use crate::response::ReqCtx;
 
 const MAX_FEEDBACK_LOG_CHARS: usize = 500_000;
@@ -201,4 +201,69 @@ pub async fn check_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
         }
         None => ctx.err(404, "用户不存在"),
     }
+}
+
+/// 获取当前用户的反馈完成通知：返回该用户已解决（resolved）且尚未确认（notified_at 为空）的反馈。
+/// 客户端据此调用公告弹窗展示处理管理员与完成说明。
+pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "请先登录");
+    }
+    let rows = sqlx::query(
+        "SELECT id, title, content, assignee, resolve_note, replied_at, updated_at
+         FROM user_feedback
+         WHERE ciyuanxi_id = ? AND status = 'resolved' AND assignee <> '' AND resolve_note IS NOT NULL AND resolve_note <> '' AND notified_at IS NULL
+         ORDER BY updated_at DESC",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_all(pool)
+    .await;
+    let list: Vec<Value> = match rows {
+        Ok(rows) => rows.iter().map(row_to_json).collect(),
+        Err(_) => Vec::new(),
+    };
+    ctx.ok("获取通知成功", json!({ "list": list }))
+}
+
+/// 确认反馈完成通知：将指定反馈的 notified_at 置为当前时间，标记该用户已读。
+pub async fn confirm_feedback_notification(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let id = int_of(&data, "id");
+    if ciyuanxi_id.is_empty() || id <= 0 {
+        return ctx.err(400, "参数错误");
+    }
+    let upd = sqlx::query(
+        "UPDATE user_feedback SET notified_at = NOW() WHERE id = ? AND ciyuanxi_id = ? AND status = 'resolved'",
+    )
+    .bind(id)
+    .bind(&ciyuanxi_id)
+    .execute(pool)
+    .await;
+    match upd {
+        Ok(_) => ctx.ok("通知确认成功", json!({ "id": id })),
+        Err(_) => ctx.err(500, "服务器错误"),
+    }
+}
+
+/// 将一行反馈记录转换为 JSON（含 nullable 字段处理）
+fn row_to_json(row: &sqlx::mysql::MySqlRow) -> Value {
+    use sqlx::Row;
+    json!({
+        "id": row.get::<i64, _>("id"),
+        "title": row.get::<String, _>("title"),
+        "content": row.get::<Option<String>, _>("content").unwrap_or_default(),
+        "assignee": row.get::<String, _>("assignee"),
+        "resolve_note": row.get::<Option<String>, _>("resolve_note").unwrap_or_default(),
+        "replied_at": row.get::<Option<String>, _>("replied_at").unwrap_or_default(),
+        "updated_at": row.get::<Option<String>, _>("updated_at").unwrap_or_default(),
+    })
 }

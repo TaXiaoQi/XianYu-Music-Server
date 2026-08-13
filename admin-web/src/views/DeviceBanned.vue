@@ -59,6 +59,10 @@
               <tr>
                 <th>ID</th>
                 <th>设备ID</th>
+                <th>硬件型号</th>
+                <th>系统版本</th>
+                <th>所属账号</th>
+                <th>应用版本</th>
                 <th>原因</th>
                 <th>操作人</th>
                 <th>封禁时间</th>
@@ -69,6 +73,16 @@
               <tr v-for="(d, idx) in bannedDevices" :key="d.id" class="table-row" :style="{ animationDelay: `${idx * 40}ms` }">
                 <td class="col-id">{{ d.id }}</td>
                 <td class="col-device" :title="d.device_id">{{ d.device_id }}</td>
+                <td class="col-model" :title="d.device_model || '-'">{{ d.device_model || '-' }}</td>
+                <td class="col-os" :title="d.os_version || '-'">{{ d.os_version || '-' }}</td>
+                <td class="col-account" :title="(d.nickname || '') + (d.ciyuanxi_id ? '（' + d.ciyuanxi_id + '）' : '')">
+                  <span v-if="d.nickname || d.ciyuanxi_id" class="account-cell">
+                    <span class="account-name">{{ d.nickname || '-' }}</span>
+                    <span v-if="d.ciyuanxi_id" class="account-id">{{ d.ciyuanxi_id }}</span>
+                  </span>
+                  <span v-else class="muted">未关联</span>
+                </td>
+                <td class="col-version" :title="d.app_version || '-'">{{ d.app_version || '-' }}</td>
                 <td class="col-reason">{{ d.reason || '-' }}</td>
                 <td>{{ d.banned_by || '-' }}</td>
                 <td class="col-time">{{ d.created_at }}</td>
@@ -299,7 +313,7 @@ onMounted(loadBannedDevices)
   width: 100%;
   border-collapse: collapse;
   background: var(--white);
-  min-width: 720px;
+  min-width: 1080px;
 }
 .data-table th {
   padding: 12px 14px;
@@ -329,9 +343,17 @@ onMounted(loadBannedDevices)
   font-family: monospace;
   font-size: 11px;
   word-break: break-all;
-  max-width: 260px;
+  max-width: 220px;
 }
-.col-reason { color: var(--text-light); }
+.col-model { color: var(--text); white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.col-os { color: var(--text); white-space: nowrap; font-size: 12px; }
+.col-version { color: var(--text-muted); white-space: nowrap; font-size: 12px; }
+.col-account { min-width: 120px; }
+.account-cell { display: flex; flex-direction: column; gap: 2px; }
+.account-name { color: var(--text); font-size: 13px; font-weight: 600; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.account-id { color: var(--text-muted); font-size: 11px; font-family: monospace; }
+.muted { color: var(--text-muted); }
+.col-reason { color: var(--text-light); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .col-time { white-space: nowrap; font-size: 12px; color: var(--text-light); }
 .btn-unban {
   padding: 6px 14px;

@@ -58,6 +58,15 @@
   line-height: 1.5;
   word-break: break-word;
 }
+.mobile-item-sub.monospace {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-light);
+}
+.mobile-item-sub.muted-time {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 .mobile-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

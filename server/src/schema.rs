@@ -88,6 +88,10 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "log_meta", "TEXT").await;
     // 申诉与普通反馈共用 user_feedback 表，用 category 区分：feedback / appeal
     ensure_column(pool, "user_feedback", "category", "VARCHAR(16) NOT NULL DEFAULT 'feedback'").await;
+    // 认领人（管理员账号名）与完成说明、通知确认时间（反馈 todo 化）
+    ensure_column(pool, "user_feedback", "assignee", "VARCHAR(64) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "user_feedback", "resolve_note", "TEXT").await;
+    ensure_column(pool, "user_feedback", "notified_at", "DATETIME DEFAULT NULL").await;
 }
 
 /// 账号系统重构迁移：将 app_users.username 列改名为 nickname。

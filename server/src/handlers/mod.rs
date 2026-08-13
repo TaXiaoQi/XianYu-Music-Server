@@ -67,6 +67,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "submit_feedback" => social::submit_feedback(body, ctx, pool).await,
         "submit_appeal" => social::submit_appeal(body, ctx, pool).await,
         "check_ciyuanxi_id" => social::check_ciyuanxi_id(body, ctx, pool).await,
+        "get_my_feedback_notifications" => social::get_my_feedback_notifications(body, ctx, pool).await,
+        "confirm_feedback_notification" => social::confirm_feedback_notification(body, ctx, pool).await,
         // wallpaper
         "list_wallpapers" => wallpaper::list_wallpapers(body, ctx, pool).await,
         "my_wallpapers" => wallpaper::my_wallpapers(body, ctx, pool).await,

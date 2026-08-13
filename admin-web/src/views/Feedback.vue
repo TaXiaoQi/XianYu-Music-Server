@@ -135,6 +135,14 @@
                 <span v-if="hasErrorLogs(item)" class="log-chip">错误日志 {{ formatLogSize(item.error_logs_chars) }}</span>
                 <span v-if="hasAllLogs(item)" class="log-chip">全量日志 {{ formatLogSize(item.all_logs_chars) }}</span>
               </div>
+              <div v-if="item.assignee" class="assignee-row">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span>认领人：{{ item.assignee }}</span>
+              </div>
+              <div v-if="item.status === 'resolved' && item.resolve_note" class="resolve-note">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ item.resolve_note }}</span></div>
+              </div>
             </div>
 
             <!-- 卡片底部 -->
@@ -154,11 +162,15 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
                   日志
                 </button>
-                <button v-if="isEditable(item)" class="act-btn act-resolve" @click="changeStatus(item.id, 'resolved')">
+                <button v-if="item.status === 'pending'" class="act-btn act-claim" @click="claimFeedback(item.id)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  认领
+                </button>
+                <button v-if="item.status === 'processing'" class="act-btn act-resolve" @click="openResolveModal(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   完成
                 </button>
-                <button v-if="isEditable(item)" class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">
+                <button v-if="item.status === 'pending' || item.status === 'processing'" class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   拒绝
                 </button>
@@ -168,6 +180,43 @@
         </TransitionGroup>
       </div>
     </template>
+
+    <!-- 完成说明弹窗 -->
+    <Transition name="modal">
+      <div v-if="resolveModalVisible" class="modal-backdrop" @click.self="closeResolveModal">
+        <div class="modal-dialog resolve-dialog">
+          <div class="modal-head">
+            <h3>完成反馈</h3>
+            <button class="modal-close" @click="closeResolveModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="resolveTarget" class="resolve-target-info">
+              <strong>{{ resolveTarget.title || '无标题' }}</strong>
+              <span>{{ resolveTarget.nickname || '匿名用户' }} · {{ resolveTarget.ciyuanxi_id || '-' }}</span>
+            </div>
+            <label class="resolve-field">
+              <span class="resolve-field-label">完成说明 <em>*</em></span>
+              <textarea
+                v-model="resolveNote"
+                class="resolve-textarea"
+                rows="5"
+                maxlength="1000"
+                placeholder="请填写本次处理的完成说明（必填），该说明将展示给提交反馈的用户"
+              ></textarea>
+              <span class="resolve-count">{{ resolveNote.length }}/1000</span>
+            </label>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" :disabled="resolveSaving" @click="closeResolveModal">取消</button>
+            <button class="btn-confirm" :disabled="resolveSaving || !resolveNote.trim()" @click="confirmResolve">
+              {{ resolveSaving ? '提交中...' : '确认完成' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
     <!-- 日志弹窗 -->
     <Transition name="modal">
@@ -239,6 +288,8 @@ interface Feedback {
   has_all_logs?: number | string | boolean
   replied_at: string | null
   replied_by: string
+  assignee: string
+  resolve_note: string | null
   ip: string
   created_at: string
   updated_at: string
@@ -279,8 +330,58 @@ function statusLabel(s: string): string {
 }
 
 // 仅待处理/处理中可执行完成或拒绝操作，终态（已解决/已拒绝）不再显示操作按钮
-function isEditable(item: Feedback): boolean {
-  return item.status === 'pending' || item.status === 'processing'
+
+// ===== 认领功能 =====
+async function claimFeedback(id: number) {
+  const ok = await webConfirm('确认认领该反馈？认领后将自动划入您的名下并移入处理中。', {
+    title: '认领反馈',
+    confirmText: '认领',
+  })
+  if (!ok) return
+  const res = await adminApi('claim_feedback', { id })
+  if (res.code === 200) {
+    showToast('认领成功，已置为处理中', 'success')
+    await loadList()
+  } else {
+    showToast(res.msg || '认领失败')
+  }
+}
+
+// ===== 完成弹窗 =====
+const resolveModalVisible = ref(false)
+const resolveTarget = ref<Feedback | null>(null)
+const resolveNote = ref('')
+const resolveSaving = ref(false)
+
+function openResolveModal(item: Feedback) {
+  resolveTarget.value = item
+  resolveNote.value = ''
+  resolveSaving.value = false
+  resolveModalVisible.value = true
+}
+
+function closeResolveModal() {
+  if (resolveSaving.value) return
+  resolveModalVisible.value = false
+  resolveTarget.value = null
+  resolveNote.value = ''
+}
+
+async function confirmResolve() {
+  if (!resolveTarget.value || !resolveNote.value.trim()) return
+  resolveSaving.value = true
+  const res = await adminApi('resolve_feedback', {
+    id: resolveTarget.value.id,
+    note: resolveNote.value.trim(),
+  })
+  resolveSaving.value = false
+  if (res.code === 200) {
+    showToast('已标记为已完成', 'success')
+    closeResolveModal()
+    await loadList()
+  } else {
+    showToast(res.msg || '操作失败')
+  }
 }
 
 function formatLogSize(chars?: number | string): string {
@@ -733,6 +834,100 @@ onMounted(() => {
 .act-resolve:hover { background: #dcfce7; }
 .act-reject { background: #fef2f2; color: #dc2626; }
 .act-reject:hover { background: #fee2e2; }
+.act-claim { background: #eff6ff; color: #3b82f6; }
+.act-claim:hover { background: #dbeafe; }
+
+/* ===== 认领人 / 完成说明 ===== */
+.assignee-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #3b82f6;
+  font-size: 12px;
+  font-weight: 600;
+}
+.resolve-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #f0fdf4;
+  color: #16a34a;
+  font-size: 12px;
+}
+.resolve-note svg { flex-shrink: 0; margin-top: 1px; }
+.resolve-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.resolve-label { font-weight: 700; }
+.resolve-text span:last-child { color: #15803d; white-space: pre-wrap; word-break: break-word; }
+
+/* ===== 完成说明弹窗 ===== */
+.resolve-dialog { max-width: 520px; }
+.resolve-target-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  background: #f8f9fc;
+  border-radius: 10px;
+  margin-bottom: 16px;
+}
+.resolve-target-info strong { font-size: 14px; color: var(--text); }
+.resolve-target-info span { font-size: 12px; color: var(--text-muted); }
+.resolve-field { position: relative; display: block; }
+.resolve-field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.resolve-field-label em { color: #dc2626; font-style: normal; }
+.resolve-textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 120px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  background: var(--white);
+  color: var(--text);
+}
+.resolve-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.08);
+}
+.resolve-count {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.btn-confirm {
+  padding: 9px 20px;
+  border-radius: 10px;
+  border: none;
+  background: #16a34a;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-confirm:hover { opacity: 0.88; }
+.btn-confirm:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* ===== 回复弹窗 ===== */
 .modal-backdrop {

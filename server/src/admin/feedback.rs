@@ -34,7 +34,7 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
-        "SELECT id, ciyuanxi_id, nickname, title, content, status, category, admin_reply, replied_at, replied_by, ip, created_at, updated_at,
+        "SELECT id, ciyuanxi_id, nickname, title, content, status, category, admin_reply, replied_at, replied_by, assignee, resolve_note, ip, created_at, updated_at,
                 log_meta,
                 COALESCE(CHAR_LENGTH(error_logs), 0) AS error_logs_chars,
                 COALESCE(CHAR_LENGTH(all_logs), 0) AS all_logs_chars,
@@ -150,6 +150,70 @@ pub async fn update_feedback_limit(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
             )
             .await;
             ok("保存成功", json!({ "feedback_daily_limit": limit }))
+        }
+        Err(_) => err(500, "服务器错误"),
+    }
+}
+
+/// 认领反馈：将 pending 状态的反馈归属到当前管理员并置为 processing。
+/// 仅待处理状态可认领，且只能由发起请求的管理员本人认领。
+pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    // 仅当当前状态为 pending 时才允许认领，防止重复认领/抢单
+    let upd = sqlx::query(
+        "UPDATE user_feedback SET status = 'processing', assignee = ?, replied_by = ?, replied_at = NOW(), updated_at = NOW() WHERE id = ? AND status = 'pending'",
+    )
+    .bind(&ctx.username)
+    .bind(&ctx.username)
+    .bind(id)
+    .execute(pool)
+    .await;
+    match upd {
+        Ok(r) => {
+            if r.rows_affected() == 0 {
+                return err(409, "该反馈已被认领或状态已变更，请刷新后重试");
+            }
+            log_operation(pool, ctx, "认领反馈", &format!("id={}", id), &format!("assignee={}", ctx.username)).await;
+            ok("认领成功，已置为处理中", json!({ "id": id, "assignee": ctx.username, "status": "processing" }))
+        }
+        Err(_) => err(500, "服务器错误"),
+    }
+}
+
+/// 完成反馈：必填完成说明，将 processing 状态反馈置为 resolved 并记录说明，
+/// 同时清空 notified_at 以便用户端拉取到该反馈的完成通知。
+pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    let note = str_of(&data, "note").trim().to_string();
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    if note.is_empty() {
+        return err(400, "完成说明不能为空");
+    }
+    if note.chars().count() > 1000 {
+        return err(400, "完成说明不能超过 1000 字");
+    }
+    let upd = sqlx::query(
+        "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, replied_by = ?, replied_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+    )
+    .bind(&note)
+    .bind(&ctx.username)
+    .bind(id)
+    .execute(pool)
+    .await;
+    match upd {
+        Ok(r) => {
+            if r.rows_affected() == 0 {
+                return err(409, "该反馈不是处理中状态，无法完成，请刷新后重试");
+            }
+            log_operation(pool, ctx, "完成反馈", &format!("id={}", id), &format!("note={}", note)).await;
+            ok("已标记为已完成", json!({ "id": id, "status": "resolved" }))
         }
         Err(_) => err(500, "服务器错误"),
     }

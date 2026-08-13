@@ -101,9 +101,19 @@
         <div v-else-if="bannedDevices.length === 0" class="mobile-empty">暂无封禁设备</div>
         <div v-else class="mobile-list">
           <div v-for="d in bannedDevices" :key="d.id || deviceIdOf(d)" class="mobile-item">
-            <div class="mobile-item-title">{{ deviceIdOf(d) || '未知设备' }}</div>
-            <div class="mobile-item-sub">{{ d.username || d.user_id || '-' }} · {{ d.created_at || d.banned_at || '-' }}</div>
-            <div class="mobile-item-sub">原因：{{ d.reason || d.ban_reason || '-' }}</div>
+            <div class="mobile-item-title">{{ d.device_model || deviceIdOf(d) || '未知设备' }}</div>
+            <div class="mobile-item-sub monospace">{{ deviceIdOf(d) || '-' }}</div>
+            <div class="mobile-item-sub">
+              <template v-if="d.os_version">{{ d.os_version }}<template v-if="d.app_version"> · v{{ d.app_version }}</template></template>
+              <template v-else-if="d.app_version">v{{ d.app_version }}</template>
+              <template v-else>-</template>
+            </div>
+            <div class="mobile-item-sub">
+              <template v-if="d.nickname || d.ciyuanxi_id">账号：{{ d.nickname || '-' }}<template v-if="d.ciyuanxi_id">（{{ d.ciyuanxi_id }}）</template></template>
+              <template v-else>账号：未关联</template>
+            </div>
+            <div class="mobile-item-sub">原因：{{ d.reason || d.ban_reason || '-' }} · {{ d.banned_by ? '操作人：' + d.banned_by : '' }}</div>
+            <div class="mobile-item-sub muted-time">{{ d.created_at || d.banned_at || '-' }}</div>
             <div class="mobile-actions">
               <button class="mobile-btn" @click="unbanDeviceById(d.id, deviceIdOf(d))">解封</button>
             </div>

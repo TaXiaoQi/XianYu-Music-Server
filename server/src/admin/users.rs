@@ -454,18 +454,47 @@ pub async fn list_banned_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     let offset = (page - 1) * page_size;
     let keyword = str_of(&data, "keyword").trim().to_string();
 
+    // 查询封禁设备列表：关联 app_open_log 取每台设备最新一条记录，获取硬件型号/系统/版本/所属账号，再关联 app_users 取昵称
+    let base_sql = "
+        SELECT 
+            b.*,
+            a.device_model,
+            a.os_version,
+            a.app_version,
+            a.ciyuanxi_id,
+            u.nickname
+        FROM banned_devices b
+        LEFT JOIN app_open_log a ON a.id = (
+            SELECT o.id FROM app_open_log o
+            WHERE o.device_id = b.device_id
+            ORDER BY o.created_at DESC, o.id DESC LIMIT 1
+        )
+        LEFT JOIN app_users u ON a.ciyuanxi_id = u.ciyuanxi_id
+    ";
+
     let (total, rows) = if keyword.is_empty() {
         let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM banned_devices")
             .fetch_one(pool).await.unwrap_or(0);
-        let rows = sqlx::query("SELECT * FROM banned_devices ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        let rows = sqlx::query(&format!("{} ORDER BY b.created_at DESC LIMIT ? OFFSET ?", base_sql))
             .bind(page_size).bind(offset).fetch_all(pool).await;
         (total, rows)
     } else {
         let pat = format!("%{}%", keyword);
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM banned_devices WHERE device_id LIKE ? OR reason LIKE ?")
-            .bind(&pat).bind(&pat).fetch_one(pool).await.unwrap_or(0);
-        let rows = sqlx::query("SELECT * FROM banned_devices WHERE device_id LIKE ? OR reason LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
-            .bind(&pat).bind(&pat).bind(page_size).bind(offset).fetch_all(pool).await;
+        let where_clause = "WHERE b.device_id LIKE ? OR b.reason LIKE ? OR a.ciyuanxi_id LIKE ? OR u.nickname LIKE ?";
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM banned_devices b
+             LEFT JOIN app_open_log a ON a.id = (
+                 SELECT o.id FROM app_open_log o
+                 WHERE o.device_id = b.device_id
+                 ORDER BY o.created_at DESC, o.id DESC LIMIT 1
+             )
+             LEFT JOIN app_users u ON a.ciyuanxi_id = u.ciyuanxi_id
+             {}", where_clause);
+        let total: i64 = sqlx::query_scalar(&count_sql)
+            .bind(&pat).bind(&pat).bind(&pat).bind(&pat)
+            .fetch_one(pool).await.unwrap_or(0);
+        let rows = sqlx::query(&format!("{} {} ORDER BY b.created_at DESC LIMIT ? OFFSET ?", base_sql, where_clause))
+            .bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(page_size).bind(offset).fetch_all(pool).await;
         (total, rows)
     };
 
