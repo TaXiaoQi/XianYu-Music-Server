@@ -118,7 +118,14 @@
         <!-- 卡片头部 -->
         <div class="mfb-head">
           <div class="mfb-user">
-            <div class="user-avatar" :class="f.category === 'appeal' ? 'avatar-appeal' : (f.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem')">
+            <img
+              v-if="f.avatar_url"
+              :src="f.avatar_url"
+              alt="头像"
+              class="user-avatar avatar-img"
+              @click.stop="openViewer([f.avatar_url], 0)"
+            />
+            <div v-else class="user-avatar" :class="f.category === 'appeal' ? 'avatar-appeal' : (f.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem')">
               <svg v-if="f.category === 'appeal'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
               <svg v-else-if="f.feedback_type === 'suggestion'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
               <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -768,6 +775,7 @@ onMounted(() => { loadLimit(); loadList() })
   border-radius: 11px;
   display: flex; align-items: center; justify-content: center;
 }
+.user-avatar.avatar-img { object-fit: cover; cursor: zoom-in; }
 .avatar-problem { background: rgba(236, 65, 65, 0.10); color: #EC4141; }
 .avatar-suggestion { background: rgba(79, 70, 229, 0.10); color: #4f46e5; }
 .avatar-appeal { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }

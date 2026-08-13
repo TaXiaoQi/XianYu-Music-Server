@@ -90,20 +90,21 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
 
     // 排除已软删除的记录
     let (where_clause, binds): (String, Vec<String>) = if status_filter.is_empty() || status_filter == "all" {
-        ("WHERE deleted_at IS NULL".to_string(), Vec::new())
+        ("WHERE f.deleted_at IS NULL".to_string(), Vec::new())
     } else {
-        ("WHERE deleted_at IS NULL AND status = ?".to_string(), vec![status_filter.clone()])
+        ("WHERE f.deleted_at IS NULL AND f.status = ?".to_string(), vec![status_filter.clone()])
     };
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
-        "SELECT id, ciyuanxi_id, nickname, title, content, status, category, feedback_type, images, admin_reply, replied_at, replied_by, assignee, resolve_note, ip, created_at, updated_at, claimed_at, resolved_at,
-                log_meta,
-                COALESCE(CHAR_LENGTH(error_logs), 0) AS error_logs_chars,
-                COALESCE(CHAR_LENGTH(all_logs), 0) AS all_logs_chars,
-                CASE WHEN error_logs IS NULL OR error_logs = '' THEN 0 ELSE 1 END AS has_error_logs,
-                CASE WHEN all_logs IS NULL OR all_logs = '' THEN 0 ELSE 1 END AS has_all_logs
-         FROM user_feedback {} {}",
+        "SELECT f.id, f.ciyuanxi_id, f.nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.resolve_note, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
+                f.log_meta,
+                COALESCE(CHAR_LENGTH(f.error_logs), 0) AS error_logs_chars,
+                COALESCE(CHAR_LENGTH(f.all_logs), 0) AS all_logs_chars,
+                CASE WHEN f.error_logs IS NULL OR f.error_logs = '' THEN 0 ELSE 1 END AS has_error_logs,
+                CASE WHEN f.all_logs IS NULL OR f.all_logs = '' THEN 0 ELSE 1 END AS has_all_logs,
+                u.avatar_url AS avatar_url
+         FROM user_feedback f LEFT JOIN app_users u ON u.ciyuanxi_id = f.ciyuanxi_id {} {}",
         where_clause, order_sql
     );
     let mut list_query = sqlx::query(&list_sql);
@@ -146,7 +147,9 @@ pub async fn get_feedback_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     if id <= 0 {
         return err(400, "参数错误");
     }
-    let row = sqlx::query("SELECT * FROM user_feedback WHERE id = ? LIMIT 1")
+    let row = sqlx::query(
+        "SELECT f.*, u.avatar_url AS avatar_url FROM user_feedback f LEFT JOIN app_users u ON u.ciyuanxi_id = f.ciyuanxi_id WHERE f.id = ? LIMIT 1",
+    )
         .bind(id)
         .fetch_optional(pool)
         .await;

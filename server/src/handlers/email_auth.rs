@@ -302,7 +302,11 @@ fn resolve_smtp_endpoint(sender: &str) -> (String, u16) {
 
 /// 邮箱运行时配置（优先从数据库读取，回退到环境变量）
 pub struct EmailRuntimeConfig {
-    pub provider: String, // "builtin"、"http_api" 或 "smtp"
+    pub provider: String, // "builtin"、"http_api" 或 "smtp"（保留用于兼容，实际发送统一走内置通道逻辑）
+    // 通道开关
+    pub channel_general: bool, // 通用配置（发件邮箱 + 授权码）作为 SMTP 通道
+    pub channel_api: bool,     // 外部 HTTP API 通道
+    pub channel_pool: bool,    // SMTP 账号池通道
     // HTTP API 模式
     pub api_primary: String,
     pub api_backup: String,
@@ -337,6 +341,20 @@ pub async fn load_email_config(
         .await
         .unwrap_or_else(|| "builtin".to_string());
 
+    // 通道开关：默认开启通用配置与账号池，外部 API 默认关闭
+    let channel_general = read_setting(pool, "email_channel_general")
+        .await
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(true);
+    let channel_api = read_setting(pool, "email_channel_api")
+        .await
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    let channel_pool = read_setting(pool, "email_channel_pool")
+        .await
+        .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
+        .unwrap_or(true);
+
     let api_primary = read_setting(pool, "email_api_primary")
         .await
         .unwrap_or_else(|| fallback.email_api_primary.clone());
@@ -370,6 +388,9 @@ pub async fn load_email_config(
 
     EmailRuntimeConfig {
         provider,
+        channel_general,
+        channel_api,
+        channel_pool,
         api_primary,
         api_backup,
         sender,
@@ -382,16 +403,20 @@ pub async fn load_email_config(
     }
 }
 
-fn primary_smtp_account(cfg: &EmailRuntimeConfig) -> SmtpAccount {
-    SmtpAccount {
-        sender: cfg.sender.clone(),
-        host: cfg.smtp_host.clone(),
-        port: cfg.smtp_port,
-        username: cfg.smtp_username.clone(),
-        password: cfg.smtp_password.clone(),
-        enabled: true,
-        remark: "主 SMTP 配置".to_string(),
+/// 通用配置通道：用「发件邮箱 + 通用授权码」作为单一 SMTP 投递账号，SMTP 地址按域名自动识别。
+fn general_smtp_account(cfg: &EmailRuntimeConfig) -> Option<SmtpAccount> {
+    if cfg.sender.trim().is_empty() || cfg.password.trim().is_empty() {
+        return None;
     }
+    Some(SmtpAccount {
+        sender: cfg.sender.clone(),
+        host: String::new(), // 空 host 触发按域名自动识别
+        port: 465,
+        username: cfg.sender.clone(),
+        password: cfg.password.clone(),
+        enabled: true,
+        remark: "通用配置".to_string(),
+    })
 }
 
 /// 通过 HTTP API 发送邮件（主地址失败回退备用地址）
@@ -452,11 +477,6 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, context: &str,
 }
 
 /// 通过标准 SMTP 发送邮件
-async fn send_via_smtp(cfg: &EmailRuntimeConfig, title: &str, context: &str, recipient: &str) -> Result<(), String> {
-    let account = primary_smtp_account(cfg);
-    send_via_smtp_account(&account, title, context, recipient).await
-}
-
 /// 通过指定 SMTP 账号发送邮件
 async fn send_via_smtp_account(account: &SmtpAccount, title: &str, context: &str, recipient: &str) -> Result<(), String> {
     use lettre::message::header::ContentType;
@@ -532,32 +552,59 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, context: &str
         .map_err(|e| format!("SMTP 发送失败: {e}"))
 }
 
-async fn select_builtin_smtp_accounts(pool: &MySqlPool, cfg: &EmailRuntimeConfig) -> Vec<SmtpAccount> {
-    let mut accounts: Vec<SmtpAccount> = cfg
-        .smtp_accounts
-        .iter()
-        .filter(|a| a.is_usable())
-        .cloned()
-        .collect();
+/// 内置邮箱机的投递通道：SMTP 账号或外部 HTTP API
+enum MailChannel {
+    Smtp(SmtpAccount),
+    Api,
+}
 
-    if accounts.is_empty() {
-        let primary = primary_smtp_account(cfg);
-        if primary.is_usable() {
-            accounts.push(primary);
+/// 根据通道开关构建投递通道列表，顺序为：通用配置 → 外部 API → SMTP 账号池。
+/// 返回 (通道列表, 未启用/未配置的说明)。
+fn build_mail_channels(cfg: &EmailRuntimeConfig) -> (Vec<MailChannel>, Vec<String>) {
+    let mut channels = Vec::new();
+    let mut notes = Vec::new();
+
+    // 1. 通用配置（发件邮箱 + 授权码 → 单一 SMTP 通道）
+    if cfg.channel_general {
+        match general_smtp_account(cfg) {
+            Some(acc) => channels.push(MailChannel::Smtp(acc)),
+            None => notes.push("通用配置未启用（缺少发件邮箱或授权码）".to_string()),
         }
+    } else {
+        notes.push("通用配置通道未开启".to_string());
     }
 
-    if accounts.is_empty() {
-        return accounts;
+    // 2. 外部 HTTP API
+    if cfg.channel_api {
+        if !cfg.api_primary.is_empty() || !cfg.api_backup.is_empty() {
+            channels.push(MailChannel::Api);
+        } else {
+            notes.push("外部 API 通道未配置地址".to_string());
+        }
+    } else {
+        notes.push("外部 API 通道未开启".to_string());
     }
 
-    let sent_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log WHERE ip = 'builtin' AND status IN (1, 2)")
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
-    let idx = (sent_count.max(0) as usize) % accounts.len();
-    accounts.rotate_left(idx);
-    accounts
+    // 3. SMTP 账号池（每个可用账号独立成通道，参与轮换）
+    if cfg.channel_pool {
+        let usable: Vec<SmtpAccount> = cfg
+            .smtp_accounts
+            .iter()
+            .filter(|a| a.is_usable())
+            .cloned()
+            .collect();
+        if usable.is_empty() {
+            notes.push("SMTP 账号池未配置可用账号".to_string());
+        } else {
+            for acc in usable {
+                channels.push(MailChannel::Smtp(acc));
+            }
+        }
+    } else {
+        notes.push("SMTP 账号池通道未开启".to_string());
+    }
+
+    (channels, notes)
 }
 
 async fn create_builtin_mail_log(pool: &MySqlPool, recipient: &str, title: &str, detail: &str) -> Option<u64> {
@@ -584,7 +631,7 @@ async fn update_builtin_mail_log(pool: &MySqlPool, id: Option<u64>, status: i32,
     }
 }
 
-/// 服务端内置邮箱机：统一记录发送日志，优先轮换 SMTP 账号池投递，失败后回退外部邮箱机 API。
+/// 服务端内置邮箱机：按通道开关构建投递通道列表，依次尝试直到成功，并按成功发送次数轮换起始通道。
 async fn send_via_builtin_mailer(
     cfg: &EmailRuntimeConfig,
     pool: &MySqlPool,
@@ -595,51 +642,60 @@ async fn send_via_builtin_mailer(
     let log_id = create_builtin_mail_log(pool, recipient, title, "内置邮箱机已接收，等待投递").await;
     let mut errors = Vec::new();
 
-    let accounts = select_builtin_smtp_accounts(pool, cfg).await;
-    if !accounts.is_empty() {
-        for account in accounts {
-            let sender_label = if account.remark.trim().is_empty() {
-                account.sender.clone()
-            } else {
-                format!("{} ({})", account.sender, account.remark)
-            };
-
-            match send_via_smtp_account(&account, title, context, recipient).await {
-                Ok(()) => {
-                    update_builtin_mail_log(
-                        pool,
-                        log_id,
-                        1,
-                        &format!("内置邮箱机已通过 SMTP 账号投递: {}", sender_label),
-                    )
-                    .await;
-                    return Ok(());
-                }
-                Err(e) => errors.push(format!("SMTP 账号 {} 失败: {}", sender_label, e)),
-            }
-        }
-    } else {
-        errors.push("SMTP 账号池未配置可用账号".to_string());
+    let (mut channels, notes) = build_mail_channels(cfg);
+    if channels.is_empty() {
+        let reason = if notes.is_empty() {
+            "无可用投递通道".to_string()
+        } else {
+            notes.join("；")
+        };
+        update_builtin_mail_log(pool, log_id, 2, &reason).await;
+        return Err(format!("内置邮箱机投递失败: {}", reason));
     }
 
-    if !cfg.api_primary.is_empty() || !cfg.api_backup.is_empty() {
-        match send_via_http_api(cfg, title, context, recipient).await {
+    // 按「成功发送次数」轮换起始通道，实现发送成功即依次轮换
+    let sent_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log WHERE ip = 'builtin' AND status = 1")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    let idx = (sent_count.max(0) as usize) % channels.len();
+    channels.rotate_left(idx);
+
+    for channel in channels {
+        let result = match channel {
+            MailChannel::Smtp(account) => {
+                let label = if account.remark.trim().is_empty() {
+                    account.sender.clone()
+                } else {
+                    format!("{} ({})", account.sender, account.remark)
+                };
+                send_via_smtp_account(&account, title, context, recipient)
+                    .await
+                    .map_err(|e| format!("SMTP 账号 {} 失败: {}", label, e))
+            }
+            MailChannel::Api => send_via_http_api(cfg, title, context, recipient)
+                .await
+                .map_err(|e| format!("外部 API 失败: {}", e)),
+        };
+
+        match result {
             Ok(()) => {
-                update_builtin_mail_log(pool, log_id, 1, "内置邮箱机已回退外部 API 投递").await;
+                update_builtin_mail_log(pool, log_id, 1, "内置邮箱机投递成功").await;
                 return Ok(());
             }
-            Err(e) => errors.push(format!("外部 API 失败: {}", e)),
+            Err(e) => errors.push(e),
         }
-    } else {
-        errors.push("外部 API 未配置".to_string());
     }
 
-    let reason = errors.join("；");
+    let mut reason = errors.join("；");
+    if !notes.is_empty() {
+        reason = format!("{}{}{}", reason, if reason.is_empty() { "" } else { "；" }, notes.join("；"));
+    }
     update_builtin_mail_log(pool, log_id, 2, &reason).await;
     Err(format!("内置邮箱机投递失败: {}", reason))
 }
 
-/// 统一邮件发送入口：根据 provider 配置分发到内置邮箱机、HTTP API 或 SMTP
+/// 统一邮件发送入口：始终走内置邮箱机，按各通道开关依次尝试并轮换。
 ///
 /// 邮箱配置优先从数据库 `server_settings` 表读取，留空字段回退到环境变量默认值。
 /// 返回 `Ok(())` 表示发送成功，返回 `Err(reason)` 表示失败并附带原因。
@@ -651,12 +707,7 @@ pub async fn call_email_api(
     recipient: &str,
 ) -> Result<(), String> {
     let cfg = load_email_config(pool, config).await;
-
-    match cfg.provider.as_str() {
-        "builtin" => send_via_builtin_mailer(&cfg, pool, title, context, recipient).await,
-        "smtp" => send_via_smtp(&cfg, title, context, recipient).await,
-        _ => send_via_http_api(&cfg, title, context, recipient).await,
-    }
+    send_via_builtin_mailer(&cfg, pool, title, context, recipient).await
 }
 
 /// 写操作日志

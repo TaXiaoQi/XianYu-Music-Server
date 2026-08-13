@@ -170,7 +170,14 @@
             <!-- 卡片头部 -->
             <div class="card-top">
               <div class="card-user">
-                <div class="user-avatar" :class="item.category === 'appeal' ? 'avatar-appeal' : (item.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem')">
+                <img
+                  v-if="item.avatar_url"
+                  :src="item.avatar_url"
+                  alt="头像"
+                  class="user-avatar avatar-img"
+                  @click.stop="openImageViewer([item.avatar_url], 0)"
+                />
+                <div v-else class="user-avatar" :class="item.category === 'appeal' ? 'avatar-appeal' : (item.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem')">
                   <svg v-if="item.category === 'appeal'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
                   <svg v-else-if="item.feedback_type === 'suggestion'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                   <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -1528,6 +1535,7 @@ onUnmounted(() => {
   color: #999;
   flex-shrink: 0;
 }
+.user-avatar.avatar-img { object-fit: cover; cursor: zoom-in; }
 .user-info { display: flex; flex-direction: column; gap: 1px; }
 .user-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .user-id { font-size: 11px; color: var(--text-muted); }

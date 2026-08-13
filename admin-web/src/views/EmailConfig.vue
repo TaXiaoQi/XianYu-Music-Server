@@ -5,7 +5,7 @@
       <div>
         <h2 class="page-title">邮箱机设置</h2>
         <p class="page-desc">
-          配置服务端内置邮箱机，支持内置投递和外部 HTTP API 两种方案。SMTP 服务器地址与端口会根据发件邮箱域名自动识别，留空字段使用环境变量默认值，保存后立即生效。
+          配置服务端邮箱机。通用配置、外部 API、SMTP 账号池各自可通过顶部开关启用，开哪个用哪个；多个开启时按顺序依次尝试，发送成功即轮换。SMTP 地址与端口会根据发件邮箱域名自动识别。
         </p>
       </div>
       <button class="btn-save" :disabled="saving" @click="save">
@@ -21,29 +21,17 @@
     </div>
 
     <template v-else>
-      <!-- 发送方式选择 -->
-      <Transition name="fade-up" appear>
-      <div class="config-card">
-        <div class="section-title">发送方式</div>
-        <div class="provider-toggle">
-          <label class="provider-option" :class="{ active: form.email_provider === 'builtin' }">
-            <input v-model="form.email_provider" type="radio" value="builtin" />
-            <span class="provider-label">内置邮箱机</span>
-            <span class="provider-desc">自动识别邮箱服务商的 SMTP 地址与端口，支持多账号轮流发送，失败后可回退外部 API</span>
-          </label>
-          <label class="provider-option" :class="{ active: form.email_provider === 'http_api' }">
-            <input v-model="form.email_provider" type="radio" value="http_api" />
-            <span class="provider-label">外部 HTTP API</span>
-            <span class="provider-desc">通过第三方邮箱 API 服务发送，作为内置邮箱机的备选通道</span>
-          </label>
-        </div>
-      </div>
-      </Transition>
-
       <!-- 通用配置 -->
       <Transition name="fade-up" appear>
       <div class="config-card">
-        <div class="section-title">通用配置</div>
+        <div class="section-head">
+          <div class="section-title">通用配置</div>
+          <label class="channel-switch">
+            <input v-model="form.email_channel_general" type="checkbox" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">启用 SMTP 投递</span>
+          </label>
+        </div>
         <div class="field-grid">
           <label class="field">
             <span class="required">发件邮箱地址</span>
@@ -58,19 +46,30 @@
             />
           </label>
         </div>
+        <div class="endpoint-box">
+          <span class="endpoint-label">SMTP 服务器（自动识别）</span>
+          <code class="endpoint-value">{{ smtpEndpointText(form.email_sender) }}</code>
+        </div>
         <p class="hint">
-          外部 API 模式下作为 API 认证凭证；SMTP/内置邮箱机模式下，若 SMTP 密码留空则使用此密码。
+          启用后使用「发件邮箱 + 授权码」作为单一 SMTP 通道投递，SMTP 地址与端口按域名自动识别。
         </p>
       </div>
       </Transition>
 
       <!-- HTTP API 配置 -->
       <Transition name="fade-up" appear>
-      <div v-if="form.email_provider === 'builtin' || form.email_provider === 'http_api'" class="config-card">
-        <div class="section-title">{{ form.email_provider === 'builtin' ? '外部 API 备选' : 'HTTP API 地址' }}</div>
+      <div class="config-card">
+        <div class="section-head">
+          <div class="section-title">外部 API</div>
+          <label class="channel-switch">
+            <input v-model="form.email_channel_api" type="checkbox" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">启用外部 API 通道</span>
+          </label>
+        </div>
         <div class="field-grid">
           <label class="field">
-            <span :class="{ required: form.email_provider === 'http_api' }">主地址</span>
+            <span>主地址</span>
             <input v-model="form.email_api_primary" type="text" placeholder="https://mail-api.example.com/send" />
           </label>
           <label class="field">
@@ -79,56 +78,36 @@
           </label>
         </div>
         <p class="hint">
-          {{ form.email_provider === 'builtin' ? '内置邮箱机在 SMTP 出口失败时，可回退到这里配置的外部邮箱机 API。' : '主地址请求失败时自动回退到备用地址。' }}
-        </p>
-      </div>
-      </Transition>
-
-      <!-- SMTP 配置 -->
-      <Transition name="fade-up" appear>
-      <div v-if="form.email_provider === 'builtin'" class="config-card">
-        <div class="section-title">SMTP 投递</div>
-        <div class="endpoint-box">
-          <span class="endpoint-label">SMTP 服务器（自动识别）</span>
-          <code class="endpoint-value">{{ smtpEndpointText(form.email_sender) }}</code>
-        </div>
-
-        <div class="section-title">SMTP 认证</div>
-        <div class="field-grid">
-          <label class="field">
-            <span>SMTP 用户名</span>
-            <input v-model="form.smtp_username" type="text" placeholder="留空则使用发件邮箱" />
-          </label>
-          <label class="field">
-            <span class="required">SMTP 密码 / 授权码</span>
-            <input
-              v-model="form.smtp_password"
-              type="password"
-              :placeholder="hasSmtpPassword ? '********（留空则使用通用密码）' : '留空则使用通用授权码'"
-            />
-          </label>
-        </div>
-        <p class="hint">
-          系统会根据发件邮箱域名自动识别 SMTP 服务器地址和端口（如 QQ 邮箱为 smtp.qq.com:465）。账号池为空时使用此处投递，作为兜底出口。
+          启用后作为一条投递通道参与尝试与轮换，主地址请求失败时自动回退备用地址。
         </p>
       </div>
       </Transition>
 
       <!-- SMTP 账号池 -->
       <Transition name="fade-up" appear>
-      <div v-if="form.email_provider === 'builtin'" class="config-card">
+      <div class="config-card">
         <div class="section-head">
           <div>
             <div class="section-title">SMTP 账号池</div>
             <p class="hint pool-hint">
-              配置多个发件邮箱后，内置邮箱机会按发送次数轮流选择账号，降低单个邮箱触发风控的概率。每个账号的 SMTP 地址与端口会根据发件邮箱域名自动识别，你只需填写发件邮箱和授权码。账号池为空时继续使用上面的 SMTP 投递兜底出口。
+              启用后每个可用账号可作为独立投递通道轮流发送，降低单个邮箱触发风控的概率。每个账号的 SMTP 地址与端口按发件邮箱域名自动识别，只需填写发件邮箱和授权码。
             </p>
           </div>
-          <button type="button" class="btn-add-account" @click="addSmtpAccount">添加邮箱</button>
+          <label class="channel-switch">
+            <input v-model="form.email_channel_pool" type="checkbox" />
+            <span class="switch-track"><span class="switch-thumb"></span></span>
+            <span class="switch-label">启用账号池</span>
+          </label>
         </div>
+          <div class="pool-actions">
+            <button type="button" class="btn-save-pool" :disabled="saving" @click="savePool">
+              {{ saving ? '保存中...' : '保存邮箱池' }}
+            </button>
+            <button type="button" class="btn-add-account" @click="addSmtpAccount">添加邮箱</button>
+          </div>
 
         <div v-if="form.smtp_accounts.length === 0" class="empty-pool">
-          暂未配置账号池，当前仍使用单 SMTP 出口发送。
+          暂未配置账号池，开启后每条账号将作为独立投递通道参与轮换。
         </div>
 
         <div
@@ -207,7 +186,9 @@ import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 
 interface EmailConfigForm {
-  email_provider: string
+  email_channel_general: boolean
+  email_channel_api: boolean
+  email_channel_pool: boolean
   email_api_primary: string
   email_api_backup: string
   email_sender: string
@@ -288,7 +269,9 @@ const saving = ref(false)
 const hasPassword = ref(false)
 const hasSmtpPassword = ref(false)
 const form = ref<EmailConfigForm>({
-  email_provider: 'builtin',
+  email_channel_general: true,
+  email_channel_api: false,
+  email_channel_pool: true,
   email_api_primary: '',
   email_api_backup: '',
   email_sender: '',
@@ -308,7 +291,9 @@ const testResultType = ref<'success' | 'error'>('success')
 async function loadConfig() {
   loading.value = true
   const res = await adminApi<{
-    email_provider: string
+    email_channel_general: boolean
+    email_channel_api: boolean
+    email_channel_pool: boolean
     email_api_primary: string
     email_api_backup: string
     email_sender: string
@@ -324,7 +309,9 @@ async function loadConfig() {
 
   if (res.code === 200 && res.data) {
     form.value = {
-      email_provider: res.data.email_provider || 'builtin',
+      email_channel_general: res.data.email_channel_general !== false,
+      email_channel_api: res.data.email_channel_api === true,
+      email_channel_pool: res.data.email_channel_pool !== false,
       email_api_primary: res.data.email_api_primary || '',
       email_api_backup: res.data.email_api_backup || '',
       email_sender: res.data.email_sender || '',
@@ -369,7 +356,7 @@ function removeSmtpAccount(index: number) {
   form.value.smtp_accounts.splice(index, 1)
 }
 
-async function save() {
+async function doSave(successMsg: string) {
   saving.value = true
   const payload = {
     ...form.value,
@@ -382,11 +369,19 @@ async function save() {
   saving.value = false
 
   if (res.code === 200) {
-    showToast('邮箱机配置已保存', 'success')
+    showToast(successMsg, 'success')
     await loadConfig()
   } else {
     showToast(res.msg || '保存失败')
   }
+}
+
+async function save() {
+  await doSave('邮箱机配置已保存')
+}
+
+async function savePool() {
+  await doSave('邮箱池已保存')
 }
 
 async function sendTest() {
@@ -504,41 +499,51 @@ onMounted(loadConfig)
   justify-content: space-between;
   gap: 16px;
 }
+.channel-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+}
+.channel-switch input {
+  display: none;
+}
+.switch-track {
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--border);
+  position: relative;
+  transition: background 0.25s;
+}
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.25s;
+}
+.channel-switch input:checked + .switch-track {
+  background: var(--accent);
+}
+.channel-switch input:checked + .switch-track .switch-thumb {
+  transform: translateX(18px);
+}
+.switch-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light);
+}
 .provider-toggle {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 16px;
-}
-.provider-option {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 16px;
-  border: 2px solid var(--border);
-  border-radius: 14px;
-  cursor: pointer;
-  transition: all 0.2s;
-  background: #fafafa;
-}
-.provider-option:hover {
-  border-color: var(--accent);
-}
-.provider-option.active {
-  border-color: var(--accent);
-  background: rgba(var(--accent-rgb, 99, 102, 241), 0.05);
-}
-.provider-option input {
-  display: none;
-}
-.provider-label {
-  font-size: 15px;
-  font-weight: 800;
-  color: var(--text);
-}
-.provider-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
 }
 .field-grid {
   display: grid;
@@ -601,6 +606,31 @@ onMounted(loadConfig)
 .pool-hint {
   margin-top: 0;
   line-height: 1.6;
+}
+.pool-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.btn-save-pool {
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: var(--white);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.18);
+}
+.btn-save-pool:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.btn-save-pool:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .btn-add-account,
 .btn-remove-account {
@@ -739,9 +769,6 @@ onMounted(loadConfig)
   .test-row {
     grid-template-columns: 1fr;
     flex-direction: column;
-  }
-  .provider-toggle {
-    grid-template-columns: 1fr;
   }
 }
 

@@ -548,6 +548,9 @@ pub async fn get_email_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
 
     ok("ok", json!({
         "email_provider": cfg.provider,
+        "email_channel_general": cfg.channel_general,
+        "email_channel_api": cfg.channel_api,
+        "email_channel_pool": cfg.channel_pool,
         "email_api_primary": cfg.api_primary,
         "email_api_backup": cfg.api_backup,
         "email_sender": cfg.sender,
@@ -562,6 +565,16 @@ pub async fn get_email_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     }))
 }
 
+/// 从请求体解析布尔开关（支持 true/false/1/0）
+fn parse_bool_setting(data: &serde_json::Value, key: &str) -> Option<bool> {
+    match data.get(key) {
+        Some(serde_json::Value::Bool(b)) => Some(*b),
+        Some(serde_json::Value::String(s)) => Some(s == "1" || s.eq_ignore_ascii_case("true")),
+        Some(serde_json::Value::Number(n)) => Some(n.as_i64().unwrap_or(0) == 1),
+        _ => None,
+    }
+}
+
 /// 保存邮箱机配置（密码为空时保留原值）
 pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
@@ -571,6 +584,11 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     if !matches!(provider.as_str(), "builtin" | "http_api" | "smtp") {
         return err(400, "邮箱机发送方式不正确");
     }
+
+    // 通道开关
+    let channel_general = parse_bool_setting(&data, "email_channel_general").unwrap_or(true);
+    let channel_api = parse_bool_setting(&data, "email_channel_api").unwrap_or(false);
+    let channel_pool = parse_bool_setting(&data, "email_channel_pool").unwrap_or(true);
 
     let api_primary = str_of(&data, "email_api_primary").trim().to_string();
     let api_backup = str_of(&data, "email_api_backup").trim().to_string();
@@ -586,6 +604,9 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     let smtp_accounts_json = serde_json::to_string(&smtp_accounts).unwrap_or_else(|_| "[]".to_string());
 
     upsert_setting(pool, "email_provider", &provider).await;
+    upsert_setting(pool, "email_channel_general", if channel_general { "1" } else { "0" }).await;
+    upsert_setting(pool, "email_channel_api", if channel_api { "1" } else { "0" }).await;
+    upsert_setting(pool, "email_channel_pool", if channel_pool { "1" } else { "0" }).await;
     upsert_setting(pool, "email_api_primary", &api_primary).await;
     upsert_setting(pool, "email_api_backup", &api_backup).await;
     upsert_setting(pool, "email_sender", &sender).await;
@@ -605,7 +626,7 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
 
     log_operation(
         pool, ctx, "保存邮箱配置",
-        &format!("方式:{} 外部API:{} SMTP:{} 账号池:{}个", provider, api_primary, smtp_host, smtp_accounts.len()),
+        &format!("通用:{} 外部API:{} 账号池:{} 账号池账号:{}个", channel_general, channel_api, channel_pool, smtp_accounts.len()),
         "",
     ).await;
 
