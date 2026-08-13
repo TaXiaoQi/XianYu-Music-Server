@@ -501,6 +501,74 @@ pub async fn list_banned_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     }
 }
 
+/// 获取所有设备列表（分页 + 关键词搜索，从 app_open_log 取每台设备最新一条记录）
+pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let page = int_of(&data, "page").max(1);
+    let page_size = {
+        let ps = int_of(&data, "page_size");
+        if ps == 0 { 20 } else { ps.clamp(1, 100) }
+    };
+    let offset = (page - 1) * page_size;
+    let keyword = str_of(&data, "keyword").trim().to_string();
+
+    // 关联 app_open_log 取每台设备最新一条记录，再关联 app_users 取昵称，关联 banned_devices 判断是否被封禁
+    let base_sql = "
+        SELECT 
+            a.device_id,
+            a.device_model,
+            a.os_version,
+            a.app_version,
+            a.ciyuanxi_id,
+            a.ip,
+            a.created_at,
+            u.nickname,
+            b.id AS ban_id,
+            b.reason AS ban_reason
+        FROM app_open_log a
+        INNER JOIN (
+            SELECT device_id, MAX(id) AS max_id FROM app_open_log GROUP BY device_id
+        ) latest ON a.id = latest.max_id
+        LEFT JOIN app_users u ON a.ciyuanxi_id = u.ciyuanxi_id
+        LEFT JOIN banned_devices b ON b.device_id = a.device_id
+    ";
+
+    let (total, rows) = if keyword.is_empty() {
+        let total: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT device_id) FROM app_open_log")
+            .fetch_one(pool).await.unwrap_or(0);
+        let rows = sqlx::query(&format!("{} ORDER BY a.created_at DESC LIMIT ? OFFSET ?", base_sql))
+            .bind(page_size).bind(offset).fetch_all(pool).await;
+        (total, rows)
+    } else {
+        let pat = format!("%{}%", keyword);
+        let where_clause = "WHERE a.device_id LIKE ? OR a.device_model LIKE ? OR a.ciyuanxi_id LIKE ? OR u.nickname LIKE ?";
+        let count_sql = format!(
+            "SELECT COUNT(*) FROM (
+                SELECT 1 FROM app_open_log a
+                INNER JOIN (
+                    SELECT device_id, MAX(id) AS max_id FROM app_open_log GROUP BY device_id
+                ) latest ON a.id = latest.max_id
+                LEFT JOIN app_users u ON a.ciyuanxi_id = u.ciyuanxi_id
+                {}
+            ) t", where_clause);
+        let total: i64 = sqlx::query_scalar(&count_sql)
+            .bind(&pat).bind(&pat).bind(&pat).bind(&pat)
+            .fetch_one(pool).await.unwrap_or(0);
+        let rows = sqlx::query(&format!("{} {} ORDER BY a.created_at DESC LIMIT ? OFFSET ?", base_sql, where_clause))
+            .bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(page_size).bind(offset).fetch_all(pool).await;
+        (total, rows)
+    };
+
+    match rows {
+        Ok(rows) => {
+            let list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
+            ok("ok", json!({ "total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "list": list }))
+        }
+        Err(e) => err(500, &format!("查询失败: {}", e)),
+    }
+}
+
 /// 封禁设备
 pub async fn ban_device(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);

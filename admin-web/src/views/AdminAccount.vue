@@ -171,7 +171,7 @@
 
     <!-- 新增管理员弹窗 -->
     <Transition name="modal">
-      <div v-if="addModalVisible" class="modal-backdrop" @click.self="closeAddModal">
+      <div v-if="addModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
             <h3>新增管理员</h3>
@@ -237,7 +237,7 @@
 
     <!-- 上传头像弹窗 -->
     <Transition name="modal">
-      <div v-if="avatarModalVisible" class="modal-backdrop" @click.self="closeAvatarModal">
+      <div v-if="avatarModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
             <h3>上传头像 - {{ avatarTarget?.username || '' }}</h3>
@@ -274,7 +274,7 @@
 
     <!-- 修改登录弹窗 -->
     <Transition name="modal">
-      <div v-if="loginModalVisible" class="modal-backdrop" @click.self="closeLoginModal">
+      <div v-if="loginModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
             <h3>修改登录 - {{ loginTarget?.username || '' }}</h3>

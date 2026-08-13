@@ -698,6 +698,10 @@ html[data-theme='dark'] .toast {
 }
 
 /* ---------- 后台统一弹窗（替代浏览器 confirm/prompt） ---------- */
+/* 弹窗打开时锁定 body 滚动（CSS :has() 自动检测） */
+body:has(.modal-overlay, .modal-backdrop, .web-dialog-overlay, .mobile-dialog-overlay, .viewer-backdrop) {
+    overflow: hidden;
+}
 .web-dialog-overlay {
     position: fixed;
     inset: 0;

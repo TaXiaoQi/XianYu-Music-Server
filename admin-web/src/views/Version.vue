@@ -43,7 +43,7 @@
 
     <!-- 桌面端下载渠道弹窗 -->
     <Transition name="modal">
-    <div v-if="desktopChannelModalVisible" class="modal-overlay" @click.self="closeDesktopChannelModal">
+    <div v-if="desktopChannelModalVisible" class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
           <span class="modal-title">选择下载渠道</span>
@@ -181,7 +181,7 @@
 
     <!-- 新增版本弹窗 -->
     <Transition name="modal">
-    <div v-if="addModalVisible" class="modal-overlay" @click.self="closeAddModal">
+    <div v-if="addModalVisible" class="modal-overlay">
       <div class="modal">
         <div class="modal-header">
           <span class="modal-title">新增版本</span>

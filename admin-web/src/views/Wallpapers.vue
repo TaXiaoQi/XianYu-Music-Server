@@ -217,7 +217,7 @@
 
     <!-- 新增壁纸弹窗 -->
     <Transition name="modal">
-      <div v-if="addModalVisible" class="modal-backdrop" @click.self="closeAddModal">
+      <div v-if="addModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
             <h3>新增壁纸</h3>

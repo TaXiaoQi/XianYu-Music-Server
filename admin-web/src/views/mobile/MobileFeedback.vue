@@ -74,7 +74,7 @@
     </div>
 
     <!-- 完成说明弹窗 -->
-    <div v-if="resolveVisible" class="mobile-dialog-overlay" @click.self="closeResolve">
+    <div v-if="resolveVisible" class="mobile-dialog-overlay">
       <div class="mobile-dialog" style="display:flex;flex-direction:column;">
         <div class="mobile-dialog-title">完成反馈</div>
         <textarea v-model="resolveNote" class="mobile-dialog-input" rows="4" type="text" placeholder="请填写完成说明（必填）" style="min-height:90px;resize:vertical;"></textarea>
@@ -86,7 +86,7 @@
     </div>
 
     <!-- 新建事项弹窗 -->
-    <div v-if="createVisible" class="mobile-dialog-overlay" @click.self="closeCreate">
+    <div v-if="createVisible" class="mobile-dialog-overlay">
       <div class="mobile-dialog mfb-create" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
         <div class="mobile-dialog-title">新建事项</div>
         <div class="mfb-create-body">
@@ -126,7 +126,7 @@
     </div>
 
     <!-- 统计弹窗 -->
-    <div v-if="statsVisible" class="mobile-dialog-overlay" @click.self="statsVisible = false">
+    <div v-if="statsVisible" class="mobile-dialog-overlay">
       <div class="mobile-dialog mfb-stats" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
         <div class="mobile-dialog-title">管理员处理统计</div>
         <div class="mfb-stats-body">
@@ -158,7 +158,7 @@
     </div>
 
     <!-- 图片查看器 -->
-    <div v-if="viewerVisible" class="mobile-dialog-overlay mfb-viewer" @click.self="viewerVisible = false">
+    <div v-if="viewerVisible" class="mobile-dialog-overlay mfb-viewer">
       <button class="mfb-viewer-close" @click="viewerVisible = false">×</button>
       <button v-if="viewerList.length > 1" class="mfb-viewer-nav prev" @click="viewerPrev">‹</button>
       <img v-if="viewerList[viewerIndex]" :src="viewerList[viewerIndex]" class="mfb-viewer-img" />

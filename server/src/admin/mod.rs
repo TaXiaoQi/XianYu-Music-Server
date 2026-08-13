@@ -221,6 +221,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "reset_listen_duration" => account::reset_listen_duration(body, &ctx, pool).await,
         "change_ciyuanxi_id" => prettyid::change_ciyuanxi_id(body, &ctx, pool).await,
         "list_banned_devices" => users::list_banned_devices(body, &ctx, pool).await,
+        "list_all_devices" => users::list_all_devices(body, &ctx, pool).await,
         "ban_device" => users::ban_device(body, &ctx, pool).await,
         "unban_device" => users::unban_device(body, &ctx, pool).await,
         "get_user_devices" => users::get_user_devices(body, &ctx, pool).await,
@@ -252,6 +253,9 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "feedback_admin_stats" => feedback::feedback_admin_stats(body, &ctx, pool).await,
         "get_feedback_limit" => feedback::get_feedback_limit(body, &ctx, pool).await,
         "update_feedback_limit" => feedback::update_feedback_limit(body, &ctx, pool).await,
+        "batch_delete_feedback" => feedback::batch_delete_feedback(body, &ctx, pool).await,
+        "list_recycle_bin" => feedback::list_recycle_bin(body, &ctx, pool).await,
+        "restore_feedback" => feedback::restore_feedback(body, &ctx, pool).await,
         "view_share_detail" => share::view_share_detail(body, &ctx, pool).await,
         "delete_expired_shares" => share::delete_expired_shares(body, &ctx, pool).await,
         // source / prettyid

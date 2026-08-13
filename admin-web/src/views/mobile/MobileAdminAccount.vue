@@ -41,7 +41,7 @@
     <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" @change="onFileChange" />
 
     <!-- 修改登录弹窗 -->
-    <div v-if="loginModalVisible" class="mobile-dialog-overlay" :class="{ show: true }" @click.self="closeLogin">
+    <div v-if="loginModalVisible" class="mobile-dialog-overlay" :class="{ show: true }">
       <div class="mobile-dialog show">
         <div class="mobile-dialog-title">修改登录 - {{ loginTarget?.username || '' }}</div>
         <div class="mobile-dialog-body">

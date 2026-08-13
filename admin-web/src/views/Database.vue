@@ -166,7 +166,7 @@
 
     <!-- 表内容查看弹窗 -->
     <Transition name="modal">
-      <div v-if="showTableModal" class="modal-backdrop" @click.self="closeTableModal">
+      <div v-if="showTableModal" class="modal-backdrop">
         <div class="modal-dialog modal-lg">
           <div class="modal-head">
             <h3>表内容 - {{ tableData?.table || '' }}</h3>
@@ -221,7 +221,7 @@
 
     <!-- 备份内容查看弹窗 -->
     <Transition name="modal">
-      <div v-if="showBackupModal" class="modal-backdrop" @click.self="closeBackupModal">
+      <div v-if="showBackupModal" class="modal-backdrop">
         <div class="modal-dialog modal-lg">
           <div class="modal-head">
             <h3 class="backup-modal-title" :title="backupViewName">备份内容 - {{ backupViewName }}</h3>

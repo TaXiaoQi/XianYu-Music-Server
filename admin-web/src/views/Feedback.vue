@@ -62,6 +62,10 @@
             <span v-if="limitSaving" class="btn-spinner dark"></span>
             {{ limitSaving ? '保存中...' : '保存上限' }}
           </button>
+          <button class="btn-recycle" @click="openRecycleBin">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            回收站
+          </button>
         </div>
       </div>
     </Transition>
@@ -92,20 +96,42 @@
       </div>
     </Transition>
 
-    <!-- 工具条：类型筛选 + 排序 -->
+    <!-- 工具条：类型筛选 + 排序 + 批量操作 -->
     <div class="toolbar">
       <div class="toolbar-group">
         <button class="tool-btn" :class="{ active: typeFilter === 'all' }" @click="typeFilter = 'all'">全部类型</button>
         <button class="tool-btn" :class="{ active: typeFilter === 'problem' }" @click="typeFilter = 'problem'">问题反馈</button>
         <button class="tool-btn" :class="{ active: typeFilter === 'suggestion' }" @click="typeFilter = 'suggestion'">功能建议</button>
+        <button class="tool-btn" :class="{ active: typeFilter === 'appeal' }" @click="typeFilter = 'appeal'">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align: -2px; margin-right: 3px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          封禁申诉
+        </button>
       </div>
-      <div class="sort-wrap">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="M3 17l3 3 3-3"/><path d="M6 18V4"/></svg>
-        <select v-model="sortMode" class="sort-select" @change="loadList">
-          <option value="post_time_desc">最新提交</option>
-          <option value="post_time_asc">最早提交</option>
-          <option value="update_desc">最近更新</option>
-        </select>
+      <div class="toolbar-right">
+        <div v-if="batchMode" class="batch-bar">
+          <label class="batch-select-all">
+            <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
+            <span>全选</span>
+          </label>
+          <span class="batch-count">已选 {{ selectedIds.size }} 项</span>
+          <button class="btn-batch-delete" :disabled="selectedIds.size === 0" @click="confirmBatchDelete">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            删除所选
+          </button>
+          <button class="btn-batch-exit" @click="exitBatchMode">退出</button>
+        </div>
+        <button v-else class="btn-batch-enter" @click="enterBatchMode">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          批量管理
+        </button>
+        <div class="sort-wrap">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="M3 17l3 3 3-3"/><path d="M6 18V4"/></svg>
+          <select v-model="sortMode" class="sort-select" @change="loadList">
+            <option value="post_time_desc">最新提交</option>
+            <option value="post_time_asc">最早提交</option>
+            <option value="update_desc">最近更新</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -134,14 +160,19 @@
             v-for="(item, idx) in filteredList"
             :key="item.id"
             class="fb-card"
-            :class="`st-${item.status}`"
+            :class="[`st-${item.status}`, { 'batch-selected': selectedIds.has(item.id) }]"
             :style="{ animationDelay: `${idx * 60}ms` }"
           >
+            <!-- 批量选择复选框 -->
+            <div v-if="batchMode" class="card-checkbox" @click.stop="toggleSelect(item.id)">
+              <input type="checkbox" :checked="selectedIds.has(item.id)" />
+            </div>
             <!-- 卡片头部 -->
             <div class="card-top">
               <div class="card-user">
-                <div class="user-avatar" :class="item.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem'">
-                  <svg v-if="item.feedback_type === 'suggestion'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                <div class="user-avatar" :class="item.category === 'appeal' ? 'avatar-appeal' : (item.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem')">
+                  <svg v-if="item.category === 'appeal'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                  <svg v-else-if="item.feedback_type === 'suggestion'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                   <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </div>
                 <div class="user-info">
@@ -150,7 +181,8 @@
                 </div>
               </div>
               <div class="card-top-right">
-                <span v-if="item.feedback_type" class="type-badge" :class="item.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
+                <span v-if="item.category === 'appeal'" class="type-badge type-appeal">封禁申诉</span>
+                <span v-else-if="item.feedback_type" class="type-badge" :class="item.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
                   {{ item.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
                 </span>
                 <span class="status-badge" :class="`badge-${item.status}`">
@@ -174,7 +206,7 @@
                   </div>
                   <div v-if="item.assignee" class="assignee-row">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                    <span>认领人：{{ item.assignee }}</span>
+                    <span>{{ item.status === 'rejected' ? '拒绝人' : '认领人' }}：{{ item.assignee }}</span>
                   </div>
                   <div v-if="item.status === 'resolved' && item.resolve_note" class="resolve-note">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -201,7 +233,7 @@
             <!-- 卡片底部 -->
             <div class="card-foot" @click.stop>
               <div class="foot-meta">
-                <span class="meta-time">发布时间{{ fmtTime(item.created_at) }}</span>
+                <span class="meta-time">发布时间：{{ fmtTime(item.created_at) }}</span>
                 <span v-if="item.claimed_at" class="meta-time"> | 认领时间：{{ fmtTime(item.claimed_at) }}</span>
                 <span v-if="item.status === 'resolved' && item.resolved_at" class="meta-time"> | 完成时间：{{ fmtTime(item.resolved_at) }}</span>
               </div>
@@ -231,7 +263,7 @@
 
     <!-- 完成说明弹窗 -->
     <Transition name="modal">
-      <div v-if="resolveModalVisible" class="modal-backdrop" @click.self="closeResolveModal">
+      <div v-if="resolveModalVisible" class="modal-backdrop">
         <div class="modal-dialog resolve-dialog">
           <div class="modal-head">
             <h3>完成反馈</h3>
@@ -268,7 +300,7 @@
 
     <!-- 日志弹窗 -->
     <Transition name="modal">
-      <div v-if="logModalVisible" class="modal-backdrop" @click.self="closeLogModal">
+      <div v-if="logModalVisible" class="modal-backdrop">
         <div class="modal-dialog log-dialog">
           <div class="modal-head">
             <h3>反馈日志</h3>
@@ -314,7 +346,7 @@
 
     <!-- 新建事项弹窗 -->
     <Transition name="modal">
-      <div v-if="createModalVisible" class="modal-backdrop" @click.self="closeCreateModal">
+      <div v-if="createModalVisible" class="modal-backdrop">
         <div class="modal-dialog create-dialog">
           <div class="modal-head">
             <h3>新建事项</h3>
@@ -331,6 +363,10 @@
               <button class="create-type-btn" :class="{ active: createType === 'suggestion' }" @click="createType = 'suggestion'">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                 功能建议
+              </button>
+              <button class="create-type-btn" :class="{ active: createType === 'appeal' }" @click="createType = 'appeal'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                封禁申诉
               </button>
             </div>
             <label class="create-field">
@@ -389,7 +425,7 @@
 
     <!-- 处理统计弹窗 -->
     <Transition name="modal">
-      <div v-if="statsModalVisible" class="modal-backdrop" @click.self="closeStats">
+      <div v-if="statsModalVisible" class="modal-backdrop">
         <div class="modal-dialog stats-dialog">
           <div class="modal-head">
             <h3>管理员处理统计</h3>
@@ -446,9 +482,60 @@
       </div>
     </Transition>
 
+    <!-- 回收站弹窗 -->
+    <Transition name="modal">
+      <div v-if="recycleModalVisible" class="modal-backdrop">
+        <div class="modal-dialog recycle-dialog">
+          <div class="modal-head">
+            <h3>回收站</h3>
+            <button class="modal-close" @click="closeRecycleBin">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="recycle-tip">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+              <span>已删除的记录将保留 14 天，超期自动永久清除。可点击「恢复」将记录还原至反馈列表。</span>
+            </div>
+            <div v-if="recycleLoading" class="state-box compact">
+              <div class="spinner"></div>
+              <span>正在加载...</span>
+            </div>
+            <div v-else-if="recycleList.length === 0" class="state-box compact">
+              <span>回收站为空</span>
+            </div>
+            <div v-else class="recycle-list">
+              <div v-for="item in recycleList" :key="item.id" class="recycle-item">
+                <div class="recycle-item-main">
+                  <div class="recycle-item-title">{{ item.title || '无标题' }}</div>
+                  <div class="recycle-item-meta">
+                    <span v-if="item.category === 'appeal'" class="type-badge type-appeal small">封禁申诉</span>
+                    <span v-else-if="item.feedback_type === 'suggestion'" class="type-badge type-suggestion small">功能建议</span>
+                    <span v-else class="type-badge type-problem small">问题反馈</span>
+                    <span class="recycle-user">{{ item.nickname || '匿名' }}</span>
+                    <span class="recycle-del">删除人：{{ item.deleted_by || '-' }}</span>
+                    <span class="recycle-remaining" :class="{ urgent: item.remaining_hours < 48 }">
+                      剩余 {{ Math.floor((item.remaining_hours || 0) / 24) }} 天 {{ (item.remaining_hours || 0) % 24 }} 小时
+                    </span>
+                  </div>
+                </div>
+                <button class="btn-restore" @click="restoreItem(item.id)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                  恢复
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeRecycleBin">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 图片查看器 -->
     <Transition name="modal">
-      <div v-if="imageViewerVisible" class="viewer-backdrop" @click.self="closeImageViewer">
+      <div v-if="imageViewerVisible" class="viewer-backdrop">
         <button class="viewer-close" @click="closeImageViewer">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -640,9 +727,13 @@ function closeStats() {
 
 // ===== 新建事项弹窗 =====
 const createModalVisible = ref(false)
-const createType = ref<'problem' | 'suggestion'>('problem')
+const createType = ref<'problem' | 'suggestion' | 'appeal'>('problem')
 // 标题默认取所选类型，无需手动填写
-const createTitle = computed(() => createType.value === 'suggestion' ? '功能建议' : '问题反馈')
+const createTitle = computed(() => {
+  if (createType.value === 'suggestion') return '功能建议'
+  if (createType.value === 'appeal') return '封禁申诉'
+  return '问题反馈'
+})
 const createContent = ref('')
 const createImages = ref<string[]>([])
 const createDragging = ref(false)
@@ -823,8 +914,10 @@ const filteredList = computed(() => {
   if (activeFilter.value !== 'all') {
     arr = arr.filter(f => f.status === activeFilter.value)
   }
-  if (typeFilter.value !== 'all') {
-    arr = arr.filter(f => f.feedback_type === typeFilter.value)
+  if (typeFilter.value === 'appeal') {
+    arr = arr.filter(f => f.category === 'appeal')
+  } else if (typeFilter.value !== 'all') {
+    arr = arr.filter(f => f.feedback_type === typeFilter.value && f.category !== 'appeal')
   }
   return arr
 })
@@ -943,6 +1036,102 @@ function closeLogModal() {
   if (logLoading.value) return
   logModalVisible.value = false
   logTarget.value = null
+}
+
+// ===== 批量管理 =====
+const batchMode = ref(false)
+const selectedIds = ref<Set<number>>(new Set())
+
+const allSelected = computed(() => {
+  return filteredList.value.length > 0 && filteredList.value.every(f => selectedIds.value.has(f.id))
+})
+
+function enterBatchMode() {
+  batchMode.value = true
+  selectedIds.value.clear()
+}
+
+function exitBatchMode() {
+  batchMode.value = false
+  selectedIds.value.clear()
+}
+
+function toggleSelect(id: number) {
+  if (selectedIds.value.has(id)) {
+    selectedIds.value.delete(id)
+  } else {
+    selectedIds.value.add(id)
+  }
+  // 触发响应式更新
+  selectedIds.value = new Set(selectedIds.value)
+}
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    // 取消全选（仅取消当前列表的选中）
+    filteredList.value.forEach(f => selectedIds.value.delete(f.id))
+  } else {
+    filteredList.value.forEach(f => selectedIds.value.add(f.id))
+  }
+  selectedIds.value = new Set(selectedIds.value)
+}
+
+async function confirmBatchDelete() {
+  if (selectedIds.value.size === 0) return
+  const ok = await webConfirm(`确认将选中的 ${selectedIds.value.size} 条记录移入回收站？14 天内可恢复。`, {
+    title: '批量删除',
+    confirmText: '删除',
+  })
+  if (!ok) return
+  const ids = Array.from(selectedIds.value)
+  const res = await adminApi('batch_delete_feedback', { ids })
+  if (res.code === 200) {
+    showToast(`已删除 ${res.data?.deleted ?? ids.length} 条记录`, 'success')
+    exitBatchMode()
+    await loadList()
+  } else {
+    showToast(res.msg || '删除失败')
+  }
+}
+
+// ===== 回收站 =====
+const recycleModalVisible = ref(false)
+const recycleLoading = ref(false)
+const recycleList = ref<any[]>([])
+
+async function openRecycleBin() {
+  recycleModalVisible.value = true
+  await loadRecycleBin()
+}
+
+function closeRecycleBin() {
+  if (recycleLoading.value) return
+  recycleModalVisible.value = false
+}
+
+async function loadRecycleBin() {
+  recycleLoading.value = true
+  const res = await adminApi<{ list: any[] }>('list_recycle_bin')
+  recycleLoading.value = false
+  if (res.code === 200 && res.data) {
+    recycleList.value = res.data.list || []
+  } else {
+    recycleList.value = []
+    showToast(res.msg || '回收站加载失败')
+  }
+}
+
+async function restoreItem(id: number) {
+  const res = await adminApi('restore_feedback', { id })
+  if (res.code === 200) {
+    showToast('恢复成功', 'success')
+    // 从回收站列表移除
+    recycleList.value = recycleList.value.filter(r => r.id !== id)
+    // 刷新主列表
+    await loadList()
+  } else {
+    showToast(res.msg || '恢复失败')
+  }
 }
 
 onMounted(() => {
@@ -1272,6 +1461,7 @@ onUnmounted(() => {
 /* ===== 反馈卡片 ===== */
 .fb-list { display: flex; flex-direction: column; gap: 14px; }
 .fb-card {
+  position: relative;
   background: var(--white);
   border: 1px solid var(--border);
   border-radius: 14px;
@@ -1964,6 +2154,255 @@ onUnmounted(() => {
   to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
+/* ===== 回收站按钮 ===== */
+.btn-recycle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-recycle:hover {
+  border-color: #ef4444;
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.06);
+}
+
+/* ===== 工具条右侧 ===== */
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ===== 批量管理 ===== */
+.btn-batch-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-batch-enter:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--hover-bg);
+  border: 1px solid var(--border-color);
+}
+.batch-select-all {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.batch-select-all input {
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+.batch-count {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.btn-batch-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: none;
+  background: #ef4444;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-batch-delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-batch-delete:not(:disabled):hover {
+  background: #dc2626;
+}
+.btn-batch-exit {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-batch-exit:hover {
+  color: var(--text-primary);
+}
+
+/* ===== 卡片复选框 ===== */
+.card-checkbox {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.card-checkbox input {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+.fb-card.batch-selected {
+  border-color: var(--accent-color) !important;
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 99, 102, 241), 0.15);
+}
+
+/* ===== 封禁申诉类型样式 ===== */
+.avatar-appeal {
+  background: linear-gradient(135deg, #fef3c7, #fde68a);
+  color: #92400e;
+}
+.type-appeal {
+  background: #fef3c7 !important;
+  color: #92400e !important;
+}
+.type-badge.small {
+  font-size: 10px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* ===== 回收站弹窗 ===== */
+.recycle-dialog {
+  max-width: 560px;
+  width: 90%;
+}
+.recycle-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.08);
+  color: #92400e;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+.recycle-tip svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.recycle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+.recycle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--hover-bg);
+  border: 1px solid var(--border-color);
+  transition: all 0.2s;
+}
+.recycle-item:hover {
+  border-color: var(--accent-color);
+}
+.recycle-item-main {
+  flex: 1;
+  min-width: 0;
+}
+.recycle-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recycle-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.recycle-user {
+  font-weight: 500;
+}
+.recycle-del {
+  color: var(--text-muted);
+}
+.recycle-remaining {
+  color: #16a34a;
+  font-weight: 500;
+}
+.recycle-remaining.urgent {
+  color: #ef4444;
+}
+.btn-restore {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #16a34a;
+  background: rgba(22, 163, 74, 0.06);
+  color: #16a34a;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.btn-restore:hover {
+  background: #16a34a;
+  color: #fff;
+}
+
 /* ===== 响应式 ===== */
 @media (max-width: 768px) {
   .stats-row { grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
@@ -1973,5 +2412,8 @@ onUnmounted(() => {
   .card-foot { flex-direction: column; align-items: stretch; }
   .foot-actions { justify-content: flex-end; }
   .fb-card { padding: 14px 16px; }
+  .toolbar { flex-direction: column; gap: 10px; align-items: stretch; }
+  .toolbar-right { flex-wrap: wrap; }
+  .toolbar-group { flex-wrap: wrap; }
 }
 </style>

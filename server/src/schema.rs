@@ -108,6 +108,9 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     // 反馈类型：problem（问题反馈）/ suggestion（功能建议），images 保存图片 URL 的 JSON 数组
     ensure_column(pool, "user_feedback", "feedback_type", "VARCHAR(16) NOT NULL DEFAULT 'problem'").await;
     ensure_column(pool, "user_feedback", "images", "TEXT").await;
+    // 回收站：软删除时间与删除人，14天后自动过期
+    ensure_column(pool, "user_feedback", "deleted_at", "DATETIME DEFAULT NULL").await;
+    ensure_column(pool, "user_feedback", "deleted_by", "VARCHAR(64) NOT NULL DEFAULT ''").await;
 }
 
 /// 账号系统重构迁移：将 app_users.username 列改名为 nickname。

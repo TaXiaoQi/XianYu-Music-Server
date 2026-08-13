@@ -88,10 +88,11 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
         _ => "ORDER BY created_at DESC",
     };
 
+    // 排除已软删除的记录
     let (where_clause, binds): (String, Vec<String>) = if status_filter.is_empty() || status_filter == "all" {
-        (String::new(), Vec::new())
+        ("WHERE deleted_at IS NULL".to_string(), Vec::new())
     } else {
-        ("WHERE status = ?".to_string(), vec![status_filter.clone()])
+        ("WHERE deleted_at IS NULL AND status = ?".to_string(), vec![status_filter.clone()])
     };
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
@@ -114,16 +115,16 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
         Err(_) => return err(500, "数据库错误"),
     };
 
-    // 统计各状态数量
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback")
+    // 统计各状态数量（排除已软删除的记录）
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL")
         .fetch_one(pool).await.unwrap_or(0);
-    let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE status = 'pending'")
+    let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL AND status = 'pending'")
         .fetch_one(pool).await.unwrap_or(0);
-    let processing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE status = 'processing'")
+    let processing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL AND status = 'processing'")
         .fetch_one(pool).await.unwrap_or(0);
-    let resolved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE status = 'resolved'")
+    let resolved: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL AND status = 'resolved'")
         .fetch_one(pool).await.unwrap_or(0);
-    let rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE status = 'rejected'")
+    let rejected: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL AND status = 'rejected'")
         .fetch_one(pool).await.unwrap_or(0);
 
     ok("ok", json!({
@@ -165,21 +166,38 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     if id <= 0 || !valid.contains(&status.as_str()) {
         return err(400, "参数错误");
     }
-    let upd = sqlx::query(
-        "UPDATE user_feedback SET status = ?,
-                claimed_at = CASE WHEN ? = 'processing' THEN COALESCE(claimed_at, NOW()) ELSE claimed_at END,
-                resolved_at = CASE WHEN ? = 'resolved' THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
-                updated_at = NOW() WHERE id = ?",
-    )
-    .bind(&status)
-    .bind(&status)
-    .bind(&status)
-    .bind(id)
-    .execute(pool)
-    .await;
+    // 拒绝时记录操作人（与认领一致，打上 assignee 和 replied_by）
+    let upd = if status == "rejected" {
+        sqlx::query(
+            "UPDATE user_feedback SET status = ?,
+                    assignee = ?, replied_by = ?, replied_at = NOW(),
+                    resolved_at = CASE WHEN ? = 'resolved' THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
+                    updated_at = NOW() WHERE id = ?",
+        )
+        .bind(&status)
+        .bind(&ctx.username)
+        .bind(&ctx.username)
+        .bind(&status)
+        .bind(id)
+        .execute(pool)
+        .await
+    } else {
+        sqlx::query(
+            "UPDATE user_feedback SET status = ?,
+                    claimed_at = CASE WHEN ? = 'processing' THEN COALESCE(claimed_at, NOW()) ELSE claimed_at END,
+                    resolved_at = CASE WHEN ? = 'resolved' THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
+                    updated_at = NOW() WHERE id = ?",
+        )
+        .bind(&status)
+        .bind(&status)
+        .bind(&status)
+        .bind(id)
+        .execute(pool)
+        .await
+    };
     match upd {
         Ok(_) => {
-            log_operation(pool, ctx, "更新反馈状态", &format!("id={}", id), &format!("status={}", status)).await;
+            log_operation(pool, ctx, "更新反馈状态", &format!("id={}", id), &format!("status={} 操作人={}", status, ctx.username)).await;
             ok("状态已更新", serde_json::Value::Null)
         }
         Err(_) => err(500, "服务器错误"),
@@ -269,9 +287,10 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         return err(400, "完成说明不能超过 1000 字");
     }
     let upd = sqlx::query(
-        "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+        "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, assignee = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
     )
     .bind(&note)
+    .bind(&ctx.username)
     .bind(&ctx.username)
     .bind(id)
     .execute(pool)
@@ -297,9 +316,11 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     if feedback_type.is_empty() {
         feedback_type = "problem".to_string();
     }
-    if feedback_type != "problem" && feedback_type != "suggestion" {
+    if feedback_type != "problem" && feedback_type != "suggestion" && feedback_type != "appeal" {
         return err(400, "反馈类型不正确");
     }
+    // 封禁申诉类型使用 category='appeal'，其余使用 category='feedback'
+    let category = if feedback_type == "appeal" { "appeal" } else { "feedback" };
     let title = str_of(&data, "title").trim().to_string();
     let content = str_of(&data, "content").trim().to_string();
     let notify_external = int_of(&data, "notify_external") != 0;
@@ -344,13 +365,14 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     let images_json = json!(image_urls).to_string();
     // 后台创建：昵称显示为发起的管理员，ciyuanxi_id 留空标识为后台创建
     let result = sqlx::query(
-        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, status, category, ip) VALUES ('', ?, ?, ?, ?, ?, 'pending', 'feedback', ?)",
+        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, status, category, ip) VALUES ('', ?, ?, ?, ?, ?, 'pending', ?, ?)",
     )
         .bind(&ctx.username)
         .bind(&title)
         .bind(&content)
         .bind(&feedback_type)
         .bind(&images_json)
+        .bind(&category)
         .bind(&ctx.ip)
         .execute(pool)
         .await;
@@ -398,6 +420,7 @@ pub async fn feedback_admin_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool)
                 CAST(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS SIGNED) AS rejected,
                 CAST(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS SIGNED) AS pending
          FROM user_feedback
+         WHERE deleted_at IS NULL
          GROUP BY admin_name
          ORDER BY total DESC",
     )
@@ -422,4 +445,95 @@ pub async fn feedback_admin_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     let grand_total: i64 = list.iter().map(|v| v.get("total").and_then(|t| t.as_i64()).unwrap_or(0)).sum();
     log_operation(pool, ctx, "查看反馈处理统计", "", "").await;
     ok("ok", json!({ "list": list, "grand_total": grand_total }))
+}
+
+/// 批量软删除反馈记录（移入回收站，14天后自动过期）
+/// 入参：ids（数组）
+pub async fn batch_delete_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ids: Vec<i64> = data
+        .get("ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+                .filter(|id| *id > 0)
+                .collect()
+        })
+        .unwrap_or_default();
+    if ids.is_empty() {
+        return err(400, "请选择要删除的记录");
+    }
+    // 构建占位符
+    let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "UPDATE user_feedback SET deleted_at = NOW(), deleted_by = ? WHERE id IN ({}) AND deleted_at IS NULL",
+        placeholders.join(",")
+    );
+    let mut query = sqlx::query(&sql).bind(&ctx.username);
+    for id in &ids {
+        query = query.bind(id);
+    }
+    match query.execute(pool).await {
+        Ok(r) => {
+            let affected = r.rows_affected();
+            log_operation(pool, ctx, "批量删除反馈", &format!("ids={:?}", ids), &format!("删除{}条, 操作人={}", affected, ctx.username)).await;
+            ok("删除成功", json!({ "deleted": affected }))
+        }
+        Err(_) => err(500, "服务器错误"),
+    }
+}
+
+/// 回收站列表：展示已软删除的记录（14天内可恢复）
+pub async fn list_recycle_bin(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let list_sql = "SELECT id, ciyuanxi_id, nickname, title, content, status, category, feedback_type,
+                           assignee, deleted_at, deleted_by, created_at,
+                           COALESCE(TIMESTAMPDIFF(HOUR, deleted_at, NOW()), 0) AS hours_since_deleted
+                    FROM user_feedback
+                    WHERE deleted_at IS NOT NULL AND deleted_at >= DATE_SUB(NOW(), INTERVAL 14 DAY)
+                    ORDER BY deleted_at DESC";
+    let list: Vec<Value> = match sqlx::query(list_sql).fetch_all(pool).await {
+        Ok(rows) => rows.iter().map(row_to_value).collect(),
+        Err(_) => return err(500, "数据库错误"),
+    };
+    // 计算每条记录的剩余可恢复小时数
+    let items: Vec<Value> = list
+        .iter()
+        .map(|v| {
+            let hours = v.get("hours_since_deleted").and_then(|h| h.as_i64()).unwrap_or(0);
+            let remaining_hours = (14 * 24 - hours).max(0);
+            let mut obj = v.clone();
+            if let Some(m) = obj.as_object_mut() {
+                m.insert("remaining_hours".to_string(), json!(remaining_hours));
+            }
+            obj
+        })
+        .collect();
+    ok("ok", json!({ "list": items }))
+}
+
+/// 从回收站恢复反馈记录
+/// 入参：id
+pub async fn restore_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let upd = sqlx::query(
+        "UPDATE user_feedback SET deleted_at = NULL, deleted_by = '' WHERE id = ? AND deleted_at IS NOT NULL",
+    )
+    .bind(id)
+    .execute(pool)
+    .await;
+    match upd {
+        Ok(r) => {
+            if r.rows_affected() == 0 {
+                return err(404, "记录不存在或已不在回收站中");
+            }
+            log_operation(pool, ctx, "恢复反馈记录", &format!("id={}", id), &format!("操作人={}", ctx.username)).await;
+            ok("恢复成功", serde_json::Value::Null)
+        }
+        Err(_) => err(500, "服务器错误"),
+    }
 }

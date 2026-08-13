@@ -918,7 +918,13 @@ pub fn handle_admin_api(action: &str) -> Response {
         "list_error_logs" | "list_app_login_log" | "list_operation_logs" | "list_admin_login_logs" | "list_feedback" => {
             admin::ok("ok", json!({ "total": 0, "total_pages": 0, "list": [] }))
         }
+        "list_recycle_bin" => admin::ok("ok", json!({ "list": [] })),
+        "batch_delete_feedback" => admin::ok("删除成功", json!({ "deleted": 0 })),
+        "restore_feedback" => admin::ok("恢复成功", serde_json::Value::Null),
         "list_banned_devices" => admin::ok("ok", json!({
+            "total": 0, "total_pages": 0, "list": [], "debug": true
+        })),
+        "list_all_devices" => admin::ok("ok", json!({
             "total": 0, "total_pages": 0, "list": [], "debug": true
         })),
         "ban_device" => admin::ok("已封禁", json!({ "debug": true })),

@@ -32,6 +32,7 @@ function createDialog(): HTMLDivElement {
 }
 
 function animateIn(overlay: HTMLDivElement, dialog: HTMLDivElement) {
+  document.body.style.overflow = 'hidden'
   document.body.appendChild(overlay)
   overlay.appendChild(dialog)
   requestAnimationFrame(() => {
@@ -44,7 +45,12 @@ function closeDialog(overlay: HTMLDivElement) {
   const dialog = overlay.querySelector('.web-dialog')
   overlay.classList.remove('show')
   dialog?.classList.remove('show')
-  setTimeout(() => overlay.remove(), 240)
+  setTimeout(() => {
+    overlay.remove()
+    if (!document.querySelector('.web-dialog-overlay')) {
+      document.body.style.overflow = ''
+    }
+  }, 240)
 }
 
 /** 转义 HTML，防止注入 */
@@ -93,9 +99,6 @@ export function webConfirm(message: string, options: WebConfirmOptions = {}): Pr
 
     cancelBtn.onclick = () => done(false)
     confirmBtn.onclick = () => done(true)
-    overlay.onclick = (e) => {
-      if (e.target === overlay) done(false)
-    }
     document.addEventListener('keydown', onKey)
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -151,9 +154,6 @@ export function webPrompt(message: string, defaultValue = '', options: WebPrompt
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') done(input.value)
     })
-    overlay.onclick = (e) => {
-      if (e.target === overlay) done(null)
-    }
     document.addEventListener('keydown', onKey)
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
@@ -219,9 +219,6 @@ export function webActionMenu(title: string, actions: WebAction[]): Promise<stri
     actionBtns.forEach((btn) => {
       btn.addEventListener('click', () => done((btn as HTMLButtonElement).dataset.key || null))
     })
-    overlay.onclick = (e) => {
-      if (e.target === overlay) done(null)
-    }
     document.addEventListener('keydown', onKey)
     function onKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {

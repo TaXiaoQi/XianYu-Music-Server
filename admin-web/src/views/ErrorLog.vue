@@ -97,7 +97,7 @@
 
     <!-- 详情弹窗 -->
     <Transition name="modal">
-    <div v-if="showDetailModal" class="modal-overlay" @click.self="showDetailModal = false">
+    <div v-if="showDetailModal" class="modal-overlay">
       <div class="modal modal-wide">
         <div class="modal-header">
           <span class="modal-title">崩溃日志详情</span>

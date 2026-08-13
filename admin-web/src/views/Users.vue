@@ -125,7 +125,7 @@
 
     <!-- 添加用户弹窗 -->
     <Transition name="modal">
-    <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
+    <div v-if="showAddModal" class="modal-overlay">
       <div class="modal">
         <h3>添加用户</h3>
         <div class="form-group">
@@ -157,7 +157,7 @@
 
     <!-- 修改邮箱弹窗 -->
     <Transition name="modal">
-    <div v-if="showEmailModal" class="modal-overlay" @click.self="showEmailModal = false">
+    <div v-if="showEmailModal" class="modal-overlay">
       <div class="modal">
         <h3>修改用户邮箱</h3>
         <div class="form-group">
@@ -185,7 +185,7 @@
 
     <!-- 重置听歌时长确认弹窗 -->
     <Transition name="modal">
-    <div v-if="showResetModal" class="modal-overlay" @click.self="showResetModal = false">
+    <div v-if="showResetModal" class="modal-overlay">
       <div class="modal">
         <h3>重置听歌时长</h3>
         <div class="form-group">
@@ -211,7 +211,7 @@
 
     <!-- 查看插件弹窗 -->
     <Transition name="modal">
-    <div v-if="showPluginsModal" class="modal-overlay" @click.self="showPluginsModal = false">
+    <div v-if="showPluginsModal" class="modal-overlay">
       <div class="modal" style="max-width:700px;">
         <h3>用户插件 - {{ pluginsData.nickname || pluginsData.username }}</h3>
         <div v-if="pluginsLoading" class="empty">加载中...</div>
@@ -256,7 +256,7 @@
 
     <!-- 头像大图查看弹窗 -->
     <Transition name="modal">
-    <div v-if="showAvatarModal" class="modal-overlay" @click.self="showAvatarModal = false">
+    <div v-if="showAvatarModal" class="modal-overlay">
       <div class="modal" style="width:300px;text-align:center;">
         <h3>{{ avatarViewUser?.nickname || avatarViewUser?.username }} 的头像</h3>
         <img
@@ -277,7 +277,7 @@
 
     <!-- 设备信息弹窗 -->
     <Transition name="modal">
-    <div v-if="showDeviceModal" class="modal-overlay" @click.self="showDeviceModal = false">
+    <div v-if="showDeviceModal" class="modal-overlay">
       <div class="modal" style="max-width:700px;">
         <h3>设备信息 - {{ deviceData.nickname || deviceData.username }}</h3>
         <div v-if="deviceLoading" class="empty">加载中...</div>
@@ -345,7 +345,7 @@
 
     <!-- 设备管理弹窗 -->
     <Transition name="modal">
-    <div v-if="showBannedModal" class="modal-overlay" @click.self="showBannedModal = false">
+    <div v-if="showBannedModal" class="modal-overlay">
       <div class="modal" style="max-width:700px;">
         <h3>设备管理</h3>
 

@@ -116,7 +116,7 @@
 
     <!-- 新增/编辑弹窗 -->
     <Transition name="modal">
-      <div v-if="modalVisible" class="modal-backdrop" @click.self="closeModal">
+      <div v-if="modalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
             <h3>{{ editingId ? '编辑公告' : '新增公告' }}</h3>
