@@ -8,6 +8,59 @@ use crate::response::ReqCtx;
 
 const MAX_FEEDBACK_LOG_CHARS: usize = 500_000;
 const DEFAULT_FEEDBACK_DAILY_LIMIT: i64 = 20;
+const MAX_FEEDBACK_IMAGES: usize = 6;
+const MAX_FEEDBACK_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+
+fn feedback_img_dir() -> std::path::PathBuf {
+    std::path::Path::new("uploads").join("feedback")
+}
+
+fn data_url_to_bytes(data_url: &str) -> Option<Vec<u8>> {
+    let raw = data_url.split_once(',').map(|(_, v)| v).unwrap_or(data_url);
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(raw).ok()
+}
+
+/// 将图片数据压缩为 JPEG 保存到 uploads/feedback/，返回相对 URL。
+fn compress_and_save_feedback_image(bytes: &[u8], name: &str, max_w: u32, quality: u32) -> Option<String> {
+    use image::GenericImageView;
+    let img = image::load_from_memory(bytes).ok()?;
+    let (w, h) = img.dimensions();
+    let (nw, nh) = if w > max_w {
+        (max_w, (h * max_w / w).max(1))
+    } else {
+        (w, h)
+    };
+    let resized = img.resize_exact(nw, nh, image::imageops::FilterType::Lanczos3);
+    let rgb = resized.to_rgb8();
+    let dir = feedback_img_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return None;
+    }
+    let path = dir.join(name);
+    let file = std::fs::File::create(&path).ok()?;
+    if image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(file), quality as u8)
+        .encode(&rgb, nw, nh, image::ExtendedColorType::Rgb8)
+        .is_err()
+    {
+        return None;
+    }
+    Some(format!("/uploads/feedback/{}", name))
+}
+
+fn public_feedback_img_url(ctx: &ReqCtx, url: String) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") || url.is_empty() {
+        return url;
+    }
+    let base = if !ctx.base_url.is_empty() {
+        &ctx.base_url
+    } else if !ctx.config.public_base_url.is_empty() {
+        &ctx.config.public_base_url
+    } else {
+        return url;
+    };
+    format!("{}{}", base.trim_end_matches('/'), url)
+}
 
 fn trim_feedback_log(value: String) -> String {
     if value.chars().count() <= MAX_FEEDBACK_LOG_CHARS {
@@ -37,7 +90,22 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     }
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
     let mut nickname = str_of(&data, "nickname").trim().to_string();
-    let title = str_of(&data, "title").trim().to_string();
+    let mut title = str_of(&data, "title").trim().to_string();
+    let mut feedback_type = str_of(&data, "feedback_type").trim().to_string();
+    if feedback_type.is_empty() {
+        feedback_type = "problem".to_string();
+    }
+    if feedback_type != "problem" && feedback_type != "suggestion" {
+        feedback_type = "problem".to_string();
+    }
+    // 标题为空时按反馈类型赋予默认标题
+    if title.is_empty() {
+        title = if feedback_type == "suggestion" {
+            "功能建议".to_string()
+        } else {
+            "问题反馈".to_string()
+        };
+    }
     let content = str_of(&data, "content").trim().to_string();
     let raw_error_logs = str_of(&data, "error_logs");
     let raw_all_logs = str_of(&data, "all_logs");
@@ -52,6 +120,39 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         "all_logs_truncated": raw_all_logs.chars().count() > all_logs.chars().count(),
     })
     .to_string();
+    // 图片：功能建议支持上传图片，接收 base64 data URL 数组，压缩保存到 uploads/feedback/
+    let raw_images = data.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    if feedback_type == "problem" && !raw_images.is_empty() {
+        return ctx.err(400, "问题反馈不支持上传图片");
+    }
+    if raw_images.len() > MAX_FEEDBACK_IMAGES {
+        return ctx.err(400, &format!("最多上传 {} 张图片", MAX_FEEDBACK_IMAGES));
+    }
+    let mut image_urls: Vec<String> = Vec::new();
+    if !raw_images.is_empty() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        for (i, img_val) in raw_images.iter().enumerate() {
+            let data_url = img_val.as_str().unwrap_or("");
+            if data_url.is_empty() {
+                continue;
+            }
+            if data_url.len() > MAX_FEEDBACK_IMAGE_BYTES {
+                continue;
+            }
+            let bytes = match data_url_to_bytes(data_url) {
+                Some(b) if b.len() <= MAX_FEEDBACK_IMAGE_BYTES => b,
+                _ => continue,
+            };
+            let name = format!("feedback_{}_{}.jpg", ts, i);
+            if let Some(url) = compress_and_save_feedback_image(&bytes, &name, 1600, 82) {
+                image_urls.push(public_feedback_img_url(&ctx, url));
+            }
+        }
+    }
+    let images_json = json!(image_urls).to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "请先登录");
     }
@@ -95,15 +196,20 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         }
     }
     let ip = ctx.client_ip.clone();
-    let result = sqlx::query("INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, error_logs, all_logs, log_meta, ip) VALUES (?,?,?,?,?,?,?,?)")
+    let result = sqlx::query(
+        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, error_logs, all_logs, log_meta, ip, category) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    )
         .bind(&ciyuanxi_id)
         .bind(&nickname)
         .bind(&title)
         .bind(&content)
+        .bind(&feedback_type)
+        .bind(&images_json)
         .bind(&error_logs)
         .bind(&all_logs)
         .bind(&log_meta)
         .bind(&ip)
+        .bind("feedback")
         .execute(pool)
         .await;
     match result {
@@ -266,4 +372,58 @@ fn row_to_json(row: &sqlx::mysql::MySqlRow) -> Value {
         "replied_at": row.get::<Option<String>, _>("replied_at").unwrap_or_default(),
         "updated_at": row.get::<Option<String>, _>("updated_at").unwrap_or_default(),
     })
+}
+
+/// 获取当前用户的反馈列表（含状态），用于客户端「我的反馈」查看。
+pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "请先登录");
+    }
+    let rows = sqlx::query(
+        "SELECT id, title, content, feedback_type, images, status, category, assignee, resolve_note, error_logs, all_logs, created_at, replied_at, updated_at
+         FROM user_feedback
+         WHERE ciyuanxi_id = ? AND category = 'feedback'
+         ORDER BY created_at DESC
+         LIMIT 100",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_all(pool)
+    .await;
+    match rows {
+        Ok(rows) => {
+            use sqlx::Row;
+            let list: Vec<Value> = rows
+                .iter()
+                .map(|r| {
+                    let images_raw: Option<String> = r.get("images");
+                    let images: Vec<String> = images_raw
+                        .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+                        .unwrap_or_default();
+                    json!({
+                        "id": r.get::<i64, _>("id"),
+                        "title": r.get::<String, _>("title"),
+                        "content": r.get::<Option<String>, _>("content").unwrap_or_default(),
+                        "feedbackType": r.get::<String, _>("feedback_type"),
+                        "images": images,
+                        "status": r.get::<String, _>("status"),
+                        "category": r.get::<String, _>("category"),
+                        "assignee": r.get::<String, _>("assignee"),
+                        "resolveNote": r.get::<Option<String>, _>("resolve_note").unwrap_or_default(),
+                        "hasErrorLogs": r.get::<Option<String>, _>("error_logs").map(|v| !v.is_empty()).unwrap_or(false),
+                        "hasAllLogs": r.get::<Option<String>, _>("all_logs").map(|v| !v.is_empty()).unwrap_or(false),
+                        "createdAt": r.get::<Option<String>, _>("created_at").unwrap_or_default(),
+                        "repliedAt": r.get::<Option<String>, _>("replied_at").unwrap_or_default(),
+                        "updatedAt": r.get::<Option<String>, _>("updated_at").unwrap_or_default(),
+                    })
+                })
+                .collect();
+            ctx.ok("ok", json!({ "list": list }))
+        }
+        Err(_) => ctx.err(500, "数据库错误"),
+    }
 }

@@ -92,6 +92,9 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "assignee", "VARCHAR(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "resolve_note", "TEXT").await;
     ensure_column(pool, "user_feedback", "notified_at", "DATETIME DEFAULT NULL").await;
+    // 反馈类型：problem（问题反馈）/ suggestion（功能建议），images 保存图片 URL 的 JSON 数组
+    ensure_column(pool, "user_feedback", "feedback_type", "VARCHAR(16) NOT NULL DEFAULT 'problem'").await;
+    ensure_column(pool, "user_feedback", "images", "TEXT").await;
 }
 
 /// 账号系统重构迁移：将 app_users.username 列改名为 nickname。
