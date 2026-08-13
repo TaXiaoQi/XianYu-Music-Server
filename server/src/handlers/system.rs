@@ -434,7 +434,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             let day_filter = "stat_date = CURDATE()";
             (
                 format!(
-                    "SELECT d.ciyuanxi_id, u.username, u.avatar_url, SUM(d.{}) AS value \
+                    "SELECT d.ciyuanxi_id, u.username, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
                      FROM listen_daily_stats d \
                      INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
                      WHERE {} \
@@ -450,12 +450,12 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                      INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
                      WHERE {} \
                      GROUP BY d.ciyuanxi_id \
-                     HAVING SUM(d.{}) > 0 \
+                     HAVING CAST(SUM(d.{}) AS SIGNED) > 0 \
                      ) AS sub",
                     day_filter, order_col
                 ),
                 format!(
-                    "SELECT u.username, u.avatar_url, COALESCE(SUM(d.{}), 0) AS value \
+                    "SELECT u.username, u.avatar_url, CAST(COALESCE(SUM(d.{}), 0) AS SIGNED) AS value \
                      FROM app_users u \
                      LEFT JOIN listen_daily_stats d ON d.ciyuanxi_id = u.ciyuanxi_id AND {} \
                      WHERE u.ciyuanxi_id = ? AND u.status = 1 \
@@ -469,7 +469,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                      INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
                      WHERE {} \
                      GROUP BY d.ciyuanxi_id \
-                     HAVING SUM(d.{}) > ? \
+                     HAVING CAST(SUM(d.{}) AS SIGNED) > ? \
                      ) AS sub",
                     day_filter, order_col
                 ),
@@ -480,7 +480,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             let week_filter = "stat_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND stat_date <= CURDATE()";
             (
                 format!(
-                    "SELECT d.ciyuanxi_id, u.username, u.avatar_url, SUM(d.{}) AS value \
+                    "SELECT d.ciyuanxi_id, u.username, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
                      FROM listen_daily_stats d \
                      INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
                      WHERE {} \
@@ -496,12 +496,12 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                      INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
                      WHERE {} \
                      GROUP BY d.ciyuanxi_id \
-                     HAVING SUM(d.{}) > 0 \
+                     HAVING CAST(SUM(d.{}) AS SIGNED) > 0 \
                      ) AS sub",
                     week_filter, order_col
                 ),
                 format!(
-                    "SELECT u.username, u.avatar_url, COALESCE(SUM(d.{}), 0) AS value \
+                    "SELECT u.username, u.avatar_url, CAST(COALESCE(SUM(d.{}), 0) AS SIGNED) AS value \
                      FROM app_users u \
                      LEFT JOIN listen_daily_stats d ON d.ciyuanxi_id = u.ciyuanxi_id AND {} \
                      WHERE u.ciyuanxi_id = ? AND u.status = 1 \
@@ -515,7 +515,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                      INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
                      WHERE {} \
                      GROUP BY d.ciyuanxi_id \
-                     HAVING SUM(d.{}) > ? \
+                     HAVING CAST(SUM(d.{}) AS SIGNED) > ? \
                      ) AS sub",
                     week_filter, order_col
                 ),
@@ -525,22 +525,22 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             // total
             (
                 format!(
-                    "SELECT ciyuanxi_id, username, avatar_url, {} AS value \
-                     FROM app_users WHERE status = 1 AND {} > 0 \
+                    "SELECT ciyuanxi_id, username, avatar_url, CAST({} AS SIGNED) AS value \
+                     FROM app_users WHERE status = 1 AND CAST({} AS SIGNED) > 0 \
                      ORDER BY {} DESC, username ASC LIMIT ?",
                     order_col, order_col, order_col
                 ),
                 format!(
-                    "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND {} > 0",
+                    "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND CAST({} AS SIGNED) > 0",
                     order_col
                 ),
                 format!(
-                    "SELECT username, avatar_url, {} AS value \
+                    "SELECT username, avatar_url, CAST({} AS SIGNED) AS value \
                      FROM app_users WHERE ciyuanxi_id = ? AND status = 1 LIMIT 1",
                     order_col
                 ),
                 format!(
-                    "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND {} > ?",
+                    "SELECT COUNT(*) AS cnt FROM app_users WHERE status = 1 AND CAST({} AS SIGNED) > ?",
                     order_col
                 ),
             )
