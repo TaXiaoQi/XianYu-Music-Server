@@ -118,6 +118,20 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         return ctx.ok_empty("ok");
     }
 
+    // 检查是否存在待处理的听歌统计重置信号，如有则跳过本次更新（由 report_listen_stats 统一处理重置）
+    let has_reset: Option<String> = sqlx::query_scalar(
+        "SELECT listen_stats_reset_at FROM app_users WHERE ciyuanxi_id = ?",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    if has_reset.is_some() {
+        return ctx.ok_empty("ok");
+    }
+
     let result = sqlx::query(
         "UPDATE app_users SET listen_duration = GREATEST(listen_duration, ?) WHERE ciyuanxi_id = ?",
     )

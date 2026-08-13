@@ -212,8 +212,13 @@
     <!-- 查看插件弹窗 -->
     <Transition name="modal">
     <div v-if="showPluginsModal" class="modal-overlay">
-      <div class="modal" style="max-width:700px;">
-        <h3>用户插件 - {{ pluginsData.nickname || pluginsData.username }}</h3>
+      <div class="modal" style="max-width:900px;">
+        <div class="modal-head-bar">
+          <h3>用户插件 - {{ pluginsData.nickname || pluginsData.username }}</h3>
+          <button class="modal-close-btn" @click="showPluginsModal = false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
         <div v-if="pluginsLoading" class="empty">加载中...</div>
         <div v-else>
           <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;">
@@ -247,9 +252,6 @@
           </div>
           <div v-else class="empty">该用户暂无插件数据</div>
         </div>
-        <div class="modal-actions">
-          <button class="btn" @click="showPluginsModal = false">关闭</button>
-        </div>
       </div>
     </div>
     </Transition>
@@ -278,8 +280,13 @@
     <!-- 设备信息弹窗 -->
     <Transition name="modal">
     <div v-if="showDeviceModal" class="modal-overlay">
-      <div class="modal" style="max-width:700px;">
-        <h3>设备信息 - {{ deviceData.nickname || deviceData.username }}</h3>
+      <div class="modal" style="max-width:900px;">
+        <div class="modal-head-bar">
+          <h3>设备信息 - {{ deviceData.nickname || deviceData.username }}</h3>
+          <button class="modal-close-btn" @click="showDeviceModal = false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
         <div v-if="deviceLoading" class="empty">加载中...</div>
         <div v-else>
           <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;flex-wrap:wrap;">
@@ -335,9 +342,6 @@
           </div>
 
           <div v-if="!deviceData.last_device_id" class="empty">该用户暂无设备记录</div>
-        </div>
-        <div class="modal-actions">
-          <button class="btn" @click="showDeviceModal = false">关闭</button>
         </div>
       </div>
     </div>
@@ -1244,6 +1248,39 @@ onMounted(() => {
   gap: 12px;
   justify-content: flex-end;
   margin-top: 24px;
+}
+
+/* 弹窗顶部标题栏 + 关闭按钮 */
+.modal-head-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border, #eee);
+}
+.modal-head-bar h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+}
+.modal-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted, #999);
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+.modal-close-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: #e74c3c;
 }
 
 /* 弹窗淡进淡出 */

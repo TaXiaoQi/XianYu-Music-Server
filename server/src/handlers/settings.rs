@@ -646,10 +646,11 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "弦予号不能为空");
     }
+    // 兼容 duration / listen_duration 字段，同时支持数字和字符串
     let seconds = data
         .get("duration")
         .or_else(|| data.get("listen_duration"))
-        .and_then(|v| v.as_f64())
+        .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok())))
         .unwrap_or(0.0)
         .max(0.0) as i64;
     let unique_songs_count = data
@@ -659,66 +660,83 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         .max(0);
 
     // 检查是否存在待处理的听歌统计重置信号
-    let reset_at: Option<String> = sqlx::query_scalar(
-        "SELECT listen_stats_reset_at FROM app_users WHERE ciyuanxi_id = ?",
+    let row = sqlx::query(
+        "SELECT listen_stats_reset_at, listen_duration_offset, unique_songs_offset FROM app_users WHERE ciyuanxi_id = ?",
     )
     .bind(&ciyuanxi_id)
     .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    .await;
 
-    let reset_signal = if reset_at.is_some() {
-        // 重置信号存在：清除重置标记，不更新数据（客户端会清空本地统计后重新上报）
-        let _ = sqlx::query(
-            "UPDATE app_users SET listen_stats_reset_at = NULL WHERE ciyuanxi_id = ?",
-        )
-        .bind(&ciyuanxi_id)
-        .execute(pool)
-        .await;
-        reset_at
-    } else if seconds <= 0 && unique_songs_count <= 0 {
-        return ctx.ok_empty("ok");
-    } else {
-        // 正常流程：使用 GREATEST 更新
-        let result = sqlx::query(
-            "UPDATE app_users \
-             SET listen_duration = GREATEST(listen_duration, ?), \
-                 unique_songs_count = GREATEST(unique_songs_count, ?) \
-             WHERE ciyuanxi_id = ?",
-        )
-        .bind(seconds)
-        .bind(unique_songs_count)
-        .bind(&ciyuanxi_id)
-        .execute(pool)
-        .await;
-
-        // 同步写入每日统计（用于日榜/周榜）
-        let _ = sqlx::query(
-            "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
-             VALUES (?, CURDATE(), ?, ?) \
-             ON DUPLICATE KEY UPDATE \
-                 listen_duration = GREATEST(listen_duration, VALUES(listen_duration)), \
-                 unique_songs_count = GREATEST(unique_songs_count, VALUES(unique_songs_count))",
-        )
-        .bind(&ciyuanxi_id)
-        .bind(seconds)
-        .bind(unique_songs_count)
-        .execute(pool)
-        .await;
-
-        match result {
-            Ok(r) if r.rows_affected() > 0 => return ctx.ok_empty("ok"),
-            Ok(_) => return ctx.err(404, "用户不存在"),
-            Err(e) => return ctx.err(500, &format!("服务器错误: {}", e)),
+    let (reset_at, dur_offset, songs_offset): (Option<String>, i64, i64) = match row {
+        Ok(Some(r)) => {
+            use sqlx::Row;
+            let reset: Option<String> = r.try_get("listen_stats_reset_at").unwrap_or(None);
+            let dur_off: i64 = r.try_get("listen_duration_offset").unwrap_or(0);
+            let songs_off: i64 = r.try_get("unique_songs_offset").unwrap_or(0);
+            (reset, dur_off, songs_off)
         }
+        _ => return ctx.err(404, "用户不存在"),
     };
 
-    // 返回重置信号（如果有的话）
-    if let Some(ts) = reset_signal {
-        ctx.ok("ok", Some(json!({ "reset_at": ts })))
-    } else {
-        ctx.ok_empty("ok")
+    if let Some(ts) = reset_at {
+        // 重置信号存在：将客户端当前上报的累计值作为基准偏移量存储
+        // 后续上报需减去偏移量才是重置后的真实增量
+        let _ = sqlx::query(
+            "UPDATE app_users SET listen_stats_reset_at = NULL, listen_duration = 0, unique_songs_count = 0, listen_duration_offset = ?, unique_songs_offset = ? WHERE ciyuanxi_id = ?",
+        )
+        .bind(seconds)
+        .bind(unique_songs_count)
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+
+        // 同时清理每日统计，确保日榜/周榜从零开始
+        let _ = sqlx::query("DELETE FROM listen_daily_stats WHERE ciyuanxi_id = ?")
+            .bind(&ciyuanxi_id)
+            .execute(pool)
+            .await;
+
+        return ctx.ok("ok", Some(json!({ "reset_at": ts })));
+    }
+
+    if seconds <= 0 && unique_songs_count <= 0 {
+        return ctx.ok_empty("ok");
+    }
+
+    // 正常流程：减去重置偏移量得到真实增量，再与当前值取 GREATEST
+    let actual_seconds = (seconds - dur_offset).max(0);
+    let actual_songs = (unique_songs_count - songs_offset).max(0);
+
+    let result = sqlx::query(
+        "UPDATE app_users \
+         SET listen_duration = GREATEST(listen_duration, ?), \
+             unique_songs_count = GREATEST(unique_songs_count, ?) \
+         WHERE ciyuanxi_id = ?",
+    )
+    .bind(actual_seconds)
+    .bind(actual_songs)
+    .bind(&ciyuanxi_id)
+    .execute(pool)
+    .await;
+
+    // 同步写入每日统计（用于日榜/周榜）
+    let _ = sqlx::query(
+        "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
+         VALUES (?, CURDATE(), ?, ?) \
+         ON DUPLICATE KEY UPDATE \
+             listen_duration = GREATEST(listen_duration, VALUES(listen_duration)), \
+             unique_songs_count = GREATEST(unique_songs_count, VALUES(unique_songs_count))",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(actual_seconds)
+    .bind(actual_songs)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(r) if r.rows_affected() > 0 => ctx.ok_empty("ok"),
+        Ok(_) => ctx.err(404, "用户不存在"),
+        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
     }
 }
 

@@ -267,7 +267,7 @@ pub async fn reset_listen_duration(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     if ciyuanxi_id.is_empty() {
         return err(400, "用户参数错误");
     }
-    let _ = sqlx::query("UPDATE app_users SET listen_duration = 0, unique_songs_count = 0, listen_stats_reset_at = NOW() WHERE ciyuanxi_id = ?")
+    let _ = sqlx::query("UPDATE app_users SET listen_duration = 0, unique_songs_count = 0, listen_stats_reset_at = NOW(), listen_duration_offset = 0, unique_songs_offset = 0 WHERE ciyuanxi_id = ?")
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;

@@ -62,7 +62,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in logs" :key="row.id">
+            <tr v-for="(row, idx) in logs" :key="row.id" class="table-row" :style="{ animationDelay: `${idx * 40}ms` }">
               <td>{{ row.id }}</td>
               <td>{{ row.device_model || '-' }}</td>
               <td>{{ row.device_brand || '-' }}</td>
@@ -508,6 +508,15 @@ onMounted(() => {
 
 @media (max-width: 768px) {
   .detail-grid { grid-template-columns: 1fr; }
+}
+
+/* 表格行逐条加载动画 */
+.data-table tr.table-row {
+  animation: rowIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* 弹窗淡进淡出 */

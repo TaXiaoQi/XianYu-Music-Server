@@ -26,6 +26,9 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "app_users", "background_url", "LONGTEXT NULL").await;
     ensure_column(pool, "app_users", "signature", "varchar(255) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "listen_stats_reset_at", "datetime NULL").await;
+    // 听歌统计重置基准偏移量：重置后客户端首次上报的累计值作为基准，后续上报减去基准得到真实增量
+    ensure_column(pool, "app_users", "listen_duration_offset", "bigint(20) NOT NULL DEFAULT 0").await;
+    ensure_column(pool, "app_users", "unique_songs_offset", "int(11) NOT NULL DEFAULT 0").await;
     // 弦予号每月限改：记录最近一次修改时间
     ensure_column(pool, "app_users", "ciyuanxi_id_updated_at", "datetime NULL").await;
     ensure_column(pool, "listen_daily_stats", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;

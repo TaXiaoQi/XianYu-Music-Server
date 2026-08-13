@@ -323,7 +323,7 @@ pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySql
     let rows = sqlx::query(
         "SELECT id, title, content, assignee, resolve_note, replied_at, updated_at
          FROM user_feedback
-         WHERE ciyuanxi_id = ? AND status = 'resolved' AND assignee <> '' AND resolve_note IS NOT NULL AND resolve_note <> '' AND notified_at IS NULL
+         WHERE ciyuanxi_id = ? AND status = 'resolved' AND assignee <> '' AND resolve_note IS NOT NULL AND resolve_note <> '' AND notified_at IS NULL AND deleted_at IS NULL
          ORDER BY updated_at DESC",
     )
     .bind(&ciyuanxi_id)
@@ -387,7 +387,7 @@ pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     let rows = sqlx::query(
         "SELECT id, title, content, feedback_type, images, status, category, assignee, resolve_note, error_logs, all_logs, created_at, replied_at, updated_at
          FROM user_feedback
-         WHERE ciyuanxi_id = ? AND category = 'feedback'
+         WHERE ciyuanxi_id = ? AND category = 'feedback' AND deleted_at IS NULL
          ORDER BY created_at DESC
          LIMIT 100",
     )
