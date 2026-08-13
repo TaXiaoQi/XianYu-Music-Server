@@ -904,6 +904,17 @@ pub fn handle_admin_api(action: &str) -> Response {
             "status": 1,
             "created_at": now_string()
         }])),
+        "list_password_targets" => admin::ok("ok", json!({
+            "list": [{
+                "id": 1,
+                "username": "debug-admin",
+                "role": "super_admin",
+                "status": 1
+            }],
+            "current_id": 1,
+            "role": "super_admin",
+            "debug": true
+        })),
         "list_error_logs" | "list_app_login_log" | "list_operation_logs" | "list_admin_login_logs" | "list_feedback" => {
             admin::ok("ok", json!({ "total": 0, "total_pages": 0, "list": [] }))
         }

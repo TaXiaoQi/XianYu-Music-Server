@@ -94,32 +94,6 @@ pub async fn get_feedback_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     }
 }
 
-/// 回复反馈
-pub async fn reply_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    let id = int_of(&data, "id");
-    let reply = str_of(&data, "reply").trim().to_string();
-    if id <= 0 || reply.is_empty() {
-        return err(400, "参数错误");
-    }
-    let admin_name = &ctx.username;
-    let upd = sqlx::query(
-        "UPDATE user_feedback SET admin_reply = ?, replied_by = ?, replied_at = NOW(), status = 'processing', updated_at = NOW() WHERE id = ?",
-    )
-    .bind(&reply)
-    .bind(admin_name)
-    .bind(id)
-    .execute(pool)
-    .await;
-    match upd {
-        Ok(_) => {
-            log_operation(pool, ctx, "回复反馈", &format!("id={}", id), &reply).await;
-            ok("回复成功", serde_json::Value::Null)
-        }
-        Err(_) => err(500, "服务器错误"),
-    }
-}
-
 /// 更新反馈状态
 pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);

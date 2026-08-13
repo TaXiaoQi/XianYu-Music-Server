@@ -1,6 +1,7 @@
 <template>
   <div class="login-page">
     <div class="login-container">
+      <img :src="siteLogoUrl" alt="弦予音乐" class="login-logo" />
       <h1>弦予音乐</h1>
       <p class="subtitle">后台管理系统</p>
       <div v-if="timeoutTip" class="timeout-tip">登录已过期，请重新登录</div>
@@ -45,6 +46,7 @@ import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { showToast } from '@/api/client'
 import { CLEAR_LOGIN_FORM_KEY } from '@/utils/adminIdleLogout'
+import { loadSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
 
 const router = useRouter()
 const route = useRoute()
@@ -72,6 +74,7 @@ onMounted(() => {
     timeoutTip.value = true
     clearLoginForm()
   }
+  loadSiteLogo()
 })
 
 onBeforeUnmount(() => {
@@ -114,6 +117,15 @@ async function handleLogin() {
   box-shadow: var(--shadow-card);
   backdrop-filter: blur(22px);
   animation: loginEnter 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.login-logo {
+  width: 76px;
+  height: 76px;
+  border-radius: 20px;
+  display: block;
+  margin: 0 auto 18px;
+  box-shadow: var(--shadow-card);
+  background: #fff;
 }
 .login-container h1 {
   font-size: 26px;

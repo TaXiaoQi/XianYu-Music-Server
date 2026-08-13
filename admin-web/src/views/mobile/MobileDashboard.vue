@@ -47,28 +47,36 @@
     </div>
 
     <!-- 数据概览 -->
-    <div v-if="!loading && !loadError" class="mobile-card stats-section">
-      <div class="mobile-grid">
-        <div class="mobile-stat">
-          <span>总用户数</span>
+    <div v-if="!loading && !loadError" class="stats-section">
+      <div class="stats-row">
+        <div class="stat-chip">
           <strong>{{ stats.total_users ?? 0 }}</strong>
-          <div class="stat-sub">今日新增 {{ stats.today_users ?? 0 }} · 昨日 {{ stats.yesterday_users ?? 0 }}</div>
+          <span>总用户数</span>
         </div>
-        <div class="mobile-stat">
-          <span>今日热搜</span>
+        <div class="stat-chip">
           <strong class="hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</strong>
-          <div class="stat-sub">今日搜索 {{ stats.today_hot_search_count ?? 0 }} 次</div>
+          <span>今日热搜</span>
         </div>
-        <div class="mobile-stat">
-          <span>今日用户</span>
+        <div class="stat-chip">
           <strong>{{ stats.active_users ?? 0 }}</strong>
-          <div class="stat-sub">今日活跃设备数</div>
+          <span>今日用户</span>
         </div>
-        <div class="mobile-stat">
-          <span>今日分享</span>
+        <div class="stat-chip">
           <strong>{{ stats.today_shares ?? 0 }}</strong>
-          <div class="stat-sub">总计 {{ stats.total_shares ?? 0 }} 次</div>
+          <span>今日分享</span>
         </div>
+      </div>
+    </div>
+
+    <!-- 常用操作 -->
+    <div class="quick-section">
+      <h3 class="quick-title">常用操作</h3>
+      <div class="quick-grid">
+        <router-link to="/m/announcements" class="mobile-btn primary">公告管理</router-link>
+        <router-link to="/m/version" class="mobile-btn primary">版本管理</router-link>
+        <router-link to="/m/email-config" class="mobile-btn">邮箱机设置</router-link>
+        <router-link to="/m/turnstile-config" class="mobile-btn">人机验证</router-link>
+        <router-link to="/m/database" class="mobile-btn">数据库管理</router-link>
       </div>
     </div>
 
@@ -90,18 +98,6 @@
           </div>
           <b>{{ item.count }}</b>
         </router-link>
-      </div>
-    </div>
-
-    <!-- 常用操作 -->
-    <div class="mobile-card quick-section">
-      <h3 class="mobile-card-title">常用操作</h3>
-      <div class="quick-grid">
-        <router-link to="/m/announcements" class="mobile-btn primary">公告管理</router-link>
-        <router-link to="/m/version" class="mobile-btn primary">版本管理</router-link>
-        <router-link to="/m/email-config" class="mobile-btn">邮箱机设置</router-link>
-        <router-link to="/m/turnstile-config" class="mobile-btn">人机验证</router-link>
-        <router-link to="/m/database" class="mobile-btn">数据库管理</router-link>
       </div>
     </div>
 
@@ -445,24 +441,51 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-/* 数据概览 */
+/* 数据概览（去卡片化，横向滚动） */
 .stats-section {
   display: flex;
   flex-direction: column;
+  padding: 0 2px;
 }
-.stats-section .mobile-grid {
+.stats-row {
+  display: flex;
+  flex-direction: row;
   gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.stats-section .mobile-stat strong {
+.stats-row::-webkit-scrollbar {
+  display: none;
+}
+.stat-chip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  min-width: 90px;
+}
+.stat-chip strong {
+  font-size: 22px;
+  line-height: 1;
   color: var(--accent);
+  font-weight: 800;
+}
+.stat-chip span {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 .hot-keyword {
-  font-size: 20px !important;
-}
-.stat-sub {
-  margin-top: 6px;
-  font-size: 10px;
-  color: var(--text-light);
+  font-size: 18px !important;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -552,23 +575,32 @@ onMounted(async () => {
   font-size: 18px;
 }
 
-/* 常用操作 */
-.quick-section h3 {
-  margin: 0 0 12px;
+/* 常用操作（去卡片化） */
+.quick-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 2px;
+}
+.quick-title {
+  margin: 0;
   font-size: 15px;
   color: var(--text);
+  font-weight: 850;
 }
 .quick-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .quick-grid .mobile-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
+  min-height: 38px;
+  padding: 8px 14px;
   text-decoration: none;
+  flex: 0 0 auto;
 }
 
 /* 服务器 API */

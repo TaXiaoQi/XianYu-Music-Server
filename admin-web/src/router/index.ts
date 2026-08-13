@@ -197,6 +197,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '用户管理' },
       },
       {
+        path: 'device-banned',
+        name: 'DeviceBanned',
+        component: () => import('@/views/DeviceBanned.vue'),
+        meta: { title: '设备封禁管理' },
+      },
+      {
         path: 'error-log',
         name: 'ErrorLog',
         component: () => import('@/views/ErrorLog.vue'),
@@ -225,6 +231,12 @@ const routes: RouteRecordRaw[] = [
         name: 'AboutConfig',
         component: () => import('@/views/AboutConfig.vue'),
         meta: { title: '关于页配置' },
+      },
+      {
+        path: 'site-config',
+        name: 'SiteConfig',
+        component: () => import('@/views/SiteConfig.vue'),
+        meta: { title: 'Logo 配置' },
       },
       {
         path: 'wallpapers',

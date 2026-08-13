@@ -3,7 +3,7 @@ use serde_json::json;
 use sqlx::MySqlPool;
 use sqlx::Row;
 
-use crate::handlers::helpers::{generate_ciyuanxi_id, parse_body, str_of};
+use crate::handlers::helpers::{default_nickname, parse_body, str_of, validate_ciyuanxi_id};
 use crate::response::ReqCtx;
 
 const CAPTCHA_TTL_MINUTES: i64 = 5;
@@ -295,7 +295,16 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let password = str_of(&data, "password");
     let email = str_of(&data, "email").trim().to_string();
     let verify_code = str_of(&data, "verify_code").trim().to_string();
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
 
+    // 弦予号必填 + 微信号规则校验
+    if let Err(msg) = validate_ciyuanxi_id(&ciyuanxi_id) {
+        return ctx.err(400, msg);
+    }
+    // 昵称可选，留空默认"弦予+号"
+    if nickname.is_empty() {
+        nickname = default_nickname(&ciyuanxi_id);
+    }
     let name_len = nickname.chars().count();
     if name_len < 2 || name_len > 32 {
         return ctx.err(400, "昵称长度需2-32个字符");
@@ -379,7 +388,25 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "该邮箱已注册");
     }
 
-    let ciyuanxi_id = generate_ciyuanxi_id(pool).await;
+    // 弦予号唯一性校验（普通用户表 + 靓号表）
+    let id_dup = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    let id_pretty = sqlx::query("SELECT id FROM ciyuanxi_pretty_ids WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    if id_dup || id_pretty {
+        return ctx.err(400, "该弦予号已被占用");
+    }
+
     let hashed = match bcrypt::hash(&password, 10) {
         Ok(h) => h,
         Err(_) => return ctx.err(500, "密码加密失败"),

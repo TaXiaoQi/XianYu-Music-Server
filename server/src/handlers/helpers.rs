@@ -35,6 +35,8 @@ pub fn bool_of(v: &Value, key: &str) -> bool {
 }
 
 /// 生成弦予号（顺序+1逻辑，从 1000 开始找第一个未使用的号）
+/// 注：新流程改为用户自行填写弦予号，此函数仅作向后兼容保留
+#[allow(dead_code)]
 pub async fn generate_ciyuanxi_id(pool: &MySqlPool) -> String {
     let mut used: std::collections::HashSet<i64> = std::collections::HashSet::new();
 
@@ -67,6 +69,30 @@ pub async fn generate_ciyuanxi_id(pool: &MySqlPool) -> String {
         id += 1;
     }
     id.to_string()
+}
+
+/// 校验弦予号（参考微信号规则：6-20个字符，以字母开头，只能包含字母、数字、下划线、中划线）
+pub fn validate_ciyuanxi_id(id: &str) -> Result<(), &'static str> {
+    let len = id.chars().count();
+    if len < 6 || len > 20 {
+        return Err("弦予号长度为 6-20 个字符");
+    }
+    let mut chars = id.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() => {}
+        _ => return Err("弦予号必须以字母开头"),
+    }
+    for c in chars {
+        if !(c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            return Err("弦予号只能包含字母、数字、下划线或中划线");
+        }
+    }
+    Ok(())
+}
+
+/// 默认昵称：弦予 + 弦予号（如 弦予161）
+pub fn default_nickname(ciyuanxi_id: &str) -> String {
+    format!("弦予{}", ciyuanxi_id)
 }
 
 /// 解析版本号字符串为 [major, minor, patch]

@@ -8,7 +8,7 @@
             反馈与建议
             <span v-if="stats.pending > 0" class="pending-badge">{{ stats.pending }} 项待处理</span>
           </h2>
-          <p class="page-desc">查看用户提交的反馈与建议，回复用户并将问题标记为已解决或已拒绝。</p>
+          <p class="page-desc">查看用户提交的反馈与建议，将问题标记为已解决或已拒绝。</p>
         </div>
         <button class="btn-refresh" @click="loadList" :disabled="loading">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ spinning: loading }">
@@ -137,16 +137,6 @@
               </div>
             </div>
 
-            <!-- 管理员回复 -->
-            <div v-if="item.admin_reply" class="reply-section">
-              <div class="reply-head">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 17H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4"/><polyline points="14 7 19 12 14 17"/><line x1="19" y1="12" x2="9" y2="12"/></svg>
-                <span>管理员回复</span>
-                <span class="reply-meta">{{ item.replied_by || '' }} · {{ item.replied_at || '' }}</span>
-              </div>
-              <p class="reply-text">{{ item.admin_reply }}</p>
-            </div>
-
             <!-- 卡片底部 -->
             <div class="card-foot">
               <div class="foot-meta">
@@ -164,15 +154,11 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
                   日志
                 </button>
-                <button class="act-btn act-reply" @click="openReplyModal(item)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-                  {{ item.admin_reply ? '修改回复' : '回复' }}
-                </button>
-                <button v-if="item.status !== 'resolved'" class="act-btn act-resolve" @click="changeStatus(item.id, 'resolved')">
+                <button v-if="isEditable(item)" class="act-btn act-resolve" @click="changeStatus(item.id, 'resolved')">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   完成
                 </button>
-                <button v-if="item.status !== 'rejected'" class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">
+                <button v-if="isEditable(item)" class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   拒绝
                 </button>
@@ -182,37 +168,6 @@
         </TransitionGroup>
       </div>
     </template>
-
-    <!-- 回复弹窗 -->
-    <Transition name="modal">
-      <div v-if="replyModalVisible" class="modal-backdrop" @click.self="closeReplyModal">
-        <div class="modal-dialog">
-          <div class="modal-head">
-            <h3>回复反馈</h3>
-            <button class="modal-close" @click="closeReplyModal">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div v-if="replyTarget" class="reply-target-info">
-              <strong>{{ replyTarget.title || '无标题' }}</strong>
-              <span>{{ replyTarget.nickname || '匿名用户' }} · {{ replyTarget.ciyuanxi_id || '-' }}</span>
-            </div>
-            <div class="field">
-              <label class="required">回复内容</label>
-              <textarea v-model="replyText" rows="5" placeholder="请输入回复内容..." autofocus></textarea>
-            </div>
-          </div>
-          <div class="modal-foot">
-            <button class="btn-cancel" @click="closeReplyModal">取消</button>
-            <button class="btn-save" :disabled="replying" @click="doReply">
-              <span v-if="replying" class="btn-spinner"></span>
-              {{ replying ? '提交中...' : '发送回复' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
 
     <!-- 日志弹窗 -->
     <Transition name="modal">
@@ -225,7 +180,7 @@
             </button>
           </div>
           <div class="modal-body">
-            <div v-if="logTarget" class="reply-target-info">
+            <div v-if="logTarget" class="log-target-info">
               <strong>{{ logTarget.title || '无标题' }}</strong>
               <span>{{ logTarget.nickname || '匿名用户' }} · {{ logTarget.ciyuanxi_id || '-' }}</span>
             </div>
@@ -321,6 +276,11 @@ const statusMap: Record<string, string> = {
 
 function statusLabel(s: string): string {
   return statusMap[s] || s
+}
+
+// 仅待处理/处理中可执行完成或拒绝操作，终态（已解决/已拒绝）不再显示操作按钮
+function isEditable(item: Feedback): boolean {
+  return item.status === 'pending' || item.status === 'processing'
 }
 
 function formatLogSize(chars?: number | string): string {
@@ -425,60 +385,6 @@ async function changeStatus(id: number, status: string) {
     }
   } else {
     showToast(res.msg || '操作失败')
-  }
-}
-
-// ===== 回复弹窗 =====
-const replyModalVisible = ref(false)
-const replyTarget = ref<Feedback | null>(null)
-const replyText = ref('')
-const replying = ref(false)
-
-function openReplyModal(item: Feedback) {
-  replyTarget.value = item
-  replyText.value = item.admin_reply || ''
-  replyModalVisible.value = true
-}
-
-function closeReplyModal() {
-  if (replying.value) return
-  replyModalVisible.value = false
-  replyTarget.value = null
-  replyText.value = ''
-}
-
-async function doReply() {
-  if (!replyTarget.value) return
-  if (!replyText.value.trim()) {
-    showToast('请输入回复内容')
-    return
-  }
-  replying.value = true
-  const res = await adminApi('reply_feedback', {
-    id: replyTarget.value.id,
-    reply: replyText.value.trim(),
-  })
-  replying.value = false
-  if (res.code === 200) {
-    showToast('回复成功', 'success')
-    // 本地更新
-    const item = feedbackList.value.find(f => f.id === replyTarget.value!.id)
-    if (item) {
-      const oldStatus = item.status
-      item.admin_reply = replyText.value.trim()
-      item.replied_by = 'admin'
-      item.status = 'processing'
-      // 更新统计
-      if (oldStatus !== 'processing') {
-        if (stats.value[oldStatus as keyof FbStats] !== undefined) {
-          stats.value[oldStatus as keyof FbStats]--
-        }
-        stats.value.processing++
-      }
-    }
-    closeReplyModal()
-  } else {
-    showToast(res.msg || '回复失败')
   }
 }
 
@@ -790,33 +696,6 @@ onMounted(() => {
   font-weight: 600;
 }
 
-/* 管理员回复 */
-.reply-section {
-  background: #f8f9fc;
-  border: 1px solid #e8e8f0;
-  border-radius: 10px;
-  padding: 12px 14px;
-  margin-bottom: 12px;
-}
-.reply-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--text-light);
-  margin-bottom: 6px;
-}
-.reply-meta { font-size: 11px; color: var(--text-muted); margin-left: auto; font-weight: 400; }
-.reply-text {
-  font-size: 13px;
-  color: var(--text);
-  line-height: 1.6;
-  margin: 0;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
 /* 卡片底部 */
 .card-foot {
   display: flex;
@@ -848,8 +727,6 @@ onMounted(() => {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .act-btn:active { transform: scale(0.95); }
-.act-reply { background: #eff6ff; color: #2563eb; }
-.act-reply:hover { background: #dbeafe; }
 .act-log { background: #f4f4f5; color: #52525b; }
 .act-log:hover { background: #e4e4e7; }
 .act-resolve { background: #f0fdf4; color: #16a34a; }
@@ -899,7 +776,7 @@ onMounted(() => {
 }
 .modal-close:hover { background: #e5e5e5; color: var(--text); }
 .modal-body { padding: 20px; }
-.reply-target-info {
+.log-target-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -908,8 +785,8 @@ onMounted(() => {
   border-radius: 10px;
   margin-bottom: 16px;
 }
-.reply-target-info strong { font-size: 14px; color: var(--text); }
-.reply-target-info span { font-size: 12px; color: var(--text-muted); }
+.log-target-info strong { font-size: 14px; color: var(--text); }
+.log-target-info span { font-size: 12px; color: var(--text-muted); }
 .field { margin-bottom: 0; }
 .field label {
   display: block;

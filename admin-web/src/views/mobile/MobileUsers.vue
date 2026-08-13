@@ -14,8 +14,9 @@
     <transition name="expand">
       <div v-if="openAdd" class="mobile-card mobile-form">
         <h3 class="mobile-card-title">新增用户</h3>
-        <input v-model="addForm.username" class="mobile-input" placeholder="用户名" />
-        <input v-model="addForm.password" class="mobile-input" placeholder="密码" type="password" />
+        <input v-model="addForm.ciyuanxi_id" class="mobile-input" placeholder="弦予号（必填，字母开头）" />
+        <input v-model="addForm.password" class="mobile-input" placeholder="密码（必填）" type="password" />
+        <input v-model="addForm.nickname" class="mobile-input" placeholder="昵称（选填，留空默认弦予+号）" />
         <input v-model="addForm.email" class="mobile-input" placeholder="邮箱（选填）" />
         <button class="mobile-btn primary" :disabled="saving" @click="addUser">{{ saving ? '提交中...' : '确认新增' }}</button>
       </div>
@@ -33,13 +34,7 @@
         </div>
         <div class="mobile-item-sub">听歌时长：{{ u.listen_duration || 0 }} 分钟 · 注册：{{ u.created_at || '-' }}</div>
         <div class="mobile-actions">
-          <button class="mobile-btn" @click="toggleUser(u)">{{ u.status == 1 ? '禁用' : '启用' }}</button>
-          <button class="mobile-btn" @click="changeEmail(u)">改邮箱</button>
-          <button class="mobile-btn" @click="loadPlugins(u)">插件</button>
-          <button class="mobile-btn" @click="openDeviceInfo(u)">设备</button>
-          <button class="mobile-btn" @click="resetDuration(u)">重置时长</button>
-          <button class="mobile-btn danger" @click="deleteAvatar(u)">删头像</button>
-          <button class="mobile-btn danger" @click="deleteUser(u)">删除</button>
+          <button class="mobile-btn primary" @click="openActionMenu(u)">操作</button>
         </div>
         <transition name="expand">
           <pre v-if="pluginsUserId === u.id" class="mobile-code">{{ pluginsText }}</pre>
@@ -97,6 +92,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { mobileConfirm, mobilePrompt } from '@/utils/mobileDialog'
+import { webActionMenu } from '@/utils/webDialog'
 import './MobilePage.css'
 const keyword = ref('')
 const loading = ref(false)
@@ -105,7 +101,7 @@ const openAdd = ref(false)
 const list = ref<any[]>([])
 const pluginsUserId = ref(0)
 const pluginsText = ref('')
-const addForm = ref({ username: '', password: '', email: '' })
+const addForm = ref({ ciyuanxi_id: '', nickname: '', password: '', email: '' })
 const deviceUserId = ref(0)
 const deviceLoading = ref(false)
 const deviceData = ref<any>({})
@@ -123,11 +119,35 @@ async function loadList() {
   loading.value = false
 }
 async function addUser() {
-  if (!addForm.value.username.trim() || !addForm.value.password.trim()) return showToast('请填写用户名和密码')
+  const ciyuanxi = addForm.value.ciyuanxi_id.trim()
+  if (!ciyuanxi) return showToast('请填写弦予号')
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(ciyuanxi)) return showToast('弦予号需 6-20 位，字母开头')
+  if (!addForm.value.password) return showToast('请填写密码')
   saving.value = true
-  const res = await adminApi('add_user', addForm.value)
+  const res = await adminApi('add_user', { username: ciyuanxi, nickname: addForm.value.nickname.trim(), password: addForm.value.password, email: addForm.value.email.trim() })
   saving.value = false
-  if (res.code === 200) { showToast('新增成功', 'success'); openAdd.value = false; addForm.value = { username: '', password: '', email: '' }; loadList() } else showToast(res.msg || '新增失败')
+  if (res.code === 200) { showToast('新增成功', 'success'); openAdd.value = false; addForm.value = { ciyuanxi_id: '', nickname: '', password: '', email: '' }; loadList() } else showToast(res.msg || '新增失败')
+}
+async function openActionMenu(u: any) {
+  const action = await webActionMenu(`用户操作 · ${u.username}`, [
+    { key: 'toggle', label: u.status == 1 ? '禁用用户' : '启用用户', danger: u.status == 1, success: u.status != 1 },
+    { key: 'email', label: '修改邮箱' },
+    { key: 'reset', label: '重置听歌时长' },
+    { key: 'plugins', label: '查看插件' },
+    { key: 'device', label: '设备信息' },
+    { key: 'avatar', label: '删除头像', danger: true, show: !!u.avatar_url },
+    { key: 'delete', label: '删除用户', danger: true },
+  ])
+  if (!action) return
+  switch (action) {
+    case 'toggle': await toggleUser(u); break
+    case 'email': await changeEmail(u); break
+    case 'reset': await resetDuration(u); break
+    case 'plugins': await loadPlugins(u); break
+    case 'device': await openDeviceInfo(u); break
+    case 'avatar': await deleteAvatar(u); break
+    case 'delete': await deleteUser(u); break
+  }
 }
 async function toggleUser(u: any) {
   const status = u.status == 1 ? 0 : 1

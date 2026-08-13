@@ -372,6 +372,12 @@ pub async fn get_about_config(ctx: ReqCtx) -> Response {
     ctx.json(200, "ok", Some(read_about_config()))
 }
 
+/// 获取站点 Logo（公开接口，供后台登录页等无需登录场景使用）
+pub async fn get_site_logo(ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let url = crate::admin::site_config::read_site_logo(pool).await;
+    ctx.json(200, "ok", Some(json!({ "logo_url": url })))
+}
+
 pub async fn get_user_agreement(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let (title, content) = crate::admin::agreement::load_user_agreement(pool).await;
     ctx.json(200, "ok", Some(json!({ "title": title, "content": content })))

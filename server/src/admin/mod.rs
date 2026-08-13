@@ -23,6 +23,7 @@ pub mod playlist;
 pub mod prettyid;
 pub mod proxy;
 pub mod share;
+pub mod site_config;
 pub mod source;
 pub mod turnstile;
 pub mod users;
@@ -188,11 +189,14 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         // auth / account / admins
         "admin_logout" => auth::admin_logout(&ctx, pool).await,
         "change_password" => auth::change_password(body, &ctx, pool).await,
+        "list_password_targets" => auth::list_password_targets(body, &ctx, pool).await,
         "bind_email" => account::bind_email(body, &ctx, pool).await,
         "change_username" => account::change_username(body, &ctx, pool).await,
         "get_account_info" => account::get_account_info(body, &ctx, pool).await,
         "get_about_config_admin" => about::get(body, &ctx, pool).await,
         "save_about_config" => about::save(body, &ctx, pool).await,
+        "get_site_logo" => site_config::get_site_logo(body, &ctx, pool).await,
+        "upload_site_logo" => site_config::upload_site_logo(body, &ctx, pool).await,
         "get_server_config_file" => config_file::get(body, &ctx, pool).await,
         "save_server_config_file" => config_file::save(body, &ctx, pool).await,
         "migrate_local_cache_to_database" => config_file::migrate_local_cache_to_database(body, &ctx).await,
@@ -240,7 +244,6 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "list_admin_login_logs" => logs::list_admin_login_logs(body, &ctx, pool).await,
         "list_feedback" => feedback::list_feedback(body, &ctx, pool).await,
         "get_feedback_detail" => feedback::get_feedback_detail(body, &ctx, pool).await,
-        "reply_feedback" => feedback::reply_feedback(body, &ctx, pool).await,
         "update_feedback_status" => feedback::update_feedback_status(body, &ctx, pool).await,
         "get_feedback_limit" => feedback::get_feedback_limit(body, &ctx, pool).await,
         "update_feedback_limit" => feedback::update_feedback_limit(body, &ctx, pool).await,

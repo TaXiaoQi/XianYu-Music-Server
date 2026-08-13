@@ -14,11 +14,11 @@
 
     <!-- 批量操作 -->
     <div class="batch-actions">
-      <button class="btn btn-success" @click="batchToggle(1)" :disabled="batchLoading">一键全开</button>
-      <button class="btn btn-danger" @click="batchToggle(0)" :disabled="batchLoading">一键全禁</button>
+      <button class="btn btn-dark" @click="openBatchMenu">
+        批量操作
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
       <button class="btn btn-primary" @click="showAddModal = true">+ 添加用户</button>
-      <button class="btn btn-dark" @click="deleteEmptyPlaylists" :disabled="batchLoading">一键删除空的我喜欢的音乐歌单</button>
-      <button class="btn btn-warning" @click="openBannedDevicesModal">设备封禁管理</button>
     </div>
 
     <!-- 用户表格 -->
@@ -32,6 +32,7 @@
             <tr>
               <th>ID</th>
               <th>头像</th>
+              <th>弦予号</th>
               <th>昵称</th>
               <th>邮箱</th>
               <th>邮箱验证</th>
@@ -56,6 +57,7 @@
                 <div v-else class="avatar-placeholder">{{ (u.nickname || u.username || '?').charAt(0) }}</div>
               </td>
               <td>{{ u.nickname || u.username }}</td>
+              <td>{{ u.ciyuanxi_id || '-' }}</td>
               <td>{{ u.email || '-' }}</td>
               <td>
                 <span :class="['badge', u.email_verified == 1 ? 'badge-success' : 'badge-warning']">
@@ -111,12 +113,17 @@
       <div class="modal">
         <h3>添加用户</h3>
         <div class="form-group">
-          <label class="required">昵称</label>
-          <input v-model="addForm.username" type="text" placeholder="2-32 个字符" />
+          <label class="required">弦予号</label>
+          <input v-model="addForm.username" type="text" placeholder="6-20 位，字母开头" />
+          <div class="hint">用于登录，规则同微信号：6-20 位，字母开头，可含数字/下划线/中划线</div>
         </div>
         <div class="form-group">
           <label class="required">密码</label>
           <input v-model="addForm.password" type="password" placeholder="至少 6 位" />
+        </div>
+        <div class="form-group">
+          <label>昵称（选填）</label>
+          <input v-model="addForm.nickname" type="text" placeholder="留空默认"弦予+弦予号"" />
         </div>
         <div class="form-group">
           <label>邮箱（选填）</label>
@@ -369,7 +376,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm, webPrompt, webActionMenu } from '@/utils/webDialog'
 
@@ -477,19 +484,29 @@ function formatScriptSize(bytes: number | undefined): string {
 }
 
 // ===== 行操作 =====
-// 当前展开下拉菜单的用户 id（0 表示都关闭）
-const menuUserId = ref(0)
-
-function openRowMenu(u: User) {
-  menuUserId.value = menuUserId.value === u.id ? 0 : u.id
-}
-
-function closeRowMenu() {
-  menuUserId.value = 0
+async function openRowMenu(u: User) {
+  const action = await webActionMenu(`用户操作 · ${u.nickname || u.username}`, [
+    { key: 'toggle', label: u.status != 0 ? '禁用用户' : '启用用户', danger: u.status != 0, success: u.status == 0 },
+    { key: 'email', label: '修改邮箱' },
+    { key: 'reset', label: '重置听歌时长' },
+    { key: 'plugins', label: '查看插件' },
+    { key: 'device', label: '设备信息' },
+    { key: 'avatar', label: '删除头像', danger: true, show: !!u.avatar_url },
+    { key: 'delete', label: '删除用户', danger: true },
+  ])
+  if (!action) return
+  switch (action) {
+    case 'toggle': await toggleStatus(u); break
+    case 'email': openEmailModal(u); break
+    case 'reset': openResetModal(u); break
+    case 'plugins': await viewPlugins(u); break
+    case 'device': await openDeviceModal(u); break
+    case 'avatar': await deleteAvatar(u); break
+    case 'delete': await deleteUser(u); break
+  }
 }
 
 async function toggleStatus(u: User) {
-  closeRowMenu()
   const newStatus = u.status != 0 ? 0 : 1
   let reason = ''
   if (newStatus === 0) {
@@ -511,7 +528,6 @@ async function toggleStatus(u: User) {
 }
 
 async function deleteUser(u: User) {
-  closeRowMenu()
   const ok = await webConfirm(`确定删除用户 "${u.nickname || u.username}" 吗？此操作不可恢复。`, { title: '删除用户', confirmText: '确认删除' })
   if (!ok) return
   const res = await adminApi('delete_user', { id: u.id })
@@ -524,7 +540,6 @@ async function deleteUser(u: User) {
 }
 
 async function deleteAvatar(u: User) {
-  closeRowMenu()
   const ok = await webConfirm(`确定删除用户 "${u.nickname || u.username}" 的头像吗？`, { title: '删除头像', confirmText: '确认删除' })
   if (!ok) return
   const res = await adminApi('delete_user_avatar', { user_id: u.id })
@@ -537,6 +552,20 @@ async function deleteAvatar(u: User) {
 }
 
 // ===== 批量操作 =====
+async function openBatchMenu() {
+  const action = await webActionMenu('批量操作', [
+    { key: 'disable', label: '批量禁用全部用户', danger: true },
+    { key: 'enable', label: '批量启用全部用户' },
+    { key: 'clearPlaylists', label: '清理空歌单' },
+  ])
+  if (!action) return
+  switch (action) {
+    case 'disable': await batchToggle(0); break
+    case 'enable': await batchToggle(1); break
+    case 'clearPlaylists': await deleteEmptyPlaylists(); break
+  }
+}
+
 async function batchToggle(status: number) {
   const label = status ? '全开' : '全禁'
   let reason = ''
@@ -578,12 +607,20 @@ async function deleteEmptyPlaylists() {
 // ===== 添加用户弹窗 =====
 const showAddModal = ref(false)
 const addLoading = ref(false)
-const addForm = ref({ username: '', password: '', email: '' })
+const addForm = ref({ username: '', nickname: '', password: '', email: '' })
 
 async function submitAddUser() {
-  const uname = addForm.value.username.trim()
-  if (uname.length < 2 || uname.length > 32) {
-    showToast('昵称需 2-32 个字符')
+  const ciyuanxi = addForm.value.username.trim()
+  if (ciyuanxi.length < 6) {
+    showToast('弦予号至少 6 位')
+    return
+  }
+  if (!/^[a-zA-Z]/.test(ciyuanxi)) {
+    showToast('弦予号必须以字母开头')
+    return
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(ciyuanxi)) {
+    showToast('弦予号需 6-20 位，仅含字母、数字、下划线、中划线')
     return
   }
   if (addForm.value.password.length < 6) {
@@ -596,15 +633,16 @@ async function submitAddUser() {
   }
   addLoading.value = true
   const res = await adminApi('add_user', {
-    username: uname,
+    username: ciyuanxi,
+    nickname: addForm.value.nickname.trim(),
     password: addForm.value.password,
     email: addForm.value.email.trim(),
   })
   addLoading.value = false
   if (res.code === 200) {
-    showToast(`添加成功${res.data ? '，弦予号: ' + (res.data as any).ciyuanxi_id : ''}`, 'success')
+    showToast(`添加成功，弦予号: ${res.data ? (res.data as any).ciyuanxi_id : ciyuanxi}`, 'success')
     showAddModal.value = false
-    addForm.value = { username: '', password: '', email: '' }
+    addForm.value = { username: '', nickname: '', password: '', email: '' }
     loadUsers()
   } else {
     showToast(res.msg || '添加失败')
@@ -617,7 +655,6 @@ const emailLoading = ref(false)
 const emailForm = ref({ userId: 0, username: '', nickname: '', currentEmail: '', newEmail: '' })
 
 function openEmailModal(u: User) {
-  closeRowMenu()
   emailForm.value = { userId: u.id, username: u.nickname || u.username, nickname: u.nickname || u.username, currentEmail: u.email || '', newEmail: '' }
   showEmailModal.value = true
 }
@@ -648,7 +685,6 @@ const resetLoading = ref(false)
 const resetForm = ref({ userId: 0, username: '', nickname: '', duration: '', ciyuanxiId: '' })
 
 function openResetModal(u: User) {
-  closeRowMenu()
   resetForm.value = {
     userId: u.id,
     username: u.nickname || u.username,
@@ -681,7 +717,6 @@ const pluginsLoading = ref(false)
 const pluginsData = ref<any>({})
 
 async function viewPlugins(u: User) {
-  closeRowMenu()
   showPluginsModal.value = true
   pluginsLoading.value = true
   pluginsData.value = {}
@@ -735,7 +770,6 @@ const banDeviceInput = ref('')
 const banReasonInput = ref('')
 
 async function openDeviceModal(u: User) {
-  closeRowMenu()
   showDeviceModal.value = true
   deviceLoading.value = true
   deviceData.value = { username: u.nickname || u.username, nickname: u.nickname || u.username }
@@ -827,12 +861,6 @@ async function unbanDeviceById(id: number, deviceId: string) {
 // ===== 初始化 =====
 onMounted(() => {
   loadUsers()
-  document.addEventListener('click', closeRowMenu)
-})
-
-// 组件卸载时移除全局监听
-onBeforeUnmount(() => {
-  document.removeEventListener('click', closeRowMenu)
 })
 </script>
 
@@ -925,58 +953,6 @@ onBeforeUnmount(() => {
   gap: 4px;
   flex-wrap: wrap;
 }
-
-/* 操作下拉菜单 */
-.row-menu {
-  position: relative;
-  display: inline-flex;
-}
-.row-menu-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 200;
-  min-width: 150px;
-  padding: 6px;
-  background: var(--card-solid, var(--card));
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 9px 12px;
-  border: none;
-  background: transparent;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-  white-space: nowrap;
-}
-.menu-item:hover { background: var(--accent-soft); color: var(--accent); }
-.menu-item.danger { color: #dc2626; }
-.menu-item.danger:hover { background: #fff5f5; color: #dc2626; }
-.menu-item.success { color: #16a34a; }
-.menu-item.success:hover { background: #f0faf3; color: #16a34a; }
-html[data-theme='dark'] .menu-item.danger { color: #f87171; }
-html[data-theme='dark'] .menu-item.danger:hover { background: rgba(220, 38, 38, 0.12); color: #f87171; }
-html[data-theme='dark'] .menu-item.success { color: #4ade80; }
-html[data-theme='dark'] .menu-item.success:hover { background: rgba(22, 163, 74, 0.12); color: #4ade80; }
-html[data-theme='dark'] .row-menu-pop { background: var(--card-solid) !important; }
-
-/* 下拉菜单过渡 */
-.menu-enter-active, .menu-leave-active { transition: opacity 0.16s ease, transform 0.16s var(--motion); transform-origin: top right; }
-.menu-enter-from, .menu-leave-to { opacity: 0; transform: scale(0.94) translateY(-4px); }
 
 /* 设备封禁表单 */
 .ban-form {

@@ -4,7 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use super::{err, log_operation, ok, row_to_value, AdminCtx};
-use crate::handlers::helpers::{generate_ciyuanxi_id, int_of, parse_body, str_of};
+use crate::handlers::helpers::{default_nickname, int_of, parse_body, str_of, validate_ciyuanxi_id};
 
 /// 获取用户列表（分页 + 关键词搜索）
 pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
@@ -164,6 +164,15 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     let email = str_of(&data, "email").trim().to_string();
     let master_quota = int_of(&data, "master_quota");
     let master_quota = if master_quota == 0 { 200 } else { master_quota };
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    // 弦予号必填 + 微信号规则校验
+    if let Err(msg) = validate_ciyuanxi_id(&ciyuanxi_id) {
+        return err(400, msg);
+    }
+    // 昵称可选，留空默认"弦予+号"
+    if username.is_empty() {
+        username = default_nickname(&ciyuanxi_id);
+    }
     if username.len() < 2 || username.len() > 32 {
         return err(400, "昵称需 2-32 个字符");
     }
@@ -172,6 +181,24 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     }
     if !email.is_empty() && !crate::admin::is_valid_email(&email) {
         return err(400, "邮箱格式不正确");
+    }
+    // 弦予号唯一性校验
+    let id_dup = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    let id_pretty = sqlx::query("SELECT id FROM ciyuanxi_pretty_ids WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    if id_dup || id_pretty {
+        return err(409, "该弦予号已被占用");
     }
     // 用户名唯一性：与客户端注册保持一致，同时检查管理员表和普通用户表
     let admin_exists = sqlx::query("SELECT id FROM admin_users WHERE username = ? LIMIT 1")
@@ -210,7 +237,6 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
             return err(409, "邮箱已被使用");
         }
     }
-    let ciyuanxi_id = generate_ciyuanxi_id(pool).await;
     let hashed = match bcrypt::hash(&password, 10) {
         Ok(h) => h,
         Err(_) => return err(500, "加密失败"),

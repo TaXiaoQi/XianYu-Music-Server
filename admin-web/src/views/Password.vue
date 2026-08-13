@@ -48,7 +48,19 @@
             </div>
           </div>
           <div class="card-body">
-            <div class="field">
+            <div v-if="isSuper" class="field">
+              <label class="required">操作账户</label>
+              <div class="select-wrap">
+                <select v-model="passwordForm.admin_id" class="admin-select" :disabled="targetsLoading">
+                  <option v-for="a in adminTargets" :key="a.id" :value="a.id">
+                    {{ a.username }}{{ a.role === 'super_admin' ? '（超级管理员）' : '（管理员）' }}
+                  </option>
+                </select>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </div>
+              <p class="field-hint">可选择修改任意管理员的密码，修改他人密码无需填写当前密码。</p>
+            </div>
+            <div v-if="!isSuper || isSelfTarget" class="field">
               <label class="required">当前密码</label>
               <input v-model="passwordForm.old_password" type="password" placeholder="请输入当前密码" autocomplete="current-password" />
             </div>
@@ -84,8 +96,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+const isSuper = computed(() => auth.user?.role === 'super_admin')
+const currentAdminId = computed(() => auth.user?.id ?? 0)
 
 // ===== 修改用户名 =====
 const usernameForm = ref<{ new_username: string }>({ new_username: '' })
@@ -109,12 +126,41 @@ async function submitUsername() {
 }
 
 // ===== 修改密码 =====
-const passwordForm = ref<{ old_password: string; new_password: string; confirm_password: string }>({
+interface AdminTarget {
+  id: number
+  username: string
+  role: string
+  status: number
+}
+
+const adminTargets = ref<AdminTarget[]>([])
+const targetsLoading = ref(false)
+
+const passwordForm = ref<{ admin_id: number; old_password: string; new_password: string; confirm_password: string }>({
+  admin_id: 0,
   old_password: '',
   new_password: '',
   confirm_password: '',
 })
 const passwordSaving = ref(false)
+
+// 当前选中的目标是否为当前登录管理员自身
+const isSelfTarget = computed(() => passwordForm.value.admin_id === currentAdminId.value)
+
+async function loadAdminTargets() {
+  if (!isSuper.value) return
+  targetsLoading.value = true
+  const res = await adminApi<{ list: AdminTarget[] }>('list_password_targets')
+  targetsLoading.value = false
+  if (res.code === 200 && res.data) {
+    adminTargets.value = res.data.list || []
+    if (passwordForm.value.admin_id === 0 && adminTargets.value.length) {
+      passwordForm.value.admin_id = adminTargets.value[0].id
+    }
+  } else {
+    showToast(res.msg || '管理员列表加载失败')
+  }
+}
 
 // 密码强度：综合长度与字符种类（小写 / 大写 / 数字 / 符号）
 function strengthLevel(): number {
@@ -138,10 +184,13 @@ function strengthText(): string {
 }
 
 async function submitPassword() {
-  const { old_password, new_password, confirm_password } = passwordForm.value
-  if (!old_password) {
-    showToast('请输入当前密码')
-    return
+  const { admin_id, old_password, new_password, confirm_password } = passwordForm.value
+  // 修改自己密码需校验旧密码；超管修改他人密码时无需旧密码
+  if (!isSuper.value || isSelfTarget.value) {
+    if (!old_password) {
+      showToast('请输入当前密码')
+      return
+    }
   }
   if (new_password.length < 6) {
     showToast('新密码至少需要 6 个字符')
@@ -152,15 +201,24 @@ async function submitPassword() {
     return
   }
   passwordSaving.value = true
-  const res = await adminApi('change_password', { old_password, new_password, confirm_password })
+  const payload: Record<string, string | number> = { new_password, confirm_password }
+  if (!isSuper.value || isSelfTarget.value) {
+    payload.old_password = old_password
+  }
+  if (isSuper.value) {
+    payload.admin_id = admin_id || 0
+  }
+  const res = await adminApi('change_password', payload)
   passwordSaving.value = false
   if (res.code === 200) {
     showToast('密码修改成功', 'success')
-    passwordForm.value = { old_password: '', new_password: '', confirm_password: '' }
+    passwordForm.value = { admin_id: admin_id || 0, old_password: '', new_password: '', confirm_password: '' }
   } else {
     showToast(res.msg || '密码修改失败')
   }
 }
+
+onMounted(loadAdminTargets)
 </script>
 
 <style scoped>
@@ -278,6 +336,43 @@ async function submitPassword() {
 }
 .field input::placeholder { color: var(--text-light); }
 .field input:focus { border-color: var(--accent); }
+
+/* 管理员选择器 */
+.select-wrap {
+  position: relative;
+}
+.admin-select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 38px 10px 14px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--white);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.admin-select:focus { border-color: var(--accent); }
+.admin-select:disabled { opacity: 0.6; cursor: not-allowed; }
+.select-wrap svg {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-light);
+  pointer-events: none;
+}
+.field-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 6px 0 0;
+  line-height: 1.5;
+}
 
 /* 提示文本 */
 .hint {

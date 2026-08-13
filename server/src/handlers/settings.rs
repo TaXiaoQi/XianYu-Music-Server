@@ -4,7 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use crate::audit_policy::{self, AuditDecision};
-use crate::handlers::helpers::{parse_body, str_of};
+use crate::handlers::helpers::{parse_body, str_of, validate_ciyuanxi_id};
 use crate::response::ReqCtx;
 
 const SETTINGS_FIELDS: [&str; 8] = [
@@ -457,14 +457,11 @@ pub async fn update_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     if new_ciyuanxi_id.is_empty() {
         return ctx.err(400, "请输入新弦予号");
     }
-    if new_ciyuanxi_id.chars().count() < 6 || new_ciyuanxi_id.chars().count() > 32 {
-        return ctx.err(400, "弦予号长度需为 6 到 32 个字符");
+    if let Err(msg) = validate_ciyuanxi_id(&new_ciyuanxi_id) {
+        return ctx.err(400, msg);
     }
     if new_ciyuanxi_id == old_ciyuanxi_id {
         return ctx.err(400, "新弦予号不能与当前弦予号相同");
-    }
-    if !new_ciyuanxi_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
-        return ctx.err(400, "弦予号只能包含字母、数字、下划线或中划线");
     }
 
     let user = sqlx::query("SELECT * FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")

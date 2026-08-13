@@ -20,9 +20,11 @@
         <textarea v-model="replyMap[f.id]" class="mobile-textarea" placeholder="回复内容"></textarea>
         <div class="mobile-actions">
           <button class="mobile-btn" @click="loadDetail(f)">详情</button>
-          <button class="mobile-btn" @click="reply(f)">回复</button>
-          <button class="mobile-btn" @click="changeStatus(f, 'processing')">处理中</button>
-          <button class="mobile-btn primary" @click="changeStatus(f, 'resolved')">解决</button>
+          <template v-if="isEditable(f)">
+            <button class="mobile-btn" @click="reply(f)">回复</button>
+            <button class="mobile-btn" @click="changeStatus(f, 'processing')">处理中</button>
+            <button class="mobile-btn primary" @click="changeStatus(f, 'resolved')">解决</button>
+          </template>
         </div>
         <transition name="expand">
           <pre v-if="detailId === f.id" class="mobile-code">{{ detailText }}</pre>
@@ -42,6 +44,7 @@ const detailText = ref('')
 const replyMap = ref<Record<number, string>>({})
 const limit = ref({ feedback_daily_limit: 20 })
 function setStatus(s: string) { status.value = s; loadList() }
+function isEditable(f: any): boolean { return f.status === 'pending' || f.status === 'processing' }
 async function loadList() {
   loading.value = true
   const res = await adminApi<any>('list_feedback', { page: 1, page_size: 30, status: status.value })

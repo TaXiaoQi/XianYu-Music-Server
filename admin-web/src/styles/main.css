@@ -129,6 +129,14 @@ button, input, textarea, select { font-family: inherit; }
     stroke: var(--accent);
     filter: drop-shadow(0 6px 12px rgba(236, 65, 65, 0.16));
 }
+.sidebar-title .sidebar-logo {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    flex-shrink: 0;
+    object-fit: cover;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.10);
+}
 .sidebar-menu { list-style: none; display: flex; flex-direction: column; gap: 4px; }
 .sidebar-menu > li > a,
 .sidebar-menu > li > .menu-header {

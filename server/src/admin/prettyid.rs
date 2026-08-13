@@ -4,7 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use super::{err, log_operation, ok, AdminCtx};
-use crate::handlers::helpers::{int_of, parse_body, str_of};
+use crate::handlers::helpers::{int_of, parse_body, str_of, validate_ciyuanxi_id};
 
 /// 修改用户弦予号（普通号码，不进入靓号表）
 pub async fn change_ciyuanxi_id(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
@@ -14,8 +14,11 @@ pub async fn change_ciyuanxi_id(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     if user_id <= 0 {
         return err(400, "用户参数错误");
     }
-    if new_id.is_empty() || !new_id.chars().all(|c| c.is_ascii_digit()) {
-        return err(400, "弦予号必须为纯数字");
+    if new_id.is_empty() {
+        return err(400, "请输入弦予号");
+    }
+    if let Err(msg) = validate_ciyuanxi_id(&new_id) {
+        return err(400, msg);
     }
     let check = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? AND id != ? LIMIT 1")
         .bind(&new_id).bind(user_id).fetch_optional(pool).await.ok().flatten();
