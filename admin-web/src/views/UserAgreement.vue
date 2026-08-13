@@ -41,6 +41,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface UserAgreementConfig {
   title: string
@@ -89,8 +90,9 @@ async function loadConfig() {
   loading.value = false
 }
 
-function resetDefault() {
-  if (!confirm('确定恢复为初版用户协议吗？恢复后需要点击保存才会生效。')) return
+async function resetDefault() {
+  const ok = await webConfirm('确定恢复为初版用户协议吗？恢复后需要点击保存才会生效。', { title: '恢复初版协议', confirmText: '确认恢复' })
+  if (!ok) return
   form.value = { ...defaultConfig }
 }
 

@@ -197,6 +197,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast, getAdminUser } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface Admin {
   id: number
@@ -247,7 +248,8 @@ async function loadList() {
 // ===== 切换状态 =====
 async function toggleStatus(item: Admin) {
   const action = item.status == 1 ? '禁用' : '启用'
-  if (!confirm(`确认${action}管理员 "${item.username}"？`)) return
+  const ok = await webConfirm(`确认${action}管理员 "${item.username}"？`, { title: `${action}管理员`, confirmText: `确认${action}` })
+  if (!ok) return
   const res = await adminApi('toggle_admin_status', { id: item.id })
   if (res.code === 200) {
     showToast(`已${action}`, 'success')
@@ -267,7 +269,8 @@ async function toggleStatus(item: Admin) {
 
 // ===== 删除 =====
 async function deleteAdmin(item: Admin) {
-  if (!confirm(`确认删除管理员 "${item.username}"？此操作不可恢复！`)) return
+  const ok = await webConfirm(`确认删除管理员 "${item.username}"？此操作不可恢复！`, { title: '删除管理员', confirmText: '确认删除' })
+  if (!ok) return
   const res = await adminApi('delete_admin', { id: item.id })
   if (res.code === 200) {
     showToast('删除成功', 'success')

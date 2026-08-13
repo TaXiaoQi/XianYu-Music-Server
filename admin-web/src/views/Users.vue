@@ -80,15 +80,10 @@
               <td>{{ u.created_at }}</td>
               <td>
                 <div class="row-actions">
-                  <button class="btn btn-sm" :class="u.status != 0 ? 'btn-danger' : 'btn-success'" @click="toggleStatus(u)">
-                    {{ u.status != 0 ? '禁用' : '启用' }}
+                  <button class="btn btn-sm btn-primary" @click="openRowMenu(u)">
+                    操作
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
-                  <button class="btn btn-sm" @click="openEmailModal(u)">改邮箱</button>
-                  <button class="btn btn-sm" @click="openResetModal(u)">重置时长</button>
-                  <button class="btn btn-sm" @click="viewPlugins(u)">插件</button>
-                  <button class="btn btn-sm" @click="openDeviceModal(u)">设备</button>
-                  <button v-if="u.avatar_url" class="btn btn-sm btn-danger" @click="deleteAvatar(u)">删头像</button>
-                  <button class="btn btn-sm btn-danger" @click="deleteUser(u)">删除</button>
                 </div>
               </td>
             </tr>
@@ -332,20 +327,14 @@
         <h3>设备封禁管理</h3>
 
         <!-- 手动添加封禁 -->
-        <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-          <input
-            v-model="banDeviceInput"
-            type="text"
-            placeholder="输入设备ID"
-            style="flex:1;min-width:200px;"
-          />
-          <input
-            v-model="banReasonInput"
-            type="text"
-            placeholder="封禁原因（必填）"
-            style="flex:1;min-width:200px;"
-          />
-          <button class="btn btn-danger" @click="manualBanDevice">封禁</button>
+        <div class="ban-form">
+          <div class="form-group ban-device-input">
+            <input v-model="banDeviceInput" type="text" placeholder="输入设备ID" />
+          </div>
+          <div class="form-group ban-reason-input">
+            <input v-model="banReasonInput" type="text" placeholder="封禁原因（必填）" />
+          </div>
+          <button class="btn btn-danger ban-submit" @click="manualBanDevice">封禁</button>
         </div>
 
         <div v-if="bannedLoading" class="empty">加载中...</div>
@@ -380,8 +369,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm, webPrompt, webActionMenu } from '@/utils/webDialog'
 
 // ===== 类型定义 =====
 interface User {
@@ -487,11 +477,23 @@ function formatScriptSize(bytes: number | undefined): string {
 }
 
 // ===== 行操作 =====
+// 当前展开下拉菜单的用户 id（0 表示都关闭）
+const menuUserId = ref(0)
+
+function openRowMenu(u: User) {
+  menuUserId.value = menuUserId.value === u.id ? 0 : u.id
+}
+
+function closeRowMenu() {
+  menuUserId.value = 0
+}
+
 async function toggleStatus(u: User) {
+  closeRowMenu()
   const newStatus = u.status != 0 ? 0 : 1
   let reason = ''
   if (newStatus === 0) {
-    const input = prompt(`请输入封禁用户 "${u.nickname || u.username}" 的原因：`)
+    const input = await webPrompt(`请输入封禁用户 "${u.nickname || u.username}" 的原因：`, '', { title: '封禁用户', placeholder: '封禁原因（必填）' })
     reason = (input || '').trim()
     if (!reason) {
       showToast('封禁原因不能为空')
@@ -509,7 +511,9 @@ async function toggleStatus(u: User) {
 }
 
 async function deleteUser(u: User) {
-  if (!confirm(`确定删除用户 "${u.nickname || u.username}" 吗？此操作不可恢复。`)) return
+  closeRowMenu()
+  const ok = await webConfirm(`确定删除用户 "${u.nickname || u.username}" 吗？此操作不可恢复。`, { title: '删除用户', confirmText: '确认删除' })
+  if (!ok) return
   const res = await adminApi('delete_user', { id: u.id })
   if (res.code === 200) {
     showToast('删除成功', 'success')
@@ -520,7 +524,9 @@ async function deleteUser(u: User) {
 }
 
 async function deleteAvatar(u: User) {
-  if (!confirm(`确定删除用户 "${u.nickname || u.username}" 的头像吗？`)) return
+  closeRowMenu()
+  const ok = await webConfirm(`确定删除用户 "${u.nickname || u.username}" 的头像吗？`, { title: '删除头像', confirmText: '确认删除' })
+  if (!ok) return
   const res = await adminApi('delete_user_avatar', { user_id: u.id })
   if (res.code === 200) {
     showToast('头像已删除', 'success')
@@ -535,14 +541,15 @@ async function batchToggle(status: number) {
   const label = status ? '全开' : '全禁'
   let reason = ''
   if (!status) {
-    const input = prompt('请输入批量封禁所有用户的原因：')
+    const input = await webPrompt('请输入批量封禁所有用户的原因：', '', { title: '批量禁用', placeholder: '封禁原因（必填）' })
     reason = (input || '').trim()
     if (!reason) {
       showToast('封禁原因不能为空')
       return
     }
   }
-  if (!confirm(`确定${label}所有用户状态吗？`)) return
+  const ok = await webConfirm(`确定${label}所有用户状态吗？`, { title: `批量${label}`, confirmText: `确认${label}` })
+  if (!ok) return
   batchLoading.value = true
   const res = await adminApi('batch_toggle_user_status', { status, reason })
   batchLoading.value = false
@@ -555,7 +562,8 @@ async function batchToggle(status: number) {
 }
 
 async function deleteEmptyPlaylists() {
-  if (!confirm('确定删除所有空的"我喜欢的音乐"歌单吗？')) return
+  const ok = await webConfirm('确定删除所有空的"我喜欢的音乐"歌单吗？', { title: '清理空歌单', confirmText: '确认删除' })
+  if (!ok) return
   batchLoading.value = true
   const res = await adminApi('delete_empty_favorite_playlists')
   batchLoading.value = false
@@ -609,6 +617,7 @@ const emailLoading = ref(false)
 const emailForm = ref({ userId: 0, username: '', nickname: '', currentEmail: '', newEmail: '' })
 
 function openEmailModal(u: User) {
+  closeRowMenu()
   emailForm.value = { userId: u.id, username: u.nickname || u.username, nickname: u.nickname || u.username, currentEmail: u.email || '', newEmail: '' }
   showEmailModal.value = true
 }
@@ -639,6 +648,7 @@ const resetLoading = ref(false)
 const resetForm = ref({ userId: 0, username: '', nickname: '', duration: '', ciyuanxiId: '' })
 
 function openResetModal(u: User) {
+  closeRowMenu()
   resetForm.value = {
     userId: u.id,
     username: u.nickname || u.username,
@@ -671,6 +681,7 @@ const pluginsLoading = ref(false)
 const pluginsData = ref<any>({})
 
 async function viewPlugins(u: User) {
+  closeRowMenu()
   showPluginsModal.value = true
   pluginsLoading.value = true
   pluginsData.value = {}
@@ -724,6 +735,7 @@ const banDeviceInput = ref('')
 const banReasonInput = ref('')
 
 async function openDeviceModal(u: User) {
+  closeRowMenu()
   showDeviceModal.value = true
   deviceLoading.value = true
   deviceData.value = { username: u.nickname || u.username, nickname: u.nickname || u.username }
@@ -737,14 +749,15 @@ async function openDeviceModal(u: User) {
 }
 
 async function banUserDevice(deviceId: string, username: string) {
-  const input = prompt(`请输入封禁用户 "${username}" 的设备 (${deviceId.substring(0, 16)}...) 的原因：`)
-  const reason = (input || '').trim()
-  if (!reason) {
+  const reason = await webPrompt(`请输入封禁用户 "${username}" 的设备 (${deviceId.substring(0, 16)}...) 的原因：`, '', { title: '封禁设备', placeholder: '封禁原因（必填）' })
+  const reasonText = (reason || '').trim()
+  if (!reasonText) {
     showToast('封禁原因不能为空')
     return
   }
-  if (!confirm(`确定封禁用户 "${username}" 的设备 (${deviceId.substring(0, 16)}...) 吗？\n封禁后该设备将无法登录。`)) return
-  const res = await adminApi('ban_device', { device_id: deviceId, reason })
+  const ok = await webConfirm(`确定封禁用户 "${username}" 的设备 (${deviceId.substring(0, 16)}...) 吗？封禁后该设备将无法登录。`, { title: '封禁设备', confirmText: '确认封禁' })
+  if (!ok) return
+  const res = await adminApi('ban_device', { device_id: deviceId, reason: reasonText })
   if (res.code === 200) {
     showToast('设备已封禁', 'success')
     deviceData.value.is_banned = true
@@ -814,6 +827,12 @@ async function unbanDeviceById(id: number, deviceId: string) {
 // ===== 初始化 =====
 onMounted(() => {
   loadUsers()
+  document.addEventListener('click', closeRowMenu)
+})
+
+// 组件卸载时移除全局监听
+onBeforeUnmount(() => {
+  document.removeEventListener('click', closeRowMenu)
 })
 </script>
 
@@ -905,6 +924,77 @@ onMounted(() => {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+}
+
+/* 操作下拉菜单 */
+.row-menu {
+  position: relative;
+  display: inline-flex;
+}
+.row-menu-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 200;
+  min-width: 150px;
+  padding: 6px;
+  background: var(--card-solid, var(--card));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  white-space: nowrap;
+}
+.menu-item:hover { background: var(--accent-soft); color: var(--accent); }
+.menu-item.danger { color: #dc2626; }
+.menu-item.danger:hover { background: #fff5f5; color: #dc2626; }
+.menu-item.success { color: #16a34a; }
+.menu-item.success:hover { background: #f0faf3; color: #16a34a; }
+html[data-theme='dark'] .menu-item.danger { color: #f87171; }
+html[data-theme='dark'] .menu-item.danger:hover { background: rgba(220, 38, 38, 0.12); color: #f87171; }
+html[data-theme='dark'] .menu-item.success { color: #4ade80; }
+html[data-theme='dark'] .menu-item.success:hover { background: rgba(22, 163, 74, 0.12); color: #4ade80; }
+html[data-theme='dark'] .row-menu-pop { background: var(--card-solid) !important; }
+
+/* 下拉菜单过渡 */
+.menu-enter-active, .menu-leave-active { transition: opacity 0.16s ease, transform 0.16s var(--motion); transform-origin: top right; }
+.menu-enter-from, .menu-leave-to { opacity: 0; transform: scale(0.94) translateY(-4px); }
+
+/* 设备封禁表单 */
+.ban-form {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.ban-device-input { flex: 1.2; min-width: 180px; margin-bottom: 0; }
+.ban-reason-input { flex: 1; min-width: 160px; margin-bottom: 0; }
+.ban-submit {
+  flex-shrink: 0;
+  height: 40px;
+  padding: 0 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* 分页 */

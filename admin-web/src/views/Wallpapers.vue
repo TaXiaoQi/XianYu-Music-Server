@@ -286,6 +286,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface Wallpaper {
   id: number
@@ -470,7 +471,8 @@ function fillAccountLimitForm(item: WallpaperAccountLimit) {
 }
 
 async function deleteWallpaperAccountLimit(ciyuanxiId: string) {
-  if (!confirm(`确定恢复 ${ciyuanxiId} 使用全局上传上限吗？`)) return
+  const ok = await webConfirm(`确定恢复 ${ciyuanxiId} 使用全局上传上限吗？`, { title: '恢复全局上限', confirmText: '确认恢复' })
+  if (!ok) return
   const res = await adminApi('delete_wallpaper_account_limit', { ciyuanxi_id: ciyuanxiId })
   if (res.code === 200) {
     showToast('已恢复全局默认', 'success')
@@ -495,7 +497,10 @@ async function changeStatus(id: number, status: string) {
     rejected: '确定拒绝此壁纸吗？',
     disabled: '确定禁用此壁纸吗？',
   }
-  if (tips[status] && !confirm(tips[status])) return
+  if (tips[status]) {
+    const ok = await webConfirm(tips[status], { title: '壁纸状态变更', confirmText: '确认' })
+    if (!ok) return
+  }
   const res = await adminApi('change_wallpaper_status', { id, status })
   if (res.code === 200) {
     showToast('操作成功', 'success')
@@ -507,7 +512,8 @@ async function changeStatus(id: number, status: string) {
 
 // ===== 删除 =====
 async function deleteWallpaper(id: number) {
-  if (!confirm('确定要删除此壁纸吗？图片文件也会一并删除。')) return
+  const ok = await webConfirm('确定要删除此壁纸吗？图片文件也会一并删除。', { title: '删除壁纸', confirmText: '确认删除' })
+  if (!ok) return
   const res = await adminApi('delete_wallpaper', { id })
   if (res.code === 200) {
     showToast('删除成功', 'success')

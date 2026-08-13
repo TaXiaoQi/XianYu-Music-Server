@@ -229,6 +229,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface AppVersion {
   id: number
@@ -508,7 +509,8 @@ async function changeStatus(id: number, status: string) {
 }
 
 async function deleteVersion(id: number) {
-  if (!confirm('确认删除该版本？')) return
+  const ok = await webConfirm('确认删除该版本？', { title: '删除版本', confirmText: '确认删除' })
+  if (!ok) return
   const res = await adminApi('delete_version', { id })
   if (res.code === 200) {
     showToast('删除成功', 'success')

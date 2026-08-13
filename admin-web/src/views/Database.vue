@@ -248,6 +248,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast, getToken } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 // ===== 类型定义 =====
 interface TableInfo {
@@ -492,7 +493,8 @@ function setBusy(name: string, op: string, val: boolean) {
 }
 
 async function restoreBackup(item: BackupInfo) {
-  if (!confirm(`确定从备份 "${item.name}" 恢复数据库吗？\n\n此操作将覆盖当前所有表数据，且不可恢复，请谨慎操作！`)) return
+  const ok = await webConfirm(`确定从备份 "${item.name}" 恢复数据库吗？\n\n此操作将覆盖当前所有表数据，且不可恢复，请谨慎操作！`, { title: '恢复数据库', confirmText: '确认恢复' })
+  if (!ok) return
   setBusy(item.name, 'rs', true)
   const res = await adminApi('restore_backup', { filename: item.name })
   setBusy(item.name, 'rs', false)
@@ -505,7 +507,8 @@ async function restoreBackup(item: BackupInfo) {
 }
 
 async function deleteBackup(item: BackupInfo) {
-  if (!confirm(`确定删除备份文件 "${item.name}" 吗？此操作不可恢复。`)) return
+  const ok = await webConfirm(`确定删除备份文件 "${item.name}" 吗？此操作不可恢复。`, { title: '删除备份', confirmText: '确认删除' })
+  if (!ok) return
   setBusy(item.name, 'del', true)
   const res = await adminApi('delete_backup', { filename: item.name })
   setBusy(item.name, 'del', false)

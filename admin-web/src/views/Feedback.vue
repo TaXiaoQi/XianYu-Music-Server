@@ -265,6 +265,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface Feedback {
   id: number
@@ -402,7 +403,10 @@ async function changeStatus(id: number, status: string) {
     resolved: '确认将此反馈标记为已解决？',
     rejected: '确认拒绝此反馈？',
   }
-  if (tips[status] && !confirm(tips[status])) return
+  if (tips[status]) {
+    const ok = await webConfirm(tips[status], { title: '更新反馈状态', confirmText: '确认' })
+    if (!ok) return
+  }
   const res = await adminApi('update_feedback_status', { id, status })
   if (res.code === 200) {
     showToast('状态已更新', 'success')

@@ -142,6 +142,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface ErrorLog {
   id: number
@@ -280,7 +281,8 @@ async function viewDetail(id: number) {
 
 // 删除单条
 async function deleteRow(id: number) {
-  if (!confirm('确定删除这条崩溃日志吗？')) return
+  const ok = await webConfirm('确定删除这条崩溃日志吗？', { title: '删除日志', confirmText: '确认删除' })
+  if (!ok) return
   const res = await adminApi('delete_error', { id })
   if (res.code === 200) {
     showToast('删除成功', 'success')
@@ -293,7 +295,8 @@ async function deleteRow(id: number) {
 
 // 清空全部
 async function clearAll() {
-  if (!confirm('确定清空所有崩溃日志吗？此操作不可恢复！')) return
+  const ok = await webConfirm('确定清空所有崩溃日志吗？此操作不可恢复！', { title: '清空日志', confirmText: '确认清空' })
+  if (!ok) return
   const res = await adminApi('clear_all_errors')
   if (res.code === 200) {
     showToast(res.msg || '已清空', 'success')

@@ -264,6 +264,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface AvatarPending {
   id: number
@@ -383,7 +384,8 @@ async function loadAll(silent = false) {
 
 // ===== 头像审核 =====
 async function handleApproveAvatar(id: number) {
-  if (!confirm('确认通过该头像审核？通过后将更新为用户的新头像。')) return
+  const ok = await webConfirm('确认通过该头像审核？通过后将更新为用户的新头像。', { title: '通过审核', confirmText: '确认通过' })
+  if (!ok) return
   const res = await adminApi('approve_avatar', { id })
   if (res.code === 200) {
     showToast('审核通过', 'success')
@@ -396,7 +398,8 @@ async function handleApproveAvatar(id: number) {
 }
 
 async function handleRejectAvatar(id: number) {
-  if (!confirm('确认拒绝该头像审核？')) return
+  const ok = await webConfirm('确认拒绝该头像审核？', { title: '拒绝审核', confirmText: '确认拒绝' })
+  if (!ok) return
   const res = await adminApi('reject_avatar', { id })
   if (res.code === 200) {
     showToast('已拒绝', 'success')
@@ -410,7 +413,8 @@ async function handleRejectAvatar(id: number) {
 
 // ===== 改名审核 =====
 async function handleApproveNickname(id: number) {
-  if (!confirm('确认通过该改名申请？通过后用户名将更新。')) return
+  const ok = await webConfirm('确认通过该改名申请？通过后用户名将更新。', { title: '通过改名', confirmText: '确认通过' })
+  if (!ok) return
   const res = await adminApi('approve_nickname', { id })
   if (res.code === 200) {
     showToast('审核通过', 'success')
@@ -421,7 +425,8 @@ async function handleApproveNickname(id: number) {
 }
 
 async function handleRejectNickname(id: number) {
-  if (!confirm('确认拒绝该改名申请？')) return
+  const ok = await webConfirm('确认拒绝该改名申请？', { title: '拒绝改名', confirmText: '确认拒绝' })
+  if (!ok) return
   const res = await adminApi('reject_nickname', { id })
   if (res.code === 200) {
     showToast('已拒绝', 'success')

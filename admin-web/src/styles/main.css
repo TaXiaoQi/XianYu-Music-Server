@@ -689,6 +689,141 @@ html[data-theme='dark'] .toast {
     box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);
 }
 
+/* ---------- 后台统一弹窗（替代浏览器 confirm/prompt） ---------- */
+.web-dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.38);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    opacity: 0;
+    transition: opacity 0.22s var(--motion);
+}
+.web-dialog-overlay.show { opacity: 1; }
+.web-dialog {
+    width: 100%;
+    max-width: 400px;
+    background: var(--card-solid, var(--card));
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
+    transform: scale(0.94) translateY(10px);
+    opacity: 0;
+    transition: transform 0.26s var(--motion), opacity 0.26s;
+}
+.web-dialog.show {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+}
+.web-dialog-title {
+    padding: 20px 22px 0;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text);
+}
+.web-dialog-body {
+    padding: 12px 22px 20px;
+    font-size: 14px;
+    line-height: 1.65;
+    color: var(--text-light);
+    word-break: break-word;
+}
+.web-dialog-input {
+    display: block;
+    width: calc(100% - 44px);
+    margin: 0 22px 20px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 11px 14px;
+    background: var(--control-bg);
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 0.18s, box-shadow 0.18s;
+}
+.web-dialog-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* 操作菜单弹窗：垂直操作项列表 */
+.web-dialog-actions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 22px 6px;
+}
+.web-dialog-actions-list .action {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    padding: 11px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--control-bg);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: transform 0.16s var(--motion), background 0.16s, border-color 0.16s, box-shadow 0.16s;
+}
+.web-dialog-actions-list .action:hover {
+    transform: translateY(-1px);
+    background: rgba(236, 65, 65, 0.04);
+    border-color: var(--accent);
+    box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+}
+.web-dialog-actions-list .action:active { transform: scale(0.98); }
+.web-dialog-actions-list .action.danger { color: #dc2626; }
+.web-dialog-actions-list .action.danger:hover { background: rgba(220, 38, 38, 0.06); border-color: #dc2626; }
+.web-dialog-actions-list .action.success { color: #16a34a; }
+.web-dialog-actions-list .action.success:hover { background: rgba(22, 163, 74, 0.06); border-color: #16a34a; }
+.web-dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 16px 22px;
+    border-top: 1px solid var(--border);
+    background: rgba(236, 65, 65, 0.03);
+}
+.web-dialog-btn {
+    border: 1px solid var(--border);
+    padding: 9px 20px;
+    border-radius: 12px;
+    background: var(--control-bg);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.18s var(--motion), background 0.18s, border-color 0.18s, box-shadow 0.18s;
+}
+.web-dialog-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08); }
+.web-dialog-btn:active { transform: scale(0.97); }
+.web-dialog-btn.cancel:hover { background: rgba(255, 255, 255, 0.6); }
+.web-dialog-btn.confirm.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--white);
+}
+.web-dialog-btn.confirm.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); box-shadow: 0 10px 22px rgba(236, 65, 65, 0.22); }
+.web-dialog-btn.confirm.danger {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: #fff;
+}
+.web-dialog-btn.confirm.danger:hover { background: #b91c1c; border-color: #b91c1c; box-shadow: 0 10px 22px rgba(220, 38, 38, 0.22); }
+html[data-theme='dark'] .web-dialog-overlay { background: rgba(0, 0, 0, 0.56) !important; }
+html[data-theme='dark'] .web-dialog-title { color: var(--text) !important; }
+html[data-theme='dark'] .web-dialog-body { color: var(--text-light) !important; }
+html[data-theme='dark'] .web-dialog-actions { border-color: var(--border) !important; }
+html[data-theme='dark'] .web-dialog-btn.cancel:hover { background: rgba(255, 255, 255, 0.10) !important; }
+
 /* ---------- 空状态 ---------- */
 .empty {
     text-align: center;

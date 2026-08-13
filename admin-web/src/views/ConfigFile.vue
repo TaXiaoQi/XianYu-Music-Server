@@ -211,6 +211,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface ServerConfigForm {
   db_host: string
@@ -371,7 +372,8 @@ async function save() {
     showToast(msg)
     return
   }
-  if (!confirm('确定保存服务端配置文件吗？数据库连接、监听地址和密钥类配置需要重启服务端后才会完全生效。')) {
+  const ok = await webConfirm('确定保存服务端配置文件吗？数据库连接、监听地址和密钥类配置需要重启服务端后才会完全生效。', { title: '保存配置', confirmText: '确定保存' })
+  if (!ok) {
     return
   }
   saving.value = true
@@ -393,7 +395,8 @@ async function save() {
 }
 
 async function migrateCache() {
-  if (!confirm('迁移前请先保存正确的数据库连接配置。确定要把本地缓存数据迁移到数据库吗？')) {
+  const ok = await webConfirm('迁移前请先保存正确的数据库连接配置。确定要把本地缓存数据迁移到数据库吗？', { title: '迁移数据', confirmText: '确定迁移' })
+  if (!ok) {
     return
   }
   migrating.value = true

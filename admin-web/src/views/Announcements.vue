@@ -181,6 +181,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { webConfirm } from '@/utils/webDialog'
 
 interface Announcement {
   id: string
@@ -241,7 +242,8 @@ async function toggleAnn(id: string, enabled: boolean) {
 
 // ===== 删除 =====
 async function deleteAnn(id: string) {
-  if (!confirm('确认删除该公告？此操作不可恢复。')) return
+  const ok = await webConfirm('确认删除该公告？此操作不可恢复。', { title: '删除公告', confirmText: '确认删除' })
+  if (!ok) return
   const res = await adminApi('delete_announcement', { id })
   if (res.code === 200) {
     showToast('删除成功', 'success')
