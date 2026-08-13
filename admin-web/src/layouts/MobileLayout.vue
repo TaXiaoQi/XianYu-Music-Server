@@ -31,12 +31,22 @@
 </template>
 
 <script setup lang="ts">
-import { useRouter } from 'vue-router'
+import { watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { showToast } from '@/api/client'
 
 const router = useRouter()
+const route = useRoute()
+
+// 切换路由时回到容器顶部
+watch(
+  () => route.fullPath,
+  () => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+  }
+)
 const auth = useAuthStore()
 const theme = useThemeStore()
 
@@ -210,14 +220,15 @@ async function handleLogout() {
 }
 .mobile-page-enter-active,
 .mobile-page-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .mobile-page-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(12px);
 }
 .mobile-page-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
+  transform: translateY(-10px);
 }
 </style>

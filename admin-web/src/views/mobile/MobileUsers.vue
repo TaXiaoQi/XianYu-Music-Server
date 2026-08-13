@@ -44,7 +44,6 @@
               <span class="mobile-item-title">昵称：{{ u.nickname || u.username || '-' }}</span>
               <div class="mobile-title-right">
                 <span class="mobile-badge" :class="u.status == 1 ? 'green' : 'red'">{{ u.status == 1 ? '正常' : '禁用' }}</span>
-                <button class="mobile-btn mobile-op-btn" @click="openActionMenu(u)">操作</button>
               </div>
             </div>
             <div class="mobile-item-sub">弦予号：{{ u.ciyuanxi_id || '-' }}</div>
@@ -56,8 +55,11 @@
         </div>
         <div v-if="u.status == 0 && u.ban_reason" class="mobile-item-reason">封禁原因：{{ u.ban_reason }}</div>
         <div class="mobile-item-foot">
-          <span>听歌时长 {{ formatDuration(u.listen_duration) }}</span>
-          <span>注册 {{ u.created_at || '-' }}</span>
+          <div class="mobile-item-foot-info">
+            <span>听歌时长 {{ formatDuration(u.listen_duration) }}</span>
+            <span>注册 {{ u.created_at || '-' }}</span>
+          </div>
+          <button class="mobile-op-btn" @click="openActionMenu(u)">操作</button>
         </div>
       </div>
     </div>
@@ -214,8 +216,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { mobileConfirm, mobilePrompt } from '@/utils/mobileDialog'
-import { webActionMenu } from '@/utils/webDialog'
+import { mobileConfirm, mobilePrompt, mobileActionMenu } from '@/utils/mobileDialog'
 import './MobilePage.css'
 const keyword = ref('')
 const loading = ref(false)
@@ -369,7 +370,7 @@ async function addUser() {
   if (res.code === 200) { showToast('新增成功', 'success'); openAdd.value = false; addForm.value = { ciyuanxi_id: '', nickname: '', password: '', email: '' }; loadList() } else showToast(res.msg || '新增失败')
 }
 async function openActionMenu(u: any) {
-  const action = await webActionMenu(`用户操作 · ${u.nickname || u.username}`, [
+  const action = await mobileActionMenu(`用户操作 · ${u.nickname || u.username}`, [
     { key: 'toggle', label: u.status == 1 ? '禁用用户' : '启用用户', danger: u.status == 1, success: u.status != 1 },
     { key: 'ciyuanxi', label: '修改弦予号' },
     { key: 'email', label: '修改邮箱' },
@@ -731,8 +732,8 @@ onMounted(loadList)
   background: color-mix(in srgb, var(--accent) 6%, transparent);
 }
 .mobile-item-head .mobile-select-badge {
-  align-self: flex-start;
-  margin-top: 2px;
+  align-self: center;
+  margin-top: 0;
 }
 
 /* 头像 */
@@ -743,6 +744,7 @@ onMounted(loadList)
   object-fit: cover;
   flex: none;
   cursor: pointer;
+  align-self: center;
 }
 .mobile-avatar-ph {
   display: flex;
@@ -769,10 +771,6 @@ onMounted(loadList)
   gap: 6px;
   flex: 0 0 auto;
 }
-.mobile-op-btn {
-  padding: 5px 11px;
-  font-size: 12px;
-}
 .mobile-item-verify {
   display: flex;
   align-items: center;
@@ -794,11 +792,36 @@ onMounted(loadList)
 }
 .mobile-item-foot {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-top: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
   color: var(--text-muted);
   font-size: 12px;
+}
+.mobile-item-foot-info {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.mobile-op-btn {
+  flex: 0 0 auto;
+  border: none;
+  border-radius: 999px;
+  padding: 8px 18px;
+  background: #EC4141;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(236, 65, 65, 0.28);
+  transition: transform 0.16s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)),
+              opacity 0.16s, box-shadow 0.16s;
+}
+.mobile-op-btn:active {
+  transform: scale(0.94);
+  opacity: 0.85;
 }
 
 /* 头像预览 */

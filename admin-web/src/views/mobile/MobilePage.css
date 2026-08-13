@@ -303,6 +303,41 @@
 .mobile-dialog-btn.confirm:active {
   background: var(--accent-soft);
 }
+.mobile-dialog-btn.confirm.danger {
+  color: #EC4141;
+}
+.mobile-dialog-btn.confirm.danger:active {
+  background: rgba(236, 65, 65, 0.08);
+}
+/* 操作菜单列表 */
+.mobile-dialog-actions-list {
+  display: flex;
+  flex-direction: column;
+  padding: 8px 0;
+}
+.mobile-dialog-actions-list .action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 14px 0;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.16s;
+}
+.mobile-dialog-actions-list .action:active {
+  background: var(--control-bg);
+}
+.mobile-dialog-actions-list .action.danger {
+  color: #EC4141;
+}
+.mobile-dialog-actions-list .action.success {
+  color: #16a34a;
+}
 
 /* ---------- 深色模式弹窗 ---------- */
 html[data-theme='dark'] .mobile-dialog {
@@ -343,13 +378,38 @@ html[data-theme='dark'] .mobile-dialog-overlay {
   }
 }
 
+/* ---------- 页面内容块入场动画（统一补齐所有页面） ---------- */
+.mobile-page > * {
+  animation: mobileBlockIn 0.42s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)) both;
+}
+.mobile-page > *:nth-child(1) { animation-delay: 0.02s; }
+.mobile-page > *:nth-child(2) { animation-delay: 0.06s; }
+.mobile-page > *:nth-child(3) { animation-delay: 0.10s; }
+.mobile-page > *:nth-child(4) { animation-delay: 0.14s; }
+.mobile-page > *:nth-child(5) { animation-delay: 0.18s; }
+.mobile-page > *:nth-child(6) { animation-delay: 0.22s; }
+.mobile-page > *:nth-child(7) { animation-delay: 0.26s; }
+.mobile-page > *:nth-child(8) { animation-delay: 0.30s; }
+.mobile-page > *:nth-child(n+9) { animation-delay: 0.34s; }
+@keyframes mobileBlockIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* ---------- 减少动画偏好 ---------- */
 @media (prefers-reduced-motion: reduce) {
   .mobile-item,
   .mobile-btn,
   .mobile-card,
   .mobile-dialog,
-  .mobile-dialog-overlay {
+  .mobile-dialog-overlay,
+  .mobile-page > * {
     animation: none !important;
     transition: none !important;
   }

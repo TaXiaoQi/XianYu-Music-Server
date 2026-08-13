@@ -15,26 +15,28 @@
       </div>
 
       <div class="toolbar-actions">
-        <template v-if="!isBatchMode">
-          <button class="btn btn-primary" @click="showAddModal = true">+ 添加用户</button>
-          <button class="btn btn-dark" @click="enterBatchMode">批量管理</button>
-        </template>
+        <Transition name="batch-swap" mode="out-in">
+          <div v-if="!isBatchMode" key="normal" class="toolbar-actions-row">
+            <button class="btn btn-primary" @click="showAddModal = true">+ 添加用户</button>
+            <button class="btn btn-dark" @click="enterBatchMode">批量管理</button>
+          </div>
 
-        <div v-else class="batch-mode-bar">
-          <button class="btn btn-sm" @click="toggleSelectAll">
-            <span class="checkbox-badge" :class="{ checked: isAllSelected }">
-              <svg v-if="isAllSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </span>
-            {{ isAllSelected ? '取消全选' : '全选' }}
-          </button>
-          <button class="btn btn-sm" @click="batchToggleSelected(0)" :disabled="selectedCount === 0 || batchLoading">封禁</button>
-          <button class="btn btn-sm" @click="batchToggleSelected(1)" :disabled="selectedCount === 0 || batchLoading">启用</button>
-          <button class="btn btn-sm" @click="batchBanDevice" :disabled="selectedCount === 0 || batchLoading">封禁ID</button>
-          <button class="btn btn-sm btn-danger" @click="batchDeleteSelected" :disabled="selectedCount === 0 || batchLoading">删除</button>
-          <button class="btn btn-sm" @click="deleteEmptyPlaylists" :disabled="batchLoading">清空歌单</button>
-          <span class="batch-count">已选 {{ selectedCount }} 项</span>
-          <button class="btn btn-sm btn-primary" @click="exitBatchMode">完成</button>
-        </div>
+          <div v-else key="batch" class="batch-mode-bar">
+            <button class="btn btn-sm" @click="toggleSelectAll">
+              <span class="checkbox-badge" :class="{ checked: isAllSelected }">
+                <svg v-if="isAllSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              {{ isAllSelected ? '取消全选' : '全选' }}
+            </button>
+            <button class="btn btn-sm" @click="batchToggleSelected(0)" :disabled="selectedCount === 0 || batchLoading">封禁</button>
+            <button class="btn btn-sm" @click="batchToggleSelected(1)" :disabled="selectedCount === 0 || batchLoading">启用</button>
+            <button class="btn btn-sm" @click="batchBanDevice" :disabled="selectedCount === 0 || batchLoading">封禁ID</button>
+            <button class="btn btn-sm btn-danger" @click="batchDeleteSelected" :disabled="selectedCount === 0 || batchLoading">删除</button>
+            <button class="btn btn-sm" @click="deleteEmptyPlaylists" :disabled="batchLoading">清空歌单</button>
+            <span class="batch-count">已选 {{ selectedCount }} 项</span>
+            <button class="btn btn-sm btn-primary" @click="exitBatchMode">完成</button>
+          </div>
+        </Transition>
       </div>
     </div>
     </Transition>
@@ -1040,6 +1042,25 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+}
+.toolbar-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* 批量菜单打开/关闭切换动效 */
+.batch-swap-enter-active,
+.batch-swap-leave-active {
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.batch-swap-enter-from {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+}
+.batch-swap-leave-to {
+  opacity: 0;
+  transform: translateY(4px) scale(0.97);
 }
 .batch-mode-bar {
   display: flex;

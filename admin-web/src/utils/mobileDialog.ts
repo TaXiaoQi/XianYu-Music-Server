@@ -4,6 +4,21 @@
  * 样式：毛玻璃 + 圆角 + 阴影 + 居中
  */
 
+export interface MobileConfirmOptions {
+  title?: string
+  confirmText?: string
+  cancelText?: string
+  /** 危险操作时使用红色确认按钮 */
+  danger?: boolean
+}
+
+export interface MobilePromptOptions {
+  title?: string
+  confirmText?: string
+  cancelText?: string
+  placeholder?: string
+}
+
 function createOverlay(): HTMLDivElement {
   const overlay = document.createElement('div')
   overlay.className = 'mobile-dialog-overlay'
@@ -32,21 +47,38 @@ function closeDialog(overlay: HTMLDivElement) {
   setTimeout(() => overlay.remove(), 260)
 }
 
+function escapeHtml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/\n/g, '<br/>')
+}
+
 /**
  * 确认弹窗（替代 confirm）
  * @returns Promise<boolean>
  */
-export function mobileConfirm(message: string, title = '操作确认'): Promise<boolean> {
+export function mobileConfirm(message: string, options: MobileConfirmOptions = {}): Promise<boolean> {
+  const {
+    title = '操作确认',
+    confirmText = '确认',
+    cancelText = '取消',
+    danger = false,
+  } = options
+
   return new Promise((resolve) => {
     const overlay = createOverlay()
     const dialog = createDialog()
+    const confirmClass = danger ? 'danger' : ''
 
     dialog.innerHTML = `
-      <div class="mobile-dialog-title">${title}</div>
-      <div class="mobile-dialog-body">${message}</div>
+      <div class="mobile-dialog-title">${escapeHtml(title)}</div>
+      <div class="mobile-dialog-body">${escapeHtml(message)}</div>
       <div class="mobile-dialog-actions">
-        <button class="mobile-dialog-btn cancel">取消</button>
-        <button class="mobile-dialog-btn confirm">确认</button>
+        <button class="mobile-dialog-btn cancel" type="button">${escapeHtml(cancelText)}</button>
+        <button class="mobile-dialog-btn confirm ${confirmClass}" type="button">${escapeHtml(confirmText)}</button>
       </div>
     `
 
@@ -73,18 +105,25 @@ export function mobileConfirm(message: string, title = '操作确认'): Promise<
  * 输入弹窗（替代 prompt）
  * @returns Promise<string | null> null 表示用户取消
  */
-export function mobilePrompt(message: string, defaultValue = ''): Promise<string | null> {
+export function mobilePrompt(message: string, defaultValue = '', options: MobilePromptOptions = {}): Promise<string | null> {
+  const {
+    title = '输入',
+    confirmText = '确定',
+    cancelText = '取消',
+    placeholder = '',
+  } = options
+
   return new Promise((resolve) => {
     const overlay = createOverlay()
     const dialog = createDialog()
 
     dialog.innerHTML = `
-      <div class="mobile-dialog-title">输入</div>
-      <div class="mobile-dialog-body">${message}</div>
-      <input class="mobile-dialog-input" type="text" value="${defaultValue.replace(/"/g, '&quot;')}" />
+      <div class="mobile-dialog-title">${escapeHtml(title)}</div>
+      <div class="mobile-dialog-body">${escapeHtml(message)}</div>
+      <input class="mobile-dialog-input" type="text" value="${escapeHtml(defaultValue)}" placeholder="${escapeHtml(placeholder)}" />
       <div class="mobile-dialog-actions">
-        <button class="mobile-dialog-btn cancel">取消</button>
-        <button class="mobile-dialog-btn confirm">确定</button>
+        <button class="mobile-dialog-btn cancel" type="button">${escapeHtml(cancelText)}</button>
+        <button class="mobile-dialog-btn confirm" type="button">${escapeHtml(confirmText)}</button>
       </div>
     `
 
@@ -111,5 +150,62 @@ export function mobilePrompt(message: string, defaultValue = ''): Promise<string
       input.focus()
       input.select()
     }, 100)
+  })
+}
+
+export interface MobileAction {
+  key: string
+  label: string
+  /** 危险操作（红色文字） */
+  danger?: boolean
+  /** 成功/启用类操作（绿色文字） */
+  success?: boolean
+  /** 是否显示（默认 true） */
+  show?: boolean
+}
+
+/**
+ * 操作菜单弹窗（替代下拉菜单）
+ * 居中展示一组操作项，与其他移动端弹窗样式统一。
+ * @returns Promise<string | null> 返回所选操作的 key，取消返回 null
+ */
+export function mobileActionMenu(title: string, actions: MobileAction[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    const overlay = createOverlay()
+    const dialog = createDialog()
+
+    const items = actions
+      .filter((a) => a.show !== false)
+      .map((a) => {
+        const cls = a.danger ? 'action danger' : a.success ? 'action success' : 'action'
+        return `<button class="${cls}" type="button" data-key="${escapeHtml(a.key)}">${escapeHtml(a.label)}</button>`
+      })
+      .join('')
+
+    dialog.innerHTML = `
+      <div class="mobile-dialog-title">${escapeHtml(title)}</div>
+      <div class="mobile-dialog-actions-list">${items}</div>
+      <div class="mobile-dialog-actions">
+        <button class="mobile-dialog-btn cancel" type="button">取消</button>
+      </div>
+    `
+
+    const cancelBtn = dialog.querySelector('.cancel') as HTMLButtonElement
+    const actionBtns = dialog.querySelectorAll('.mobile-dialog-actions-list .action')
+
+    const done = (result: string | null) => {
+      closeDialog(overlay)
+      resolve(result)
+    }
+
+    cancelBtn.onclick = () => done(null)
+    actionBtns.forEach((btn) => {
+      btn.addEventListener('click', () => done((btn as HTMLButtonElement).dataset.key || null))
+    })
+    overlay.onclick = (e) => {
+      if (e.target === overlay) done(null)
+    }
+
+    animateIn(overlay, dialog)
   })
 }

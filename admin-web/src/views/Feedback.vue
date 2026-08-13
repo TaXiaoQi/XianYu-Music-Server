@@ -108,22 +108,26 @@
         </button>
       </div>
       <div class="toolbar-right">
-        <div v-if="batchMode" class="batch-bar">
-          <label class="batch-select-all">
-            <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
-            <span>全选</span>
-          </label>
-          <span class="batch-count">已选 {{ selectedIds.size }} 项</span>
-          <button class="btn-batch-delete" :disabled="selectedIds.size === 0" @click="confirmBatchDelete">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-            删除所选
+        <Transition name="batch-swap" mode="out-in">
+          <div v-if="batchMode" key="batch" class="batch-bar">
+            <button class="btn-batch-select" @click="toggleSelectAll">
+              <span class="checkbox-badge" :class="{ checked: allSelected }">
+                <svg v-if="allSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              {{ allSelected ? '取消全选' : '全选' }}
+            </button>
+            <span class="batch-count">已选 {{ selectedIds.size }} 项</span>
+            <button class="btn-batch-delete" :disabled="selectedIds.size === 0" @click="confirmBatchDelete">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+              删除所选
+            </button>
+            <button class="btn-batch-exit" @click="exitBatchMode">退出</button>
+          </div>
+          <button v-else key="enter" class="btn-batch-enter" @click="enterBatchMode">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            批量管理
           </button>
-          <button class="btn-batch-exit" @click="exitBatchMode">退出</button>
-        </div>
-        <button v-else class="btn-batch-enter" @click="enterBatchMode">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          批量管理
-        </button>
+        </Transition>
         <div class="sort-wrap">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="M3 17l3 3 3-3"/><path d="M6 18V4"/></svg>
           <select v-model="sortMode" class="sort-select" @change="loadList">
@@ -2243,31 +2247,65 @@ onUnmounted(() => {
   border-color: var(--accent-color);
   color: var(--accent-color);
 }
+/* 批量菜单打开/关闭切换动效 */
+.batch-swap-enter-active,
+.batch-swap-leave-active {
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.batch-swap-enter-from {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+}
+.batch-swap-leave-to {
+  opacity: 0;
+  transform: translateY(4px) scale(0.97);
+}
 .batch-bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 12px;
-  border-radius: 8px;
-  background: var(--hover-bg);
-  border: 1px solid var(--border-color);
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
 }
-.batch-select-all {
-  display: flex;
+.btn-batch-select {
+  display: inline-flex;
   align-items: center;
   gap: 5px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text);
   font-size: 12px;
-  color: var(--text-secondary);
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
 }
-.batch-select-all input {
+.checkbox-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  background: var(--white);
   cursor: pointer;
-  accent-color: var(--accent-color);
+  transition: all 0.15s;
+  vertical-align: -2px;
+  margin-right: 4px;
 }
+.checkbox-badge.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.checkbox-badge:hover { border-color: var(--accent); }
 .batch-count {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--accent);
+  font-weight: 600;
   white-space: nowrap;
 }
 .btn-batch-delete {

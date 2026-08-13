@@ -53,6 +53,17 @@ const groups = [
   flex-direction: column;
   gap: 14px;
 }
+.mobile-more > * {
+  animation: moreIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.mobile-more > *:nth-child(1) { animation-delay: 0.02s; }
+.mobile-more > *:nth-child(2) { animation-delay: 0.10s; }
+.mobile-more > *:nth-child(3) { animation-delay: 0.18s; }
+.mobile-more > *:nth-child(4) { animation-delay: 0.26s; }
+@keyframes moreIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 .more-group {
   padding: 16px;
   border: 1px solid var(--border);

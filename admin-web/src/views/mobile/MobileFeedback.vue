@@ -367,7 +367,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { webConfirm } from '@/utils/webDialog'
+import { mobileConfirm } from '@/utils/mobileDialog'
 import './MobilePage.css'
 
 const loading = ref(false)
@@ -486,7 +486,7 @@ async function saveLimit() {
 
 // ===== 认领 =====
 async function claim(f: any) {
-  const ok = await webConfirm('确认认领该反馈？认领后将自动划入您的名下并移入处理中。', { title: '认领反馈', confirmText: '认领' })
+  const ok = await mobileConfirm('确认认领该反馈？认领后将自动划入您的名下并移入处理中。', { title: '认领反馈', confirmText: '认领' })
   if (!ok) return
   const res = await adminApi('claim_feedback', { id: f.id })
   if (res.code === 200) {
@@ -501,7 +501,7 @@ async function claim(f: any) {
 
 // ===== 状态变更 =====
 async function setStatusOf(f: any, s: string) {
-  const ok = await webConfirm(s === 'rejected' ? '确认拒绝此反馈？' : '确认更新状态？', { title: '更新反馈状态', confirmText: '确认' })
+  const ok = await mobileConfirm(s === 'rejected' ? '确认拒绝此反馈？' : '确认更新状态？', { title: '更新反馈状态', confirmText: '确认', danger: s === 'rejected' })
   if (!ok) return
   const res = await adminApi('update_feedback_status', { id: f.id, status: s })
   if (res.code === 200) {
@@ -553,7 +553,7 @@ function toggleSelectAll() {
 }
 async function confirmBatchDelete() {
   if (selectedIds.value.size === 0) return
-  const ok = await webConfirm(`确认将选中的 ${selectedIds.value.size} 条记录移入回收站？14 天内可恢复。`, { title: '批量删除', confirmText: '删除' })
+  const ok = await mobileConfirm(`确认将选中的 ${selectedIds.value.size} 条记录移入回收站？14 天内可恢复。`, { title: '批量删除', confirmText: '删除', danger: true })
   if (!ok) return
   const ids = Array.from(selectedIds.value)
   const res = await adminApi('batch_delete_feedback', { ids })
