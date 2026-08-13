@@ -436,13 +436,13 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             let day_filter = "stat_date = CURDATE()";
             (
                 format!(
-                    "SELECT d.ciyuanxi_id, u.username, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
+                    "SELECT d.ciyuanxi_id, u.nickname, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
                      FROM listen_daily_stats d \
                      INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
                      WHERE {} \
-                     GROUP BY d.ciyuanxi_id, u.username, u.avatar_url \
+                     GROUP BY d.ciyuanxi_id, u.nickname, u.avatar_url \
                      HAVING value > 0 \
-                     ORDER BY value DESC, u.username ASC LIMIT ?",
+                     ORDER BY value DESC, u.nickname ASC LIMIT ?",
                     order_col, day_filter
                 ),
                 format!(
@@ -457,11 +457,11 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                     day_filter, order_col
                 ),
                 format!(
-                    "SELECT u.username, u.avatar_url, CAST(COALESCE(SUM(d.{}), 0) AS SIGNED) AS value \
+                    "SELECT u.nickname, u.avatar_url, CAST(COALESCE(SUM(d.{}), 0) AS SIGNED) AS value \
                      FROM app_users u \
                      LEFT JOIN listen_daily_stats d ON d.ciyuanxi_id = u.ciyuanxi_id AND {} \
                      WHERE u.ciyuanxi_id = ? AND u.status = 1 \
-                     GROUP BY u.ciyuanxi_id, u.username, u.avatar_url",
+                     GROUP BY u.ciyuanxi_id, u.nickname, u.avatar_url",
                     order_col, day_filter
                 ),
                 format!(
@@ -482,13 +482,13 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             let week_filter = "stat_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND stat_date <= CURDATE()";
             (
                 format!(
-                    "SELECT d.ciyuanxi_id, u.username, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
+                    "SELECT d.ciyuanxi_id, u.nickname, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
                      FROM listen_daily_stats d \
                      INNER JOIN app_users u ON u.ciyuanxi_id = d.ciyuanxi_id AND u.status = 1 \
                      WHERE {} \
-                     GROUP BY d.ciyuanxi_id, u.username, u.avatar_url \
+                     GROUP BY d.ciyuanxi_id, u.nickname, u.avatar_url \
                      HAVING value > 0 \
-                     ORDER BY value DESC, u.username ASC LIMIT ?",
+                     ORDER BY value DESC, u.nickname ASC LIMIT ?",
                     order_col, week_filter
                 ),
                 format!(
@@ -503,11 +503,11 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                     week_filter, order_col
                 ),
                 format!(
-                    "SELECT u.username, u.avatar_url, CAST(COALESCE(SUM(d.{}), 0) AS SIGNED) AS value \
+                    "SELECT u.nickname, u.avatar_url, CAST(COALESCE(SUM(d.{}), 0) AS SIGNED) AS value \
                      FROM app_users u \
                      LEFT JOIN listen_daily_stats d ON d.ciyuanxi_id = u.ciyuanxi_id AND {} \
                      WHERE u.ciyuanxi_id = ? AND u.status = 1 \
-                     GROUP BY u.ciyuanxi_id, u.username, u.avatar_url",
+                     GROUP BY u.ciyuanxi_id, u.nickname, u.avatar_url",
                     order_col, week_filter
                 ),
                 format!(
@@ -527,9 +527,9 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             // total
             (
                 format!(
-                    "SELECT ciyuanxi_id, username, avatar_url, CAST({} AS SIGNED) AS value \
+                    "SELECT ciyuanxi_id, nickname, avatar_url, CAST({} AS SIGNED) AS value \
                      FROM app_users WHERE status = 1 AND CAST({} AS SIGNED) > 0 \
-                     ORDER BY {} DESC, username ASC LIMIT ?",
+                     ORDER BY {} DESC, nickname ASC LIMIT ?",
                     order_col, order_col, order_col
                 ),
                 format!(
@@ -537,7 +537,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                     order_col
                 ),
                 format!(
-                    "SELECT username, avatar_url, CAST({} AS SIGNED) AS value \
+                    "SELECT nickname, avatar_url, CAST({} AS SIGNED) AS value \
                      FROM app_users WHERE ciyuanxi_id = ? AND status = 1 LIMIT 1",
                     order_col
                 ),
@@ -561,7 +561,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     for (i, row) in rows.iter().enumerate() {
         let rank = (i + 1) as u32;
         let uid: String = row.get("ciyuanxi_id");
-        let username: String = row.get("username");
+        let username: String = row.get("nickname");
         let avatar: String = row.get::<Option<String>, _>("avatar_url")
             .unwrap_or_default();
         let value: i64 = row.get("value");
@@ -590,7 +590,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             .await;
 
         if let Ok(Some(row)) = user_row {
-            let username: String = row.get("username");
+            let username: String = row.get("nickname");
             let avatar: String = row.get::<Option<String>, _>("avatar_url")
                 .unwrap_or_default();
             let value: i64 = row.get("value");

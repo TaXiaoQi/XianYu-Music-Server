@@ -124,9 +124,12 @@ fn user_matches(user: &Value, ident: &str) -> bool {
 }
 
 fn user_payload(user: &Value, token: &str) -> Value {
+    let nickname = user.get("nickname").and_then(|v| v.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string())
+        .unwrap_or_else(|| user.get("username").and_then(|v| v.as_str()).unwrap_or("debug-user").to_string());
     json!({
         "user_id": user.get("id").and_then(|v| v.as_i64()).unwrap_or(1),
         "username": user.get("username").and_then(|v| v.as_str()).unwrap_or("debug-user"),
+        "nickname": nickname,
         "email": user.get("email").and_then(|v| v.as_str()).unwrap_or("debug@example.local"),
         "token": token,
         "role": user.get("role").and_then(|v| v.as_str()).unwrap_or("member"),
@@ -373,14 +376,17 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
         "register" | "email_register" => {
             let mut state = load_state();
             let username = {
-                let u = str_of(&data, "username");
-                if u.trim().is_empty() { str_of(&data, "email").split('@').next().unwrap_or("debug-user").to_string() } else { u.trim().to_string() }
+                let u = str_of(&data, "nickname");
+                if u.trim().is_empty() {
+                    let u2 = str_of(&data, "username");
+                    if u2.trim().is_empty() { str_of(&data, "email").split('@').next().unwrap_or("debug-user").to_string() } else { u2.trim().to_string() }
+                } else { u.trim().to_string() }
             };
             let password = str_of(&data, "password");
             let email = str_of(&data, "email").trim().to_string();
             let verify_code = str_of(&data, "verify_code");
             if username.chars().count() < 2 || username.chars().count() > 32 {
-                return ctx.err(400, "用户名长度需2-32个字符");
+                return ctx.err(400, "昵称长度需2-32个字符");
             }
             if password.len() < 6 {
                 return ctx.err(400, "密码长度至少6位");
@@ -398,7 +404,7 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             }
             let mut users = get_array(&state, "users");
             if users.iter().any(|u| u.get("username").and_then(|v| v.as_str()).unwrap_or("") == username) {
-                return ctx.err(400, "用户名已存在");
+                return ctx.err(400, "昵称已存在");
             }
             if users.iter().any(|u| u.get("email").and_then(|v| v.as_str()).unwrap_or("").eq_ignore_ascii_case(&email)) {
                 return ctx.err(400, "该邮箱已注册");
@@ -411,7 +417,7 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
                 "username": username,
                 "password": password,
                 "email": email,
-                "nickname": "",
+                "nickname": username,
                 "avatar_url": "",
                 "ciyuanxi_id": ciyuanxi_id,
                 "status": 1,
@@ -427,12 +433,15 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
         "user_login" | "email_login" => {
             let mut state = load_state();
             let ident = {
-                let u = str_of(&data, "username");
-                if u.trim().is_empty() { str_of(&data, "email") } else { u }
+                let u = str_of(&data, "ciyuanxi_id");
+                if u.trim().is_empty() {
+                    let u2 = str_of(&data, "username");
+                    if u2.trim().is_empty() { str_of(&data, "email") } else { u2 }
+                } else { u }
             };
             let password = str_of(&data, "password");
             if ident.trim().is_empty() || password.is_empty() {
-                return ctx.err(400, "用户名和密码不能为空");
+                return ctx.err(400, "弦予号和密码不能为空");
             }
             if action == "user_login" {
                 if let Some(resp) = require_captcha(&data, &ctx, &mut state, "auth") {
@@ -441,10 +450,10 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             }
             let users = get_array(&state, "users");
             let Some(user) = users.iter().find(|u| user_matches(u, &ident)).cloned() else {
-                return ctx.err(401, "用户名或密码错误");
+                return ctx.err(401, "弦予号或密码错误");
             };
             if user.get("password").and_then(|v| v.as_str()).unwrap_or("") != password {
-                return ctx.err(401, "用户名或密码错误");
+                return ctx.err(401, "弦予号或密码错误");
             }
             if user.get("status").and_then(|v| v.as_i64()).unwrap_or(1) == 0 {
                 return ctx.err(403, "账号已被禁用，请联系管理员");

@@ -46,7 +46,8 @@ pub async fn get_user_info(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     let role = crate::handlers::helpers::resolve_role_by_email(pool, &email).await;
     let payload = json!({
         "user_id": user.get::<i64,_>("id"),
-        "username": user.get::<String,_>("username"),
+        "nickname": user.get::<String,_>("nickname"),
+        "username": user.get::<String,_>("nickname"),
         "email": email,
         "role": role,
         "avatar_url": user.get::<String,_>("avatar_url"),
@@ -207,7 +208,7 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "弦予号不能为空");
     }
-    let user = sqlx::query("SELECT username FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+    let user = sqlx::query("SELECT nickname FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
         .await
@@ -216,7 +217,7 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     let Some(user) = user else {
         return ctx.err(404, "用户不存在");
     };
-    let current_username: String = user.get("username");
+    let current_nickname: String = user.get("nickname");
 
     let mut nickname_submitted = false;
     let mut avatar_submitted = false;
@@ -231,10 +232,10 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         if len < 2 || len > 20 {
             return ctx.err(400, "昵称长度需为 2 到 20 个字符");
         }
-        if nickname == current_username {
+        if nickname == current_nickname {
             return ctx.err(400, "新昵称不能与当前昵称相同");
         }
-        let exists = sqlx::query("SELECT id FROM app_users WHERE username = ? AND ciyuanxi_id != ? LIMIT 1")
+        let exists = sqlx::query("SELECT id FROM app_users WHERE nickname = ? AND ciyuanxi_id != ? LIMIT 1")
             .bind(&nickname)
             .bind(&ciyuanxi_id)
             .fetch_optional(pool)
@@ -261,11 +262,11 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
             pool,
             "nickname",
             &nickname,
-            json!({ "ciyuanxi_id": ciyuanxi_id, "old_name": current_username }),
+            json!({ "ciyuanxi_id": ciyuanxi_id, "old_name": current_nickname }),
         )
         .await;
         if audit.decision == AuditDecision::Pass {
-            let _ = sqlx::query("UPDATE app_users SET username = ? WHERE ciyuanxi_id = ?")
+            let _ = sqlx::query("UPDATE app_users SET nickname = ? WHERE ciyuanxi_id = ?")
                 .bind(&nickname)
                 .bind(&ciyuanxi_id)
                 .execute(pool)
@@ -386,11 +387,16 @@ fn sql_escape(s: &str) -> String {
 
 pub async fn check_username(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
-    let username = str_of(&data, "username").trim().to_string();
+    let _nickname = str_of(&data, "nickname").trim().to_string();
+    let username = if _nickname.is_empty() {
+        str_of(&data, "username").trim().to_string()
+    } else {
+        _nickname
+    };
     let exists = if username.is_empty() {
         false
     } else {
-        sqlx::query("SELECT id FROM app_users WHERE username = ? LIMIT 1")
+        sqlx::query("SELECT id FROM app_users WHERE nickname = ? LIMIT 1")
             .bind(&username)
             .fetch_optional(pool)
             .await
@@ -436,6 +442,85 @@ pub async fn change_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         .execute(pool)
         .await;
     ctx.ok_empty("密码修改成功")
+}
+
+/// 修改弦予号（每月限一次 + 唯一性校验）
+/// 参考微信号设计：弦予号是用户唯一登录标识，可修改但每月仅限一次。
+pub async fn update_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let old_ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let new_ciyuanxi_id = str_of(&data, "new_ciyuanxi_id").trim().to_string();
+    let password = str_of(&data, "password");
+    if old_ciyuanxi_id.is_empty() {
+        return ctx.err(400, "当前弦予号不能为空");
+    }
+    if new_ciyuanxi_id.is_empty() {
+        return ctx.err(400, "请输入新弦予号");
+    }
+    if new_ciyuanxi_id.chars().count() < 6 || new_ciyuanxi_id.chars().count() > 32 {
+        return ctx.err(400, "弦予号长度需为 6 到 32 个字符");
+    }
+    if new_ciyuanxi_id == old_ciyuanxi_id {
+        return ctx.err(400, "新弦予号不能与当前弦予号相同");
+    }
+    if !new_ciyuanxi_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+        return ctx.err(400, "弦予号只能包含字母、数字、下划线或中划线");
+    }
+
+    let user = sqlx::query("SELECT * FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&old_ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return ctx.err(404, "用户不存在");
+    };
+
+    // 校验密码
+    let stored: String = user.get("password");
+    if !bcrypt::verify(&password, &stored).unwrap_or(false) {
+        return ctx.err(400, "密码错误");
+    }
+
+    // 每月限一次
+    if let Ok(Some(last)) = user.try_get::<Option<chrono::NaiveDateTime>, _>("ciyuanxi_id_updated_at") {
+        let now = chrono::Utc::now().naive_utc();
+        let diff_days = (now - last).num_days();
+        if diff_days < 30 {
+            let remain = 30 - diff_days;
+            return ctx.err(429, &format!("弦予号每月只能修改一次，请{}天后再试", remain));
+        }
+    }
+
+    // 唯一性校验（app_users + pretty_ids）
+    let dup_user = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? AND ciyuanxi_id != ? LIMIT 1")
+        .bind(&new_ciyuanxi_id)
+        .bind(&old_ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    let dup_pretty = sqlx::query("SELECT id FROM ciyuanxi_pretty_ids WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&new_ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    if dup_user || dup_pretty {
+        return ctx.err(400, "该弦予号已被占用");
+    }
+
+    let uid: i64 = user.get("id");
+    let _ = sqlx::query("UPDATE app_users SET ciyuanxi_id = ?, ciyuanxi_id_updated_at = NOW() WHERE id = ?")
+        .bind(&new_ciyuanxi_id)
+        .bind(uid)
+        .execute(pool)
+        .await;
+
+    ctx.ok("弦予号修改成功", json!({ "ciyuanxi_id": new_ciyuanxi_id }))
 }
 
 pub async fn get_avatar_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
@@ -495,7 +580,7 @@ pub async fn get_nickname_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "弦予号不能为空");
     }
-    let user = sqlx::query("SELECT username FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+    let user = sqlx::query("SELECT nickname FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
         .await
@@ -535,7 +620,7 @@ pub async fn get_nickname_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         }))),
         None => ctx.json(200, "ok", Some(json!({
             "status": "none",
-            "nickname": user.get::<String, _>("username"),
+            "nickname": user.get::<String, _>("nickname"),
             "today_blocked": today_status.is_some(),
             "block_message": today_block_message,
         }))),

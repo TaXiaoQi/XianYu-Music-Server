@@ -45,7 +45,7 @@ async fn resolve_role(pool: &MySqlPool, email: &str) -> String {
 /// 构建登录用户返回 payload
 fn build_user_payload(
     user_id: i64,
-    username: &str,
+    nickname: &str,
     email: &str,
     avatar_url: &str,
     ciyuanxi_id: &str,
@@ -56,7 +56,8 @@ fn build_user_payload(
 ) -> serde_json::Value {
     json!({
         "user_id": user_id,
-        "username": username,
+        "nickname": nickname,
+        "username": nickname,
         "email": email,
         "token": token,
         "role": role,
@@ -287,14 +288,17 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if data.is_null() {
         return ctx.err(400, "参数错误");
     }
-    let username = str_of(&data, "username").trim().to_string();
+    let mut nickname = str_of(&data, "nickname").trim().to_string();
+    if nickname.is_empty() {
+        nickname = str_of(&data, "username").trim().to_string();
+    }
     let password = str_of(&data, "password");
     let email = str_of(&data, "email").trim().to_string();
     let verify_code = str_of(&data, "verify_code").trim().to_string();
 
-    let name_len = username.chars().count();
+    let name_len = nickname.chars().count();
     if name_len < 2 || name_len > 32 {
-        return ctx.err(400, "用户名长度需2-32个字符");
+        return ctx.err(400, "昵称长度需2-32个字符");
     }
     if password.len() < 6 {
         return ctx.err(400, "密码长度至少6位");
@@ -336,23 +340,23 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         .execute(pool)
         .await;
 
-    // 检查用户名是否重复
+    // 检查昵称是否重复
     let admin_dup = sqlx::query("SELECT id FROM admin_users WHERE username = ?")
-        .bind(&username)
+        .bind(&nickname)
         .fetch_optional(pool)
         .await
         .ok()
         .flatten()
         .is_some();
-    let user_dup = sqlx::query("SELECT id FROM app_users WHERE username = ?")
-        .bind(&username)
+    let user_dup = sqlx::query("SELECT id FROM app_users WHERE nickname = ?")
+        .bind(&nickname)
         .fetch_optional(pool)
         .await
         .ok()
         .flatten()
         .is_some();
     if admin_dup || user_dup {
-        return ctx.err(400, "用户名已存在");
+        return ctx.err(400, "昵称已存在");
     }
     let email_admin = sqlx::query("SELECT id FROM admin_users WHERE email = ?")
         .bind(&email)
@@ -381,9 +385,9 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         Err(_) => return ctx.err(500, "密码加密失败"),
     };
     let result = sqlx::query(
-        "INSERT INTO app_users (username, password, email, email_verified, status, ciyuanxi_id, last_device_id) VALUES (?,?,?,1,1,?,?)",
+        "INSERT INTO app_users (nickname, password, email, email_verified, status, ciyuanxi_id, last_device_id) VALUES (?,?,?,1,1,?,?)",
     )
-    .bind(&username)
+    .bind(&nickname)
     .bind(&hashed)
     .bind(&email)
     .bind(&ciyuanxi_id)
@@ -398,7 +402,7 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
             let role = resolve_role(pool, &email).await;
             let payload = build_user_payload(
                 user_id,
-                &username,
+                &nickname,
                 &email,
                 "",
                 &ciyuanxi_id,
@@ -418,29 +422,41 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if data.is_null() {
         return ctx.err(400, "参数错误");
     }
-    let username = str_of(&data, "username").trim().to_string();
+    // 支持弦予号或邮箱登录（参考微信号设计：邮箱登录时大小写不敏感）
+    let account_input = str_of(&data, "ciyuanxi_id").trim().to_string();
     let password = str_of(&data, "password");
-    if username.is_empty() || password.is_empty() {
-        return ctx.err(400, "用户名和密码不能为空");
+    if account_input.is_empty() || password.is_empty() {
+        return ctx.err(400, "弦予号/邮箱和密码不能为空");
     }
-    if let Some(resp) = check_login_cooldown(&username, &ctx, pool).await {
+    if let Some(resp) = check_login_cooldown(&account_input, &ctx, pool).await {
         return resp;
     }
     if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
         return resp;
     }
 
-    let user = sqlx::query("SELECT * FROM app_users WHERE (username = ? OR email = ? OR ciyuanxi_id = ?)")
-        .bind(&username)
-        .bind(&username)
-        .bind(&username)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
+    let is_email = account_input.contains('@');
+    let (user, matched) = if is_email {
+        let email_lower = account_input.to_lowercase();
+        let row = sqlx::query("SELECT * FROM app_users WHERE LOWER(email) = ?")
+            .bind(&email_lower)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+        (row, account_input.clone())
+    } else {
+        let row = sqlx::query("SELECT * FROM app_users WHERE ciyuanxi_id = ?")
+            .bind(&account_input)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+        (row, account_input.clone())
+    };
     let Some(user) = user else {
-        record_login_failure(&username, &ctx, pool).await;
-        return ctx.err(401, "用户名或密码错误");
+        record_login_failure(&matched, &ctx, pool).await;
+        return ctx.err(401, "弦予号/邮箱或密码错误");
     };
     let stored: String = user.get("password");
     let mut password_ok = bcrypt::verify(&password, &stored).unwrap_or(false);
@@ -458,8 +474,8 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         }
     }
     if !password_ok {
-        record_login_failure(&username, &ctx, pool).await;
-        return ctx.err(401, "用户名或密码错误");
+        record_login_failure(&matched, &ctx, pool).await;
+        return ctx.err(401, "弦予号/邮箱或密码错误");
     }
     let status: i64 = user.get("status");
     if status == 0 {
@@ -479,11 +495,11 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let token = rand_token();
 
     let user_id: i64 = user.try_get::<i64, _>("id").unwrap_or(0);
-    let uname: String = user.try_get::<String, _>("username").unwrap_or_default();
+    let uname: String = user.try_get::<String, _>("nickname").unwrap_or_default();
     let avatar_url: String = user.try_get::<Option<String>, _>("avatar_url").ok().flatten().unwrap_or_default();
     let ciyuanxi_id: String = user.try_get::<String, _>("ciyuanxi_id").unwrap_or_default();
     let master_quota: i64 = user.try_get::<i64, _>("master_quota").unwrap_or(0);
-    clear_login_failures(&username, &ctx, pool).await;
+    clear_login_failures(&matched, &ctx, pool).await;
 
     // 记录 APP 登录日志
     let _ = sqlx::query(
@@ -577,7 +593,7 @@ pub async fn poll_tv_login_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     let email: String = user.get("email");
     let role = resolve_role(pool, &email).await;
     let user_id: i64 = user.get("id");
-    let uname: String = user.get("username");
+    let uname: String = user.try_get::<String, _>("nickname").unwrap_or_default();
     let avatar_url: String = user.try_get::<Option<String>, _>("avatar_url").ok().flatten().unwrap_or_default();
     let master_quota: i64 = user.try_get::<i64, _>("master_quota").unwrap_or(0);
     let mut payload = build_user_payload(user_id, &uname, &email, &avatar_url, &ciyuanxi_id, user_status, master_quota, &token, &role);
@@ -605,7 +621,7 @@ pub async fn scan_tv_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     if status != "pending" && status != "scanned" {
         return ctx.err(410, "二维码已被使用或已取消");
     }
-    let user = sqlx::query("SELECT id, status, username FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+    let user = sqlx::query("SELECT id, status, nickname FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
         .await
@@ -618,7 +634,7 @@ pub async fn scan_tv_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     if u_status == 0 {
         return ctx.err(403, "账号已被禁用");
     }
-    let username: String = user.get("username");
+    let nickname: String = user.try_get::<String, _>("nickname").unwrap_or_default();
     let _ = sqlx::query("UPDATE tv_login_codes SET status = 'scanned', ciyuanxi_id = ?, scanned_at = NOW() WHERE code = ? AND status IN ('pending','scanned')")
         .bind(&ciyuanxi_id)
         .bind(&code)
@@ -627,7 +643,7 @@ pub async fn scan_tv_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     ctx.json(
         200,
         "扫码成功，请在手机端确认登录",
-        Some(json!({ "ciyuanxi_id": ciyuanxi_id, "username": username })),
+        Some(json!({ "ciyuanxi_id": ciyuanxi_id, "nickname": nickname, "username": nickname })),
     )
 }
 
@@ -730,7 +746,7 @@ pub async fn login_by_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     }
     let token = rand_token();
     let user_id: i64 = user.get("id");
-    let uname: String = user.get("username");
+    let uname: String = user.try_get::<String, _>("nickname").unwrap_or_default();
     let avatar_url: String = user.get("avatar_url");
     let ciyuanxi_id: String = user.get("ciyuanxi_id");
     let master_quota: i64 = user.get("master_quota");

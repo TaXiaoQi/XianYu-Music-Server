@@ -55,6 +55,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "update_profile" => settings::update_profile(body, ctx, pool).await,
         "check_username" => settings::check_username(body, ctx, pool).await,
         "change_password" => settings::change_password(body, ctx, pool).await,
+        "update_ciyuanxi_id" => settings::update_ciyuanxi_id(body, ctx, pool).await,
         "get_avatar_status" => settings::get_avatar_status(body, ctx, pool).await,
         "get_nickname_status" => settings::get_nickname_status(body, ctx, pool).await,
         "report_listen_stats" => settings::report_listen_stats(body, ctx, pool).await,

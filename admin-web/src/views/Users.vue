@@ -5,7 +5,7 @@
       <input
         v-model="keyword"
         type="text"
-        placeholder="搜索用户名或邮箱"
+        placeholder="搜索昵称、弦予号或邮箱"
         @keyup.enter="handleSearch"
       />
       <button class="btn btn-primary" @click="handleSearch">搜索</button>
@@ -32,7 +32,7 @@
             <tr>
               <th>ID</th>
               <th>头像</th>
-              <th>用户名</th>
+              <th>昵称</th>
               <th>邮箱</th>
               <th>邮箱验证</th>
               <th>状态</th>
@@ -53,9 +53,9 @@
                   class="user-avatar"
                   @click="openAvatarView(u)"
                 />
-                <div v-else class="avatar-placeholder">{{ (u.username || '?').charAt(0) }}</div>
+                <div v-else class="avatar-placeholder">{{ (u.nickname || u.username || '?').charAt(0) }}</div>
               </td>
-              <td>{{ u.username }}</td>
+              <td>{{ u.nickname || u.username }}</td>
               <td>{{ u.email || '-' }}</td>
               <td>
                 <span :class="['badge', u.email_verified == 1 ? 'badge-success' : 'badge-warning']">
@@ -116,7 +116,7 @@
       <div class="modal">
         <h3>添加用户</h3>
         <div class="form-group">
-          <label class="required">用户名</label>
+          <label class="required">昵称</label>
           <input v-model="addForm.username" type="text" placeholder="2-32 个字符" />
         </div>
         <div class="form-group">
@@ -143,7 +143,7 @@
       <div class="modal">
         <h3>修改用户邮箱</h3>
         <div class="form-group">
-          <label>用户名</label>
+          <label>昵称</label>
           <input :value="emailForm.username" type="text" disabled />
         </div>
         <div class="form-group">
@@ -171,7 +171,7 @@
       <div class="modal">
         <h3>重置听歌时长</h3>
         <div class="form-group">
-          <label>用户名</label>
+          <label>昵称</label>
           <input :value="resetForm.username" type="text" disabled />
         </div>
         <div class="form-group">
@@ -195,7 +195,7 @@
     <Transition name="modal">
     <div v-if="showPluginsModal" class="modal-overlay" @click.self="showPluginsModal = false">
       <div class="modal" style="max-width:700px;">
-        <h3>用户插件 - {{ pluginsData.username }}</h3>
+        <h3>用户插件 - {{ pluginsData.nickname || pluginsData.username }}</h3>
         <div v-if="pluginsLoading" class="empty">加载中...</div>
         <div v-else>
           <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;">
@@ -240,7 +240,7 @@
     <Transition name="modal">
     <div v-if="showAvatarModal" class="modal-overlay" @click.self="showAvatarModal = false">
       <div class="modal" style="width:300px;text-align:center;">
-        <h3>{{ avatarViewUser?.username }} 的头像</h3>
+        <h3>{{ avatarViewUser?.nickname || avatarViewUser?.username }} 的头像</h3>
         <img
           v-if="avatarViewUser?.avatar_url"
           :src="avatarViewUser.avatar_url"
@@ -261,7 +261,7 @@
     <Transition name="modal">
     <div v-if="showDeviceModal" class="modal-overlay" @click.self="showDeviceModal = false">
       <div class="modal" style="max-width:700px;">
-        <h3>设备信息 - {{ deviceData.username }}</h3>
+        <h3>设备信息 - {{ deviceData.nickname || deviceData.username }}</h3>
         <div v-if="deviceLoading" class="empty">加载中...</div>
         <div v-else>
           <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;flex-wrap:wrap;">
@@ -274,7 +274,7 @@
             <button
               v-if="!deviceData.is_banned"
               class="btn btn-danger btn-sm"
-              @click="banUserDevice(deviceData.last_device_id, deviceData.username)"
+              @click="banUserDevice(deviceData.last_device_id, deviceData.nickname || deviceData.username)"
             >封禁此设备</button>
             <button
               v-else
@@ -491,7 +491,7 @@ async function toggleStatus(u: User) {
   const newStatus = u.status != 0 ? 0 : 1
   let reason = ''
   if (newStatus === 0) {
-    const input = prompt(`请输入封禁用户 "${u.username}" 的原因：`)
+    const input = prompt(`请输入封禁用户 "${u.nickname || u.username}" 的原因：`)
     reason = (input || '').trim()
     if (!reason) {
       showToast('封禁原因不能为空')
@@ -509,7 +509,7 @@ async function toggleStatus(u: User) {
 }
 
 async function deleteUser(u: User) {
-  if (!confirm(`确定删除用户 "${u.username}" 吗？此操作不可恢复。`)) return
+  if (!confirm(`确定删除用户 "${u.nickname || u.username}" 吗？此操作不可恢复。`)) return
   const res = await adminApi('delete_user', { id: u.id })
   if (res.code === 200) {
     showToast('删除成功', 'success')
@@ -520,7 +520,7 @@ async function deleteUser(u: User) {
 }
 
 async function deleteAvatar(u: User) {
-  if (!confirm(`确定删除用户 "${u.username}" 的头像吗？`)) return
+  if (!confirm(`确定删除用户 "${u.nickname || u.username}" 的头像吗？`)) return
   const res = await adminApi('delete_user_avatar', { user_id: u.id })
   if (res.code === 200) {
     showToast('头像已删除', 'success')
@@ -575,7 +575,7 @@ const addForm = ref({ username: '', password: '', email: '' })
 async function submitAddUser() {
   const uname = addForm.value.username.trim()
   if (uname.length < 2 || uname.length > 32) {
-    showToast('用户名需 2-32 个字符')
+    showToast('昵称需 2-32 个字符')
     return
   }
   if (addForm.value.password.length < 6) {
@@ -606,10 +606,10 @@ async function submitAddUser() {
 // ===== 修改邮箱弹窗 =====
 const showEmailModal = ref(false)
 const emailLoading = ref(false)
-const emailForm = ref({ userId: 0, username: '', currentEmail: '', newEmail: '' })
+const emailForm = ref({ userId: 0, username: '', nickname: '', currentEmail: '', newEmail: '' })
 
 function openEmailModal(u: User) {
-  emailForm.value = { userId: u.id, username: u.username, currentEmail: u.email || '', newEmail: '' }
+  emailForm.value = { userId: u.id, username: u.nickname || u.username, nickname: u.nickname || u.username, currentEmail: u.email || '', newEmail: '' }
   showEmailModal.value = true
 }
 
@@ -636,12 +636,13 @@ async function submitEmailChange() {
 // ===== 重置听歌时长弹窗 =====
 const showResetModal = ref(false)
 const resetLoading = ref(false)
-const resetForm = ref({ userId: 0, username: '', duration: '', ciyuanxiId: '' })
+const resetForm = ref({ userId: 0, username: '', nickname: '', duration: '', ciyuanxiId: '' })
 
 function openResetModal(u: User) {
   resetForm.value = {
     userId: u.id,
-    username: u.username,
+    username: u.nickname || u.username,
+    nickname: u.nickname || u.username,
     duration: formatDuration(u.listen_duration),
     ciyuanxiId: u.ciyuanxi_id || '',
   }
@@ -725,7 +726,7 @@ const banReasonInput = ref('')
 async function openDeviceModal(u: User) {
   showDeviceModal.value = true
   deviceLoading.value = true
-  deviceData.value = { username: u.username }
+  deviceData.value = { username: u.nickname || u.username, nickname: u.nickname || u.username }
   const res = await adminApi('get_user_devices', { user_id: u.id })
   if (res.code === 200 && res.data) {
     deviceData.value = res.data

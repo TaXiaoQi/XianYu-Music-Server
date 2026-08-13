@@ -25,7 +25,7 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
             .unwrap_or(0)
     } else {
         let pat = format!("%{}%", keyword);
-        sqlx::query_scalar("SELECT COUNT(*) FROM app_users WHERE username LIKE ? OR email LIKE ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM app_users WHERE nickname LIKE ? OR email LIKE ?")
             .bind(&pat)
             .bind(&pat)
             .fetch_one(pool)
@@ -42,7 +42,7 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
             .await
     } else {
         let pat = format!("%{}%", keyword);
-        sqlx::query("SELECT * FROM app_users WHERE username LIKE ? OR email LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        sqlx::query("SELECT * FROM app_users WHERE nickname LIKE ? OR email LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
             .bind(&pat)
             .bind(&pat)
             .bind(page_size)
@@ -118,7 +118,7 @@ pub async fn delete_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
     if id <= 0 {
         return err(400, "参数错误");
     }
-    let user = sqlx::query("SELECT username FROM app_users WHERE id = ?")
+    let user = sqlx::query("SELECT nickname FROM app_users WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -127,9 +127,9 @@ pub async fn delete_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
     let Some(user) = user else {
         return err(404, "用户不存在");
     };
-    let username: String = user.get("username");
+    let nickname: String = user.get("nickname");
     let _ = sqlx::query("DELETE FROM app_users WHERE id = ?").bind(id).execute(pool).await;
-    log_operation(pool, ctx, "删除用户", &format!("用户ID:{}", id), &format!("用户名:{}", username)).await;
+    log_operation(pool, ctx, "删除用户", &format!("用户ID:{}", id), &format!("昵称:{}", nickname)).await;
     ok("删除成功", Value::Null)
 }
 
@@ -139,7 +139,7 @@ pub async fn delete_user_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     if id <= 0 {
         return err(400, "参数错误");
     }
-    let user = sqlx::query("SELECT username FROM app_users WHERE id = ?")
+    let user = sqlx::query("SELECT nickname FROM app_users WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -148,21 +148,24 @@ pub async fn delete_user_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     let Some(user) = user else {
         return err(404, "用户不存在");
     };
-    let username: String = user.get("username");
+    let nickname: String = user.get("nickname");
     let _ = sqlx::query("UPDATE app_users SET avatar_url = '' WHERE id = ?").bind(id).execute(pool).await;
-    log_operation(pool, ctx, "删除用户头像", &format!("用户ID:{}", id), &format!("用户名:{}", username)).await;
+    log_operation(pool, ctx, "删除用户头像", &format!("用户ID:{}", id), &format!("昵称:{}", nickname)).await;
     ok("头像已删除", Value::Null)
 }
 
 pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
-    let username = str_of(&data, "username").trim().to_string();
+    let mut username = str_of(&data, "nickname").trim().to_string();
+    if username.is_empty() {
+        username = str_of(&data, "username").trim().to_string();
+    }
     let password = str_of(&data, "password").to_string();
     let email = str_of(&data, "email").trim().to_string();
     let master_quota = int_of(&data, "master_quota");
     let master_quota = if master_quota == 0 { 200 } else { master_quota };
     if username.len() < 2 || username.len() > 32 {
-        return err(400, "用户名需 2-32 个字符");
+        return err(400, "昵称需 2-32 个字符");
     }
     if password.len() < 6 {
         return err(400, "密码至少 6 位");
@@ -178,7 +181,7 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         .ok()
         .flatten()
         .is_some();
-    let exists = sqlx::query("SELECT id FROM app_users WHERE username = ? LIMIT 1")
+    let exists = sqlx::query("SELECT id FROM app_users WHERE nickname = ? LIMIT 1")
         .bind(&username)
         .fetch_optional(pool)
         .await
@@ -186,7 +189,7 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         .flatten()
         .is_some();
     if admin_exists || exists {
-        return err(409, "用户名已存在");
+        return err(409, "昵称已存在");
     }
     if !email.is_empty() {
         let admin_email_exists = sqlx::query("SELECT id FROM admin_users WHERE email = ? LIMIT 1")
@@ -212,7 +215,7 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         Ok(h) => h,
         Err(_) => return err(500, "加密失败"),
     };
-    let _ = sqlx::query("INSERT INTO app_users (username, password, email, email_verified, status, ciyuanxi_id, master_quota) VALUES (?,?,?,1,1,?,?)")
+    let _ = sqlx::query("INSERT INTO app_users (nickname, password, email, email_verified, status, ciyuanxi_id, master_quota) VALUES (?,?,?,1,1,?,?)")
         .bind(&username)
         .bind(hashed)
         .bind(&email)
@@ -220,7 +223,7 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         .bind(master_quota)
         .execute(pool)
         .await;
-    log_operation(pool, ctx, "添加用户", &format!("用户名:{}", username), &format!("弦予号:{} 额度:{}", ciyuanxi_id, master_quota)).await;
+    log_operation(pool, ctx, "添加用户", &format!("昵称:{}", username), &format!("弦予号:{} 额度:{}", ciyuanxi_id, master_quota)).await;
     ok("添加成功", json!({ "ciyuanxi_id": ciyuanxi_id }))
 }
 
@@ -234,7 +237,7 @@ pub async fn set_user_master_quota(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     if quota < 0 {
         return err(400, "额度不能为负数");
     }
-    let user = sqlx::query("SELECT username, ciyuanxi_id FROM app_users WHERE id = ?")
+    let user = sqlx::query("SELECT nickname, ciyuanxi_id FROM app_users WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -243,13 +246,13 @@ pub async fn set_user_master_quota(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     let Some(user) = user else {
         return err(404, "用户不存在");
     };
-    let username: String = user.get("username");
+    let nickname: String = user.get("nickname");
     let _ = sqlx::query("UPDATE app_users SET master_quota = ? WHERE id = ?")
         .bind(quota)
         .bind(id)
         .execute(pool)
         .await;
-    log_operation(pool, ctx, "设置母带额度", &format!("用户ID:{} 用户名:{}", id, username), &format!("额度设为:{}", quota)).await;
+    log_operation(pool, ctx, "设置母带额度", &format!("用户ID:{} 昵称:{}", id, nickname), &format!("额度设为:{}", quota)).await;
     ok("设置成功", Value::Null)
 }
 
@@ -271,7 +274,7 @@ pub async fn get_user_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     if id <= 0 {
         return err(400, "参数错误");
     }
-    let user = sqlx::query("SELECT username, ciyuanxi_id FROM app_users WHERE id = ?")
+    let user = sqlx::query("SELECT nickname, ciyuanxi_id FROM app_users WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -280,17 +283,17 @@ pub async fn get_user_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     let Some(user) = user else {
         return err(404, "用户不存在");
     };
-    let username: String = user.get("username");
+    let username: String = user.get("nickname");
     let ciyuanxi_id: String = user.get("ciyuanxi_id");
     if ciyuanxi_id.is_empty() {
-        return ok("ok", json!({ "username": username, "plugins": [], "uploaded_at": Value::Null }));
+        return ok("ok", json!({ "nickname": username, "plugins": [], "uploaded_at": Value::Null }));
     }
     let clean_id: String = ciyuanxi_id.chars().filter(|c| c.is_ascii_digit()).collect();
     let dir = std::path::Path::new("data").join("sync").join(&clean_id);
     let file = dir.join("plugins.json");
     let content = match std::fs::read_to_string(&file) {
         Ok(c) => c,
-        Err(_) => return ok("ok", json!({ "username": username, "ciyuanxi_id": ciyuanxi_id, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null })),
+        Err(_) => return ok("ok", json!({ "nickname": username, "ciyuanxi_id": ciyuanxi_id, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null })),
     };
     let save_data: Value = match serde_json::from_str(&content) {
         Ok(v) => v,
@@ -315,7 +318,7 @@ pub async fn get_user_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         }
     }
     ok("ok", json!({
-        "username": username,
+        "nickname": username,
         "ciyuanxi_id": ciyuanxi_id,
         "uploaded_at": uploaded_at,
         "plugin_count": plugins.len(),
@@ -515,10 +518,10 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
 
     // 从 app_users 获取最后登录设备
     let user_row = if user_id > 0 {
-        sqlx::query("SELECT ciyuanxi_id, username, last_device_id FROM app_users WHERE id = ? LIMIT 1")
+        sqlx::query("SELECT ciyuanxi_id, nickname, last_device_id FROM app_users WHERE id = ? LIMIT 1")
             .bind(user_id).fetch_optional(pool).await
     } else {
-        sqlx::query("SELECT ciyuanxi_id, username, last_device_id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+        sqlx::query("SELECT ciyuanxi_id, nickname, last_device_id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
             .bind(&ciyuanxi_id).fetch_optional(pool).await
     };
 
@@ -527,7 +530,7 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         _ => return err(404, "用户不存在"),
     };
 
-    let username: String = user_row.get("username");
+    let username: String = user_row.get("nickname");
     let user_ciyuanxi_id: String = user_row.get("ciyuanxi_id");
     let last_device_id: String = user_row.get("last_device_id");
 
@@ -570,7 +573,7 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     })).collect();
 
     ok("ok", json!({
-        "username": username,
+        "nickname": username,
         "ciyuanxi_id": user_ciyuanxi_id,
         "last_device_id": last_device_id,
         "is_banned": is_banned,

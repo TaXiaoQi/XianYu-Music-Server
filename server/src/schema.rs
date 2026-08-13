@@ -26,7 +26,11 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "app_users", "background_url", "LONGTEXT NULL").await;
     ensure_column(pool, "app_users", "signature", "varchar(255) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "listen_stats_reset_at", "datetime NULL").await;
+    // 弦予号每月限改：记录最近一次修改时间
+    ensure_column(pool, "app_users", "ciyuanxi_id_updated_at", "datetime NULL").await;
     ensure_column(pool, "listen_daily_stats", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;
+    // 账号系统重构：app_users.username 改为 nickname（仅改应用用户表，不动管理员/日志表）
+    ensure_app_users_username_to_nickname(pool).await;
     ensure_default_admin(pool).await;
 }
 
@@ -82,6 +86,50 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "error_logs", "LONGTEXT").await;
     ensure_column(pool, "user_feedback", "all_logs", "LONGTEXT").await;
     ensure_column(pool, "user_feedback", "log_meta", "TEXT").await;
+}
+
+/// 账号系统重构迁移：将 app_users.username 列改名为 nickname。
+/// 仅迁移应用用户表，不影响 admin_users / 各类日志表。
+/// 若存在 username 列且尚不存在 nickname 列，则执行改名并重建唯一键。
+async fn ensure_app_users_username_to_nickname(pool: &MySqlPool) {
+    // 检查 username 列是否存在
+    let has_username: i64 = sqlx::query(
+        "SELECT COUNT(*) AS cnt FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'app_users' AND column_name = 'username'",
+    )
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get("cnt"))
+    .unwrap_or(0);
+
+    // 检查 nickname 列是否存在
+    let has_nickname: i64 = sqlx::query(
+        "SELECT COUNT(*) AS cnt FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'app_users' AND column_name = 'nickname'",
+    )
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get("cnt"))
+    .unwrap_or(0);
+
+    if has_username > 0 && has_nickname == 0 {
+        if let Err(e) = sqlx::query("ALTER TABLE `app_users` CHANGE COLUMN `username` `nickname` varchar(64) NOT NULL DEFAULT ''")
+            .execute(pool)
+            .await
+        {
+            warn!("schema rename username->nickname failed: {}", e);
+            return;
+        }
+        // 删除旧唯一键（若存在），再重建为 nickname 唯一键
+        let _ = sqlx::query("ALTER TABLE `app_users` DROP INDEX `uk_username`")
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("ALTER TABLE `app_users` ADD UNIQUE KEY `uk_nickname` (`nickname`)")
+            .execute(pool)
+            .await;
+        warn!("schema migrated: app_users.username -> nickname");
+    } else if has_nickname == 0 {
+        // 全新表：确保 nickname 列与唯一键存在
+        ensure_column(pool, "app_users", "nickname", "varchar(64) NOT NULL DEFAULT ''").await;
+    }
 }
 
 static TABLE_STATEMENTS: &[&str] = &[
@@ -147,13 +195,14 @@ static TABLE_STATEMENTS: &[&str] = &[
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `app_users` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
-            `username` varchar(64) NOT NULL DEFAULT '',
+            `nickname` varchar(64) NOT NULL DEFAULT '',
             `password` varchar(255) NOT NULL DEFAULT '',
             `email` varchar(128) NOT NULL DEFAULT '',
             `email_verified` tinyint(1) NOT NULL DEFAULT 0,
             `status` tinyint(1) NOT NULL DEFAULT 1,
             `ban_reason` varchar(255) NOT NULL DEFAULT '',
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `ciyuanxi_id_updated_at` datetime NULL,
             `avatar_url` LONGTEXT,
             `background_url` LONGTEXT,
             `signature` varchar(255) NOT NULL DEFAULT '',
@@ -163,7 +212,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
-            UNIQUE KEY `uk_username` (`username`),
+            UNIQUE KEY `uk_nickname` (`nickname`),
             UNIQUE KEY `uk_email` (`email`),
             KEY `idx_status` (`status`),
             KEY `idx_created_at` (`created_at`),
