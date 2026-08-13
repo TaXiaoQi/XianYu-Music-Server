@@ -8,14 +8,26 @@
             反馈与建议
             <span v-if="stats.pending > 0" class="pending-badge">{{ stats.pending }} 项待处理</span>
           </h2>
-          <p class="page-desc">查看用户提交的反馈与建议，将问题标记为已解决或已拒绝。</p>
+          <p class="page-desc">查看用户提交的反馈与建议，将问题标记为已解决或已拒绝。也可从后台直接创建新事项。</p>
         </div>
-        <button class="btn-refresh" @click="loadList" :disabled="loading">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ spinning: loading }">
-            <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-          </svg>
-          刷新
-        </button>
+        <div class="header-actions">
+          <button class="btn-stats" @click="openStats">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
+            处理统计
+          </button>
+          <button class="btn-create" @click="openCreateModal">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            新建事项
+          </button>
+          <button class="btn-refresh" @click="loadList" :disabled="loading">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ spinning: loading }">
+              <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+            </svg>
+            刷新
+          </button>
+        </div>
       </div>
     </Transition>
 
@@ -80,6 +92,23 @@
       </div>
     </Transition>
 
+    <!-- 工具条：类型筛选 + 排序 -->
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <button class="tool-btn" :class="{ active: typeFilter === 'all' }" @click="typeFilter = 'all'">全部类型</button>
+        <button class="tool-btn" :class="{ active: typeFilter === 'problem' }" @click="typeFilter = 'problem'">问题反馈</button>
+        <button class="tool-btn" :class="{ active: typeFilter === 'suggestion' }" @click="typeFilter = 'suggestion'">功能建议</button>
+      </div>
+      <div class="sort-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="M3 17l3 3 3-3"/><path d="M6 18V4"/></svg>
+        <select v-model="sortMode" class="sort-select" @change="loadList">
+          <option value="post_time_desc">最新提交</option>
+          <option value="post_time_asc">最早提交</option>
+          <option value="update_desc">最近更新</option>
+        </select>
+      </div>
+    </div>
+
     <!-- 加载中 -->
     <div v-if="loading" class="state-box">
       <div class="spinner"></div>
@@ -105,53 +134,77 @@
             v-for="(item, idx) in filteredList"
             :key="item.id"
             class="fb-card"
-            :class="`st-${item.status}`"
+            :class="[`st-${item.status}`, { expanded: expandedId === item.id }]"
             :style="{ animationDelay: `${idx * 60}ms` }"
+            @click="toggleExpand(item)"
           >
             <!-- 卡片头部 -->
             <div class="card-top">
               <div class="card-user">
-                <div class="user-avatar">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <div class="user-avatar" :class="item.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem'">
+                  <svg v-if="item.feedback_type === 'suggestion'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                  <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </div>
                 <div class="user-info">
                   <span class="user-name">{{ item.nickname || '匿名用户' }}</span>
-                  <span class="user-id">{{ item.ciyuanxi_id || '-' }}</span>
+                  <span class="user-id">{{ item.ciyuanxi_id || '后台创建' }}</span>
                 </div>
               </div>
-              <span class="status-badge" :class="`badge-${item.status}`">
-                <svg v-if="item.status === 'resolved'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-                <svg v-else-if="item.status === 'rejected'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                <svg v-else-if="item.status === 'processing'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                {{ statusLabel(item.status) }}
-              </span>
+              <div class="card-top-right">
+                <span v-if="item.feedback_type" class="type-badge" :class="item.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
+                  {{ item.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
+                </span>
+                <span class="status-badge" :class="`badge-${item.status}`">
+                  <svg v-if="item.status === 'resolved'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                  <svg v-else-if="item.status === 'rejected'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  <svg v-else-if="item.status === 'processing'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  {{ statusLabel(item.status) }}
+                </span>
+              </div>
             </div>
 
-            <!-- 标题和内容 -->
+            <!-- 标题和内容（折叠态只显示标题，展开态显示完整内容） -->
             <div class="card-body">
-              <h3 class="fb-title">{{ item.title || '无标题' }}</h3>
-              <p class="fb-content">{{ item.content || '无内容' }}</p>
-              <div v-if="hasErrorLogs(item) || hasAllLogs(item)" class="log-summary">
-                <span v-if="hasErrorLogs(item)" class="log-chip">错误日志 {{ formatLogSize(item.error_logs_chars) }}</span>
-                <span v-if="hasAllLogs(item)" class="log-chip">全量日志 {{ formatLogSize(item.all_logs_chars) }}</span>
+              <h3 class="fb-title">
+                {{ item.title || '无标题' }}
+                <svg v-if="expandedId !== item.id" class="expand-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              </h3>
+              <p :class="[expandedId === item.id ? 'fb-content' : 'fb-content fb-content-clamp']">{{ item.content || '无内容' }}</p>
+              <!-- 图片缩略图 -->
+              <div v-if="itemImages(item).length > 0" class="img-thumbs">
+                <img
+                  v-for="(img, i) in itemImages(item)"
+                  :key="i"
+                  :src="img"
+                  class="thumb"
+                  @click.stop="openImageViewer(itemImages(item), i)"
+                />
               </div>
-              <div v-if="item.assignee" class="assignee-row">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                <span>认领人：{{ item.assignee }}</span>
-              </div>
-              <div v-if="item.status === 'resolved' && item.resolve_note" class="resolve-note">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ item.resolve_note }}</span></div>
-              </div>
+              <Transition name="fade-up">
+                <div v-if="expandedId === item.id" class="detail-more">
+                  <div v-if="hasErrorLogs(item) || hasAllLogs(item)" class="log-summary">
+                    <span v-if="hasErrorLogs(item)" class="log-chip">错误日志 {{ formatLogSize(item.error_logs_chars) }}</span>
+                    <span v-if="hasAllLogs(item)" class="log-chip">全量日志 {{ formatLogSize(item.all_logs_chars) }}</span>
+                  </div>
+                  <div v-if="item.assignee" class="assignee-row">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                    <span>认领人：{{ item.assignee }}</span>
+                  </div>
+                  <div v-if="item.status === 'resolved' && item.resolve_note" class="resolve-note">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ item.resolve_note }}</span></div>
+                  </div>
+                  <div v-if="item.ip" class="meta-line">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+                    IP：{{ item.ip || '未知' }}
+                  </div>
+                </div>
+              </Transition>
             </div>
 
             <!-- 卡片底部 -->
-            <div class="card-foot">
+            <div class="card-foot" @click.stop>
               <div class="foot-meta">
-                <span class="meta-ip">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-                  {{ item.ip || '未知' }}
-                </span>
                 <span class="meta-time">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                   {{ item.created_at || '-' }}
@@ -263,11 +316,172 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 新建事项弹窗 -->
+    <Transition name="modal">
+      <div v-if="createModalVisible" class="modal-backdrop" @click.self="closeCreateModal">
+        <div class="modal-dialog create-dialog">
+          <div class="modal-head">
+            <h3>新建事项</h3>
+            <button class="modal-close" @click="closeCreateModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="create-type-row">
+              <button class="create-type-btn" :class="{ active: createType === 'problem' }" @click="createType = 'problem'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                问题反馈
+              </button>
+              <button class="create-type-btn" :class="{ active: createType === 'suggestion' }" @click="createType = 'suggestion'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                功能建议
+              </button>
+            </div>
+            <label class="create-field">
+              <span class="create-field-label">标题 <em>*</em></span>
+              <input v-model="createTitle" class="create-input" maxlength="60" placeholder="请输入标题（最多 60 字）" />
+            </label>
+            <label class="create-field">
+              <span class="create-field-label">内容 <em>*</em></span>
+              <textarea v-model="createContent" class="create-textarea" rows="4" maxlength="1000" placeholder="请输入内容描述（最多 1000 字）"></textarea>
+              <span class="create-count">{{ createContent.length }}/1000</span>
+            </label>
+            <div class="create-field">
+              <span class="create-field-label">图片 <span class="optional">（可选，最多 6 张）</span></span>
+              <div
+                class="create-dropzone"
+                :class="{ dragging: createDragging, has: createImages.length > 0 }"
+                @dragover.prevent="onCreateDragOver"
+                @dragleave.prevent="onCreateDragLeave"
+                @drop.prevent="onCreateDrop"
+                @click="createFileInput?.click()"
+              >
+                <input ref="createFileInput" type="file" accept="image/*" multiple hidden @change="onCreateFileChange" />
+                <div class="dropzone-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <div class="dropzone-text">
+                  <strong>点击或拖拽图片到此处</strong>
+                  <span>支持 JPG / PNG / GIF，单张不超过 8MB</span>
+                </div>
+              </div>
+              <div v-if="createImages.length > 0" class="create-preview">
+                <div v-for="(img, i) in createImages" :key="i" class="preview-item">
+                  <img :src="img" class="preview-img" @click.stop="openImageViewer(createImages, i)" />
+                  <button class="preview-remove" @click.stop="removeCreateImage(i)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <label class="create-notify">
+              <input v-model="createNotifyExternal" type="checkbox" class="notify-check" />
+              <span class="notify-box">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              </span>
+              <span class="notify-text">
+                <strong>外部同步通知</strong>
+                <span>发布后主动向「外部通知」配置中启用的邮箱发送邮件提醒</span>
+              </span>
+            </label>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" :disabled="createSaving" @click="closeCreateModal">取消</button>
+            <button class="btn-confirm btn-create-submit" :disabled="createSaving || !createTitle.trim() || !createContent.trim()" @click="submitCreate">
+              {{ createSaving ? '发布中...' : '发布' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 处理统计弹窗 -->
+    <Transition name="modal">
+      <div v-if="statsModalVisible" class="modal-backdrop" @click.self="closeStats">
+        <div class="modal-dialog stats-dialog">
+          <div class="modal-head">
+            <h3>管理员处理统计</h3>
+            <button class="modal-close" @click="closeStats">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="statsLoading" class="state-box compact">
+              <div class="spinner"></div>
+              <span>正在加载统计...</span>
+            </div>
+            <template v-else>
+              <div class="stats-total">
+                <span class="stats-total-num">{{ statsGrandTotal }}</span>
+                <span class="stats-total-label">累计处理反馈总量</span>
+              </div>
+              <div v-if="statsList.length === 0" class="state-box compact">
+                <span>暂无统计数据</span>
+              </div>
+              <div v-else class="stats-table-wrap">
+                <table class="stats-table">
+                  <thead>
+                    <tr>
+                      <th>管理账号</th>
+                      <th>总量</th>
+                      <th>处理中</th>
+                      <th>已解决</th>
+                      <th>已拒绝</th>
+                      <th>待处理</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, i) in statsList" :key="i">
+                      <td class="stats-admin">
+                        <span class="admin-dot" :class="row.admin_name === '未认领' ? 'dot-unclaimed' : `dot-${i % 4}`"></span>
+                        {{ row.admin_name }}
+                      </td>
+                      <td class="stats-num-cell"><strong>{{ row.total }}</strong></td>
+                      <td class="stats-num-cell processing">{{ row.processing }}</td>
+                      <td class="stats-num-cell resolved">{{ row.resolved }}</td>
+                      <td class="stats-num-cell rejected">{{ row.rejected }}</td>
+                      <td class="stats-num-cell pending">{{ row.pending }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeStats">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 图片查看器 -->
+    <Transition name="modal">
+      <div v-if="imageViewerVisible" class="viewer-backdrop" @click.self="closeImageViewer">
+        <button class="viewer-close" @click="closeImageViewer">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+        <button v-if="imageViewerList.length > 1" class="viewer-nav viewer-prev" @click="prevImage">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <img
+          v-if="imageViewerList[imageViewerIndex]"
+          :src="imageViewerList[imageViewerIndex]"
+          class="viewer-img"
+          :class="{ ready: imageViewerReady }"
+          @load="imageViewerReady = true"
+        />
+        <button v-if="imageViewerList.length > 1" class="viewer-nav viewer-next" @click="nextImage">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <div v-if="imageViewerList.length > 1" class="viewer-counter">{{ imageViewerIndex + 1 }} / {{ imageViewerList.length }}</div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 
@@ -329,6 +543,187 @@ function statusLabel(s: string): string {
   return statusMap[s] || s
 }
 
+// ===== 类型筛选 + 排序 =====
+const typeFilter = ref('all')
+const sortMode = ref('post_time_desc')
+
+// ===== 展开详情 =====
+const expandedId = ref<number | null>(null)
+
+function toggleExpand(item: Feedback) {
+  expandedId.value = expandedId.value === item.id ? null : item.id
+}
+
+// ===== 图片处理 =====
+function itemImages(item: Feedback): string[] {
+  if (!item.images) return []
+  try {
+    const arr = JSON.parse(item.images)
+    return Array.isArray(arr) ? arr.filter((u: string) => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))) : []
+  } catch {
+    return []
+  }
+}
+
+// ===== 图片查看器 =====
+const imageViewerVisible = ref(false)
+const imageViewerList = ref<string[]>([])
+const imageViewerIndex = ref(0)
+const imageViewerReady = ref(false)
+
+function openImageViewer(imgs: string[], index: number) {
+  imageViewerList.value = imgs
+  imageViewerIndex.value = index
+  imageViewerReady.value = false
+  imageViewerVisible.value = true
+}
+function closeImageViewer() {
+  imageViewerVisible.value = false
+  imageViewerList.value = []
+}
+function nextImage() {
+  if (imageViewerList.value.length === 0) return
+  imageViewerIndex.value = (imageViewerIndex.value + 1) % imageViewerList.value.length
+  imageViewerReady.value = false
+}
+function prevImage() {
+  if (imageViewerList.value.length === 0) return
+  imageViewerIndex.value = (imageViewerIndex.value - 1 + imageViewerList.value.length) % imageViewerList.value.length
+  imageViewerReady.value = false
+}
+function onViewerKeydown(e: KeyboardEvent) {
+  if (!imageViewerVisible.value) return
+  if (e.key === 'Escape') closeImageViewer()
+  else if (e.key === 'ArrowRight') nextImage()
+  else if (e.key === 'ArrowLeft') prevImage()
+}
+
+// ===== 处理统计弹窗 =====
+const statsModalVisible = ref(false)
+const statsLoading = ref(false)
+const statsList = ref<Array<{ admin_name: string; total: number; processing: number; resolved: number; rejected: number; pending: number }>>([])
+const statsGrandTotal = ref(0)
+
+async function openStats() {
+  statsModalVisible.value = true
+  await loadStats()
+}
+async function loadStats() {
+  statsLoading.value = true
+  const res = await adminApi<{ list: Array<{ admin_name: string; total: number; processing: number; resolved: number; rejected: number; pending: number }>; grand_total: number }>('feedback_admin_stats')
+  statsLoading.value = false
+  if (res.code === 200 && res.data) {
+    statsList.value = res.data.list || []
+    statsGrandTotal.value = Number(res.data.grand_total ?? 0)
+  } else {
+    statsList.value = []
+    statsGrandTotal.value = 0
+    showToast(res.msg || '统计加载失败')
+  }
+}
+function closeStats() {
+  if (statsLoading.value) return
+  statsModalVisible.value = false
+}
+
+// ===== 新建事项弹窗 =====
+const createModalVisible = ref(false)
+const createType = ref<'problem' | 'suggestion'>('problem')
+const createTitle = ref('')
+const createContent = ref('')
+const createImages = ref<string[]>([])
+const createDragging = ref(false)
+const createNotifyExternal = ref(false)
+const createSaving = ref(false)
+const createFileInput = ref<HTMLInputElement | null>(null)
+
+function openCreateModal() {
+  createType.value = 'problem'
+  createTitle.value = ''
+  createContent.value = ''
+  createImages.value = []
+  createNotifyExternal.value = false
+  createSaving.value = false
+  createDragging.value = false
+  createModalVisible.value = true
+}
+function closeCreateModal() {
+  if (createSaving.value) return
+  createModalVisible.value = false
+}
+function onCreateDragOver(e: DragEvent) {
+  e.preventDefault()
+  createDragging.value = true
+}
+function onCreateDragLeave() {
+  createDragging.value = false
+}
+function onCreateDrop(e: DragEvent) {
+  e.preventDefault()
+  createDragging.value = false
+  const files = e.dataTransfer?.files
+  if (files && files.length > 0) {
+    handleCreateFiles(Array.from(files))
+  }
+}
+function onCreateFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files) return
+  handleCreateFiles(Array.from(input.files))
+  input.value = ''
+}
+function handleCreateFiles(files: File[]) {
+  const remaining = 6 - createImages.value.length
+  if (remaining <= 0) {
+    showToast('最多上传 6 张图片')
+    return
+  }
+  const accepted = files.slice(0, remaining)
+  for (const file of accepted) {
+    if (!file.type.startsWith('image/')) continue
+    if (file.size > 8 * 1024 * 1024) {
+      showToast(`图片 ${file.name} 超过 8MB，已跳过`)
+      continue
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      createImages.value.push(reader.result as string)
+    }
+    reader.onerror = () => showToast(`图片 ${file.name} 读取失败`)
+    reader.readAsDataURL(file)
+  }
+}
+function removeCreateImage(index: number) {
+  createImages.value.splice(index, 1)
+}
+async function submitCreate() {
+  if (createSaving.value) return
+  if (!createTitle.value.trim()) {
+    showToast('请填写标题')
+    return
+  }
+  if (!createContent.value.trim()) {
+    showToast('请填写内容')
+    return
+  }
+  createSaving.value = true
+  const res = await adminApi('create_feedback', {
+    feedback_type: createType.value,
+    title: createTitle.value.trim(),
+    content: createContent.value.trim(),
+    images: createImages.value,
+    notify_external: createNotifyExternal.value ? 1 : 0,
+  })
+  createSaving.value = false
+  if (res.code === 200) {
+    showToast('创建成功', 'success')
+    closeCreateModal()
+    await loadList()
+  } else {
+    showToast(res.msg || '创建失败')
+  }
+}
+
 // 仅待处理/处理中可执行完成或拒绝操作，终态（已解决/已拒绝）不再显示操作按钮
 
 // ===== 认领功能 =====
@@ -341,7 +736,19 @@ async function claimFeedback(id: number) {
   const res = await adminApi('claim_feedback', { id })
   if (res.code === 200) {
     showToast('认领成功，已置为处理中', 'success')
-    await loadList()
+    // 本地更新，不刷新页面
+    const item = feedbackList.value.find(f => f.id === id)
+    if (item) {
+      const oldStatus = item.status
+      item.status = 'processing'
+      item.assignee = res.data?.assignee || ''
+      if (stats.value[oldStatus as keyof FbStats] !== undefined) {
+        stats.value[oldStatus as keyof FbStats]--
+      }
+      if (stats.value.processing !== undefined) {
+        stats.value.processing++
+      }
+    }
   } else {
     showToast(res.msg || '认领失败')
   }
@@ -404,8 +811,14 @@ function hasAllLogs(item: Feedback): boolean {
 }
 
 const filteredList = computed(() => {
-  if (activeFilter.value === 'all') return feedbackList.value
-  return feedbackList.value.filter(f => f.status === activeFilter.value)
+  let arr = feedbackList.value
+  if (activeFilter.value !== 'all') {
+    arr = arr.filter(f => f.status === activeFilter.value)
+  }
+  if (typeFilter.value !== 'all') {
+    arr = arr.filter(f => f.feedback_type === typeFilter.value)
+  }
+  return arr
 })
 
 // ===== 加载数据 =====
@@ -413,6 +826,7 @@ async function loadList() {
   loading.value = true
   const res = await adminApi<{ list: Feedback[]; stats: FbStats }>('list_feedback', {
     status_filter: activeFilter.value === 'all' ? '' : activeFilter.value,
+    sort: sortMode.value,
   })
   if (res.code === 200 && res.data) {
     feedbackList.value = res.data.list || []
@@ -526,12 +940,17 @@ function closeLogModal() {
 onMounted(() => {
   loadFeedbackLimit()
   loadList()
+  window.addEventListener('keydown', onViewerKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onViewerKeydown)
 })
 </script>
 
 <style scoped>
 .fb-page {
-  max-width: 920px;
+  max-width: 720px;
   margin: 0 auto;
 }
 
@@ -592,6 +1011,130 @@ onMounted(() => {
 .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
 .spinning { animation: spin 0.8s linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.header-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.btn-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-stats:hover { border-color: var(--accent); transform: translateY(-1px); }
+.btn-stats:active { transform: scale(0.96); }
+.btn-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(26, 26, 26, 0.18);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-create:hover { transform: translateY(-1px); opacity: 0.9; }
+.btn-create:active { transform: scale(0.96); }
+
+/* ===== 工具条：类型筛选 + 排序 ===== */
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.toolbar-group { display: flex; gap: 6px; }
+.tool-btn {
+  padding: 7px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-light);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tool-btn:hover { border-color: var(--accent); color: var(--text); }
+.tool-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.sort-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.sort-select {
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--white);
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.sort-select:focus { border-color: var(--accent); }
+
+/* ===== 类型徽标 ===== */
+.type-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.type-suggestion { background: #eef2ff; color: #4f46e5; }
+.type-problem { background: #fef2f2; color: #dc2626; }
+.card-top-right { display: flex; align-items: center; gap: 8px; }
+
+/* ===== 图片缩略图 ===== */
+.img-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.thumb {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 10px;
+  cursor: zoom-in;
+  border: 1px solid var(--border);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s;
+}
+.thumb:hover { transform: scale(1.05); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12); }
+
+/* ===== 展开提示 ===== */
+.expand-hint {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 4px;
+  color: var(--text-muted);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.fb-content-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.fb-card.expanded .expand-hint { transform: rotate(180deg); }
 
 /* ===== 提交限制配置 ===== */
 .limit-panel {
@@ -1086,6 +1629,272 @@ onMounted(() => {
 .btn-spinner.dark {
   border-color: rgba(255,255,255,0.35);
   border-top-color: #fff;
+}
+
+/* ===== 新建事项弹窗 ===== */
+.create-dialog { max-width: 520px; }
+.create-type-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.create-type-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-light);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.create-type-btn:hover { border-color: var(--accent); }
+.create-type-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.create-field { display: block; margin-bottom: 16px; }
+.create-field-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+.create-field-label em { color: #dc2626; font-style: normal; }
+.create-field-label .optional { color: var(--text-muted); font-weight: 500; font-size: 12px; }
+.create-input {
+  width: 100%;
+  height: 40px;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--white);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.create-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.08); }
+.create-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--white);
+  resize: vertical;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.create-textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.08); }
+.create-count {
+  display: block;
+  text-align: right;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+.create-dropzone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 22px 16px;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  background: var(--white);
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.create-dropzone:hover, .create-dropzone.dragging {
+  border-color: var(--accent);
+  background: rgba(26, 26, 26, 0.03);
+}
+.create-dropzone.dragging { border-width: 2px; }
+.create-dropzone.has { border-style: solid; border-color: #16a34a; background: #f0fdf4; }
+.dropzone-icon {
+  width: 42px; height: 42px;
+  border-radius: 12px;
+  background: #eef2ff;
+  color: #4f46e5;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.dropzone-text { display: flex; flex-direction: column; gap: 2px; }
+.dropzone-text strong { font-size: 13px; color: var(--text); }
+.dropzone-text span { font-size: 11px; color: var(--text-muted); }
+.create-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.preview-item { position: relative; }
+.preview-img {
+  width: 76px; height: 76px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+}
+.preview-remove {
+  position: absolute;
+  top: -6px; right: -6px;
+  width: 20px; height: 20px;
+  border: none;
+  border-radius: 50%;
+  background: #dc2626;
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s;
+}
+.preview-remove:hover { transform: scale(1.1); }
+.create-notify {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f8f9fc;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+.notify-check { display: none; }
+.notify-box {
+  width: 20px; height: 20px;
+  border-radius: 6px;
+  border: 1.5px solid var(--border);
+  background: var(--white);
+  display: flex; align-items: center; justify-content: center;
+  color: transparent;
+  flex-shrink: 0;
+  margin-top: 1px;
+  transition: all 0.2s;
+}
+.notify-check:checked + .notify-box { background: var(--accent); border-color: var(--accent); color: #fff; }
+.notify-text { display: flex; flex-direction: column; gap: 2px; }
+.notify-text strong { font-size: 13px; color: var(--text); }
+.notify-text span { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+.btn-create-submit { background: var(--accent); }
+
+/* ===== 处理统计弹窗 ===== */
+.stats-dialog { max-width: 560px; }
+.stats-total {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 18px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f4ff 100%);
+  border: 1px solid var(--border);
+}
+.stats-total-num { font-size: 34px; font-weight: 800; color: var(--text); line-height: 1; }
+.stats-total-label { font-size: 12px; color: var(--text-muted); }
+.stats-table-wrap { overflow: auto; }
+.stats-table { width: 100%; border-collapse: collapse; }
+.stats-table th {
+  text-align: left;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.stats-table td {
+  text-align: left;
+  font-size: 13px;
+  color: var(--text);
+  padding: 11px 10px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.stats-table tbody tr:last-child td { border-bottom: none; }
+.stats-table tbody tr { transition: background 0.2s; }
+.stats-table tbody tr:hover { background: rgba(26, 26, 26, 0.03); }
+.stats-admin { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.admin-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+.dot-unclaimed { background: #a1a1aa; }
+.dot-0 { background: #3b82f6; }
+.dot-1 { background: #16a34a; }
+.dot-2 { background: #f59e0b; }
+.dot-3 { background: #8b5cf6; }
+.stats-num-cell { font-weight: 600; }
+.stats-num-cell strong { font-size: 15px; }
+.stats-num-cell.processing { color: #3b82f6; }
+.stats-num-cell.resolved { color: #16a34a; }
+.stats-num-cell.rejected { color: #dc2626; }
+.stats-num-cell.pending { color: #f59e0b; }
+
+/* ===== 图片查看器 ===== */
+.viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  padding: 40px;
+  animation: viewerIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes viewerIn { from { opacity: 0; } to { opacity: 1; } }
+.viewer-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 8px;
+  opacity: 0;
+  transform: scale(0.96);
+  transition: opacity 0.25s, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.viewer-img.ready { opacity: 1; transform: scale(1); }
+.viewer-close {
+  position: absolute;
+  top: 20px; right: 20px;
+  width: 42px; height: 42px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s;
+}
+.viewer-close:hover { background: rgba(255, 255, 255, 0.24); }
+.viewer-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 46px; height: 46px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.2s;
+}
+.viewer-nav:hover { background: rgba(255, 255, 255, 0.24); }
+.viewer-prev { left: 20px; }
+.viewer-next { right: 20px; }
+.viewer-counter {
+  position: absolute;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  backdrop-filter: blur(6px);
 }
 
 /* ===== 空状态 / 加载 ===== */

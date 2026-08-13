@@ -247,6 +247,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "update_feedback_status" => feedback::update_feedback_status(body, &ctx, pool).await,
         "claim_feedback" => feedback::claim_feedback(body, &ctx, pool).await,
         "resolve_feedback" => feedback::resolve_feedback(body, &ctx, pool).await,
+        "create_feedback" => feedback::create_feedback(body, &ctx, pool).await,
+        "feedback_admin_stats" => feedback::feedback_admin_stats(body, &ctx, pool).await,
         "get_feedback_limit" => feedback::get_feedback_limit(body, &ctx, pool).await,
         "update_feedback_limit" => feedback::update_feedback_limit(body, &ctx, pool).await,
         "view_share_detail" => share::view_share_detail(body, &ctx, pool).await,

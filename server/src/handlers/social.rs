@@ -369,8 +369,8 @@ fn row_to_json(row: &sqlx::mysql::MySqlRow) -> Value {
         "content": row.get::<Option<String>, _>("content").unwrap_or_default(),
         "assignee": row.get::<String, _>("assignee"),
         "resolve_note": row.get::<Option<String>, _>("resolve_note").unwrap_or_default(),
-        "replied_at": row.get::<Option<String>, _>("replied_at").unwrap_or_default(),
-        "updated_at": row.get::<Option<String>, _>("updated_at").unwrap_or_default(),
+        "replied_at": row.try_get::<String, _>("replied_at").unwrap_or_default(),
+        "updated_at": row.try_get::<String, _>("updated_at").unwrap_or_default(),
     })
 }
 
@@ -416,9 +416,9 @@ pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
                         "resolveNote": r.get::<Option<String>, _>("resolve_note").unwrap_or_default(),
                         "hasErrorLogs": r.get::<Option<String>, _>("error_logs").map(|v| !v.is_empty()).unwrap_or(false),
                         "hasAllLogs": r.get::<Option<String>, _>("all_logs").map(|v| !v.is_empty()).unwrap_or(false),
-                        "createdAt": r.get::<Option<String>, _>("created_at").unwrap_or_default(),
-                        "repliedAt": r.get::<Option<String>, _>("replied_at").unwrap_or_default(),
-                        "updatedAt": r.get::<Option<String>, _>("updated_at").unwrap_or_default(),
+                        "createdAt": r.try_get::<String, _>("created_at").unwrap_or_default(),
+                        "repliedAt": r.try_get::<String, _>("replied_at").unwrap_or_default(),
+                        "updatedAt": r.try_get::<String, _>("updated_at").unwrap_or_default(),
                     })
                 })
                 .collect();

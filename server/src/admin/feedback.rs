@@ -1,11 +1,66 @@
 use axum::response::Response;
 use serde_json::{json, Value};
 use sqlx::MySqlPool;
+use sqlx::Row;
 
-use super::{err, log_operation, ok, row_to_value, AdminCtx};
+use super::{err, is_valid_email, log_operation, ok, row_to_value, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
 const DEFAULT_FEEDBACK_DAILY_LIMIT: i64 = 20;
+const MAX_ADMIN_FEEDBACK_IMAGES: usize = 6;
+const MAX_ADMIN_FEEDBACK_IMAGE_BYTES: usize = 8 * 1024 * 1024;
+
+fn admin_feedback_img_dir() -> std::path::PathBuf {
+    std::path::Path::new("uploads").join("feedback")
+}
+
+fn admin_data_url_to_bytes(data_url: &str) -> Option<Vec<u8>> {
+    // 兼容 data:image/xxx;base64,... 前缀
+    let raw = data_url.split_once(',').map(|(_, v)| v).unwrap_or(data_url);
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.decode(raw).ok()
+}
+
+/// 后台创建反馈用的图片压缩保存逻辑（复用与 APP 端一致的 uploads/feedback/ 目录）
+fn compress_and_save_admin_feedback_image(bytes: &[u8], name: &str, max_w: u32, quality: u32) -> Option<String> {
+    use image::GenericImageView;
+    let img = image::load_from_memory(bytes).ok()?;
+    let (w, h) = img.dimensions();
+    let (nw, nh) = if w > max_w {
+        (max_w, (h * max_w / w).max(1))
+    } else {
+        (w, h)
+    };
+    let resized = img.resize_exact(nw, nh, image::imageops::FilterType::Lanczos3);
+    let rgb = resized.to_rgb8();
+    let dir = admin_feedback_img_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return None;
+    }
+    let path = dir.join(name);
+    let file = std::fs::File::create(&path).ok()?;
+    if image::codecs::jpeg::JpegEncoder::new_with_quality(std::io::BufWriter::new(file), quality as u8)
+        .encode(&rgb, nw, nh, image::ExtendedColorType::Rgb8)
+        .is_err()
+    {
+        return None;
+    }
+    Some(format!("/uploads/feedback/{}", name))
+}
+
+fn admin_feedback_img_url(ctx: &AdminCtx, url: String) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") || url.is_empty() {
+        return url;
+    }
+    let base = if !ctx.base_url.is_empty() {
+        &ctx.base_url
+    } else if !ctx.config.public_base_url.is_empty() {
+        &ctx.config.public_base_url
+    } else {
+        return url;
+    };
+    format!("{}{}", base.trim_end_matches('/'), url)
+}
 
 async fn read_feedback_daily_limit(pool: &MySqlPool) -> i64 {
     sqlx::query_scalar::<_, Option<String>>(
@@ -25,6 +80,13 @@ async fn read_feedback_daily_limit(pool: &MySqlPool) -> i64 {
 pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let status_filter = str_of(&data, "status_filter").trim().to_string();
+    // 排序：post_time_desc（按提交时间倒序，默认）/ post_time_asc / update_desc
+    let sort = str_of(&data, "sort").trim().to_string();
+    let order_sql = match sort.as_str() {
+        "post_time_asc" => "ORDER BY created_at ASC",
+        "update_desc" => "ORDER BY updated_at DESC",
+        _ => "ORDER BY created_at DESC",
+    };
 
     let (where_clause, binds): (String, Vec<String>) = if status_filter.is_empty() || status_filter == "all" {
         (String::new(), Vec::new())
@@ -40,8 +102,8 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
                 COALESCE(CHAR_LENGTH(all_logs), 0) AS all_logs_chars,
                 CASE WHEN error_logs IS NULL OR error_logs = '' THEN 0 ELSE 1 END AS has_error_logs,
                 CASE WHEN all_logs IS NULL OR all_logs = '' THEN 0 ELSE 1 END AS has_all_logs
-         FROM user_feedback {} ORDER BY created_at DESC",
-        where_clause
+         FROM user_feedback {} {}",
+        where_clause, order_sql
     );
     let mut list_query = sqlx::query(&list_sql);
     for b in &binds {
@@ -217,4 +279,170 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         }
         Err(_) => err(500, "服务器错误"),
     }
+}
+
+/// 后台新增反馈/建议事项（由管理员发起，非用户提交）
+/// 入参：feedback_type（problem/suggestion）、title、content、images（base64 data URL 数组）、notify_external（是否外部同步通知）
+/// 支持问题反馈与功能建议两种类型。勾选外部同步通知后，发布时会向所有启用中的通知邮箱发送提醒邮件。
+pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let mut feedback_type = str_of(&data, "feedback_type").trim().to_string();
+    if feedback_type.is_empty() {
+        feedback_type = "problem".to_string();
+    }
+    if feedback_type != "problem" && feedback_type != "suggestion" {
+        return err(400, "反馈类型不正确");
+    }
+    let title = str_of(&data, "title").trim().to_string();
+    let content = str_of(&data, "content").trim().to_string();
+    let notify_external = int_of(&data, "notify_external") != 0;
+    if title.is_empty() {
+        return err(400, "标题不能为空");
+    }
+    if content.is_empty() {
+        return err(400, "内容不能为空");
+    }
+    if title.chars().count() > 60 {
+        return err(400, "标题不能超过 60 字");
+    }
+    if content.chars().count() > 1000 {
+        return err(400, "内容不能超过 1000 字");
+    }
+    // 处理图片（base64 data URL 数组）
+    let raw_images = data.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    if raw_images.len() > MAX_ADMIN_FEEDBACK_IMAGES {
+        return err(400, &format!("最多上传 {} 张图片", MAX_ADMIN_FEEDBACK_IMAGES));
+    }
+    let mut image_urls: Vec<String> = Vec::new();
+    if !raw_images.is_empty() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        for (i, img_val) in raw_images.iter().enumerate() {
+            let data_url = img_val.as_str().unwrap_or("");
+            if data_url.is_empty() || data_url.len() > MAX_ADMIN_FEEDBACK_IMAGE_BYTES {
+                continue;
+            }
+            let bytes = match admin_data_url_to_bytes(data_url) {
+                Some(b) if b.len() <= MAX_ADMIN_FEEDBACK_IMAGE_BYTES => b,
+                _ => continue,
+            };
+            let name = format!("admin_feedback_{}_{}.jpg", ts, i);
+            if let Some(url) = compress_and_save_admin_feedback_image(&bytes, &name, 1600, 82) {
+                image_urls.push(admin_feedback_img_url(ctx, url));
+            }
+        }
+    }
+    let images_json = json!(image_urls).to_string();
+    // 后台创建：昵称显示为发起的管理员，ciyuanxi_id 留空标识为后台创建
+    let result = sqlx::query(
+        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, status, category, ip) VALUES ('', ?, ?, ?, ?, ?, 'pending', 'feedback', ?)",
+    )
+        .bind(&ctx.username)
+        .bind(&title)
+        .bind(&content)
+        .bind(&feedback_type)
+        .bind(&images_json)
+        .bind(&ctx.ip)
+        .execute(pool)
+        .await;
+    let new_id = match result {
+        Ok(r) => r.last_insert_id() as i64,
+        Err(_) => return err(500, "服务器错误"),
+    };
+    log_operation(pool, ctx, "后台新增反馈", &format!("id={}", new_id), &format!("类型:{}", feedback_type)).await;
+    // 外部同步通知：向所有启用中的通知邮箱发送提醒
+    if notify_external {
+        let sent = notify_external_emails(pool, ctx, &feedback_type, &title, &content).await;
+        return ok(
+            "创建成功",
+            json!({ "id": new_id, "notify_sent": sent, "notify_total": sent.len() }),
+        );
+    }
+    ok("创建成功", json!({ "id": new_id }))
+}
+
+/// 向所有启用中的通知邮箱统一发送邮件提醒，返回成功发送的邮箱列表
+async fn notify_external_emails(pool: &MySqlPool, ctx: &AdminCtx, feedback_type: &str, title: &str, content: &str) -> Vec<String> {
+    let rows = sqlx::query("SELECT email FROM notification_emails WHERE status = 1")
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+    let type_label = if feedback_type == "suggestion" { "功能建议" } else { "问题反馈" };
+    let mut sent: Vec<String> = Vec::new();
+    for r in rows {
+        let email: String = r.try_get("email").unwrap_or_default();
+        if email.is_empty() || !is_valid_email(&email) {
+            continue;
+        }
+        let subject = format!("【弦予后台】新增{}：{}", type_label, title);
+        let mut context = format!("后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}", type_label, title, content);
+        if content.len() > 200 {
+            context = format!(
+                "后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}…",
+                type_label,
+                title,
+                content.chars().take(200).collect::<String>()
+            );
+        }
+        match crate::handlers::email_auth::call_email_api(&ctx.config, pool, &subject, &context, &email).await {
+            Ok(_) => {
+                let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,1,'',?)")
+                    .bind(&email)
+                    .bind(&subject)
+                    .bind(&ctx.ip)
+                    .execute(pool)
+                    .await;
+                sent.push(email);
+            }
+            Err(e) => {
+                let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,2,?,?)")
+                    .bind(&email)
+                    .bind(&subject)
+                    .bind(&e)
+                    .bind(&ctx.ip)
+                    .execute(pool)
+                    .await;
+            }
+        }
+    }
+    sent
+}
+
+/// 各管理账号处理反馈量统计
+/// 统计每个管理员（认领人 assignee）处理了多少反馈，及其处理结果分布。
+pub async fn feedback_admin_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let rows = sqlx::query(
+        "SELECT COALESCE(NULLIF(assignee, ''), '未认领') AS admin_name,
+                COUNT(*) AS total,
+                SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
+                SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS resolved,
+                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending
+         FROM user_feedback
+         GROUP BY admin_name
+         ORDER BY total DESC",
+    )
+        .fetch_all(pool)
+        .await;
+    let list: Vec<Value> = match rows {
+        Ok(rows) => rows
+            .iter()
+            .map(|r| {
+                json!({
+                    "admin_name": r.get::<String, _>("admin_name"),
+                    "total": r.get::<i64, _>("total"),
+                    "processing": r.get::<i64, _>("processing"),
+                    "resolved": r.get::<i64, _>("resolved"),
+                    "rejected": r.get::<i64, _>("rejected"),
+                    "pending": r.get::<i64, _>("pending"),
+                })
+            })
+            .collect(),
+        Err(_) => return err(500, "数据库错误"),
+    };
+    let grand_total: i64 = list.iter().map(|v| v.get("total").and_then(|t| t.as_i64()).unwrap_or(0)).sum();
+    log_operation(pool, ctx, "查看反馈处理统计", "", "").await;
+    ok("ok", json!({ "list": list, "grand_total": grand_total }))
 }
