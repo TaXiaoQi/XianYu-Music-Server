@@ -16,14 +16,16 @@ fn about_config_path() -> std::path::PathBuf {
 
 fn default_about_config() -> serde_json::Value {
     json!({
-        "officialSiteUrl": "https://xy.zh2026.cn/ciyuanxi/",
+        "officialSiteUrl": "https://xymusic.cc",
         "officialSiteText": "前往官网",
         "updateEnabled": true,
         "updateText": "检查更新",
         "projectUrl": "https://github.com/TaXiaoQi/XianYu-Music-Desktop",
         "projectText": "开源地址",
         "referenceProjectUrl": "https://github.com/Billy636/XianYuMusic",
-        "referenceProjectText": "参考项目"
+        "referenceProjectText": "参考项目",
+        "joinGroupUrl": "https://qm.qq.com/q/kvteWSD8yY",
+        "joinGroupText": "加入群组"
     })
 }
 

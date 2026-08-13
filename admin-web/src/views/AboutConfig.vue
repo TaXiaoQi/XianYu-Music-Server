@@ -29,6 +29,18 @@
         </label>
       </div>
 
+      <div class="section-title">加入群组入口</div>
+      <div class="field-grid">
+        <label class="field">
+          <span>按钮文字</span>
+          <input v-model="form.joinGroupText" type="text" placeholder="加入群组" />
+        </label>
+        <label class="field">
+          <span>群组链接</span>
+          <input v-model="form.joinGroupUrl" type="text" placeholder="https://..." />
+        </label>
+      </div>
+
       <div class="section-title">检查更新入口</div>
       <div class="field-grid">
         <label class="field">
@@ -83,10 +95,12 @@ interface AboutConfig {
   projectText: string
   referenceProjectUrl: string
   referenceProjectText: string
+  joinGroupUrl: string
+  joinGroupText: string
 }
 
 const defaultConfig: AboutConfig = {
-  officialSiteUrl: 'https://xy.zh2026.cn/ciyuanxi/',
+  officialSiteUrl: 'https://xymusic.cc',
   officialSiteText: '前往官网',
   updateEnabled: true,
   updateText: '检查更新',
@@ -94,6 +108,8 @@ const defaultConfig: AboutConfig = {
   projectText: '开源地址',
   referenceProjectUrl: 'https://github.com/Billy636/XianYuMusic',
   referenceProjectText: '参考项目',
+  joinGroupUrl: 'https://qm.qq.com/q/kvteWSD8yY',
+  joinGroupText: '加入群组',
 }
 
 const loading = ref(true)

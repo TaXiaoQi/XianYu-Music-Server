@@ -11,14 +11,16 @@ fn about_config_path() -> std::path::PathBuf {
 
 fn default_about_config() -> Value {
     json!({
-        "officialSiteUrl": "https://xy.zh2026.cn/ciyuanxi/",
+        "officialSiteUrl": "https://xymusic.cc",
         "officialSiteText": "前往官网",
         "updateEnabled": true,
         "updateText": "检查更新",
         "projectUrl": "https://github.com/TaXiaoQi/XianYu-Music-Desktop",
         "projectText": "开源地址",
         "referenceProjectUrl": "https://github.com/Billy636/XianYuMusic",
-        "referenceProjectText": "参考项目"
+        "referenceProjectText": "参考项目",
+        "joinGroupUrl": "https://qm.qq.com/q/kvteWSD8yY",
+        "joinGroupText": "加入群组"
     })
 }
 
@@ -62,6 +64,8 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let project_text = str_of(&data, "projectText").trim().to_string();
     let reference_project_url = str_of(&data, "referenceProjectUrl").trim().to_string();
     let reference_project_text = str_of(&data, "referenceProjectText").trim().to_string();
+    let join_group_url = str_of(&data, "joinGroupUrl").trim().to_string();
+    let join_group_text = str_of(&data, "joinGroupText").trim().to_string();
 
     let config = json!({
         "officialSiteUrl": official_site_url,
@@ -72,6 +76,8 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
         "projectText": project_text,
         "referenceProjectUrl": reference_project_url,
         "referenceProjectText": reference_project_text,
+        "joinGroupUrl": join_group_url,
+        "joinGroupText": join_group_text,
     });
 
     if write_about_config(&config).is_err() {
