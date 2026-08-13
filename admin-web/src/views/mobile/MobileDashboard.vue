@@ -48,11 +48,22 @@
 
     <!-- 数据概览 -->
     <div v-if="!loading && !loadError" class="stats-section">
-      <div class="stats-grid">
-        <div v-for="(card, idx) in statCards" :key="card.label" class="stat-card" :style="{ animationDelay: `${idx * 80}ms` }">
-          <div class="label">{{ card.label }}</div>
-          <div class="value" :class="{ 'hot-keyword': card.hot }">{{ card.value() }}</div>
-          <div class="sub">{{ card.sub() }}</div>
+      <div class="stats-row">
+        <div class="stat-chip">
+          <strong>{{ stats.total_users ?? 0 }}</strong>
+          <span>总用户数</span>
+        </div>
+        <div class="stat-chip">
+          <strong class="hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</strong>
+          <span>今日热搜</span>
+        </div>
+        <div class="stat-chip">
+          <strong>{{ stats.active_users ?? 0 }}</strong>
+          <span>今日用户</span>
+        </div>
+        <div class="stat-chip">
+          <strong>{{ stats.today_shares ?? 0 }}</strong>
+          <span>今日分享</span>
         </div>
       </div>
     </div>
@@ -171,31 +182,6 @@ const sourceRingStyle = computed(() => {
   })
   return `conic-gradient(${parts.join(', ')})`
 })
-
-// 统计卡片（参考桌面版结构）
-const statCards = [
-  {
-    label: '总用户数',
-    value: () => stats.value.total_users ?? 0,
-    sub: () => `今日新增 ${stats.value.today_users ?? 0} · 昨日 ${stats.value.yesterday_users ?? 0}`,
-  },
-  {
-    label: '今日热搜',
-    value: () => stats.value.today_hot_search_keyword || '暂无',
-    sub: () => `今日搜索 ${stats.value.today_hot_search_count ?? 0} 次`,
-    hot: true,
-  },
-  {
-    label: '今日用户',
-    value: () => stats.value.active_users ?? 0,
-    sub: () => '今日活跃设备数',
-  },
-  {
-    label: '今日分享',
-    value: () => stats.value.today_shares ?? 0,
-    sub: () => `总计 ${stats.value.total_shares ?? 0} 次`,
-  },
-]
 
 const noticeItems = computed(() => [
   { label: '新壁纸审核', desc: '用户上传壁纸待审核', count: stats.value.pending_wallpapers ?? 0, to: '/m/wallpapers', className: 'wallpaper' },
@@ -455,55 +441,54 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-/* 数据概览（2×2 网格卡片，参考桌面版） */
+/* 数据概览（一行并行，无卡片嵌套） */
 .stats-section {
   display: flex;
   flex-direction: column;
   padding: 0 2px;
 }
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+.stats-row {
+  display: flex;
+  flex-direction: row;
   gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-.stat-card {
+.stats-row::-webkit-scrollbar {
+  display: none;
+}
+.stat-chip {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
   gap: 4px;
-  padding: 14px;
-  border-radius: 16px;
+  padding: 10px 14px;
+  border-radius: 14px;
   background: var(--control-bg);
   border: 1px solid var(--border);
-  min-width: 0;
-  animation: dashIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+  min-width: 90px;
 }
-.stat-card .label {
-  font-size: 11px;
-  color: var(--text-light);
-  font-weight: 600;
-}
-.stat-card .value {
-  font-size: 24px;
-  line-height: 1.1;
+.stat-chip strong {
+  font-size: 22px;
+  line-height: 1;
   color: var(--accent);
   font-weight: 800;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.stat-card .sub {
+.stat-chip span {
   font-size: 11px;
   color: var(--text-muted);
   white-space: nowrap;
+}
+.stat-chip .hot-keyword {
+  font-size: 18px;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.stat-card .hot-keyword {
-  font-size: 18px;
-}
-@keyframes dashIn {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  white-space: nowrap;
 }
 
 /* 消息通知 */
@@ -606,6 +591,7 @@ onMounted(async () => {
 .quick-grid {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 8px;
 }
 .quick-grid .mobile-btn {
