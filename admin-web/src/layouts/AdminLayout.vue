@@ -10,7 +10,7 @@
       <ul class="sidebar-menu">
         <li><router-link to="/dashboard"><span class="menu-label"><span class="menu-icon" v-html="icons.dashboard"></span>仪表盘</span></router-link></li>
         <li><router-link to="/users"><span class="menu-label"><span class="menu-icon" v-html="icons.users"></span>用户管理</span></router-link></li>
-        <li><router-link to="/device-banned"><span class="menu-label"><span class="menu-icon" v-html="icons.device"></span>设备封禁管理</span></router-link></li>
+        <li><router-link to="/device-banned"><span class="menu-label"><span class="menu-icon" v-html="icons.device"></span>设备管理</span></router-link></li>
 
         <!-- 内容管理 -->
         <li>

@@ -34,7 +34,7 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
-        "SELECT id, ciyuanxi_id, nickname, title, content, status, admin_reply, replied_at, replied_by, ip, created_at, updated_at,
+        "SELECT id, ciyuanxi_id, nickname, title, content, status, category, admin_reply, replied_at, replied_by, ip, created_at, updated_at,
                 log_meta,
                 COALESCE(CHAR_LENGTH(error_logs), 0) AS error_logs_chars,
                 COALESCE(CHAR_LENGTH(all_logs), 0) AS all_logs_chars,

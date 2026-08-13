@@ -1,24 +1,40 @@
 <template>
   <div class="users-wrap">
-    <!-- 搜索栏 -->
-    <div class="search-bar">
-      <input
-        v-model="keyword"
-        type="text"
-        placeholder="搜索昵称、弦予号或邮箱"
-        @keyup.enter="handleSearch"
-      />
-      <button class="btn btn-primary" @click="handleSearch">搜索</button>
-      <button v-if="keyword" class="btn" @click="clearSearch">清除</button>
-    </div>
+    <!-- 顶部工具栏：搜索 + 操作合并为一行，批量管理在最右侧弹出 -->
+    <div class="toolbar-row">
+      <div class="search-box">
+        <input
+          v-model="keyword"
+          type="text"
+          placeholder="搜索昵称、弦予号或邮箱"
+          @keyup.enter="handleSearch"
+        />
+        <button class="btn btn-primary" @click="handleSearch">搜索</button>
+        <button v-if="keyword" class="btn" @click="clearSearch">清除</button>
+      </div>
 
-    <!-- 批量操作 -->
-    <div class="batch-actions">
-      <button class="btn btn-dark" @click="openBatchMenu">
-        批量操作
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-      </button>
-      <button class="btn btn-primary" @click="showAddModal = true">+ 添加用户</button>
+      <div class="toolbar-actions">
+        <template v-if="!isBatchMode">
+          <button class="btn btn-primary" @click="showAddModal = true">+ 添加用户</button>
+          <button class="btn btn-dark" @click="enterBatchMode">批量管理</button>
+        </template>
+
+        <div v-else class="batch-mode-bar">
+          <button class="btn btn-sm" @click="toggleSelectAll">
+            <span class="checkbox-badge" :class="{ checked: isAllSelected }">
+              <svg v-if="isAllSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </span>
+            {{ isAllSelected ? '取消全选' : '全选' }}
+          </button>
+          <button class="btn btn-sm" @click="batchToggleSelected(0)" :disabled="selectedCount === 0 || batchLoading">封禁</button>
+          <button class="btn btn-sm" @click="batchToggleSelected(1)" :disabled="selectedCount === 0 || batchLoading">启用</button>
+          <button class="btn btn-sm" @click="batchBanDevice" :disabled="selectedCount === 0 || batchLoading">封禁ID</button>
+          <button class="btn btn-sm btn-danger" @click="batchDeleteSelected" :disabled="selectedCount === 0 || batchLoading">删除</button>
+          <button class="btn btn-sm" @click="deleteEmptyPlaylists" :disabled="batchLoading">清空歌单</button>
+          <span class="batch-count">已选 {{ selectedCount }} 项</span>
+          <button class="btn btn-sm btn-primary" @click="exitBatchMode">完成</button>
+        </div>
+      </div>
     </div>
 
     <!-- 用户表格 -->
@@ -30,22 +46,30 @@
         <table>
           <thead>
             <tr>
-              <th>ID</th>
-              <th>头像</th>
+              <th v-if="isBatchMode" class="col-check">
+                <span class="checkbox-badge" :class="{ checked: isAllSelected }" @click="toggleSelectAll">
+                  <svg v-if="isAllSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </span>
+              </th>
               <th>弦予号</th>
+              <th>头像</th>
               <th>昵称</th>
               <th>邮箱</th>
               <th>邮箱验证</th>
               <th>状态</th>
               <th>听歌时长</th>
-              <th>设备ID</th>
               <th>注册时间</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="u in users" :key="u.id">
-              <td>{{ u.id }}</td>
+            <tr v-for="u in users" :key="u.id" :class="{ 'row-selected': isBatchMode && selectedIds.has(u.id) }">
+              <td v-if="isBatchMode" class="col-check">
+                <span class="checkbox-badge" :class="{ checked: selectedIds.has(u.id) }" @click="toggleSelect(u.id)">
+                  <svg v-if="selectedIds.has(u.id)" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </span>
+              </td>
+              <td>{{ u.ciyuanxi_id || '-' }}</td>
               <td>
                 <img
                   v-if="u.avatar_url"
@@ -57,7 +81,6 @@
                 <div v-else class="avatar-placeholder">{{ (u.nickname || u.username || '?').charAt(0) }}</div>
               </td>
               <td>{{ u.nickname || u.username }}</td>
-              <td>{{ u.ciyuanxi_id || '-' }}</td>
               <td>{{ u.email || '-' }}</td>
               <td>
                 <span :class="['badge', u.email_verified == 1 ? 'badge-success' : 'badge-warning']">
@@ -73,18 +96,11 @@
                 </div>
               </td>
               <td>{{ formatDuration(u.listen_duration) }}</td>
-              <td>
-                <span v-if="u.last_device_id" class="device-id-cell" @click="openDeviceModal(u)" :title="u.last_device_id">
-                  {{ u.last_device_id.substring(0, 8) }}...
-                </span>
-                <span v-else style="color:#ccc;">-</span>
-              </td>
               <td>{{ u.created_at }}</td>
               <td>
                 <div class="row-actions">
                   <button class="btn btn-sm btn-primary" @click="openRowMenu(u)">
                     操作
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
                   </button>
                 </div>
               </td>
@@ -123,7 +139,7 @@
         </div>
         <div class="form-group">
           <label>昵称（选填）</label>
-          <input v-model="addForm.nickname" type="text" placeholder="留空默认"弦予+弦予号"" />
+          <input v-model="addForm.nickname" type="text" placeholder='留空默认"弦予+弦予号"' />
         </div>
         <div class="form-group">
           <label>邮箱（选填）</label>
@@ -327,11 +343,11 @@
     </div>
     </Transition>
 
-    <!-- 设备封禁管理弹窗 -->
+    <!-- 设备管理弹窗 -->
     <Transition name="modal">
     <div v-if="showBannedModal" class="modal-overlay" @click.self="showBannedModal = false">
       <div class="modal" style="max-width:700px;">
-        <h3>设备封禁管理</h3>
+        <h3>设备管理</h3>
 
         <!-- 手动添加封禁 -->
         <div class="ban-form">
@@ -487,6 +503,7 @@ function formatScriptSize(bytes: number | undefined): string {
 async function openRowMenu(u: User) {
   const action = await webActionMenu(`用户操作 · ${u.nickname || u.username}`, [
     { key: 'toggle', label: u.status != 0 ? '禁用用户' : '启用用户', danger: u.status != 0, success: u.status == 0 },
+    { key: 'ciyuanxi', label: '修改弦予号' },
     { key: 'email', label: '修改邮箱' },
     { key: 'reset', label: '重置听歌时长' },
     { key: 'plugins', label: '查看插件' },
@@ -497,6 +514,7 @@ async function openRowMenu(u: User) {
   if (!action) return
   switch (action) {
     case 'toggle': await toggleStatus(u); break
+    case 'ciyuanxi': await changeCiyuanxi(u); break
     case 'email': openEmailModal(u); break
     case 'reset': openResetModal(u); break
     case 'plugins': await viewPlugins(u); break
@@ -511,7 +529,8 @@ async function toggleStatus(u: User) {
   let reason = ''
   if (newStatus === 0) {
     const input = await webPrompt(`请输入封禁用户 "${u.nickname || u.username}" 的原因：`, '', { title: '封禁用户', placeholder: '封禁原因（必填）' })
-    reason = (input || '').trim()
+    if (input === null) return // 用户取消，静默退出
+    reason = input.trim()
     if (!reason) {
       showToast('封禁原因不能为空')
       return
@@ -524,6 +543,29 @@ async function toggleStatus(u: User) {
     u.ban_reason = newStatus ? '' : reason
   } else {
     showToast(res.msg || '操作失败')
+  }
+}
+
+async function changeCiyuanxi(u: User) {
+  const input = await webPrompt(`请输入 "${u.nickname || u.username}" 的新弦予号：`, u.ciyuanxi_id || '', { title: '修改弦予号', placeholder: '6-20 位，字母开头' })
+  if (input === null) return // 用户取消，静默退出
+  const newId = input.trim()
+  if (!newId) {
+    showToast('请输入弦予号', 'error')
+    return
+  }
+  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(newId)) {
+    showToast('弦予号需 6-20 位，字母开头，仅含字母、数字、下划线、中划线', 'error')
+    return
+  }
+  const ok = await webConfirm(`确定将 "${u.nickname || u.username}" 的弦予号由 "${u.ciyuanxi_id || '-'}" 修改为 "${newId}" 吗？`, { title: '修改弦予号', confirmText: '确认修改' })
+  if (!ok) return
+  const res = await adminApi('change_ciyuanxi_id', { user_id: u.id, new_ciyuanxi_id: newId })
+  if (res.code === 200) {
+    showToast('弦予号已修改', 'success')
+    u.ciyuanxi_id = newId
+  } else {
+    showToast(res.msg || '修改失败', 'error')
   }
 }
 
@@ -551,43 +593,128 @@ async function deleteAvatar(u: User) {
   }
 }
 
-// ===== 批量操作 =====
-async function openBatchMenu() {
-  const action = await webActionMenu('批量操作', [
-    { key: 'disable', label: '批量禁用全部用户', danger: true },
-    { key: 'enable', label: '批量启用全部用户' },
-    { key: 'clearPlaylists', label: '清理空歌单' },
-  ])
-  if (!action) return
-  switch (action) {
-    case 'disable': await batchToggle(0); break
-    case 'enable': await batchToggle(1); break
-    case 'clearPlaylists': await deleteEmptyPlaylists(); break
+// ===== 批量选择模式（参考客户端批量选择页） =====
+const isBatchMode = ref(false)
+const selectedIds = ref<Set<number>>(new Set())
+const selectedCount = computed(() => selectedIds.value.size)
+const isAllSelected = computed(() => users.value.length > 0 && selectedIds.value.size === users.value.length)
+
+function enterBatchMode() {
+  selectedIds.value = new Set()
+  isBatchMode.value = true
+}
+
+function exitBatchMode() {
+  isBatchMode.value = false
+  selectedIds.value = new Set()
+}
+
+function toggleSelect(id: number) {
+  const next = new Set(selectedIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  selectedIds.value = next
+}
+
+function toggleSelectAll() {
+  if (isAllSelected.value) {
+    selectedIds.value = new Set()
+  } else {
+    selectedIds.value = new Set(users.value.map(u => u.id))
   }
 }
 
-async function batchToggle(status: number) {
-  const label = status ? '全开' : '全禁'
+async function batchToggleSelected(status: number) {
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) return
+  const label = status ? '启用' : '禁用'
   let reason = ''
   if (!status) {
-    const input = await webPrompt('请输入批量封禁所有用户的原因：', '', { title: '批量禁用', placeholder: '封禁原因（必填）' })
-    reason = (input || '').trim()
+    const input = await webPrompt(`请输入对选中的 ${ids.length} 个用户执行封禁的原因：`, '', { title: '批量禁用', placeholder: '封禁原因（必填）' })
+    if (input === null) return // 用户取消，静默退出
+    reason = input.trim()
     if (!reason) {
       showToast('封禁原因不能为空')
       return
     }
   }
-  const ok = await webConfirm(`确定${label}所有用户状态吗？`, { title: `批量${label}`, confirmText: `确认${label}` })
+  const ok = await webConfirm(`确定${label}选中的 ${ids.length} 个用户吗？`, { title: `批量${label}`, confirmText: `确认${label}` })
   if (!ok) return
   batchLoading.value = true
-  const res = await adminApi('batch_toggle_user_status', { status, reason })
-  batchLoading.value = false
-  if (res.code === 200) {
-    showToast(res.msg || `已${label}`, 'success')
-    loadUsers()
-  } else {
-    showToast(res.msg || '操作失败')
+  let fail = 0
+  for (const id of ids) {
+    const res = await adminApi('toggle_user_status', { id, status, reason })
+    if (res.code !== 200) fail++
   }
+  batchLoading.value = false
+  if (fail === 0) {
+    showToast(`已${label} ${ids.length} 个用户`, 'success')
+  } else {
+    showToast(`${ids.length - fail} 个成功，${fail} 个失败`, 'error')
+  }
+  selectedIds.value = new Set()
+  loadUsers()
+}
+
+async function batchBanDevice() {
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) return
+  const targets: { id: number; name: string; deviceId: string }[] = []
+  for (const u of users.value) {
+    if (!ids.includes(u.id)) continue
+    const deviceId = (u.last_device_id || '').trim()
+    if (!deviceId) continue
+    targets.push({ id: u.id, name: u.nickname || u.username, deviceId })
+  }
+  if (targets.length === 0) {
+    showToast('选中的用户均无设备ID，无需封禁', 'error')
+    return
+  }
+  const input = await webPrompt(`将封禁选中的 ${targets.length} 个用户最近登录的设备，请输入封禁原因：`, '', { title: '批量封禁设备ID', placeholder: '封禁原因（必填）' })
+  if (input === null) return // 用户取消，静默退出
+  const reason = input.trim()
+  if (!reason) {
+    showToast('封禁原因不能为空')
+    return
+  }
+  const ok = await webConfirm(`确定封禁 ${targets.length} 个用户的设备ID吗？封禁后这些设备将无法登录。`, { title: '批量封禁设备ID', confirmText: '确认封禁' })
+  if (!ok) return
+  batchLoading.value = true
+  let success = 0
+  let fail = 0
+  for (const t of targets) {
+    const res = await adminApi('ban_device', { device_id: t.deviceId, reason })
+    if (res.code === 200) success++
+    else fail++
+  }
+  batchLoading.value = false
+  if (fail === 0) {
+    showToast(`已封禁 ${success} 个设备ID`, 'success')
+  } else {
+    showToast(`${success} 个成功，${fail} 个失败`, 'error')
+  }
+  selectedIds.value = new Set()
+}
+
+async function batchDeleteSelected() {
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) return
+  const ok = await webConfirm(`确定删除选中的 ${ids.length} 个用户吗？此操作不可恢复。`, { title: '批量删除', confirmText: '确认删除' })
+  if (!ok) return
+  batchLoading.value = true
+  let fail = 0
+  for (const id of ids) {
+    const res = await adminApi('delete_user', { id })
+    if (res.code !== 200) fail++
+  }
+  batchLoading.value = false
+  if (fail === 0) {
+    showToast(`已删除 ${ids.length} 个用户`, 'success')
+  } else {
+    showToast(`${ids.length - fail} 个成功，${fail} 个失败`, 'error')
+  }
+  selectedIds.value = new Set()
+  loadUsers()
 }
 
 async function deleteEmptyPlaylists() {
@@ -784,7 +911,8 @@ async function openDeviceModal(u: User) {
 
 async function banUserDevice(deviceId: string, username: string) {
   const reason = await webPrompt(`请输入封禁用户 "${username}" 的设备 (${deviceId.substring(0, 16)}...) 的原因：`, '', { title: '封禁设备', placeholder: '封禁原因（必填）' })
-  const reasonText = (reason || '').trim()
+  if (reason === null) return // 用户取消，静默退出
+  const reasonText = reason.trim()
   if (!reasonText) {
     showToast('封禁原因不能为空')
     return
@@ -870,31 +998,80 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-/* 搜索栏 */
-.search-bar {
+/* 顶部工具栏：搜索 + 操作合并为一行 */
+.toolbar-row {
   display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
 }
-.search-bar input {
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 260px;
+}
+.search-box input {
+  flex: 1;
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 6px;
   font-size: 13px;
   outline: none;
-  min-width: 240px;
+  min-width: 180px;
   background: var(--white);
 }
-.search-bar input:focus { border-color: var(--accent); }
+.search-box input:focus { border-color: var(--accent); }
 
-/* 批量操作 */
-.batch-actions {
+/* 右侧操作区 */
+.toolbar-actions {
   display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 10px;
   flex-wrap: wrap;
 }
+.batch-mode-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--accent-soft);
+}
+.batch-count {
+  font-size: 12px;
+  color: var(--accent);
+  font-weight: 600;
+  margin-left: 2px;
+}
+.checkbox-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  background: var(--white);
+  cursor: pointer;
+  transition: all 0.15s;
+  vertical-align: -2px;
+  margin-right: 6px;
+}
+.checkbox-badge.checked {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.checkbox-badge:hover { border-color: var(--accent); }
+.col-check { width: 40px; text-align: center; }
+.col-check .checkbox-badge { margin-right: 0; }
+.row-selected { background: var(--accent-soft); }
 .btn-dark {
   background: var(--accent);
   color: var(--white);

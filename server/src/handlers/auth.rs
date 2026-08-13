@@ -33,6 +33,43 @@ async fn check_device_ban(device_id: &str, ctx: &ReqCtx, pool: &MySqlPool) -> Op
     None
 }
 
+/// 客户端心跳接口：检查账号/设备是否被封禁。
+/// 返回 code=200 + data.banned，避免客户端 requestAction 抛错。
+pub async fn check_ban_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let device_id = str_of(&data, "device_id").trim().to_string();
+
+    // 账号封禁
+    if !ciyuanxi_id.is_empty() {
+        if let Ok(Some(row)) = sqlx::query("SELECT status, ban_reason FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+            .bind(&ciyuanxi_id)
+            .fetch_optional(pool)
+            .await
+        {
+            let status: i64 = row.try_get("status").unwrap_or(1);
+            if status == 0 {
+                let reason: String = row.try_get("ban_reason").unwrap_or_default();
+                return ctx.ok("ok", json!({ "banned": true, "type": "account", "reason": reason }));
+            }
+        }
+    }
+
+    // 设备封禁
+    if !device_id.is_empty() {
+        if let Ok(Some(row)) = sqlx::query("SELECT reason FROM banned_devices WHERE device_id = ? LIMIT 1")
+            .bind(&device_id)
+            .fetch_optional(pool)
+            .await
+        {
+            let reason: String = row.try_get("reason").unwrap_or_default();
+            return ctx.ok("ok", json!({ "banned": true, "type": "device", "reason": reason }));
+        }
+    }
+
+    ctx.ok("ok", json!({ "banned": false }))
+}
+
 fn rand_token() -> String {
     crate::handlers::helpers::random_hex(32)
 }

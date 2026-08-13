@@ -120,9 +120,6 @@
         <code>{{ clientApiSecret || '未读取到客户端 API 签名密钥' }}</code>
         <button class="btn btn-primary btn-sm" :disabled="!clientApiSecret" @click="copyApiSecret">复制密钥</button>
       </div>
-      <div class="api-hint">
-        客户端会自动拼接 <code>?action=xxx</code>，所以服务器 API 只需要填到 <code>/api</code>；密钥只需填写 <code>api_secret</code> 的值，不要填写 <code>jwt_secret</code>。
-      </div>
     </div>
   </div>
 </template>

@@ -112,6 +112,68 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     }
 }
 
+/// 账号封禁申诉：并入 user_feedback 表（category='appeal'），与普通反馈共享每日限额。
+pub async fn submit_appeal(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let mut nickname = str_of(&data, "nickname").trim().to_string();
+    let content = str_of(&data, "content").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "请先登录");
+    }
+    if content.is_empty() {
+        return ctx.err(400, "申诉内容不能为空");
+    }
+    if content.chars().count() > 1000 {
+        return ctx.err(400, "申诉内容不能超过 1000 字");
+    }
+    // 与反馈共用每日限额（反馈 + 申诉合计）
+    let daily_limit = get_feedback_daily_limit(pool).await;
+    if daily_limit > 0 {
+        let submitted_today: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM user_feedback WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY",
+        )
+        .bind(&ciyuanxi_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+        if submitted_today >= daily_limit {
+            return ctx.err(
+                429,
+                &format!("今日反馈提交次数已达上限（{} 条），请明天再试", daily_limit),
+            );
+        }
+    }
+    if nickname.is_empty() {
+        let row = sqlx::query("SELECT nickname FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+            .bind(&ciyuanxi_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+        if let Some(r) = row {
+            nickname = r.get("nickname");
+        }
+    }
+    let ip = ctx.client_ip.clone();
+    let result = sqlx::query("INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, category, ip) VALUES (?,?,?,?,?,?)")
+        .bind(&ciyuanxi_id)
+        .bind(&nickname)
+        .bind("账号申诉")
+        .bind(&content)
+        .bind("appeal")
+        .bind(&ip)
+        .execute(pool)
+        .await;
+    match result {
+        Ok(r) => ctx.json(200, "申诉已提交，请耐心等待处理", Some(json!({ "id": r.last_insert_id() }))),
+        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+    }
+}
+
 pub async fn check_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {

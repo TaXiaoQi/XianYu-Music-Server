@@ -4,7 +4,7 @@
     <Transition name="fade-down" appear>
       <div class="page-header">
         <div class="header-info">
-          <h2 class="page-title">设备封禁管理</h2>
+          <h2 class="page-title">设备管理</h2>
           <p class="page-desc">手动封禁或解封登录设备，被封禁的设备将无法登录客户端。</p>
         </div>
         <button class="btn-refresh" @click="loadBannedDevices" :disabled="bannedLoading">

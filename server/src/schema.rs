@@ -86,6 +86,8 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "error_logs", "LONGTEXT").await;
     ensure_column(pool, "user_feedback", "all_logs", "LONGTEXT").await;
     ensure_column(pool, "user_feedback", "log_meta", "TEXT").await;
+    // 申诉与普通反馈共用 user_feedback 表，用 category 区分：feedback / appeal
+    ensure_column(pool, "user_feedback", "category", "VARCHAR(16) NOT NULL DEFAULT 'feedback'").await;
 }
 
 /// 账号系统重构迁移：将 app_users.username 列改名为 nickname。

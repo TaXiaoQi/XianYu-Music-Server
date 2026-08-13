@@ -200,7 +200,7 @@ const routes: RouteRecordRaw[] = [
         path: 'device-banned',
         name: 'DeviceBanned',
         component: () => import('@/views/DeviceBanned.vue'),
-        meta: { title: '设备封禁管理' },
+        meta: { title: '设备管理' },
       },
       {
         path: 'error-log',

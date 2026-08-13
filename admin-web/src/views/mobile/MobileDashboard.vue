@@ -117,7 +117,6 @@
         <code>{{ clientApiSecret || '未读取到客户端 API 签名密钥' }}</code>
         <button class="mobile-btn primary" :disabled="!clientApiSecret" @click="copyApiSecret">复制密钥</button>
       </div>
-      <p class="api-hint">客户端会自动拼接 <code>?action=xxx</code>，所以服务器 API 只需要填到 <code>/api</code>。</p>
     </div>
   </div>
 </template>

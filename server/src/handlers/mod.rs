@@ -49,6 +49,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "poll_tv_login_status" => auth::poll_tv_login_status(body, ctx, pool).await,
         "scan_tv_login" => auth::scan_tv_login(body, ctx, pool).await,
         "confirm_tv_login" => auth::confirm_tv_login(body, ctx, pool).await,
+        "check_ban_status" => auth::check_ban_status(body, ctx, pool).await,
         // settings
         "get_user_info" => settings::get_user_info(body, ctx, pool).await,
         "get_user_settings" => settings::get_user_settings(body, ctx, pool).await,
@@ -64,6 +65,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_master_quota_usage" => settings::get_master_quota_usage(body, ctx, pool).await,
         // social
         "submit_feedback" => social::submit_feedback(body, ctx, pool).await,
+        "submit_appeal" => social::submit_appeal(body, ctx, pool).await,
         "check_ciyuanxi_id" => social::check_ciyuanxi_id(body, ctx, pool).await,
         // wallpaper
         "list_wallpapers" => wallpaper::list_wallpapers(body, ctx, pool).await,
