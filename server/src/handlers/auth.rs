@@ -74,9 +74,9 @@ fn rand_token() -> String {
     crate::handlers::helpers::random_hex(32)
 }
 
-/// 根据邮箱判定角色
-async fn resolve_role(pool: &MySqlPool, email: &str) -> String {
-    crate::handlers::helpers::resolve_role_by_email(pool, email).await
+/// 根据邮箱判定角色（管理员已去除邮箱，统一返回 member）
+async fn resolve_role(_pool: &MySqlPool, _email: &str) -> String {
+    "member".to_string()
 }
 
 /// 构建登录用户返回 payload
@@ -404,13 +404,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if admin_dup || user_dup {
         return ctx.err(400, "昵称已存在");
     }
-    let email_admin = sqlx::query("SELECT id FROM admin_users WHERE email = ?")
-        .bind(&email)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .is_some();
     let email_user = sqlx::query("SELECT id FROM app_users WHERE email = ?")
         .bind(&email)
         .fetch_optional(pool)
@@ -418,9 +411,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         .ok()
         .flatten()
         .is_some();
-    if email_admin {
-        return ctx.err(400, "该邮箱已被使用");
-    }
     if email_user {
         return ctx.err(400, "该邮箱已注册");
     }

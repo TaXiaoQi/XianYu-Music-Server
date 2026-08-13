@@ -18,7 +18,7 @@ fn int_of(v: &serde_json::Value, key: &str) -> i64 {
 pub async fn list_admins(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     // 查询列表（不返回 password 字段）
     let list: Vec<Value> = match sqlx::query(
-        "SELECT id, username, email, role, status, created_at, updated_at FROM admin_users ORDER BY created_at DESC",
+        "SELECT id, username, avatar_url, role, status, created_at, updated_at FROM admin_users ORDER BY created_at DESC",
     )
     .fetch_all(pool)
     .await
@@ -51,6 +51,9 @@ pub async fn list_admins(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Resp
 
 /// 切换管理员状态（启用/禁用）
 pub async fn toggle_admin_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    if ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可以管理管理员账号");
+    }
     let data: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
     let id = int_of(&data, "id");
     if id == 0 {
@@ -69,6 +72,24 @@ pub async fn toggle_admin_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     match current {
         Some(status) => {
             let new_status = if status == 1 { 0 } else { 1 };
+            // 禁止禁用最后一个启用中的超级管理员
+            if status == 1 && new_status == 0 {
+                let role: Option<String> = sqlx::query_scalar("SELECT role FROM admin_users WHERE id = ?")
+                    .bind(id)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()
+                    .flatten();
+                if role.as_deref() == Some("super_admin") {
+                    let active_super: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users WHERE role = 'super_admin' AND status = 1")
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
+                    if active_super <= 1 {
+                        return err(400, "系统必须保留至少一个启用的超级管理员");
+                    }
+                }
+            }
             let _ = sqlx::query("UPDATE admin_users SET status = ? WHERE id = ?")
                 .bind(new_status)
                 .bind(id)
@@ -82,12 +103,25 @@ pub async fn toggle_admin_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
 }
 
 pub async fn add_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    if ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可以新增管理员账号");
+    }
     let data: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
     let username = str_of(&data, "username").trim().to_string();
     let password = str_of(&data, "password").to_string();
     let role = str_of(&data, "role").to_string();
     if username.is_empty() || password.is_empty() {
         return err(400, "用户名和密码不能为空");
+    }
+    // 超级管理员全局只能有一个
+    if role == "super_admin" {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users WHERE role = 'super_admin'")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+        if count >= 1 {
+            return err(400, "超级管理员已存在，全局最多只能有一个超级管理员");
+        }
     }
     let exists = sqlx::query("SELECT id FROM admin_users WHERE username = ?")
         .bind(&username)
@@ -103,7 +137,7 @@ pub async fn add_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
         Ok(h) => h,
         Err(_) => return err(500, "加密失败"),
     };
-    let _ = sqlx::query("INSERT INTO admin_users (username, password, role, status) VALUES (?,?,?,1)")
+    let _ = sqlx::query("INSERT INTO admin_users (username, password, avatar_url, role, status) VALUES (?,?,'',?,1)")
         .bind(&username)
         .bind(hashed)
         .bind(&role)
@@ -114,10 +148,29 @@ pub async fn add_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
 }
 
 pub async fn delete_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    if ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可以删除管理员账号");
+    }
     let data: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
     let id = int_of(&data, "id");
     if id == ctx.id {
         return err(400, "不能删除自己");
+    }
+    // 禁止删除最后一个超级管理员
+    let role: Option<String> = sqlx::query_scalar("SELECT role FROM admin_users WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    if role.as_deref() == Some("super_admin") {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users WHERE role = 'super_admin'")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+        if count <= 1 {
+            return err(400, "系统必须保留至少一个超级管理员");
+        }
     }
     let _ = sqlx::query("DELETE FROM admin_users WHERE id = ?")
         .bind(id)

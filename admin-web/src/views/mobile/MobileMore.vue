@@ -21,18 +21,17 @@ const groups = [
       { to: '/m/about-config', label: '关于页配置', desc: '维护关于页展示内容' },
       { to: '/m/wallpapers', label: '壁纸管理', desc: '审核和管理壁纸资源' },
       { to: '/m/avatar-audit', label: '头像/改名审核', desc: '处理用户资料审核' },
+      { to: '/m/user-agreement', label: '用户协议', desc: '维护注册和登录页协议内容' },
     ],
   },
   {
     title: '系统管理',
     items: [
-      { to: '/m/admins', label: '管理员管理', desc: '管理后台管理员账号' },
-      { to: '/m/account', label: '账户管理', desc: '查看当前账户资料' },
-      { to: '/m/password', label: '修改密码', desc: '更新后台登录密码' },
+      { to: '/m/admin-account', label: '后台账号管理', desc: '管理管理员账号与登录' },
+      { to: '/m/external-notification', label: '外部通知', desc: '管理后台状态通知邮箱' },
       { to: '/m/email-config', label: '邮箱机设置', desc: '配置邮箱 API 或 SMTP' },
       { to: '/m/turnstile-config', label: '人机验证设置', desc: '配置 Turnstile / hCaptcha' },
       { to: '/m/config-file', label: '配置文件管理', desc: '维护服务端 config.json' },
-      { to: '/m/user-agreement', label: '用户协议', desc: '维护注册和登录页协议内容' },
     ],
   },
   {

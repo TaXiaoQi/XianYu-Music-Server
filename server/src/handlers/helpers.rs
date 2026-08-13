@@ -140,22 +140,7 @@ pub fn random_int(min: i64, max: i64) -> i64 {
 }
 
 /// 根据邮箱判定角色 member/admin/super_admin
-pub async fn resolve_role_by_email(pool: &MySqlPool, email: &str) -> String {
-    if email.is_empty() {
-        return "member".to_string();
-    }
-    let row = sqlx::query("SELECT role FROM admin_users WHERE email = ? AND status = 1 LIMIT 1")
-        .bind(email)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-    if let Some(r) = row {
-        if let Ok(role) = r.try_get::<String, _>("role") {
-            if role == "admin" || role == "super_admin" {
-                return role;
-            }
-        }
-    }
+/// 管理员账号已去除邮箱，统一返回 member
+pub async fn resolve_role_by_email(_pool: &MySqlPool, _email: &str) -> String {
     "member".to_string()
 }

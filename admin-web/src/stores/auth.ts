@@ -7,6 +7,7 @@ export interface AdminUser {
   id: number
   username: string
   role: string
+  avatar_url?: string
 }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -16,7 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!token.value)
 
   async function login(username: string, password: string): Promise<{ success: boolean; msg: string }> {
-    const res = await adminApi<{ token: string; admin_id: number; username: string; role: string; expires_in: number }>('admin_login', {
+    const res = await adminApi<{ token: string; admin_id: number; username: string; role: string; avatar_url?: string; expires_in: number }>('admin_login', {
       username,
       password,
     })
@@ -28,6 +29,7 @@ export const useAuthStore = defineStore('auth', () => {
         id: res.data.admin_id,
         username: res.data.username,
         role: res.data.role,
+        avatar_url: res.data.avatar_url || '',
       }
       user.value = u
       setAdminUser(u)

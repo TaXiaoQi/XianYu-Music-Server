@@ -23,7 +23,7 @@ pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPo
     if username.is_empty() || password.is_empty() {
         return err(400, "请输入用户名和密码");
     }
-    let row = sqlx::query("SELECT id, password, role FROM admin_users WHERE username = ? AND status = 1")
+    let row = sqlx::query("SELECT id, password, role, avatar_url FROM admin_users WHERE username = ? AND status = 1")
         .bind(&username)
         .fetch_optional(pool)
         .await
@@ -40,6 +40,7 @@ pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPo
     };
     let id: i64 = admin.get("id");
     let stored: String = admin.get("password");
+    let avatar_url: String = admin.get("avatar_url");
     if !bcrypt::verify(&password, &stored).unwrap_or(false) {
         let _ = sqlx::query("INSERT INTO admin_login_log (admin_id, admin_username, ip, user_agent, status) VALUES (0, ?, ?, ?, 0)")
             .bind(&username)
@@ -63,6 +64,7 @@ pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPo
         "admin_id": id,
         "username": username,
         "role": role,
+        "avatar_url": avatar_url,
         "expires_in": 86400
     }))
 }

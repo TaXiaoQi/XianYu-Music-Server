@@ -31,6 +31,10 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "listen_daily_stats", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;
     // 账号系统重构：app_users.username 改为 nickname（仅改应用用户表，不动管理员/日志表）
     ensure_app_users_username_to_nickname(pool).await;
+    // 管理员头像：平滑补列
+    ensure_column(pool, "admin_users", "avatar_url", "varchar(512) NOT NULL DEFAULT ''").await;
+    // 管理员账号去除邮箱：若旧表仍存在 email 列则平滑删除
+    drop_column_if_exists(pool, "admin_users", "email").await;
     ensure_default_admin(pool).await;
 }
 
@@ -53,11 +57,10 @@ async fn ensure_default_admin(pool: &MySqlPool) {
         }
     };
     let _ = sqlx::query(
-        "INSERT IGNORE INTO admin_users (username, password, email, role, status) VALUES (?, ?, ?, ?, 1)",
+        "INSERT IGNORE INTO admin_users (username, password, avatar_url, role, status) VALUES (?, ?, '', ?, 1)",
     )
     .bind("admin")
     .bind(&hash)
-    .bind("admin@xymusic.com")
     .bind("super_admin")
     .execute(pool)
     .await;
@@ -79,6 +82,26 @@ async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: 
     let sql = format!("ALTER TABLE `{}` ADD COLUMN `{}` {}", table, column, definition);
     if let Err(e) = sqlx::query(&sql).execute(pool).await {
         warn!("schema alter failed: {} -> {}", sql, e);
+    }
+}
+
+/// 若表中存在某列则平滑删除（用于移除废弃字段）
+async fn drop_column_if_exists(pool: &MySqlPool, table: &str, column: &str) {
+    let exists: i64 = sqlx::query(
+        "SELECT COUNT(*) AS cnt FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+    )
+    .bind(table)
+    .bind(column)
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get("cnt"))
+    .unwrap_or(0);
+    if exists <= 0 {
+        return;
+    }
+    let sql = format!("ALTER TABLE `{}` DROP COLUMN `{}`", table, column);
+    if let Err(e) = sqlx::query(&sql).execute(pool).await {
+        warn!("schema drop failed: {} -> {}", sql, e);
     }
 }
 
@@ -306,7 +329,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `username` varchar(64) NOT NULL DEFAULT '',
             `password` varchar(255) NOT NULL DEFAULT '',
-            `email` varchar(128) NOT NULL DEFAULT '',
+            `avatar_url` varchar(512) NOT NULL DEFAULT '',
             `role` varchar(32) NOT NULL DEFAULT 'admin',
             `status` tinyint(1) NOT NULL DEFAULT 1,
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,

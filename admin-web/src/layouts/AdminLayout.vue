@@ -24,6 +24,7 @@
             <li><router-link to="/about-config">关于页配置</router-link></li>
             <li><router-link to="/wallpapers">壁纸管理</router-link></li>
             <li><router-link to="/avatar-audit">头像/改名审核</router-link></li>
+            <li><router-link to="/user-agreement">用户协议</router-link></li>
           </ul>
         </li>
 
@@ -36,15 +37,13 @@
             <span class="menu-arrow" :style="{ transform: openMenu === 'system' ? 'rotate(90deg)' : '' }">&#9654;</span>
           </div>
           <ul class="submenu" :class="{ open: openMenu === 'system' }">
-            <li><router-link to="/admins">管理员管理</router-link></li>
-            <li><router-link to="/account">账户管理</router-link></li>
-            <li><router-link to="/password">修改密码</router-link></li>
+            <li><router-link to="/admin-account">后台账号管理</router-link></li>
+            <li><router-link to="/external-notification">外部通知</router-link></li>
             <li><router-link to="/database">数据库管理</router-link></li>
             <li><router-link to="/api-test">接口测试</router-link></li>
             <li><router-link to="/email-config">邮箱机设置</router-link></li>
             <li><router-link to="/turnstile-config">人机验证设置</router-link></li>
             <li><router-link to="/config-file">配置文件管理</router-link></li>
-            <li><router-link to="/user-agreement">用户协议</router-link></li>
             <li><router-link to="/site-config">Logo 配置</router-link></li>
           </ul>
         </li>
@@ -89,7 +88,11 @@
             </svg>
             <span>{{ theme.modeLabel }}</span>
           </button>
-          <span v-if="auth.user">{{ auth.user.username }} ({{ auth.user.role }})</span>
+          <span v-if="auth.user" class="topbar-admin">
+            <img v-if="auth.user.avatar_url" :src="auth.user.avatar_url" alt="" class="topbar-avatar" />
+            <span v-else class="topbar-avatar topbar-avatar-letter">{{ (auth.user.username || 'A').charAt(0).toUpperCase() }}</span>
+            <span class="topbar-admin-name">{{ auth.user.username }} ({{ auth.user.role }})</span>
+          </span>
           <button class="logout-btn" @click="handleLogout">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
@@ -184,6 +187,37 @@ const icons = {
   color: var(--accent);
   background: var(--accent-soft);
   box-shadow: var(--shadow-soft);
+}
+.topbar-admin {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.topbar-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.topbar-avatar-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.topbar-admin-name {
+  white-space: nowrap;
 }
 .route-fade-enter-active,
 .route-fade-leave-active {

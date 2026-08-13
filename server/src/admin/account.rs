@@ -17,7 +17,7 @@ fn int_of(v: &serde_json::Value, key: &str) -> i64 {
 
 /// 获取当前管理员账户信息
 pub async fn get_account_info(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    let row = sqlx::query("SELECT id, username, email, role, status, created_at, updated_at FROM admin_users WHERE id = ?")
+    let row = sqlx::query("SELECT id, username, avatar_url, role, status, created_at, updated_at FROM admin_users WHERE id = ?")
         .bind(ctx.id)
         .fetch_optional(pool)
         .await
@@ -27,11 +27,17 @@ pub async fn get_account_info(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
         return err(404, "管理员不存在");
     };
     let username: String = admin.get("username");
-    let email: String = admin.get("email");
+    let avatar_url: String = admin.get("avatar_url");
     let role: String = admin.get("role");
     let status: i32 = admin.get("status");
-    let created_at: String = admin.get("created_at");
-    let updated_at: String = admin.get("updated_at");
+    let created_at: Option<chrono::NaiveDateTime> = admin.get("created_at");
+    let updated_at: Option<chrono::NaiveDateTime> = admin.get("updated_at");
+    let created_at_str = created_at
+        .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_default();
+    let updated_at_str = updated_at
+        .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+        .unwrap_or_default();
 
     let operation_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_operation_log WHERE admin_id = ?")
         .bind(ctx.id)
@@ -47,49 +53,134 @@ pub async fn get_account_info(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
         .flatten()
         .map(|r| {
             let ip: String = r.get("ip");
-            let t: String = r.get("created_at");
-            (ip, t)
+            let t: Option<chrono::NaiveDateTime> = r.get("created_at");
+            let t_str = t
+                .map(|t| t.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_default();
+            (ip, t_str)
         });
 
     ok("ok", json!({
         "id": ctx.id,
         "username": username,
-        "email": email,
+        "avatar_url": avatar_url,
         "role": role,
         "status": status,
-        "created_at": created_at,
-        "updated_at": updated_at,
+        "created_at": created_at_str,
+        "updated_at": updated_at_str,
         "operation_count": operation_count,
         "last_login_ip": last_login.as_ref().map(|(ip, _)| ip.as_str()).unwrap_or("未知"),
         "last_login_time": last_login.as_ref().map(|(_, t)| t.as_str()).unwrap_or("未知"),
     }))
 }
 
-/// 绑定邮箱
-pub async fn bind_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+/// 管理员头像上传（JSON base64 模式）
+/// 权限：普通管理员只能上传自己的头像；超级管理员可为任意管理员上传。
+/// 入参：admin_id（目标管理员ID，默认自己）, image（data:image/xxx;base64,...）
+pub async fn upload_admin_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
-    let email = str_of(&data, "email").trim().to_string();
-    if email.is_empty() || !crate::admin::is_valid_email(&email) {
-        return err(400, "邮箱格式不正确");
+    let mut target_id = int_of(&data, "admin_id");
+    if target_id <= 0 {
+        target_id = ctx.id;
     }
-    let exists = sqlx::query("SELECT id FROM admin_users WHERE email = ? AND id != ?")
-        .bind(&email)
-        .bind(ctx.id)
+    // 权限：非超管只能操作自己
+    if ctx.role != "super_admin" && target_id != ctx.id {
+        return err(403, "普通管理员只能上传自己的头像");
+    }
+    let image_b64 = str_of(&data, "image").to_string();
+    if image_b64.is_empty() {
+        return err(400, "请选择头像图片");
+    }
+    // 兼容 data URL 前缀
+    let b64 = if let Some(idx) = image_b64.find(',') {
+        if image_b64.starts_with("data:") {
+            &image_b64[idx + 1..]
+        } else {
+            &image_b64
+        }
+    } else {
+        &image_b64
+    };
+    if b64.len() > 4 * 1024 * 1024 {
+        return err(400, "图片数据过大");
+    }
+    use base64::Engine;
+    let bytes = match base64::engine::general_purpose::STANDARD.decode(b64.trim()) {
+        Ok(b) => b,
+        Err(_) => return err(400, "无效的图片数据"),
+    };
+    let valid_ext = image::guess_format(&bytes)
+        .map(|f| {
+            matches!(
+                f,
+                image::ImageFormat::Jpeg
+                    | image::ImageFormat::Png
+                    | image::ImageFormat::WebP
+                    | image::ImageFormat::Gif
+            )
+        })
+        .unwrap_or(false);
+    if !valid_ext {
+        return err(400, "只允许上传 JPG/PNG/WEBP/GIF 图片");
+    }
+    // 目标管理员必须存在
+    let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM admin_users WHERE id = ?")
+        .bind(target_id)
         .fetch_optional(pool)
         .await
         .ok()
-        .flatten()
-        .is_some();
-    if exists {
-        return err(400, "该邮箱已被绑定");
+        .flatten();
+    if exists.is_none() {
+        return err(404, "管理员不存在");
     }
-    let _ = sqlx::query("UPDATE admin_users SET email = ? WHERE id = ?")
-        .bind(&email)
-        .bind(ctx.id)
+    let dir = std::path::Path::new("uploads").join("admin_avatars");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return err(500, "无法创建上传目录");
+    }
+    let target = dir.join(format!("{}.png", target_id));
+    if !save_admin_avatar_png(&bytes, &target) {
+        return err(500, "图片保存失败，请检查目录权限");
+    }
+    let relative = format!("/uploads/admin_avatars/{}.png", target_id);
+    let full = if !ctx.base_url.is_empty() {
+        format!("{}{}", ctx.base_url.trim_end_matches('/'), &relative)
+    } else if !ctx.config.public_base_url.is_empty() {
+        format!("{}{}", ctx.config.public_base_url.trim_end_matches('/'), &relative)
+    } else {
+        relative.clone()
+    };
+    let _ = sqlx::query("UPDATE admin_users SET avatar_url = ? WHERE id = ?")
+        .bind(&full)
+        .bind(target_id)
         .execute(pool)
         .await;
-    log_operation(pool, ctx, "绑定邮箱", &email, "").await;
-    ok("邮箱绑定成功", serde_json::Value::Null)
+    log_operation(pool, ctx, "上传管理员头像", &format!("管理员ID:{}", target_id), &full).await;
+    ok("头像已更新", json!({ "avatar_url": full }))
+}
+
+/// 保存管理员头像为 PNG（透明通道，最大边长 256）
+fn save_admin_avatar_png(bytes: &[u8], target: &std::path::Path) -> bool {
+    use image::GenericImageView;
+    let img = match image::load_from_memory(bytes) {
+        Ok(i) => i,
+        Err(_) => return false,
+    };
+    let (w, h) = img.dimensions();
+    let max = 256u32;
+    let (nw, nh) = if w > max || h > max {
+        let scale = (max as f64 / w.max(h) as f64).min(1.0);
+        (((w as f64 * scale) as u32).max(1), ((h as f64 * scale) as u32).max(1))
+    } else {
+        (w, h)
+    };
+    let resized = img.resize_exact(nw, nh, image::imageops::FilterType::Lanczos3);
+    let file = match std::fs::File::create(target) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    resized
+        .write_to(&mut std::io::BufWriter::new(file), image::ImageFormat::Png)
+        .is_ok()
 }
 
 /// 修改用户名
@@ -140,31 +231,14 @@ pub async fn change_user_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
         return err(404, "用户不存在");
     };
     let old_email: String = user.get("email");
-    let mut role_hint = "普通成员".to_string();
-    if !new_email.is_empty() {
-        let admin = sqlx::query("SELECT role FROM admin_users WHERE email = ? AND status = 1 LIMIT 1")
-            .bind(&new_email)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten();
-        if let Some(admin) = admin {
-            let role: String = admin.get("role");
-            role_hint = if role == "super_admin" {
-                "超级管理员".to_string()
-            } else {
-                "管理员".to_string()
-            };
-        }
-    }
     let _ = sqlx::query("UPDATE app_users SET email = ? WHERE id = ?")
         .bind(&new_email)
         .bind(user_id)
         .execute(pool)
         .await;
-    let detail = format!("user_id={} {} -> {} ({})", user_id, old_email, new_email, role_hint);
+    let detail = format!("user_id={} {} -> {}", user_id, old_email, new_email);
     log_operation(pool, ctx, "修改用户邮箱", &detail, "").await;
-    ok(&format!("修改成功，身份：{}", role_hint), serde_json::json!({ "role": role_hint }))
+    ok("修改成功", serde_json::json!({ "role": "普通成员" }))
 }
 
 /// 重置用户听歌时长与新歌数

@@ -24,7 +24,7 @@ export function clearToken(): void {
   localStorage.removeItem('admin_user')
 }
 
-export function getAdminUser(): { id: number; username: string; role: string } | null {
+export function getAdminUser(): { id: number; username: string; role: string; avatar_url?: string } | null {
   const raw = localStorage.getItem('admin_user')
   if (!raw) return null
   try {
@@ -34,7 +34,7 @@ export function getAdminUser(): { id: number; username: string; role: string } |
   }
 }
 
-export function setAdminUser(user: { id: number; username: string; role: string }): void {
+export function setAdminUser(user: { id: number; username: string; role: string; avatar_url?: string }): void {
   localStorage.setItem('admin_user', JSON.stringify(user))
 }
 

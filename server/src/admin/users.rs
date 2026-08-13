@@ -219,13 +219,6 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         return err(409, "昵称已存在");
     }
     if !email.is_empty() {
-        let admin_email_exists = sqlx::query("SELECT id FROM admin_users WHERE email = ? LIMIT 1")
-            .bind(&email)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten()
-            .is_some();
         let exists = sqlx::query("SELECT id FROM app_users WHERE email = ? LIMIT 1")
             .bind(&email)
             .fetch_optional(pool)
@@ -233,7 +226,7 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
             .ok()
             .flatten()
             .is_some();
-        if admin_email_exists || exists {
+        if exists {
             return err(409, "邮箱已被使用");
         }
     }

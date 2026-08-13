@@ -190,7 +190,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "admin_logout" => auth::admin_logout(&ctx, pool).await,
         "change_password" => auth::change_password(body, &ctx, pool).await,
         "list_password_targets" => auth::list_password_targets(body, &ctx, pool).await,
-        "bind_email" => account::bind_email(body, &ctx, pool).await,
+        "upload_admin_avatar" => account::upload_admin_avatar(body, &ctx, pool).await,
         "change_username" => account::change_username(body, &ctx, pool).await,
         "get_account_info" => account::get_account_info(body, &ctx, pool).await,
         "get_about_config_admin" => about::get(body, &ctx, pool).await,
