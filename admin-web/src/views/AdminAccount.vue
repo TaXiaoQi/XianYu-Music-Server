@@ -110,6 +110,10 @@
                     <span v-if="item.id === currentAdminId" class="self-tag">你</span>
                   </div>
                   <span class="admin-sub">{{ item.role === 'super_admin' ? '超级管理员账号' : '管理员账号' }}</span>
+                  <span v-if="item.email" class="admin-email">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
+                    {{ item.email }}
+                  </span>
                 </div>
                 <span class="role-badge" :class="item.role === 'super_admin' ? 'badge-super' : 'badge-admin'">
                   <svg v-if="item.role === 'super_admin'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>
@@ -129,7 +133,15 @@
                     {{ item.created_at || '-' }}
                   </span>
                 </div>
-                <div v-if="isSuper" class="foot-actions">
+                <div v-if="isSuper || item.id === currentAdminId" class="foot-actions">
+                  <button
+                    v-if="item.id === currentAdminId || isSuper"
+                    class="act-btn act-login"
+                    @click="openLoginModal(item)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+                    修改登录
+                  </button>
                   <button
                     v-if="item.id !== currentAdminId"
                     class="act-btn"
@@ -157,105 +169,6 @@
       </template>
     </section>
 
-    <!-- 账户安全区块 -->
-    <section class="section-block section-sec">
-      <div class="section-head">
-        <div class="section-title">
-          <span class="section-icon section-icon-sec">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-          </span>
-          <div>
-            <h3 class="section-name">账户安全</h3>
-            <p class="section-desc">更新登录用户名与登录密码，建议定期更换密码并使用强密码</p>
-          </div>
-        </div>
-      </div>
-
-      <div class="card-grid">
-        <!-- 修改用户名 -->
-        <Transition name="fade-up" appear>
-          <div class="card">
-            <div class="card-head">
-              <div class="card-icon icon-user">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              </div>
-              <div class="card-head-text">
-                <h3 class="card-title">修改用户名</h3>
-                <p class="card-desc">更新登录所用的用户名</p>
-              </div>
-            </div>
-            <div class="card-body">
-              <div class="field">
-                <label class="required">新用户名</label>
-                <input v-model="usernameForm.new_username" type="text" placeholder="请输入新用户名" autocomplete="off" @keydown.enter="submitUsername" />
-              </div>
-              <button class="btn-save" :disabled="usernameSaving" @click="submitUsername">
-                <span v-if="usernameSaving" class="btn-spinner"></span>
-                {{ usernameSaving ? '提交中...' : '保存用户名' }}
-              </button>
-            </div>
-          </div>
-        </Transition>
-
-        <!-- 修改密码 -->
-        <Transition name="fade-up" appear>
-          <div class="card card-delay">
-            <div class="card-head">
-              <div class="card-icon icon-lock">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              </div>
-              <div class="card-head-text">
-                <h3 class="card-title">修改密码</h3>
-                <p class="card-desc">新密码至少 6 个字符，建议字母与数字搭配</p>
-              </div>
-            </div>
-            <div class="card-body">
-              <div v-if="isSuper" class="field">
-                <label class="required">操作账户</label>
-                <div class="select-wrap">
-                  <select v-model="passwordForm.admin_id" class="admin-select" :disabled="targetsLoading">
-                    <option v-for="a in adminTargets" :key="a.id" :value="a.id">
-                      {{ a.username }}{{ a.role === 'super_admin' ? '（超级管理员）' : '（管理员）' }}
-                    </option>
-                  </select>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-                </div>
-                <p class="field-hint">可选择修改任意管理员的密码，修改他人密码无需填写当前密码。</p>
-              </div>
-              <div v-if="!isSuper || isSelfTarget" class="field">
-                <label class="required">当前密码</label>
-                <input v-model="passwordForm.old_password" type="password" placeholder="请输入当前密码" autocomplete="current-password" />
-              </div>
-              <div class="field">
-                <label class="required">新密码</label>
-                <input v-model="passwordForm.new_password" type="password" placeholder="至少 6 个字符" autocomplete="new-password" />
-                <Transition name="fade-up">
-                  <div v-if="passwordForm.new_password" class="strength">
-                    <div class="strength-bars">
-                      <span class="bar" :class="strengthLevel() >= 1 ? 'lv-' + strengthLevel() : ''"></span>
-                      <span class="bar" :class="strengthLevel() >= 2 ? 'lv-' + strengthLevel() : ''"></span>
-                      <span class="bar" :class="strengthLevel() >= 3 ? 'lv-' + strengthLevel() : ''"></span>
-                    </div>
-                    <span class="strength-label" :class="'lv-' + strengthLevel()">{{ strengthText() }}</span>
-                  </div>
-                </Transition>
-              </div>
-              <div class="field">
-                <label class="required">确认新密码</label>
-                <input v-model="passwordForm.confirm_password" type="password" placeholder="再次输入新密码" autocomplete="new-password" />
-                <span v-if="passwordForm.confirm_password && passwordForm.confirm_password !== passwordForm.new_password" class="hint hint-error">两次输入的密码不一致</span>
-                <span v-else-if="passwordForm.confirm_password && passwordForm.confirm_password === passwordForm.new_password" class="hint hint-ok">两次密码一致</span>
-              </div>
-              <button class="btn-save" :disabled="passwordSaving" @click="submitPassword">
-                <span v-if="passwordSaving" class="btn-spinner"></span>
-                {{ passwordSaving ? '提交中...' : '保存密码' }}
-              </button>
-            </div>
-          </div>
-        </Transition>
-      </div>
-    </section>
-
     <!-- 新增管理员弹窗 -->
     <Transition name="modal">
       <div v-if="addModalVisible" class="modal-backdrop" @click.self="closeAddModal">
@@ -274,6 +187,10 @@
             <div class="field">
               <label class="required">密码</label>
               <input v-model="form.password" type="password" placeholder="请输入密码" autocomplete="new-password" />
+            </div>
+            <div class="field">
+              <label>邮箱 <span class="opt-label">（可选，用于接收通知）</span></label>
+              <input v-model="form.email" type="email" placeholder="请输入管理员的接收通知邮箱" autocomplete="off" />
             </div>
             <div class="field">
               <label class="required">角色</label>
@@ -354,12 +271,68 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 修改登录弹窗 -->
+    <Transition name="modal">
+      <div v-if="loginModalVisible" class="modal-backdrop" @click.self="closeLoginModal">
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>修改登录 - {{ loginTarget?.username || '' }}</h3>
+            <button class="modal-close" @click="closeLoginModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="field">
+              <label class="required">新用户名</label>
+              <input v-model="loginForm.new_username" type="text" placeholder="请输入新用户名" autocomplete="off" @keydown.enter="submitLogin" />
+            </div>
+            <div class="field">
+              <label>邮箱 <span class="opt-label">（留空则保持原邮箱）</span></label>
+              <input v-model="loginForm.new_email" type="email" placeholder="请输入管理员的接收通知邮箱" autocomplete="off" @keydown.enter="submitLogin" />
+            </div>
+            <div v-if="needOldPassword" class="field">
+              <label class="required">当前密码</label>
+              <input v-model="loginForm.old_password" type="password" placeholder="请输入当前密码" autocomplete="current-password" />
+              <p class="field-hint">修改自己的账号需验证当前密码。</p>
+            </div>
+            <div class="field">
+              <label>新密码 <span class="opt-label">（留空则不修改）</span></label>
+              <input v-model="loginForm.new_password" type="password" placeholder="至少 6 个字符" autocomplete="new-password" />
+              <Transition name="fade-up">
+                <div v-if="loginForm.new_password" class="strength">
+                  <div class="strength-bars">
+                    <span class="bar" :class="strengthLevel() >= 1 ? 'lv-' + strengthLevel() : ''"></span>
+                    <span class="bar" :class="strengthLevel() >= 2 ? 'lv-' + strengthLevel() : ''"></span>
+                    <span class="bar" :class="strengthLevel() >= 3 ? 'lv-' + strengthLevel() : ''"></span>
+                  </div>
+                  <span class="strength-label" :class="'lv-' + strengthLevel()">{{ strengthText() }}</span>
+                </div>
+              </Transition>
+            </div>
+            <div class="field">
+              <label>确认新密码 <span class="opt-label">（留空则不修改）</span></label>
+              <input v-model="loginForm.confirm_password" type="password" placeholder="再次输入新密码" autocomplete="new-password" />
+              <span v-if="loginForm.confirm_password && loginForm.new_password && loginForm.confirm_password !== loginForm.new_password" class="hint hint-error">两次输入的密码不一致</span>
+              <span v-else-if="loginForm.confirm_password && loginForm.confirm_password === loginForm.new_password" class="hint hint-ok">两次密码一致</span>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeLoginModal">取消</button>
+            <button class="btn-save" :disabled="loginSaving" @click="submitLogin">
+              <span v-if="loginSaving" class="btn-spinner"></span>
+              {{ loginSaving ? '提交中...' : '保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { adminApi, showToast, getAdminUser } from '@/api/client'
+import { adminApi, showToast, getAdminUser, setAdminUser } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 import { useAuthStore } from '@/stores/auth'
 
@@ -458,10 +431,10 @@ async function deleteAdmin(item: Admin) {
 // ===== 新增弹窗 =====
 const addModalVisible = ref(false)
 const saving = ref(false)
-const form = ref({ username: '', password: '', role: 'admin' })
+const form = ref({ username: '', password: '', email: '', role: 'admin' })
 
 function openAddModal() {
-  form.value = { username: '', password: '', role: 'admin' }
+  form.value = { username: '', password: '', email: '', role: 'admin' }
   addModalVisible.value = true
 }
 
@@ -488,10 +461,16 @@ async function doAdd() {
     showToast('请输入密码')
     return
   }
+  const email = form.value.email.trim()
+  if (email && !isValidEmail(email)) {
+    showToast('邮箱格式不正确')
+    return
+  }
   saving.value = true
   const res = await adminApi('add_admin', {
     username: form.value.username.trim(),
     password: form.value.password,
+    email,
     role: form.value.role,
   })
   saving.value = false
@@ -561,65 +540,35 @@ async function doUploadAvatar() {
   }
 }
 
-// ===== 修改用户名 =====
-const usernameForm = ref<{ new_username: string }>({ new_username: '' })
-const usernameSaving = ref(false)
-
-async function submitUsername() {
-  const uname = usernameForm.value.new_username.trim()
-  if (!uname) {
-    showToast('请输入新用户名')
-    return
-  }
-  usernameSaving.value = true
-  const res = await adminApi('change_username', { new_username: uname })
-  usernameSaving.value = false
-  if (res.code === 200) {
-    showToast('用户名修改成功', 'success')
-    usernameForm.value.new_username = ''
-  } else {
-    showToast(res.msg || '用户名修改失败')
-  }
-}
-
-// ===== 修改密码 =====
-interface AdminTarget {
-  id: number
-  username: string
-  role: string
-  status: number
-}
-
-const adminTargets = ref<AdminTarget[]>([])
-const targetsLoading = ref(false)
-
-const passwordForm = ref<{ admin_id: number; old_password: string; new_password: string; confirm_password: string }>({
-  admin_id: 0,
+// ===== 修改登录（用户名 + 密码）弹窗 =====
+const loginModalVisible = ref(false)
+const loginSaving = ref(false)
+const loginTarget = ref<Admin | null>(null)
+const loginForm = ref<{ new_username: string; new_email: string; old_password: string; new_password: string; confirm_password: string }>({
+  new_username: '',
+  new_email: '',
   old_password: '',
   new_password: '',
   confirm_password: '',
 })
-const passwordSaving = ref(false)
 
-const isSelfTarget = computed(() => passwordForm.value.admin_id === currentAdminId.value)
-
-async function loadAdminTargets() {
-  if (!isSuper.value) return
-  targetsLoading.value = true
-  const res = await adminApi<{ list: AdminTarget[] }>('list_password_targets')
-  targetsLoading.value = false
-  if (res.code === 200 && res.data) {
-    adminTargets.value = res.data.list || []
-    if (passwordForm.value.admin_id === 0 && adminTargets.value.length) {
-      passwordForm.value.admin_id = adminTargets.value[0].id
-    }
-  } else {
-    showToast(res.msg || '管理员列表加载失败')
-  }
+function openLoginModal(item: Admin) {
+  loginTarget.value = item
+  loginForm.value = { new_username: item.username, new_email: item.email || '', old_password: '', new_password: '', confirm_password: '' }
+  loginModalVisible.value = true
 }
 
+function closeLoginModal() {
+  if (loginSaving.value) return
+  loginModalVisible.value = false
+  loginTarget.value = null
+}
+
+// 修改自己时需要填当前密码；超管修改他人时无需
+const needOldPassword = computed(() => !!loginTarget.value && loginTarget.value.id === currentAdminId.value)
+
 function strengthLevel(): number {
-  const pw = passwordForm.value.new_password
+  const pw = loginForm.value.new_password
   if (!pw) return 0
   let variety = 0
   if (/[a-z]/.test(pw)) variety++
@@ -638,43 +587,71 @@ function strengthText(): string {
   return map[strengthLevel()] || ''
 }
 
-async function submitPassword() {
-  const { admin_id, old_password, new_password, confirm_password } = passwordForm.value
-  if (!isSuper.value || isSelfTarget.value) {
-    if (!old_password) {
-      showToast('请输入当前密码')
-      return
-    }
+async function submitLogin() {
+  const target = loginTarget.value
+  if (!target) return
+  const { new_username, new_email, old_password, new_password, confirm_password } = loginForm.value
+  const uname = new_username.trim()
+  const email = new_email.trim()
+  const isSelf = target.id === currentAdminId.value
+  if (!uname) {
+    showToast('请输入新用户名')
+    return
   }
-  if (new_password.length < 6) {
+  if (email && !isValidEmail(email)) {
+    showToast('邮箱格式不正确')
+    return
+  }
+  if (isSelf && !old_password) {
+    showToast('请输入当前密码')
+    return
+  }
+  if (new_password && new_password.length < 6) {
     showToast('新密码至少需要 6 个字符')
     return
   }
-  if (new_password !== confirm_password) {
+  if (new_password && new_password !== confirm_password) {
     showToast('两次输入的新密码不一致')
     return
   }
-  passwordSaving.value = true
-  const payload: Record<string, string | number> = { new_password, confirm_password }
-  if (!isSuper.value || isSelfTarget.value) {
-    payload.old_password = old_password
+  loginSaving.value = true
+  const payload: Record<string, string | number> = { new_username: uname, admin_id: target.id }
+  if (email) payload.new_email = email
+  if (isSelf) payload.old_password = old_password
+  if (new_password) {
+    payload.new_password = new_password
+    payload.confirm_password = confirm_password
   }
-  if (isSuper.value) {
-    payload.admin_id = admin_id || 0
-  }
-  const res = await adminApi('change_password', payload)
-  passwordSaving.value = false
+  const res = await adminApi('change_login', payload)
+  loginSaving.value = false
   if (res.code === 200) {
-    showToast('密码修改成功', 'success')
-    passwordForm.value = { admin_id: admin_id || 0, old_password: '', new_password: '', confirm_password: '' }
+    showToast(res.msg || '修改成功', 'success')
+    loginModalVisible.value = false
+    loginTarget.value = null
+    await reloadAfterLoginChange()
   } else {
-    showToast(res.msg || '密码修改失败')
+    showToast(res.msg || '修改失败')
   }
+}
+
+function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+}
+
+async function reloadAfterLoginChange() {
+  // 若修改的是自己，更新本地缓存的登录用户信息
+  if (loginTarget.value && loginTarget.value.id === currentAdminId.value) {
+    const u = getAdminUser()
+    if (u) {
+      u.username = loginForm.value.new_username.trim()
+      setAdminUser(u)
+    }
+  }
+  await loadList()
 }
 
 onMounted(() => {
   loadList()
-  loadAdminTargets()
 })
 </script>
 
@@ -931,6 +908,18 @@ onMounted(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.admin-email {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 .role-badge {
   display: inline-flex;
   align-items: center;
@@ -993,6 +982,8 @@ onMounted(() => {
 .act-enable:hover { background: #dcfce7; }
 .act-disable { background: #fffbeb; color: #d97706; }
 .act-disable:hover { background: #fef3c7; }
+.act-login { background: #eff6ff; color: #3b82f6; }
+.act-login:hover { background: #dbeafe; }
 .act-delete { background: #fef2f2; color: #dc2626; }
 .act-delete:hover { background: #fee2e2; }
 
@@ -1082,6 +1073,7 @@ onMounted(() => {
   pointer-events: none;
 }
 .field-hint { font-size: 11px; color: var(--text-muted); margin: 6px 0 0; line-height: 1.5; }
+.opt-label { font-size: 11px; font-weight: 500; color: var(--text-light); }
 .hint { display: block; font-size: 11px; margin-top: 6px; font-weight: 500; }
 .hint-error { color: #ef4444; }
 .hint-ok { color: #16a34a; }

@@ -39,7 +39,7 @@
     <div v-if="loading" class="mobile-empty">加载中...</div>
     <div v-else-if="filteredList.length === 0" class="mobile-empty">暂无反馈</div>
     <div v-else class="mobile-list">
-      <div v-for="f in filteredList" :key="f.id" class="mobile-item" :class="{ expanded: detailId === f.id }" @click="toggleDetail(f)">
+      <div v-for="f in filteredList" :key="f.id" class="mobile-item mfb-item">
         <div class="mobile-item-head">
           <div class="mfb-title-wrap">
             <span class="mfb-type" :class="f.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
@@ -49,21 +49,21 @@
           </div>
           <span class="mobile-badge" :class="badgeClass(f.status)">{{ statusLabel(f.status) }}</span>
         </div>
-        <div class="mfb-sub">{{ f.nickname || '匿名用户' }} · {{ f.ciyuanxi_id || '后台创建' }}</div>
-        <div class="mobile-item-sub mfb-content">{{ f.content || '无内容' }}</div>
-        <div v-if="imagesOf(f).length > 0" class="mfb-thumbs">
-          <img v-for="(img, i) in imagesOf(f)" :key="i" :src="img" class="mfb-thumb" @click.stop="openViewer(imagesOf(f), i)" />
-        </div>
-
-        <transition name="expand">
-          <div v-if="detailId === f.id" class="mfb-detail">
-            <div v-if="f.assignee" class="mfb-line">认领人：{{ f.assignee }}</div>
+        <div class="mfb-main">
+          <div class="mfb-left">
+            <div class="mfb-sub">{{ f.nickname || '匿名用户' }}<span v-if="f.ciyuanxi_id"> · {{ f.ciyuanxi_id }}</span><span v-if="f.assignee"> · 认领：{{ f.assignee }}</span></div>
+            <div class="mobile-item-sub mfb-content">{{ f.content || '无内容' }}</div>
             <div v-if="f.status === 'resolved' && f.resolve_note" class="mfb-line mfb-resolve">完成说明：{{ f.resolve_note }}</div>
-            <div v-if="f.ip" class="mfb-line">IP：{{ f.ip }}</div>
-            <div v-if="f.created_at" class="mfb-line mfb-time">提交时间：{{ f.created_at }}</div>
           </div>
-        </transition>
-
+          <div v-if="imagesOf(f).length > 0" class="mfb-right">
+            <img v-for="(img, i) in imagesOf(f)" :key="i" :src="img" class="mfb-thumb" @click.stop="openViewer(imagesOf(f), i)" />
+          </div>
+        </div>
+        <div class="mfb-timeline">
+          <span>发布时间{{ fmtTime(f.created_at) }}</span>
+          <span v-if="f.claimed_at"> | 认领时间：{{ fmtTime(f.claimed_at) }}</span>
+          <span v-if="f.status === 'resolved' && f.resolved_at"> | 完成时间：{{ fmtTime(f.resolved_at) }}</span>
+        </div>
         <div class="mobile-actions" @click.stop>
           <button v-if="f.status === 'pending'" class="mobile-btn" @click="claim(f)">认领</button>
           <button v-if="f.status === 'processing'" class="mobile-btn primary" @click="openResolve(f)">完成</button>
@@ -176,7 +176,6 @@ import './MobilePage.css'
 const loading = ref(false), status = ref(''), type = ref('')
 const sortMode = ref('post_time_desc')
 const list = ref<any[]>([])
-const detailId = ref(0)
 const limitInput = ref(20)
 const limitSaving = ref(false)
 
@@ -200,7 +199,15 @@ function imagesOf(f: any): string[] {
 }
 
 function setStatus(s: string) { status.value = s }
-function toggleDetail(f: any) { detailId.value = detailId.value === f.id ? 0 : f.id }
+
+// 时间戳格式化：2026年12月12日 21时25分（按数据库字面时间显示，兼容服务器/客户端）
+function fmtTime(v: any): string {
+  if (!v) return ''
+  const m = String(v).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T ]+(\d{1,2}):(\d{1,2})/)
+  if (!m) return String(v)
+  const [, y, mo, d, h, mi] = m.map(Number)
+  return `${y}年${mo}月${d}日 ${h}时${String(mi).padStart(2, '0')}分`
+}
 
 async function loadList() {
   loading.value = true
@@ -350,17 +357,28 @@ onMounted(() => { loadLimit(); loadList() })
 .mfb-type.type-problem { background: #fef2f2; color: #dc2626; }
 .mfb-sub { margin-top: 4px; font-size: 11px; color: var(--text-muted); }
 .mfb-content { margin-top: 6px; }
-.mfb-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.mfb-main { display: flex; gap: 12px; align-items: flex-start; margin-top: 6px; }
+.mfb-left { flex: 1; min-width: 0; }
+.mfb-right { display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
 .mfb-thumb {
-  width: 76px; height: 76px;
+  width: 72px; height: 72px;
   object-fit: cover;
   border-radius: 12px;
   border: 1px solid var(--border);
 }
-.mfb-detail { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); display: flex; flex-direction: column; gap: 6px; }
+.mfb-timeline {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
 .mfb-line { font-size: 12px; color: var(--text-light); word-break: break-word; }
 .mfb-resolve { color: #16a34a; }
-.mfb-time { color: var(--text-muted); font-size: 11px; }
 
 /* 新建弹窗 */
 .mfb-create-body { padding: 10px 20px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }

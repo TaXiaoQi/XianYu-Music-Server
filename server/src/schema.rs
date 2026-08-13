@@ -33,8 +33,13 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_app_users_username_to_nickname(pool).await;
     // 管理员头像：平滑补列
     ensure_column(pool, "admin_users", "avatar_url", "varchar(512) NOT NULL DEFAULT ''").await;
-    // 管理员账号去除邮箱：若旧表仍存在 email 列则平滑删除
-    drop_column_if_exists(pool, "admin_users", "email").await;
+    // 管理员账号邮箱：用于后台通知接收与快捷导入外部通知
+    ensure_column(pool, "admin_users", "email", "varchar(128) NOT NULL DEFAULT ''").await;
+    // 通知邮箱板块开关：壁纸审核 / 头像 / 昵称 / 反馈更新
+    ensure_column(pool, "notification_emails", "notify_wallpaper", "tinyint(1) NOT NULL DEFAULT 1").await;
+    ensure_column(pool, "notification_emails", "notify_avatar", "tinyint(1) NOT NULL DEFAULT 1").await;
+    ensure_column(pool, "notification_emails", "notify_nickname", "tinyint(1) NOT NULL DEFAULT 1").await;
+    ensure_column(pool, "notification_emails", "notify_feedback", "tinyint(1) NOT NULL DEFAULT 1").await;
     ensure_default_admin(pool).await;
 }
 
@@ -85,25 +90,7 @@ async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: 
     }
 }
 
-/// 若表中存在某列则平滑删除（用于移除废弃字段）
-async fn drop_column_if_exists(pool: &MySqlPool, table: &str, column: &str) {
-    let exists: i64 = sqlx::query(
-        "SELECT COUNT(*) AS cnt FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
-    )
-    .bind(table)
-    .bind(column)
-    .fetch_one(pool)
-    .await
-    .map(|r| r.get("cnt"))
-    .unwrap_or(0);
-    if exists <= 0 {
-        return;
-    }
-    let sql = format!("ALTER TABLE `{}` DROP COLUMN `{}`", table, column);
-    if let Err(e) = sqlx::query(&sql).execute(pool).await {
-        warn!("schema drop failed: {} -> {}", sql, e);
-    }
-}
+
 
 async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "error_logs", "LONGTEXT").await;
@@ -115,6 +102,9 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "assignee", "VARCHAR(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "resolve_note", "TEXT").await;
     ensure_column(pool, "user_feedback", "notified_at", "DATETIME DEFAULT NULL").await;
+    // 认领时间与完成时间（用于后台反馈时间线展示）
+    ensure_column(pool, "user_feedback", "claimed_at", "DATETIME DEFAULT NULL").await;
+    ensure_column(pool, "user_feedback", "resolved_at", "DATETIME DEFAULT NULL").await;
     // 反馈类型：problem（问题反馈）/ suggestion（功能建议），images 保存图片 URL 的 JSON 数组
     ensure_column(pool, "user_feedback", "feedback_type", "VARCHAR(16) NOT NULL DEFAULT 'problem'").await;
     ensure_column(pool, "user_feedback", "images", "TEXT").await;
@@ -329,6 +319,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `username` varchar(64) NOT NULL DEFAULT '',
             `password` varchar(255) NOT NULL DEFAULT '',
+            `email` varchar(128) NOT NULL DEFAULT '',
             `avatar_url` varchar(512) NOT NULL DEFAULT '',
             `role` varchar(32) NOT NULL DEFAULT 'admin',
             `status` tinyint(1) NOT NULL DEFAULT 1,
@@ -565,6 +556,10 @@ static TABLE_STATEMENTS: &[&str] = &[
             `email` varchar(128) NOT NULL DEFAULT '',
             `remark` varchar(128) NOT NULL DEFAULT '',
             `status` tinyint(1) NOT NULL DEFAULT 1,
+            `notify_wallpaper` tinyint(1) NOT NULL DEFAULT 1,
+            `notify_avatar` tinyint(1) NOT NULL DEFAULT 1,
+            `notify_nickname` tinyint(1) NOT NULL DEFAULT 1,
+            `notify_feedback` tinyint(1) NOT NULL DEFAULT 1,
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uk_email` (`email`)

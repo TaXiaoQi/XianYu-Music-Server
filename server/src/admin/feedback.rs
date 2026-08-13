@@ -3,7 +3,7 @@ use serde_json::{json, Value};
 use sqlx::MySqlPool;
 use sqlx::Row;
 
-use super::{err, is_valid_email, log_operation, ok, row_to_value, AdminCtx};
+use super::{err, log_operation, ok, row_to_value, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
 const DEFAULT_FEEDBACK_DAILY_LIMIT: i64 = 20;
@@ -96,7 +96,7 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
-        "SELECT id, ciyuanxi_id, nickname, title, content, status, category, feedback_type, images, admin_reply, replied_at, replied_by, assignee, resolve_note, ip, created_at, updated_at,
+        "SELECT id, ciyuanxi_id, nickname, title, content, status, category, feedback_type, images, admin_reply, replied_at, replied_by, assignee, resolve_note, ip, created_at, updated_at, claimed_at, resolved_at,
                 log_meta,
                 COALESCE(CHAR_LENGTH(error_logs), 0) AS error_logs_chars,
                 COALESCE(CHAR_LENGTH(all_logs), 0) AS all_logs_chars,
@@ -165,11 +165,18 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     if id <= 0 || !valid.contains(&status.as_str()) {
         return err(400, "参数错误");
     }
-    let upd = sqlx::query("UPDATE user_feedback SET status = ?, updated_at = NOW() WHERE id = ?")
-        .bind(&status)
-        .bind(id)
-        .execute(pool)
-        .await;
+    let upd = sqlx::query(
+        "UPDATE user_feedback SET status = ?,
+                claimed_at = CASE WHEN ? = 'processing' THEN COALESCE(claimed_at, NOW()) ELSE claimed_at END,
+                resolved_at = CASE WHEN ? = 'resolved' THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
+                updated_at = NOW() WHERE id = ?",
+    )
+    .bind(&status)
+    .bind(&status)
+    .bind(&status)
+    .bind(id)
+    .execute(pool)
+    .await;
     match upd {
         Ok(_) => {
             log_operation(pool, ctx, "更新反馈状态", &format!("id={}", id), &format!("status={}", status)).await;
@@ -227,7 +234,7 @@ pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     }
     // 仅当当前状态为 pending 时才允许认领，防止重复认领/抢单
     let upd = sqlx::query(
-        "UPDATE user_feedback SET status = 'processing', assignee = ?, replied_by = ?, replied_at = NOW(), updated_at = NOW() WHERE id = ? AND status = 'pending'",
+        "UPDATE user_feedback SET status = 'processing', assignee = ?, replied_by = ?, replied_at = NOW(), claimed_at = NOW(), updated_at = NOW() WHERE id = ? AND status = 'pending'",
     )
     .bind(&ctx.username)
     .bind(&ctx.username)
@@ -262,7 +269,7 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         return err(400, "完成说明不能超过 1000 字");
     }
     let upd = sqlx::query(
-        "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, replied_by = ?, replied_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+        "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
     )
     .bind(&note)
     .bind(&ctx.username)
@@ -365,49 +372,19 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
 
 /// 向所有启用中的通知邮箱统一发送邮件提醒，返回成功发送的邮箱列表
 async fn notify_external_emails(pool: &MySqlPool, ctx: &AdminCtx, feedback_type: &str, title: &str, content: &str) -> Vec<String> {
-    let rows = sqlx::query("SELECT email FROM notification_emails WHERE status = 1")
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
     let type_label = if feedback_type == "suggestion" { "功能建议" } else { "问题反馈" };
-    let mut sent: Vec<String> = Vec::new();
-    for r in rows {
-        let email: String = r.try_get("email").unwrap_or_default();
-        if email.is_empty() || !is_valid_email(&email) {
-            continue;
-        }
-        let subject = format!("【弦予后台】新增{}：{}", type_label, title);
-        let mut context = format!("后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}", type_label, title, content);
-        if content.len() > 200 {
-            context = format!(
-                "后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}…",
-                type_label,
-                title,
-                content.chars().take(200).collect::<String>()
-            );
-        }
-        match crate::handlers::email_auth::call_email_api(&ctx.config, pool, &subject, &context, &email).await {
-            Ok(_) => {
-                let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,1,'',?)")
-                    .bind(&email)
-                    .bind(&subject)
-                    .bind(&ctx.ip)
-                    .execute(pool)
-                    .await;
-                sent.push(email);
-            }
-            Err(e) => {
-                let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,2,?,?)")
-                    .bind(&email)
-                    .bind(&subject)
-                    .bind(&e)
-                    .bind(&ctx.ip)
-                    .execute(pool)
-                    .await;
-            }
-        }
-    }
-    sent
+    let subject = format!("【弦予后台】新增{}：{}", type_label, title);
+    let context = if content.len() > 200 {
+        format!(
+            "后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}…",
+            type_label,
+            title,
+            content.chars().take(200).collect::<String>()
+        )
+    } else {
+        format!("后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}", type_label, title, content)
+    };
+    crate::admin::email::notify_external_emails_for_module(pool, &ctx.config, &ctx.ip, "feedback", &subject, &context).await
 }
 
 /// 各管理账号处理反馈量统计
@@ -416,10 +393,10 @@ pub async fn feedback_admin_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     let rows = sqlx::query(
         "SELECT COALESCE(NULLIF(assignee, ''), '未认领') AS admin_name,
                 COUNT(*) AS total,
-                SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS processing,
-                SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS resolved,
-                SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
-                SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending
+                CAST(SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS SIGNED) AS processing,
+                CAST(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS SIGNED) AS resolved,
+                CAST(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS SIGNED) AS rejected,
+                CAST(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS SIGNED) AS pending
          FROM user_feedback
          GROUP BY admin_name
          ORDER BY total DESC",

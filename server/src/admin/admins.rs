@@ -18,7 +18,7 @@ fn int_of(v: &serde_json::Value, key: &str) -> i64 {
 pub async fn list_admins(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     // 查询列表（不返回 password 字段）
     let list: Vec<Value> = match sqlx::query(
-        "SELECT id, username, avatar_url, role, status, created_at, updated_at FROM admin_users ORDER BY created_at DESC",
+        "SELECT id, username, email, avatar_url, role, status, created_at, updated_at FROM admin_users ORDER BY created_at DESC",
     )
     .fetch_all(pool)
     .await
@@ -110,8 +110,12 @@ pub async fn add_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
     let username = str_of(&data, "username").trim().to_string();
     let password = str_of(&data, "password").to_string();
     let role = str_of(&data, "role").to_string();
+    let email = str_of(&data, "email").trim().to_string();
     if username.is_empty() || password.is_empty() {
         return err(400, "用户名和密码不能为空");
+    }
+    if !email.is_empty() && !super::is_valid_email(&email) {
+        return err(400, "邮箱格式不正确");
     }
     // 超级管理员全局只能有一个
     if role == "super_admin" {
@@ -137,13 +141,15 @@ pub async fn add_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
         Ok(h) => h,
         Err(_) => return err(500, "加密失败"),
     };
-    let _ = sqlx::query("INSERT INTO admin_users (username, password, avatar_url, role, status) VALUES (?,?,'',?,1)")
+    let _ = sqlx::query("INSERT INTO admin_users (username, password, email, avatar_url, role, status) VALUES (?,?,?,?,?,1)")
         .bind(&username)
         .bind(hashed)
+        .bind(&email)
+        .bind("")
         .bind(&role)
         .execute(pool)
         .await;
-    log_operation(pool, ctx, "新增管理员", &username, &format!("角色:{}", role)).await;
+    log_operation(pool, ctx, "新增管理员", &username, &format!("角色:{} 邮箱:{}", role, email)).await;
     ok("添加成功", serde_json::Value::Null)
 }
 

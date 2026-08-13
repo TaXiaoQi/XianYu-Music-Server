@@ -134,9 +134,8 @@
             v-for="(item, idx) in filteredList"
             :key="item.id"
             class="fb-card"
-            :class="[`st-${item.status}`, { expanded: expandedId === item.id }]"
+            :class="`st-${item.status}`"
             :style="{ animationDelay: `${idx * 60}ms` }"
-            @click="toggleExpand(item)"
           >
             <!-- 卡片头部 -->
             <div class="card-top">
@@ -163,25 +162,12 @@
               </div>
             </div>
 
-            <!-- 标题和内容（折叠态只显示标题，展开态显示完整内容） -->
+            <!-- 主体：左内容，右图片（默认展开） -->
             <div class="card-body">
-              <h3 class="fb-title">
-                {{ item.title || '无标题' }}
-                <svg v-if="expandedId !== item.id" class="expand-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-              </h3>
-              <p :class="[expandedId === item.id ? 'fb-content' : 'fb-content fb-content-clamp']">{{ item.content || '无内容' }}</p>
-              <!-- 图片缩略图 -->
-              <div v-if="itemImages(item).length > 0" class="img-thumbs">
-                <img
-                  v-for="(img, i) in itemImages(item)"
-                  :key="i"
-                  :src="img"
-                  class="thumb"
-                  @click.stop="openImageViewer(itemImages(item), i)"
-                />
-              </div>
-              <Transition name="fade-up">
-                <div v-if="expandedId === item.id" class="detail-more">
+              <div class="card-main">
+                <h3 class="fb-title">{{ item.title || '无标题' }}</h3>
+                <p class="fb-content">{{ item.content || '无内容' }}</p>
+                <div class="detail-more">
                   <div v-if="hasErrorLogs(item) || hasAllLogs(item)" class="log-summary">
                     <span v-if="hasErrorLogs(item)" class="log-chip">错误日志 {{ formatLogSize(item.error_logs_chars) }}</span>
                     <span v-if="hasAllLogs(item)" class="log-chip">全量日志 {{ formatLogSize(item.all_logs_chars) }}</span>
@@ -199,16 +185,25 @@
                     IP：{{ item.ip || '未知' }}
                   </div>
                 </div>
-              </Transition>
+              </div>
+              <!-- 图片缩略图（右侧竖排） -->
+              <div v-if="itemImages(item).length > 0" class="img-thumbs">
+                <img
+                  v-for="(img, i) in itemImages(item)"
+                  :key="i"
+                  :src="img"
+                  class="thumb"
+                  @click.stop="openImageViewer(itemImages(item), i)"
+                />
+              </div>
             </div>
 
             <!-- 卡片底部 -->
             <div class="card-foot" @click.stop>
               <div class="foot-meta">
-                <span class="meta-time">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  {{ item.created_at || '-' }}
-                </span>
+                <span class="meta-time">发布时间{{ fmtTime(item.created_at) }}</span>
+                <span v-if="item.claimed_at" class="meta-time"> | 认领时间：{{ fmtTime(item.claimed_at) }}</span>
+                <span v-if="item.status === 'resolved' && item.resolved_at" class="meta-time"> | 完成时间：{{ fmtTime(item.resolved_at) }}</span>
               </div>
               <div class="foot-actions">
                 <button v-if="hasErrorLogs(item) || hasAllLogs(item)" class="act-btn act-log" @click="openLogModal(item)">
@@ -339,10 +334,6 @@
               </button>
             </div>
             <label class="create-field">
-              <span class="create-field-label">标题 <em>*</em></span>
-              <input v-model="createTitle" class="create-input" maxlength="60" placeholder="请输入标题（最多 60 字）" />
-            </label>
-            <label class="create-field">
               <span class="create-field-label">内容 <em>*</em></span>
               <textarea v-model="createContent" class="create-textarea" rows="4" maxlength="1000" placeholder="请输入内容描述（最多 1000 字）"></textarea>
               <span class="create-count">{{ createContent.length }}/1000</span>
@@ -388,7 +379,7 @@
           </div>
           <div class="modal-foot">
             <button class="btn-cancel" :disabled="createSaving" @click="closeCreateModal">取消</button>
-            <button class="btn-confirm btn-create-submit" :disabled="createSaving || !createTitle.trim() || !createContent.trim()" @click="submitCreate">
+            <button class="btn-confirm btn-create-submit" :disabled="createSaving || !createContent.trim()" @click="submitCreate">
               {{ createSaving ? '发布中...' : '发布' }}
             </button>
           </div>
@@ -547,19 +538,40 @@ function statusLabel(s: string): string {
 const typeFilter = ref('all')
 const sortMode = ref('post_time_desc')
 
-// ===== 展开详情 =====
-const expandedId = ref<number | null>(null)
-
-function toggleExpand(item: Feedback) {
-  expandedId.value = expandedId.value === item.id ? null : item.id
+// ===== 时间戳格式化 =====
+// 按数据库字面时间显示（兼容服务器/客户端），如 2026年12月12日 21时25分
+function fmtTime(v: any): string {
+  if (!v) return ''
+  const m = String(v).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T ]+(\d{1,2}):(\d{1,2})/)
+  if (!m) return String(v)
+  const [, y, mo, d, h, mi] = m.map(Number)
+  return `${y}年${mo}月${d}日 ${h}时${String(mi).padStart(2, '0')}分`
 }
 
 // ===== 图片处理 =====
+// 客户端上传的图片可能存为内网 IP:端口 的完整 URL（如 http://47.80.58.50:8081/...），
+// 后台通过 https 域名访问时会被浏览器混合内容策略拦截，这里将跨源地址改写为后台同源路径加载。
+function normalizeImgUrl(u: string): string {
+  if (u.startsWith('http://') || u.startsWith('https://')) {
+    try {
+      const parsed = new URL(u, window.location.origin)
+      if (parsed.origin !== window.location.origin) {
+        return window.location.origin + parsed.pathname + parsed.search
+      }
+      return u
+    } catch {
+      return u
+    }
+  }
+  return u
+}
 function itemImages(item: Feedback): string[] {
   if (!item.images) return []
   try {
     const arr = JSON.parse(item.images)
-    return Array.isArray(arr) ? arr.filter((u: string) => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))) : []
+    return Array.isArray(arr)
+      ? arr.filter((u: string) => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))).map(normalizeImgUrl)
+      : []
   } catch {
     return []
   }
@@ -629,7 +641,8 @@ function closeStats() {
 // ===== 新建事项弹窗 =====
 const createModalVisible = ref(false)
 const createType = ref<'problem' | 'suggestion'>('problem')
-const createTitle = ref('')
+// 标题默认取所选类型，无需手动填写
+const createTitle = computed(() => createType.value === 'suggestion' ? '功能建议' : '问题反馈')
 const createContent = ref('')
 const createImages = ref<string[]>([])
 const createDragging = ref(false)
@@ -639,7 +652,6 @@ const createFileInput = ref<HTMLInputElement | null>(null)
 
 function openCreateModal() {
   createType.value = 'problem'
-  createTitle.value = ''
   createContent.value = ''
   createImages.value = []
   createNotifyExternal.value = false
@@ -698,10 +710,6 @@ function removeCreateImage(index: number) {
 }
 async function submitCreate() {
   if (createSaving.value) return
-  if (!createTitle.value.trim()) {
-    showToast('请填写标题')
-    return
-  }
   if (!createContent.value.trim()) {
     showToast('请填写内容')
     return
@@ -950,7 +958,7 @@ onUnmounted(() => {
 
 <style scoped>
 .fb-page {
-  max-width: 720px;
+  max-width: 920px;
   margin: 0 auto;
 }
 
@@ -1116,25 +1124,27 @@ onUnmounted(() => {
   border-radius: 10px;
   cursor: zoom-in;
   border: 1px solid var(--border);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s, width 0.3s, height 0.3s;
 }
 .thumb:hover { transform: scale(1.05); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12); }
 
-/* ===== 展开提示 ===== */
-.expand-hint {
-  display: inline-block;
-  vertical-align: middle;
-  margin-left: 4px;
-  color: var(--text-muted);
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+/* 主体布局：主内容靠左，图片缩略图竖排于右侧（默认展开） */
+.fb-card .card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px;
 }
-.fb-content-clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.fb-card .card-main { min-width: 0; }
+.fb-card .img-thumbs {
+  margin-top: 0;
+  flex-direction: column;
+  align-items: flex-end;
 }
-.fb-card.expanded .expand-hint { transform: rotate(180deg); }
+.fb-card .thumb {
+  width: 72px;
+  height: 72px;
+}
 
 /* ===== 提交限制配置 ===== */
 .limit-panel {
@@ -1482,12 +1492,14 @@ onUnmounted(() => {
   justify-content: center;
   z-index: 1000;
   padding: 20px;
+  overflow-y: auto;
 }
 .modal-dialog {
   background: var(--white);
   border-radius: 16px;
   width: 100%;
   max-width: 480px;
+  margin: auto;
   overflow: hidden;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
 }
@@ -1632,7 +1644,13 @@ onUnmounted(() => {
 }
 
 /* ===== 新建事项弹窗 ===== */
-.create-dialog { max-width: 520px; }
+.create-dialog {
+  max-width: 520px;
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+}
+.create-dialog .modal-body { overflow-y: auto; }
 .create-type-row { display: flex; gap: 8px; margin-bottom: 16px; }
 .create-type-btn {
   flex: 1;

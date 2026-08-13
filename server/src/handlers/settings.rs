@@ -303,6 +303,14 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
             if let Err(e) = result {
                 return ctx.err(500, &format!("服务器错误: {}", e));
             }
+            crate::admin::email::notify_external_emails_for_module(
+                pool,
+                &ctx.config,
+                &ctx.client_ip,
+                "nickname",
+                "【弦予后台】新昵称待审核",
+                &format!("用户 {} 申请改名为「{}」，请及时审核。", ciyuanxi_id, nickname),
+            ).await;
             nickname_submitted = true;
         }
     }
@@ -359,6 +367,14 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
             if let Err(e) = result {
                 return ctx.err(500, &format!("服务器错误: {}", e));
             }
+            crate::admin::email::notify_external_emails_for_module(
+                pool,
+                &ctx.config,
+                &ctx.client_ip,
+                "avatar",
+                "【弦予后台】新头像待审核",
+                &format!("用户 {} 提交了新头像，请及时审核。", ciyuanxi_id),
+            ).await;
             avatar_submitted = true;
         }
     }

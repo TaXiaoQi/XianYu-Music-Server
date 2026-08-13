@@ -4,7 +4,10 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use super::{err, is_valid_email, log_operation, ok, AdminCtx};
-use crate::handlers::helpers::{int_of, parse_body, str_of};
+use crate::handlers::helpers::{bool_of, int_of, parse_body, str_of};
+
+/// 通知板块白名单（用于动态列名与全局设置，防止注入）
+pub const NOTIFY_MODULES: [&str; 4] = ["wallpaper", "avatar", "nickname", "feedback"];
 
 async fn ensure_email_tables(pool: &MySqlPool) {
     for t in crate::schema::table_statements() {
@@ -12,13 +15,71 @@ async fn ensure_email_tables(pool: &MySqlPool) {
             let _ = sqlx::query(t).execute(pool).await;
         }
     }
+    for m in NOTIFY_MODULES.iter() {
+        let _ = sqlx::query(&format!("ALTER TABLE `notification_emails` ADD COLUMN IF NOT EXISTS `notify_{}` tinyint(1) NOT NULL DEFAULT 1", m))
+            .execute(pool)
+            .await;
+    }
+}
+
+/// 读取某板块的全局通知开关（server_settings），默认开启
+pub async fn notify_module_enabled(pool: &MySqlPool, module: &str) -> bool {
+    let key = format!("notify_module_{}", module);
+    sqlx::query_scalar::<_, String>("SELECT setting_value FROM server_settings WHERE setting_key = ?")
+        .bind(&key)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .map(|v| v != "0")
+        .unwrap_or(true)
+}
+
+/// 向开启该板块通知的邮箱发送邮件，返回成功发送的邮箱列表
+#[allow(dead_code)]
+pub async fn notify_external_emails_for_module(
+    pool: &MySqlPool,
+    config: &crate::config::Config,
+    ip: &str,
+    module: &str,
+    subject: &str,
+    context: &str,
+) -> Vec<String> {
+    if !NOTIFY_MODULES.contains(&module) {
+        return Vec::new();
+    }
+    if !notify_module_enabled(pool, module).await {
+        return Vec::new();
+    }
+    let col = format!("notify_{}", module);
+    let q = format!("SELECT email FROM notification_emails WHERE status = 1 AND {} = 1", col);
+    let rows = sqlx::query(&q).fetch_all(pool).await.unwrap_or_default();
+    let mut sent: Vec<String> = Vec::new();
+    for r in rows {
+        let email: String = r.try_get("email").unwrap_or_default();
+        if email.is_empty() || !is_valid_email(&email) {
+            continue;
+        }
+        match crate::handlers::email_auth::call_email_api(config, pool, subject, context, &email).await {
+            Ok(_) => {
+                let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,1,'',?)")
+                    .bind(&email).bind(subject).bind(ip).execute(pool).await;
+                sent.push(email);
+            }
+            Err(e) => {
+                let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,2,?,?)")
+                    .bind(&email).bind(subject).bind(&e).bind(ip).execute(pool).await;
+            }
+        }
+    }
+    sent
 }
 
 /// 通知邮箱列表
 pub async fn list_notification_emails(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     ensure_email_tables(pool).await;
-    let list = sqlx::query("SELECT id, email, remark, status, created_at FROM notification_emails ORDER BY id ASC")
+    let list = sqlx::query("SELECT id, email, remark, status, notify_wallpaper, notify_avatar, notify_nickname, notify_feedback, created_at FROM notification_emails ORDER BY id ASC")
         .fetch_all(pool)
         .await;
     match list {
@@ -37,6 +98,10 @@ fn row_to_email(r: &sqlx::mysql::MySqlRow) -> Value {
         "email": r.get::<String, _>("email"),
         "remark": r.get::<String, _>("remark"),
         "status": r.get::<i64, _>("status"),
+        "notify_wallpaper": r.try_get::<i64, _>("notify_wallpaper").unwrap_or(1),
+        "notify_avatar": r.try_get::<i64, _>("notify_avatar").unwrap_or(1),
+        "notify_nickname": r.try_get::<i64, _>("notify_nickname").unwrap_or(1),
+        "notify_feedback": r.try_get::<i64, _>("notify_feedback").unwrap_or(1),
         "created_at": r.try_get::<String, _>("created_at").unwrap_or_else(|_| "".into()),
     })
 }
@@ -59,9 +124,17 @@ pub async fn add_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     if dup.is_some() {
         return err(400, "该邮箱已存在");
     }
-    let ins = sqlx::query("INSERT INTO notification_emails (email, remark, status) VALUES (?, ?, 1)")
+    let nw = bool_of(&data, "notify_wallpaper");
+    let na = bool_of(&data, "notify_avatar");
+    let nn = bool_of(&data, "notify_nickname");
+    let nf = bool_of(&data, "notify_feedback");
+    let ins = sqlx::query("INSERT INTO notification_emails (email, remark, status, notify_wallpaper, notify_avatar, notify_nickname, notify_feedback) VALUES (?, ?, 1, ?, ?, ?, ?)")
         .bind(&email)
         .bind(&remark)
+        .bind(nw as i32)
+        .bind(na as i32)
+        .bind(nn as i32)
+        .bind(nf as i32)
         .execute(pool)
         .await;
     match ins {
@@ -71,6 +144,103 @@ pub async fn add_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool
         }
         Err(_) => err(500, "数据库错误"),
     }
+}
+
+/// 更新通知邮箱的备注与板块开关
+pub async fn update_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let remark = str_of(&data, "remark").trim().to_string();
+    let nw = bool_of(&data, "notify_wallpaper");
+    let na = bool_of(&data, "notify_avatar");
+    let nn = bool_of(&data, "notify_nickname");
+    let nf = bool_of(&data, "notify_feedback");
+    let upd = sqlx::query("UPDATE notification_emails SET remark = ?, notify_wallpaper = ?, notify_avatar = ?, notify_nickname = ?, notify_feedback = ? WHERE id = ?")
+        .bind(&remark)
+        .bind(nw as i32)
+        .bind(na as i32)
+        .bind(nn as i32)
+        .bind(nf as i32)
+        .bind(id)
+        .execute(pool)
+        .await;
+    match upd {
+        Ok(r) if r.rows_affected() > 0 => {
+            log_operation(pool, ctx, "更新通知邮箱设置", &format!("ID:{}", id), &format!("壁纸:{} 头像:{} 昵称:{} 反馈:{}", nw, na, nn, nf)).await;
+            ok("已更新", Value::Null)
+        }
+        Ok(_) => err(404, "邮箱不存在"),
+        Err(_) => err(500, "数据库错误"),
+    }
+}
+
+/// 快捷导入管理员邮箱
+pub async fn import_admin_emails(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let _ = body;
+    ensure_email_tables(pool).await;
+    let rows = sqlx::query("SELECT username, email FROM admin_users WHERE email IS NOT NULL AND TRIM(email) <> ''")
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+    let mut imported: Vec<String> = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    for r in rows {
+        let username: String = r.try_get("username").unwrap_or_default();
+        let email: String = r.try_get("email").unwrap_or_default();
+        let email = email.trim().to_string();
+        if email.is_empty() || !is_valid_email(&email) {
+            continue;
+        }
+        let dup = sqlx::query("SELECT id FROM notification_emails WHERE email = ?")
+            .bind(&email)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+        if dup.is_some() {
+            skipped.push(email);
+            continue;
+        }
+        let _ = sqlx::query("INSERT INTO notification_emails (email, remark, status, notify_wallpaper, notify_avatar, notify_nickname, notify_feedback) VALUES (?,?,1,1,1,1,1)")
+            .bind(&email)
+            .bind(format!("管理员：{}", username))
+            .execute(pool)
+            .await;
+        imported.push(email);
+    }
+    log_operation(pool, ctx, "导入管理员邮箱", "", &format!("导入:{}个 跳过:{}个", imported.len(), skipped.len())).await;
+    ok(&format!("成功导入 {} 个管理员邮箱{}", imported.len(), if skipped.is_empty() { String::new() } else { format!("，{} 个已存在跳过", skipped.len()) }), json!({ "imported": imported, "skipped": skipped }))
+}
+
+/// 获取全局通知板块设置
+pub async fn get_notification_modules(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let mut modules = json!({});
+    for m in NOTIFY_MODULES.iter() {
+        modules[m] = json!(notify_module_enabled(pool, m).await);
+    }
+    ok("", modules)
+}
+
+/// 保存全局通知板块设置
+pub async fn update_notification_modules(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let mut changed: Vec<String> = Vec::new();
+    for m in NOTIFY_MODULES.iter() {
+        let key = format!("notify_module_{}", m);
+        if let Some(v) = data.get(m).and_then(|x| x.as_bool()) {
+            let _ = sqlx::query("INSERT INTO server_settings (setting_key, setting_value, description) VALUES (?, ?, '') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)")
+                .bind(&key)
+                .bind(if v { "1" } else { "0" })
+                .execute(pool)
+                .await;
+            changed.push(format!("{}:{}", m, if v { "开" } else { "关" }));
+        }
+    }
+    log_operation(pool, ctx, "更新通知板块设置", "", &changed.join(" ")).await;
+    ok("已保存", Value::Null)
 }
 
 /// 删除通知邮箱

@@ -261,6 +261,17 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         .execute(pool)
         .await;
 
+    if initial_status == "pending" {
+        crate::admin::email::notify_external_emails_for_module(
+            pool,
+            &ctx.config,
+            &ctx.client_ip,
+            "wallpaper",
+            "【弦予后台】新壁纸待审核",
+            &format!("用户 {} 上传了壁纸「{}」，请及时审核。", ciyuanxi_id, title),
+        ).await;
+    }
+
     let msg = match initial_status {
         "normal" => "上传成功，已通过机审",
         "rejected" => if audit.reason.is_empty() { "上传成功，但未通过机审" } else { audit.reason.as_str() },

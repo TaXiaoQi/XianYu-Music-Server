@@ -17,7 +17,7 @@ fn int_of(v: &serde_json::Value, key: &str) -> i64 {
 
 /// 获取当前管理员账户信息
 pub async fn get_account_info(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    let row = sqlx::query("SELECT id, username, avatar_url, role, status, created_at, updated_at FROM admin_users WHERE id = ?")
+    let row = sqlx::query("SELECT id, username, email, avatar_url, role, status, created_at, updated_at FROM admin_users WHERE id = ?")
         .bind(ctx.id)
         .fetch_optional(pool)
         .await
@@ -27,6 +27,7 @@ pub async fn get_account_info(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
         return err(404, "管理员不存在");
     };
     let username: String = admin.get("username");
+    let email: String = admin.get("email");
     let avatar_url: String = admin.get("avatar_url");
     let role: String = admin.get("role");
     let status: i32 = admin.get("status");
@@ -63,6 +64,7 @@ pub async fn get_account_info(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     ok("ok", json!({
         "id": ctx.id,
         "username": username,
+        "email": email,
         "avatar_url": avatar_url,
         "role": role,
         "status": status,
@@ -184,15 +186,24 @@ fn save_admin_avatar_png(bytes: &[u8], target: &std::path::Path) -> bool {
 }
 
 /// 修改用户名
+/// 支持分级：普通管理员只能修改自己的用户名，超级管理员可修改任意管理员用户名。
+/// 入参：new_username（必填）, admin_id（目标管理员ID，默认自己）
 pub async fn change_username(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
     let new_username = str_of(&data, "new_username").trim().to_string();
+    let admin_id = int_of(&data, "admin_id");
     if new_username.is_empty() {
         return err(400, "用户名不能为空");
     }
+    // 目标管理员：默认自己
+    let target_id = if admin_id > 0 { admin_id } else { ctx.id };
+    // 权限分级：修改他人用户名仅超管可操作
+    if target_id != ctx.id && ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可以修改其他管理员用户名");
+    }
     let exists = sqlx::query("SELECT id FROM admin_users WHERE username = ? AND id != ?")
         .bind(&new_username)
-        .bind(ctx.id)
+        .bind(target_id)
         .fetch_optional(pool)
         .await
         .ok()
@@ -203,10 +214,15 @@ pub async fn change_username(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     }
     let _ = sqlx::query("UPDATE admin_users SET username = ? WHERE id = ?")
         .bind(&new_username)
-        .bind(ctx.id)
+        .bind(target_id)
         .execute(pool)
         .await;
-    log_operation(pool, ctx, "修改用户名", &new_username, "").await;
+    let target_username: String = sqlx::query_scalar("SELECT username FROM admin_users WHERE id = ?")
+        .bind(target_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or_default();
+    log_operation(pool, ctx, "修改用户名", &target_username, &format!("id={}", target_id)).await;
     ok("用户名修改成功", serde_json::Value::Null)
 }
 
