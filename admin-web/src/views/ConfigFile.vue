@@ -1,6 +1,8 @@
 <template>
   <div class="config-file-page">
-    <div class="page-header">
+    <!-- 页面头部动效 -->
+    <Transition name="fade-down" appear>
+      <div class="page-header">
       <div>
         <h2 class="page-title">配置文件管理</h2>
         <p class="page-desc">
@@ -19,8 +21,12 @@
         </button>
       </div>
     </div>
+    </Transition>
 
-    <div class="notice-card">
+    <!-- 主要内容动效 -->
+    <Transition name="fade-up" appear>
+      <div class="config-content">
+        <div class="notice-card">
       <strong>安全提示</strong>
       <span>密码和密钥不会明文回显。对应输入框留空表示保留原值，只有重新填写时才会覆盖。</span>
     </div>
@@ -205,6 +211,8 @@
         <p class="hint">后台“人机验证设置”页面保存到数据库的配置通常优先生效，这里用于维护配置文件默认值。</p>
       </section>
     </template>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -634,4 +642,17 @@ onMounted(load)
     flex-direction: column;
   }
 }
+
+/* ===== 过渡动画 ===== */
+.config-content {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
+.config-card { animation: cardIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 </style>

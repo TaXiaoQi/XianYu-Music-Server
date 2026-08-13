@@ -61,6 +61,12 @@
           </ul>
         </li>
       </ul>
+      <div class="sidebar-switch">
+        <button class="switch-mobile-btn" @click="goMobile">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+          切换移动版
+        </button>
+      </div>
     </aside>
 
     <!-- 主内容区 -->
@@ -135,6 +141,10 @@ onMounted(loadSiteLogo)
 
 function toggleSubmenu(id: string) {
   openMenu.value = openMenu.value === id ? null : id
+}
+
+function goMobile() {
+  router.push('/m/dashboard')
 }
 
 async function handleLogout() {

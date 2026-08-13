@@ -1,18 +1,21 @@
 <template>
   <div class="site-config-page">
-    <div class="page-header">
+    <!-- 页面头部动效 -->
+    <Transition name="fade-down" appear>
+      <div class="page-header">
       <div>
         <h2 class="page-title">Logo 配置</h2>
         <p class="page-desc">上传站点 Logo，用于后台登录页、侧边栏及浏览器标签页图标，保存后即时生效。</p>
       </div>
     </div>
+    </Transition>
 
-    <div v-if="loading" class="state-box">
+    <Transition name="fade-up" appear>
+      <div v-if="loading" class="state-box">
       <span class="loader"></span>
       加载中...
     </div>
-
-    <div v-else class="config-card">
+      <div v-else class="config-card">
       <div class="section-title">当前 Logo</div>
 
       <div class="preview-row">
@@ -47,6 +50,7 @@
         <button v-if="hasNewImage" class="btn-cancel" :disabled="saving" @click="reset">取消</button>
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 
@@ -322,4 +326,12 @@ onMounted(async () => {
     align-items: flex-start;
   }
 }
+
+/* ===== 过渡动画 ===== */
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
+.config-card { animation: cardIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 </style>

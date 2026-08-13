@@ -1,6 +1,8 @@
 <template>
   <div class="turnstile-config-page">
-    <div class="page-header">
+    <!-- 页面头部动效 -->
+    <Transition name="fade-down" appear>
+      <div class="page-header">
       <div>
         <h2 class="page-title">人机验证设置</h2>
         <p class="page-desc">
@@ -13,11 +15,11 @@
         {{ saving ? '保存中...' : '保存配置' }}
       </button>
     </div>
+    </Transition>
 
-    <div v-if="loading" class="state-box"><span class="loader"></span> 加载中...</div>
-
-    <template v-else>
-      <div class="config-card">
+    <Transition name="fade-up" appear>
+      <div v-if="loading" class="state-box"><span class="loader"></span> 加载中...</div>
+      <div v-else class="config-card">
         <div class="section-title">基本设置</div>
         <div class="toggle-row">
           <div>
@@ -63,7 +65,9 @@
           </div>
         </div>
       </div>
+      </Transition>
 
+      <Transition name="fade-up" appear>
       <div class="config-card">
         <div class="section-title">使用说明</div>
         <ul class="tips-list">
@@ -75,7 +79,7 @@
           <li>配置保存后立即生效，无需重启服务端。</li>
         </ul>
       </div>
-    </template>
+      </Transition>
   </div>
 </template>
 
@@ -353,4 +357,12 @@ onMounted(loadConfig)
     transform: rotate(360deg);
   }
 }
+
+/* ===== 过渡动画 ===== */
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
+.config-card { animation: cardIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 </style>

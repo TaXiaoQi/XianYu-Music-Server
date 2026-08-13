@@ -1,6 +1,7 @@
 <template>
   <div class="version-wrap">
     <!-- 桌面端在线更新配置 -->
+    <Transition name="fade-down" appear>
     <div class="card desktop-card">
       <h3 class="section-title">桌面端在线更新</h3>
       <p class="section-desc">
@@ -40,6 +41,7 @@
         <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ desktop.updated_at }}</span>
       </div>
     </div>
+    </Transition>
 
     <!-- 桌面端下载渠道弹窗 -->
     <Transition name="modal">
@@ -112,6 +114,7 @@
     </Transition>
 
     <!-- APP 版本管理 -->
+    <Transition name="fade-up" appear>
     <div class="card">
       <div class="card-header">
         <h3 class="section-title">版本管理</h3>
@@ -138,7 +141,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="v in versions" :key="v.id">
+            <tr v-for="(v, idx) in versions" :key="v.id" class="table-row" :style="{ animationDelay: `${idx * 40}ms` }">
               <td>{{ v.id }}</td>
               <td>{{ v.app_name || '-' }}</td>
               <td>{{ v.version_code || '-' }}</td>
@@ -178,6 +181,7 @@
         <button :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
       </div>
     </div>
+    </Transition>
 
     <!-- 新增版本弹窗 -->
     <Transition name="modal">
@@ -1025,5 +1029,19 @@ onMounted(() => {
 }
 .modal-enter-from .modal, .modal-leave-to .modal {
   transform: scale(0.92) translateY(20px);
+}
+
+/* ===== 页面进入动效 ===== */
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
+
+/* 表格行逐条加载 */
+tbody tr.table-row { animation: rowIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>

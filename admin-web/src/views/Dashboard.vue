@@ -1,6 +1,7 @@
 <template>
   <div class="dashboard-wrap">
     <!-- 标题区 -->
+    <Transition name="fade-down" appear>
     <div class="dsh-head">
       <div class="dsh-head-l">
         <div class="dsh-head-label">Dashboard Overview</div>
@@ -12,8 +13,10 @@
         <span>实时同步</span>
       </div>
     </div>
+    </Transition>
 
     <!-- 今日音源调用占比 -->
+    <Transition name="fade-up" appear>
     <div class="source-chart-card" v-if="!loading && !loadError">
       <div class="source-chart-head">
         <div>
@@ -40,36 +43,25 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 统计卡片 -->
+    <Transition name="fade-up" appear>
     <div class="stats-grid" v-if="!loading && !loadError">
-      <div class="stat-card">
-        <div class="label">总用户数</div>
-        <div class="value">{{ stats.total_users ?? 0 }}</div>
-        <div class="sub">今日新增 {{ stats.today_users ?? 0 }} · 昨日 {{ stats.yesterday_users ?? 0 }}</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">今日热搜</div>
-        <div class="value hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</div>
-        <div class="sub">今日搜索 {{ stats.today_hot_search_count ?? 0 }} 次</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">今日用户</div>
-        <div class="value">{{ stats.active_users ?? 0 }}</div>
-        <div class="sub">今日活跃设备数</div>
-      </div>
-      <div class="stat-card">
-        <div class="label">今日分享</div>
-        <div class="value">{{ stats.today_shares ?? 0 }}</div>
-        <div class="sub">总计 {{ stats.total_shares ?? 0 }} 次</div>
+      <div v-for="(card, idx) in statCards" :key="card.label" class="stat-card" :style="{ animationDelay: `${idx * 80}ms` }">
+        <div class="label">{{ card.label }}</div>
+        <div class="value" :class="{ 'hot-keyword': card.hot }">{{ card.value() }}</div>
+        <div class="sub">{{ card.sub() }}</div>
       </div>
     </div>
+    </Transition>
 
     <!-- 加载中 -->
     <div v-if="loading" class="empty">加载中...</div>
     <div v-if="!loading && loadError" class="empty">{{ loadError }}</div>
 
     <!-- 快捷操作 -->
+    <Transition name="fade-up" appear>
     <div class="card" style="margin-top: 20px;">
       <h3>快捷操作</h3>
       <div style="display: flex; gap: 12px; flex-wrap: wrap;">
@@ -81,8 +73,10 @@
         <router-link to="/database" class="btn">数据库管理</router-link>
       </div>
     </div>
+    </Transition>
 
     <!-- 消息通知 -->
+    <Transition name="fade-up" appear>
     <div class="notice-card" v-if="!loading && !loadError">
       <div class="notice-head">
         <div>
@@ -92,7 +86,7 @@
         <span class="notice-total">{{ noticeTotal }} 条待处理</span>
       </div>
       <div class="notice-grid">
-        <router-link v-for="item in noticeItems" :key="item.label" :to="item.to" class="notice-item">
+        <router-link v-for="(item, idx) in noticeItems" :key="item.label" :to="item.to" class="notice-item" :style="{ animationDelay: `${idx * 70}ms` }">
           <span class="notice-dot" :class="item.className"></span>
           <div class="notice-text">
             <strong>{{ item.label }}</strong>
@@ -102,8 +96,10 @@
         </router-link>
       </div>
     </div>
+    </Transition>
 
     <!-- 服务器 API -->
+    <Transition name="fade-up" appear>
     <div class="card api-card">
       <div class="api-card-head">
         <div>
@@ -121,6 +117,7 @@
         <button class="btn btn-primary btn-sm" :disabled="!clientApiSecret" @click="copyApiSecret">复制密钥</button>
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 
@@ -174,6 +171,35 @@ const sourceItems = computed(() => {
     percent: Math.round((Number(item.count || 0) / total) * 100),
   }))
 })
+
+// 统计卡片配置（支持动态值）
+const statCards = [
+  {
+    label: '总用户数',
+    key: 'total_users',
+    sub: () => `今日新增 ${stats.value.today_users ?? 0} · 昨日 ${stats.value.yesterday_users ?? 0}`,
+    value: () => stats.value.total_users ?? 0,
+  },
+  {
+    label: '今日热搜',
+    key: 'today_hot_search_keyword',
+    value: () => stats.value.today_hot_search_keyword || '暂无',
+    sub: () => `今日搜索 ${stats.value.today_hot_search_count ?? 0} 次`,
+    hot: true,
+  },
+  {
+    label: '今日用户',
+    key: 'active_users',
+    value: () => stats.value.active_users ?? 0,
+    sub: () => '今日活跃设备数',
+  },
+  {
+    label: '今日分享',
+    key: 'today_shares',
+    value: () => stats.value.today_shares ?? 0,
+    sub: () => `总计 ${stats.value.total_shares ?? 0} 次`,
+  },
+]
 
 const sourceRingStyle = computed(() => {
   const items = sourceItems.value
@@ -689,4 +715,17 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== 动效 ===== */
+.stat-card, .notice-item {
+  animation: dashIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes dashIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
 </style>

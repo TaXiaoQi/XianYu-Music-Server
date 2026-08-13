@@ -1,6 +1,7 @@
 <template>
   <div class="about-config-page">
-    <div class="page-header">
+    <Transition name="fade-down" appear>
+      <div class="page-header">
       <div>
         <h2 class="page-title">关于页配置</h2>
         <p class="page-desc">配置桌面端关于页的官网、检查更新、项目地址等入口，保存后由客户端从后台下发。</p>
@@ -8,15 +9,16 @@
       <button class="btn-save" :disabled="saving" @click="save">
         <span v-if="saving" class="spinner"></span>
         {{ saving ? '保存中...' : '保存配置' }}
-      </button>
-    </div>
+        </button>
+      </div>
+    </Transition>
 
-    <div v-if="loading" class="state-box">
-      <span class="loader"></span>
-      加载中...
-    </div>
-
-    <div v-else class="config-card">
+    <Transition name="fade-up" appear>
+      <div v-if="loading" class="state-box">
+        <span class="loader"></span>
+        加载中...
+      </div>
+      <div v-else class="config-card">
       <div class="section-title">官网入口</div>
       <div class="field-grid">
         <label class="field">
@@ -78,7 +80,8 @@
       </div>
 
       <p class="hint">链接留空后，桌面端会隐藏对应外链按钮；检查更新入口可通过开关隐藏。</p>
-    </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -284,4 +287,11 @@ onMounted(loadConfig)
     flex-direction: column;
   }
 }
+
+/* ===== 过渡动画 ===== */
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
 </style>

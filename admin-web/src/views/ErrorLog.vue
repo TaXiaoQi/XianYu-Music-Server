@@ -1,6 +1,7 @@
 <template>
   <div class="error-log-wrap">
     <!-- 统计栏 -->
+    <Transition name="fade-down" appear>
     <div class="stats-bar">
       <div class="stats-tags">
         <span
@@ -17,8 +18,10 @@
         <button class="btn btn-danger btn-sm clear-btn" @click="clearAll">清空全部</button>
       </div>
     </div>
+    </Transition>
 
     <!-- 筛选区 -->
+    <Transition name="fade-up" appear>
     <div class="filters">
       <select v-model="filterType" style="width:160px;">
         <option value="">全部类型</option>
@@ -38,8 +41,10 @@
       <button v-if="hasFilter" class="btn" @click="clearFilter">清除</button>
       <span class="filter-count">共 {{ total }} 条记录</span>
     </div>
+    </Transition>
 
     <!-- 表格 -->
+    <Transition name="fade-up" appear>
     <div class="card">
       <div v-if="loading" class="empty">加载中...</div>
       <div v-else-if="loadError" class="empty">{{ loadError }}</div>
@@ -94,6 +99,7 @@
         <button :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
       </div>
     </div>
+    </Transition>
 
     <!-- 详情弹窗 -->
     <Transition name="modal">
@@ -518,6 +524,12 @@ onMounted(() => {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* 页面进入过渡动画 */
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
 
 /* 弹窗淡进淡出 */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }

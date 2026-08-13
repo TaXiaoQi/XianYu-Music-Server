@@ -4,14 +4,11 @@
       <select v-model="form.email_provider" class="mobile-select">
         <option value="builtin">内置邮箱机</option>
         <option value="api">外部 API</option>
-        <option value="smtp">SMTP</option>
       </select>
       <input v-model="form.email_sender" class="mobile-input" placeholder="发件邮箱" />
       <input v-model="form.email_api_primary" class="mobile-input" placeholder="邮箱 API 主地址" />
       <input v-model="form.email_api_backup" class="mobile-input" placeholder="邮箱 API 备用地址" />
-      <input v-model="form.smtp_host" class="mobile-input" placeholder="SMTP 主机" />
-      <input v-model="form.smtp_port" class="mobile-input" placeholder="SMTP 端口" />
-      <input v-model="form.smtp_username" class="mobile-input" placeholder="SMTP 用户名" />
+      <input v-model="form.smtp_username" class="mobile-input" placeholder="SMTP 用户名（留空则使用发件邮箱）" />
       <input v-model="form.smtp_password" class="mobile-input" placeholder="SMTP 密码 / 授权码" type="password" />
       <button class="mobile-btn primary" :disabled="saving" @click="save">保存配置</button>
     </div>

@@ -1,6 +1,7 @@
 <template>
   <div class="device-page">
     <!-- 顶部工具栏 -->
+    <Transition name="fade-down" appear>
     <div class="toolbar-row">
       <div class="search-box">
         <input
@@ -19,6 +20,7 @@
         </button>
       </div>
     </div>
+    </Transition>
 
     <!-- 手动封禁表单（折叠） -->
     <Transition name="fade-up">
@@ -35,6 +37,7 @@
     </Transition>
 
     <!-- 统计行 -->
+    <Transition name="fade-up" appear>
     <div class="stats-row">
       <div class="stat-chip">
         <div class="stat-icon stat-icon-total">
@@ -55,8 +58,10 @@
         <div class="stat-body"><span class="stat-num">{{ stats.banned }}</span><span class="stat-label">已封禁</span></div>
       </div>
     </div>
+    </Transition>
 
     <!-- 设备表格 -->
+    <Transition name="fade-up" appear>
     <div class="card">
       <div v-if="loading" class="state-box">
         <div class="spinner"></div>
@@ -123,6 +128,7 @@
         <span>共 {{ total }} 条</span>
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 
@@ -493,6 +499,8 @@ tbody tr:hover td { background: #fafbfc; }
 /* 过渡 */
 .fade-up-enter-active, .fade-up-leave-active { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-up-enter-from, .fade-up-leave-to { opacity: 0; transform: translateY(8px); }
+.fade-down-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
 
 /* 响应式 */
 @media (max-width: 768px) {

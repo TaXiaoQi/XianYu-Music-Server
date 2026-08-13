@@ -1,17 +1,19 @@
 <template>
   <div class="email-config-page">
-    <div class="page-header">
+    <Transition name="fade-down" appear>
+      <div class="page-header">
       <div>
         <h2 class="page-title">邮箱机设置</h2>
         <p class="page-desc">
-          配置服务端内置邮箱机，支持内置投递、外部 HTTP API 和标准 SMTP 三种方案。留空字段使用环境变量默认值，保存后立即生效。
+          配置服务端内置邮箱机，支持内置投递和外部 HTTP API 两种方案。SMTP 服务器地址与端口会根据发件邮箱域名自动识别，留空字段使用环境变量默认值，保存后立即生效。
         </p>
       </div>
       <button class="btn-save" :disabled="saving" @click="save">
         <span v-if="saving" class="spinner"></span>
         {{ saving ? '保存中...' : '保存配置' }}
-      </button>
-    </div>
+        </button>
+      </div>
+    </Transition>
 
     <div v-if="loading" class="state-box">
       <span class="loader"></span>
@@ -20,28 +22,26 @@
 
     <template v-else>
       <!-- 发送方式选择 -->
+      <Transition name="fade-up" appear>
       <div class="config-card">
         <div class="section-title">发送方式</div>
         <div class="provider-toggle">
           <label class="provider-option" :class="{ active: form.email_provider === 'builtin' }">
             <input v-model="form.email_provider" type="radio" value="builtin" />
             <span class="provider-label">内置邮箱机</span>
-            <span class="provider-desc">服务端统一记录、调度和回退，优先走 SMTP 出口，失败后可回退外部 API</span>
+            <span class="provider-desc">自动识别邮箱服务商的 SMTP 地址与端口，支持多账号轮流发送，失败后可回退外部 API</span>
           </label>
           <label class="provider-option" :class="{ active: form.email_provider === 'http_api' }">
             <input v-model="form.email_provider" type="radio" value="http_api" />
             <span class="provider-label">外部 HTTP API</span>
             <span class="provider-desc">通过第三方邮箱 API 服务发送，作为内置邮箱机的备选通道</span>
           </label>
-          <label class="provider-option" :class="{ active: form.email_provider === 'smtp' }">
-            <input v-model="form.email_provider" type="radio" value="smtp" />
-            <span class="provider-label">标准 SMTP</span>
-            <span class="provider-desc">直接通过 SMTP 协议发送（QQ邮箱、Gmail、企业邮等）</span>
-          </label>
         </div>
       </div>
+      </Transition>
 
       <!-- 通用配置 -->
+      <Transition name="fade-up" appear>
       <div class="config-card">
         <div class="section-title">通用配置</div>
         <div class="field-grid">
@@ -62,8 +62,10 @@
           外部 API 模式下作为 API 认证凭证；SMTP/内置邮箱机模式下，若 SMTP 密码留空则使用此密码。
         </p>
       </div>
+      </Transition>
 
       <!-- HTTP API 配置 -->
+      <Transition name="fade-up" appear>
       <div v-if="form.email_provider === 'builtin' || form.email_provider === 'http_api'" class="config-card">
         <div class="section-title">{{ form.email_provider === 'builtin' ? '外部 API 备选' : 'HTTP API 地址' }}</div>
         <div class="field-grid">
@@ -80,48 +82,46 @@
           {{ form.email_provider === 'builtin' ? '内置邮箱机在 SMTP 出口失败时，可回退到这里配置的外部邮箱机 API。' : '主地址请求失败时自动回退到备用地址。' }}
         </p>
       </div>
+      </Transition>
 
       <!-- SMTP 配置 -->
-      <div v-if="form.email_provider === 'builtin' || form.email_provider === 'smtp'" class="config-card">
-        <div class="section-title">{{ form.email_provider === 'builtin' ? '内置邮箱机 SMTP 出口' : 'SMTP 服务器' }}</div>
-        <div class="field-grid">
-          <label class="field">
-            <span class="required">SMTP 服务器地址</span>
-            <input v-model="form.smtp_host" type="text" placeholder="smtp.qq.com" />
-          </label>
-          <label class="field">
-            <span class="required">SMTP 端口</span>
-            <input v-model="form.smtp_port" type="number" placeholder="465" />
-          </label>
+      <Transition name="fade-up" appear>
+      <div v-if="form.email_provider === 'builtin'" class="config-card">
+        <div class="section-title">SMTP 投递</div>
+        <div class="endpoint-box">
+          <span class="endpoint-label">SMTP 服务器（自动识别）</span>
+          <code class="endpoint-value">{{ smtpEndpointText(form.email_sender) }}</code>
         </div>
 
         <div class="section-title">SMTP 认证</div>
         <div class="field-grid">
           <label class="field">
-            <span class="required">SMTP 用户名</span>
-            <input v-model="form.smtp_username" type="text" placeholder="通常与发件邮箱相同" />
+            <span>SMTP 用户名</span>
+            <input v-model="form.smtp_username" type="text" placeholder="留空则使用发件邮箱" />
           </label>
           <label class="field">
             <span class="required">SMTP 密码 / 授权码</span>
             <input
               v-model="form.smtp_password"
               type="password"
-              :placeholder="hasSmtpPassword ? '********（留空保留原值）' : '留空则使用通用密码'"
+              :placeholder="hasSmtpPassword ? '********（留空则使用通用密码）' : '留空则使用通用授权码'"
             />
           </label>
         </div>
         <p class="hint">
-          端口 465 使用隐式 SSL/TLS 加密；端口 587 或 25 使用 STARTTLS。内置邮箱机优先使用这里的 SMTP 出口投递。
+          系统会根据发件邮箱域名自动识别 SMTP 服务器地址和端口（如 QQ 邮箱为 smtp.qq.com:465）。账号池为空时使用此处投递，作为兜底出口。
         </p>
       </div>
+      </Transition>
 
       <!-- SMTP 账号池 -->
+      <Transition name="fade-up" appear>
       <div v-if="form.email_provider === 'builtin'" class="config-card">
         <div class="section-head">
           <div>
             <div class="section-title">SMTP 账号池</div>
             <p class="hint pool-hint">
-              配置多个发件邮箱后，内置邮箱机会按发送次数轮流选择账号，降低单个邮箱触发风控的概率。账号池为空时继续使用上面的单 SMTP 出口。
+              配置多个发件邮箱后，内置邮箱机会按发送次数轮流选择账号，降低单个邮箱触发风控的概率。每个账号的 SMTP 地址与端口会根据发件邮箱域名自动识别，你只需填写发件邮箱和授权码。账号池为空时继续使用上面的 SMTP 投递兜底出口。
             </p>
           </div>
           <button type="button" class="btn-add-account" @click="addSmtpAccount">添加邮箱</button>
@@ -131,7 +131,12 @@
           暂未配置账号池，当前仍使用单 SMTP 出口发送。
         </div>
 
-        <div v-for="(account, index) in form.smtp_accounts" :key="index" class="smtp-account-card">
+        <div
+          v-for="(account, index) in form.smtp_accounts"
+          :key="index"
+          class="smtp-account-card"
+          :style="{ animationDelay: `${index * 40}ms` }"
+        >
           <div class="account-head">
             <strong>发件账号 {{ index + 1 }}</strong>
             <label class="enabled-line">
@@ -144,23 +149,15 @@
           <div class="field-grid">
             <label class="field">
               <span class="required">发件邮箱</span>
-              <input v-model="account.sender" type="text" placeholder="no-reply@example.com" />
+              <input v-model="account.sender" type="text" placeholder="no-reply@qq.com" @input="syncAccountEndpoint(account)" />
             </label>
             <label class="field">
               <span>备注</span>
               <input v-model="account.remark" type="text" placeholder="例如：QQ邮箱一号" />
             </label>
             <label class="field">
-              <span class="required">SMTP 服务器地址</span>
-              <input v-model="account.host" type="text" placeholder="smtp.qq.com" />
-            </label>
-            <label class="field">
-              <span class="required">SMTP 端口</span>
-              <input v-model="account.port" type="number" placeholder="465" />
-            </label>
-            <label class="field">
-              <span class="required">SMTP 用户名</span>
-              <input v-model="account.username" type="text" placeholder="通常与发件邮箱相同" />
+              <span>SMTP 用户名</span>
+              <input v-model="account.username" type="text" placeholder="留空则使用发件邮箱" />
             </label>
             <label class="field">
               <span class="required">SMTP 密码 / 授权码</span>
@@ -171,13 +168,19 @@
               />
             </label>
           </div>
+          <div class="endpoint-box endpoint-box--account">
+            <span class="endpoint-label">SMTP 服务器（自动识别）</span>
+            <code class="endpoint-value">{{ smtpEndpointText(account.sender) }}</code>
+          </div>
         </div>
       </div>
+      </Transition>
     </template>
 
     <!-- 测试邮件 -->
-    <div v-if="!loading" class="config-card test-card">
-      <div class="section-title">发送测试邮件</div>
+    <Transition name="fade-up" appear>
+      <div v-if="!loading" class="config-card test-card">
+        <div class="section-title">发送测试邮件</div>
       <p class="test-desc">使用当前已保存的邮箱机配置向指定邮箱发送一封测试邮件，验证配置是否正常。</p>
       <label class="test-label required">测试收件邮箱</label>
       <div class="test-row">
@@ -194,7 +197,8 @@
         </button>
       </div>
       <p v-if="testResult" :class="['test-result', testResultType]">{{ testResult }}</p>
-    </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -224,6 +228,59 @@ interface SmtpAccountForm {
   has_password?: boolean
   enabled: boolean
   remark: string
+}
+
+// 常见邮箱服务商域名 → [SMTP 服务器地址, 端口]。未命中的域名回退为 smtp.<域名>:465
+const SMTP_ENDPOINTS: Record<string, [string, number]> = {
+  'qq.com': ['smtp.qq.com', 465],
+  'vip.qq.com': ['smtp.qq.com', 465],
+  'foxmail.com': ['smtp.qq.com', 465],
+  'exmail.qq.com': ['smtp.exmail.qq.com', 465],
+  '163.com': ['smtp.163.com', 465],
+  '126.com': ['smtp.126.com', 465],
+  'yeah.net': ['smtp.yeah.net', 465],
+  '188.com': ['smtp.188.com', 465],
+  'qiye.163.com': ['smtp.qiye.163.com', 465],
+  '139.com': ['smtp.139.com', 465],
+  '21cn.com': ['smtp.21cn.com', 465],
+  'sohu.com': ['smtp.sohu.com', 465],
+  'sina.com': ['smtp.sina.com', 465],
+  'vip.sina.com': ['smtp.sina.com', 465],
+  'aliyun.com': ['smtp.aliyun.com', 465],
+  'aliyunmail.com': ['smtp.aliyun.com', 465],
+  'qiye.aliyun.com': ['smtp.qiye.aliyun.com', 465],
+  '189.cn': ['smtp.189.cn', 465],
+  '263.net': ['smtp.263.net', 465],
+  'x263.net': ['smtp.263.net', 465],
+  'gmail.com': ['smtp.gmail.com', 465],
+  'outlook.com': ['smtp.office365.com', 587],
+  'hotmail.com': ['smtp.office365.com', 587],
+  'hotmail.co.uk': ['smtp.office365.com', 587],
+  'live.com': ['smtp.office365.com', 587],
+  'msn.com': ['smtp.office365.com', 587],
+  'yandex.com': ['smtp.yandex.ru', 465],
+  'yandex.ru': ['smtp.yandex.ru', 465],
+  'zoho.com': ['smtp.zoho.com', 465],
+  'zohomail.com': ['smtp.zoho.com', 465],
+}
+
+function smtpEndpoint(sender: string): { host: string; port: number } {
+  const domain = (sender.split('@')[1] || '').trim().toLowerCase()
+  if (!domain) return { host: '', port: 465 }
+  const hit = SMTP_ENDPOINTS[domain]
+  if (hit) return { host: hit[0], port: hit[1] }
+  return { host: `smtp.${domain}`, port: 465 }
+}
+
+function smtpEndpointText(sender: string): string {
+  const { host, port } = smtpEndpoint(sender)
+  return host ? `${host}:${port}` : '请先填写发件邮箱'
+}
+
+function syncAccountEndpoint(account: SmtpAccountForm) {
+  const { host, port } = smtpEndpoint(account.sender)
+  account.host = host
+  account.port = port
 }
 
 const loading = ref(true)
@@ -296,10 +353,11 @@ async function loadConfig() {
 }
 
 function addSmtpAccount() {
+  const { host, port } = smtpEndpoint(form.value.email_sender)
   form.value.smtp_accounts.push({
     sender: '',
-    host: form.value.smtp_host || '',
-    port: form.value.smtp_port || '465',
+    host,
+    port,
     username: '',
     password: '',
     enabled: true,
@@ -448,7 +506,7 @@ onMounted(loadConfig)
 }
 .provider-toggle {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 16px;
 }
 .provider-option {
@@ -514,6 +572,31 @@ onMounted(loadConfig)
   margin: 22px 0 0;
   font-size: 12px;
   color: var(--text-muted);
+}
+.endpoint-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  background: #fafafa;
+}
+.endpoint-box--account {
+  margin-top: 12px;
+}
+.endpoint-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-light);
+  white-space: nowrap;
+}
+.endpoint-value {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow-wrap: anywhere;
 }
 .pool-hint {
   margin-top: 0;
@@ -660,5 +743,19 @@ onMounted(loadConfig)
   .provider-toggle {
     grid-template-columns: 1fr;
   }
+}
+
+/* ===== 过渡动画 ===== */
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
+
+/* 卡片入场动画 */
+.smtp-account-card { animation: cardIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes cardIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>

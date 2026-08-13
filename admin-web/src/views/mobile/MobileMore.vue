@@ -19,6 +19,7 @@ const groups = [
     items: [
       { to: '/m/announcements', label: '公告管理', desc: '发布和维护 APP 公告' },
       { to: '/m/about-config', label: '关于页配置', desc: '维护关于页展示内容' },
+      { to: '/m/site-config', label: 'Logo 配置', desc: '上传站点 Logo 即时生效' },
       { to: '/m/wallpapers', label: '壁纸管理', desc: '审核和管理壁纸资源' },
       { to: '/m/avatar-audit', label: '头像/改名审核', desc: '处理用户资料审核' },
       { to: '/m/user-agreement', label: '用户协议', desc: '维护注册和登录页协议内容' },

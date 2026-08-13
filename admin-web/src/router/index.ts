@@ -88,6 +88,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '关于页配置', mobile: true },
       },
       {
+        path: 'site-config',
+        name: 'MobileSiteConfig',
+        component: () => import('@/views/mobile/MobileSiteConfig.vue'),
+        meta: { title: 'Logo 配置', mobile: true },
+      },
+      {
         path: 'wallpapers',
         name: 'MobileWallpapers',
         component: () => import('@/views/mobile/MobileWallpapers.vue'),

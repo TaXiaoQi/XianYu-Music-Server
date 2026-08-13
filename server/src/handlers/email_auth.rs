@@ -246,12 +246,58 @@ fn default_true() -> bool {
 
 impl SmtpAccount {
     fn is_usable(&self) -> bool {
+        // host 为空时会在发送前按发件邮箱域名自动识别，因此不强制要求 host
         self.enabled
             && !self.sender.trim().is_empty()
-            && !self.host.trim().is_empty()
             && !self.username.trim().is_empty()
             && !self.password.trim().is_empty()
     }
+}
+
+/// 根据发件邮箱域名自动识别常见邮箱服务商的 SMTP 服务器地址和端口。
+/// 返回 (host, port)。未命中的域名回退为 `smtp.<domain>:465`，无法解析时 host 为空。
+fn resolve_smtp_endpoint(sender: &str) -> (String, u16) {
+    let domain = sender
+        .split('@')
+        .nth(1)
+        .unwrap_or("")
+        .trim()
+        .trim_end_matches('.')
+        .to_lowercase();
+    let (host, port): (&str, u16) = match domain.as_str() {
+        // QQ 系
+        "qq.com" | "vip.qq.com" | "foxmail.com" => ("smtp.qq.com", 465),
+        "exmail.qq.com" => ("smtp.exmail.qq.com", 465),
+        // 网易系
+        "163.com" => ("smtp.163.com", 465),
+        "126.com" => ("smtp.126.com", 465),
+        "yeah.net" => ("smtp.yeah.net", 465),
+        "188.com" => ("smtp.188.com", 465),
+        "qiye.163.com" => ("smtp.qiye.163.com", 465),
+        // 其他国内邮箱
+        "139.com" => ("smtp.139.com", 465),
+        "21cn.com" => ("smtp.21cn.com", 465),
+        "sohu.com" => ("smtp.sohu.com", 465),
+        "sina.com" | "vip.sina.com" => ("smtp.sina.com", 465),
+        "aliyun.com" | "aliyunmail.com" => ("smtp.aliyun.com", 465),
+        "qiye.aliyun.com" => ("smtp.qiye.aliyun.com", 465),
+        "189.cn" => ("smtp.189.cn", 465),
+        "263.net" | "x263.net" => ("smtp.263.net", 465),
+        // 海外邮箱
+        "gmail.com" => ("smtp.gmail.com", 465),
+        "outlook.com" | "hotmail.com" | "hotmail.co.uk" | "live.com" | "msn.com" => {
+            ("smtp.office365.com", 587)
+        }
+        "yandex.com" | "yandex.ru" => ("smtp.yandex.ru", 465),
+        "zoho.com" | "zohomail.com" => ("smtp.zoho.com", 465),
+        _ => {
+            if domain.is_empty() {
+                return (String::new(), 465);
+            }
+            return (format!("smtp.{}", domain), 465);
+        }
+    };
+    (host.to_string(), port)
 }
 
 /// 邮箱运行时配置（优先从数据库读取，回退到环境变量）
@@ -418,9 +464,20 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, context: &str
     use lettre::transport::smtp::authentication::Credentials;
     use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
 
-    if account.host.is_empty() {
-        return Err("SMTP 服务器地址未配置".to_string());
+    if account.sender.trim().is_empty() {
+        return Err("发件邮箱地址未配置".to_string());
     }
+
+    // host 为空时按发件邮箱域名自动识别 SMTP 地址和端口
+    let (host, port) = if account.host.trim().is_empty() {
+        let (h, p) = resolve_smtp_endpoint(&account.sender);
+        if h.is_empty() {
+            return Err("无法自动识别 SMTP 服务器地址，请检查发件邮箱".to_string());
+        }
+        (h, p)
+    } else {
+        (account.host.clone(), account.port)
+    };
 
     let from_mailbox = Mailbox::new(
         Some("弦予音乐".to_string()),
@@ -448,19 +505,19 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, context: &str
     // 根据端口选择 TLS 模式
     // 465 → 隐式 TLS (Ssl)
     // 587/25 → STARTTLS
-    let transport = if account.port == 465 {
-        AsyncSmtpTransport::<Tokio1Executor>::relay(&account.host)
+    let transport = if port == 465 {
+        AsyncSmtpTransport::<Tokio1Executor>::relay(&host)
             .map_err(|e| format!("SMTP 连接构建失败: {e}"))?
-            .port(account.port)
+            .port(port)
             .credentials(Credentials::new(
                 account.username.clone(),
                 account.password.clone(),
             ))
             .build()
     } else {
-        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&account.host)
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&host)
             .map_err(|e| format!("SMTP 连接构建失败: {e}"))?
-            .port(account.port)
+            .port(port)
             .credentials(Credentials::new(
                 account.username.clone(),
                 account.password.clone(),

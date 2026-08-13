@@ -218,15 +218,17 @@
                   </div>
                 </div>
               </div>
-              <!-- 图片缩略图（右侧竖排） -->
-              <div v-if="itemImages(item).length > 0" class="img-thumbs">
+              <!-- 图片缩略图（堆叠，仅显示第一张，点击查看详情） -->
+              <div v-if="itemImages(item).length > 0" class="img-stack" @click.stop="openImageViewer(itemImages(item), 0)">
                 <img
                   v-for="(img, i) in itemImages(item)"
                   :key="i"
                   :src="img"
-                  class="thumb"
-                  @click.stop="openImageViewer(itemImages(item), i)"
+                  class="stack-thumb"
+                  :style="stackThumbStyle(i, itemImages(item).length)"
+                  alt="反馈图片"
                 />
+                <span v-if="itemImages(item).length > 1" class="stack-count">{{ itemImages(item).length }}</span>
               </div>
             </div>
 
@@ -661,6 +663,16 @@ function itemImages(item: Feedback): string[] {
       : []
   } catch {
     return []
+  }
+}
+// 堆叠样式：仅第一张完整显示，其余向右下偏移并置于底层，视觉上"只显示一张，其余叠压其后"
+function stackThumbStyle(i: number, total: number): Record<string, string> {
+  if (total <= 1) return {}
+  const offset = Math.min(i, 3) * 5
+  return {
+    left: `${offset}px`,
+    top: `${offset}px`,
+    zIndex: String(total - i),
   }
 }
 
@@ -1304,20 +1316,49 @@ onUnmounted(() => {
 .type-problem { background: #fef2f2; color: #dc2626; }
 .card-top-right { display: flex; align-items: center; gap: 8px; }
 
-/* ===== 图片缩略图 ===== */
-.img-thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.thumb {
+/* ===== 图片缩略图（堆叠，仅显示第一张） ===== */
+.img-stack {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  cursor: zoom-in;
+}
+.stack-thumb {
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 72px;
   height: 72px;
   object-fit: cover;
   border-radius: 10px;
-  cursor: zoom-in;
   border: 1px solid var(--border);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s, width 0.3s, height 0.3s;
+  background: var(--card);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s;
 }
-.thumb:hover { transform: scale(1.05); box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12); }
+.img-stack:hover .stack-thumb:first-child {
+  transform: scale(1.05);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+}
+.stack-count {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  z-index: 20;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+}
 
-/* 主体布局：主内容靠左，图片缩略图竖排于右侧（默认展开） */
+/* 主体布局：主内容靠左，图片堆叠于右侧 */
 .fb-card .card-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1325,15 +1366,7 @@ onUnmounted(() => {
   gap: 16px;
 }
 .fb-card .card-main { min-width: 0; }
-.fb-card .img-thumbs {
-  margin-top: 0;
-  flex-direction: column;
-  align-items: flex-end;
-}
-.fb-card .thumb {
-  width: 72px;
-  height: 72px;
-}
+.fb-card .img-stack { margin-top: 0; }
 
 /* ===== 提交限制配置 ===== */
 .limit-panel {

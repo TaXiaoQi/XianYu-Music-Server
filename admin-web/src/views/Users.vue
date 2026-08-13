@@ -1,6 +1,7 @@
 <template>
   <div class="users-wrap">
     <!-- 顶部工具栏：搜索 + 操作合并为一行，批量管理在最右侧弹出 -->
+    <Transition name="fade-down" appear>
     <div class="toolbar-row">
       <div class="search-box">
         <input
@@ -36,8 +37,10 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 用户表格 -->
+    <Transition name="fade-up" appear>
     <div class="card">
       <div v-if="loading" class="empty">加载中...</div>
       <div v-else-if="loadError" class="empty">{{ loadError }}</div>
@@ -63,7 +66,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="u in users" :key="u.id" :class="{ 'row-selected': isBatchMode && selectedIds.has(u.id) }">
+            <tr v-for="(u, idx) in users" :key="u.id" class="table-row" :class="{ 'row-selected': isBatchMode && selectedIds.has(u.id) }" :style="{ animationDelay: `${idx * 40}ms` }">
               <td v-if="isBatchMode" class="col-check">
                 <span class="checkbox-badge" :class="{ checked: selectedIds.has(u.id) }" @click="toggleSelect(u.id)">
                   <svg v-if="selectedIds.has(u.id)" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -122,6 +125,7 @@
         <span>共 {{ total }} 条</span>
       </div>
     </div>
+    </Transition>
 
     <!-- 添加用户弹窗 -->
     <Transition name="modal">
@@ -1291,5 +1295,19 @@ onMounted(() => {
 }
 .modal-enter-from .modal, .modal-leave-to .modal {
   transform: scale(0.92) translateY(20px);
+}
+
+/* ===== 页面进入动效 ===== */
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
+
+/* 表格行逐条加载 */
+tbody tr.table-row { animation: rowIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 </style>

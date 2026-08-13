@@ -1,14 +1,13 @@
 <template>
   <div class="mobile-page">
-    <div class="mobile-card mobile-form mobile-toolbar">
-      <input v-model="keyword" class="mobile-input" placeholder="搜索昵称 / 弦予号 / 邮箱" @keyup.enter="loadList" />
-      <div class="mobile-actions mobile-toolbar-actions">
-        <template v-if="!isBatchMode">
+    <div class="mobile-card mobile-toolbar">
+      <div v-if="!isBatchMode" class="mobile-search-row">
+        <input v-model="keyword" class="mobile-input" placeholder="搜索昵称 / 弦予号 / 邮箱" @keyup.enter="loadList" />
           <button class="mobile-btn primary" @click="loadList">搜索</button>
           <button class="mobile-btn" @click="openAdd = !openAdd">{{ openAdd ? '收起新增' : '新增用户' }}</button>
           <button class="mobile-btn primary" @click="enterBatchMode">批量管理</button>
-        </template>
-        <div v-else class="mobile-batch-bar">
+      </div>
+      <div v-else class="mobile-batch-bar">
           <button class="mobile-btn" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</button>
           <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchToggleSelected(0)">封禁</button>
           <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchToggleSelected(1)">启用</button>
@@ -20,7 +19,6 @@
           <button class="mobile-btn primary" @click="exitBatchMode">完成</button>
         </div>
       </div>
-    </div>
     <transition name="expand">
       <div v-if="openAdd" class="mobile-card mobile-form">
         <h3 class="mobile-card-title">新增用户</h3>
@@ -43,12 +41,15 @@
           <div v-else class="mobile-avatar mobile-avatar-ph">{{ (u.nickname || u.username || '?').charAt(0) }}</div>
           <div class="mobile-item-main">
             <div class="mobile-item-title-row">
-              <span class="mobile-item-title">{{ u.ciyuanxi_id || '-' }}</span>
-              <span class="mobile-badge" :class="u.status == 1 ? 'green' : 'red'">{{ u.status == 1 ? '正常' : '禁用' }}</span>
+              <span class="mobile-item-title">昵称：{{ u.nickname || u.username || '-' }}</span>
+              <div class="mobile-title-right">
+                <span class="mobile-badge" :class="u.status == 1 ? 'green' : 'red'">{{ u.status == 1 ? '正常' : '禁用' }}</span>
+                <button class="mobile-btn mobile-op-btn" @click="openActionMenu(u)">操作</button>
+              </div>
             </div>
-            <div class="mobile-item-sub">{{ u.nickname || u.username || '-' }}</div>
+            <div class="mobile-item-sub">弦予号：{{ u.ciyuanxi_id || '-' }}</div>
             <div class="mobile-item-sub mobile-item-verify">
-              <span class="mobile-email">{{ u.email || '未绑定邮箱' }}</span>
+              <span class="mobile-email">邮箱：{{ u.email || '未绑定邮箱' }}</span>
               <span class="mobile-badge" :class="u.email_verified == 1 ? 'green' : ''">{{ u.email_verified == 1 ? '已验证' : '未验证' }}</span>
             </div>
           </div>
@@ -58,33 +59,6 @@
           <span>听歌时长 {{ formatDuration(u.listen_duration) }}</span>
           <span>注册 {{ u.created_at || '-' }}</span>
         </div>
-        <div class="mobile-actions">
-          <button class="mobile-btn primary" @click="openActionMenu(u)">操作</button>
-        </div>
-        <transition name="expand">
-          <pre v-if="pluginsUserId === u.id" class="mobile-code">{{ pluginsText }}</pre>
-        </transition>
-        <transition name="expand">
-          <div v-if="deviceUserId === u.id" class="device-panel">
-            <div v-if="deviceLoading" class="mobile-empty">设备加载中...</div>
-            <template v-else>
-              <div class="mobile-item-sub">设备数量：{{ deviceRows.length || '-' }} · 封禁状态：{{ deviceData.is_banned ? '已封禁' : '正常' }}</div>
-              <div v-if="deviceRows.length === 0" class="mobile-empty">暂无设备信息</div>
-              <div v-for="d in deviceRows" :key="deviceIdOf(d)" class="device-row">
-                <div>
-                  <div class="mobile-item-title">{{ d.device_model || d.model || d.device_name || '未知设备' }}</div>
-                  <div class="mobile-item-sub">{{ deviceIdOf(d) || '-' }}</div>
-                  <div class="mobile-item-sub">{{ d.platform || d.os || '-' }} · {{ d.last_login_time || d.updated_at || d.created_at || '-' }}</div>
-                  <div v-if="d.ban_reason || d.reason" class="mobile-item-sub">原因：{{ d.ban_reason || d.reason }}</div>
-                </div>
-                <div class="mobile-actions">
-                  <button v-if="isDeviceBanned(d)" class="mobile-btn" @click="unbanUserDevice(deviceIdOf(d))">解封</button>
-                  <button v-else class="mobile-btn danger" @click="banUserDevice(deviceIdOf(d), u.username)">封禁</button>
-                </div>
-              </div>
-            </template>
-          </div>
-        </transition>
       </div>
     </div>
     <transition name="expand">
@@ -122,6 +96,113 @@
       </section>
     </transition>
 
+    <!-- 插件查看弹窗 -->
+    <div v-if="showPluginsModal" class="mobile-dialog-overlay show" @click.self="closePlugins">
+      <div class="mobile-dialog show" style="display:flex;flex-direction:column;max-width:440px;max-height:88vh;">
+        <div class="mobile-dialog-head">
+          <span class="mobile-dialog-head-title">用户插件 - {{ pluginsData.nickname || pluginsData.username || '-' }}</span>
+          <button class="mobile-dialog-close" @click="closePlugins">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="mobile-dialog-body popup-body">
+          <div v-if="pluginsLoading" class="mobile-empty">加载中...</div>
+          <template v-else>
+            <div class="popup-meta">
+              <span>插件数量：{{ pluginsData.plugin_count || 0 }}</span>
+              <span v-if="pluginsData.uploaded_at">上传时间：{{ pluginsData.uploaded_at }}</span>
+              <span v-if="pluginsData.ciyuanxi_id">弦予号：{{ pluginsData.ciyuanxi_id }}</span>
+            </div>
+            <div v-if="pluginsData.plugins && pluginsData.plugins.length > 0" class="popup-table-wrap">
+              <table class="popup-table">
+                <thead>
+                  <tr><th>名称</th><th>格式</th><th>版本</th><th>作者</th><th>状态</th><th>大小</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(p, i) in pluginsData.plugins" :key="i">
+                    <td>
+                      {{ p.name }}
+                      <div v-if="p.description" class="td-desc">{{ p.description }}</div>
+                    </td>
+                    <td><span class="badge badge-info">{{ p.format }}</span></td>
+                    <td>{{ p.version || '-' }}</td>
+                    <td>{{ p.author || '-' }}</td>
+                    <td>
+                      <span :class="['badge', p.enabled ? 'badge-success' : 'badge-error']">{{ p.enabled ? '启用' : '禁用' }}</span>
+                    </td>
+                    <td>{{ formatScriptSize(p.scriptSize) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="mobile-empty">该用户暂无插件数据</div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设备信息弹窗 -->
+    <div v-if="showDeviceModal" class="mobile-dialog-overlay show" @click.self="closeDevice">
+      <div class="mobile-dialog show" style="display:flex;flex-direction:column;max-width:460px;max-height:88vh;">
+        <div class="mobile-dialog-head">
+          <span class="mobile-dialog-head-title">设备信息 - {{ deviceData.nickname || deviceData.username || '-' }}</span>
+          <button class="mobile-dialog-close" @click="closeDevice">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="mobile-dialog-body popup-body">
+          <div v-if="deviceLoading" class="mobile-empty">加载中...</div>
+          <template v-else>
+            <div class="popup-meta">
+              <span>弦予号：{{ deviceData.ciyuanxi_id || '-' }}</span>
+              <span v-if="deviceData.last_device_id">设备ID：{{ deviceData.last_device_id }}</span>
+              <span v-if="deviceData.is_banned" class="meta-banned">设备已封禁</span>
+            </div>
+
+            <div v-if="deviceData.last_device_id" class="popup-actions">
+              <button v-if="!deviceData.is_banned" class="mobile-btn danger" @click="banUserDevice(deviceData.last_device_id, deviceData.nickname || deviceData.username)">封禁此设备</button>
+              <button v-else class="mobile-btn" @click="unbanUserDevice(deviceData.last_device_id)">解封此设备</button>
+            </div>
+
+            <div v-if="deviceData.login_logs && deviceData.login_logs.length > 0" class="popup-section">
+              <h4 class="popup-sec-title">登录记录</h4>
+              <div class="popup-table-wrap">
+                <table class="popup-table">
+                  <thead><tr><th>设备ID</th><th>IP</th><th>时间</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(log, i) in deviceData.login_logs" :key="'l'+i">
+                      <td class="td-mono">{{ log.device_id }}</td>
+                      <td>{{ log.ip }}</td>
+                      <td>{{ log.created_at }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-if="deviceData.open_logs && deviceData.open_logs.length > 0" class="popup-section">
+              <h4 class="popup-sec-title">启动记录</h4>
+              <div class="popup-table-wrap">
+                <table class="popup-table">
+                  <thead><tr><th>设备ID</th><th>IP</th><th>版本</th><th>时间</th></tr></thead>
+                  <tbody>
+                    <tr v-for="(log, i) in deviceData.open_logs" :key="'o'+i">
+                      <td class="td-mono">{{ log.device_id }}</td>
+                      <td>{{ log.ip }}</td>
+                      <td>{{ log.app_version }}</td>
+                      <td>{{ log.created_at }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-if="!deviceData.last_device_id" class="mobile-empty">该用户暂无设备记录</div>
+          </template>
+        </div>
+      </div>
+    </div>
+
     <!-- 头像预览 -->
     <transition name="expand">
       <div v-if="avatarPreview" class="mobile-avatar-preview" @click="avatarPreview = ''">
@@ -141,10 +222,11 @@ const loading = ref(false)
 const saving = ref(false)
 const openAdd = ref(false)
 const list = ref<any[]>([])
-const pluginsUserId = ref(0)
-const pluginsText = ref('')
 const addForm = ref({ ciyuanxi_id: '', nickname: '', password: '', email: '' })
-const deviceUserId = ref(0)
+const showPluginsModal = ref(false)
+const pluginsLoading = ref(false)
+const pluginsData = ref<any>({})
+const showDeviceModal = ref(false)
 const deviceLoading = ref(false)
 const deviceData = ref<any>({})
 const showBannedPanel = ref(false)
@@ -153,7 +235,6 @@ const bannedDevices = ref<any[]>([])
 const banDeviceInput = ref('')
 const banReasonInput = ref('')
 const avatarPreview = ref('')
-const deviceRows = computed(() => normalizeDeviceRows(deviceData.value))
 
 function formatDuration(seconds: number | undefined): string {
   const dur = Number(seconds) || 0
@@ -349,23 +430,37 @@ async function changeEmail(u: any) {
   if (res.code === 200) { u.email = email.trim(); showToast('邮箱已更新', 'success') } else showToast(res.msg || '更新失败')
 }
 async function loadPlugins(u: any) {
-  if (pluginsUserId.value === u.id) { pluginsUserId.value = 0; pluginsText.value = ''; return }
+  showPluginsModal.value = true
+  pluginsLoading.value = true
+  pluginsData.value = { nickname: u.nickname || u.username, username: u.username }
   const res = await adminApi<any>('get_user_plugins', { user_id: u.id })
-  pluginsUserId.value = u.id
-  pluginsText.value = res.code === 200 ? JSON.stringify(res.data || {}, null, 2) : (res.msg || '加载插件失败')
+  pluginsLoading.value = false
+  if (res.code === 200 && res.data) {
+    pluginsData.value = res.data
+  } else {
+    showToast(res.msg || '加载插件失败')
+  }
+}
+function closePlugins() {
+  if (!pluginsLoading.value) showPluginsModal.value = false
+}
+function formatScriptSize(size: number | string | undefined): string {
+  const n = Number(size) || 0
+  if (n <= 0) return '-'
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`
 }
 async function openDeviceInfo(u: any) {
-  if (deviceUserId.value === u.id) {
-    deviceUserId.value = 0
-    deviceData.value = {}
-    return
-  }
-  deviceUserId.value = u.id
+  showDeviceModal.value = true
   await refreshDeviceInfo(u)
+}
+function closeDevice() {
+  if (!deviceLoading.value) showDeviceModal.value = false
 }
 async function refreshDeviceInfo(u: any) {
   deviceLoading.value = true
-  deviceData.value = { username: u.username }
+  deviceData.value = { nickname: u.nickname || u.username, username: u.username }
   const res = await adminApi<any>('get_user_devices', { user_id: u.id })
   if (res.code === 200 && res.data) {
     deviceData.value = res.data
@@ -374,21 +469,8 @@ async function refreshDeviceInfo(u: any) {
   }
   deviceLoading.value = false
 }
-function normalizeDeviceRows(data: any): any[] {
-  if (!data) return []
-  if (Array.isArray(data.devices)) return data.devices
-  if (Array.isArray(data.list)) return data.list
-  if (Array.isArray(data.rows)) return data.rows
-  if (data.device && typeof data.device === 'object') return [data.device]
-  if (data.current_device && typeof data.current_device === 'object') return [data.current_device]
-  if (data.device_id || data.deviceId) return [data]
-  return []
-}
 function deviceIdOf(d: any): string {
   return String(d?.device_id || d?.deviceId || d?.id || '')
-}
-function isDeviceBanned(d: any): boolean {
-  return Boolean(d?.is_banned || d?.banned || d?.status === 'banned' || d?.status === 'disabled')
 }
 async function banUserDevice(deviceId: string, username: string) {
   if (!deviceId) return showToast('未读取到设备 ID')
@@ -399,10 +481,7 @@ async function banUserDevice(deviceId: string, username: string) {
   const res = await adminApi('ban_device', { device_id: deviceId, reason: reason.trim() })
   if (res.code === 200) {
     showToast('设备已封禁', 'success')
-    if (deviceUserId.value) {
-      const current = list.value.find((item) => item.id === deviceUserId.value)
-      if (current) await refreshDeviceInfo(current)
-    }
+    deviceData.value.is_banned = true
   } else {
     showToast(res.msg || '操作失败')
   }
@@ -412,10 +491,7 @@ async function unbanUserDevice(deviceId: string) {
   const res = await adminApi('unban_device', { device_id: deviceId })
   if (res.code === 200) {
     showToast('设备已解封', 'success')
-    if (deviceUserId.value) {
-      const current = list.value.find((item) => item.id === deviceUserId.value)
-      if (current) await refreshDeviceInfo(current)
-    }
+    deviceData.value.is_banned = false
   } else {
     showToast(res.msg || '操作失败')
   }
@@ -473,25 +549,139 @@ async function deleteUser(u: any) {
 onMounted(loadList)
 </script>
 <style scoped>
-.device-panel {
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px solid var(--border);
+/* 弹窗头部 */
+.mobile-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 18px 0;
 }
-.device-row {
-  padding: 10px 0;
-  border-top: 1px solid var(--border);
-  animation: mobileItemIn 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)) both;
+.mobile-dialog-head-title {
+  font-size: 15px;
+  font-weight: 850;
+  color: var(--text);
+  word-break: break-all;
 }
-.device-row:first-of-type {
-  border-top: 0;
+.mobile-dialog-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.mobile-dialog-close:hover {
+  background: var(--control-bg);
+  color: #EC4141;
 }
 
-/* 顶部工具栏：搜索 + 操作合并为一行 */
+/* 弹窗主体 */
+.popup-body {
+  padding: 12px 0 0;
+  overflow-y: auto;
+  max-height: calc(88vh - 60px);
+}
+.popup-body .mobile-empty {
+  padding: 24px 0;
+}
+.popup-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding: 0 18px 12px;
+  font-size: 12px;
+  color: var(--text-light);
+}
+.meta-banned {
+  color: #EC4141;
+  font-weight: 800;
+}
+.popup-actions {
+  display: flex;
+  gap: 8px;
+  padding: 0 18px 12px;
+}
+.popup-section {
+  padding: 0 18px 14px;
+}
+.popup-sec-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 850;
+  color: var(--text);
+}
+.popup-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.popup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 420px;
+}
+.popup-table th,
+.popup-table td {
+  padding: 9px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.popup-table thead th {
+  background: var(--control-bg);
+  color: var(--text-light);
+  font-weight: 800;
+  font-size: 11px;
+}
+.popup-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.td-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: normal;
+}
+.td-mono {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 11px;
+}
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.badge-info { background: rgba(59, 130, 246, 0.10); color: #3b82f6; }
+.badge-success { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.badge-error { background: rgba(236, 65, 65, 0.10); color: #EC4141; }
+
+/* 顶部工具栏：搜索框 + 搜索/新增/批量按钮同行，按钮在右侧 */
 .mobile-toolbar {
   display: flex;
   flex-direction: column;
   gap: 10px;
+}
+.mobile-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mobile-search-row .mobile-input {
+  flex: 1;
+  min-width: 0;
+}
+.mobile-search-row .mobile-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 .mobile-toolbar-actions {
   width: 100%;
@@ -572,6 +762,16 @@ onMounted(loadList)
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+.mobile-title-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.mobile-op-btn {
+  padding: 5px 11px;
+  font-size: 12px;
 }
 .mobile-item-verify {
   display: flex;

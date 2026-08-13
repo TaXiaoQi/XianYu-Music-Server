@@ -1,6 +1,7 @@
 <template>
   <div class="agreement-page">
-    <div class="page-header">
+    <Transition name="fade-down" appear>
+      <div class="page-header">
       <div>
         <h2 class="page-title">用户协议</h2>
         <p class="page-desc">配置客户端账号登录、注册页弹窗展示的用户协议。未保存自定义内容时，服务端会下发默认初版协议。</p>
@@ -12,14 +13,15 @@
           {{ saving ? '保存中...' : '保存协议' }}
         </button>
       </div>
-    </div>
+      </div>
+    </Transition>
 
-    <div v-if="loading" class="state-box">
+    <Transition name="fade-up" appear>
+      <div v-if="loading" class="state-box">
       <span class="loader"></span>
       加载中...
     </div>
-
-    <div v-else class="config-card">
+      <div v-else class="config-card">
       <label class="field">
         <span>协议标题</span>
         <input v-model="form.title" type="text" placeholder="弦予音乐用户协议" />
@@ -34,7 +36,8 @@
         <div class="preview-title">{{ form.title || '弦予音乐用户协议' }}</div>
         <div class="preview-content">{{ form.content }}</div>
       </div>
-    </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -280,4 +283,11 @@ onMounted(loadConfig)
     justify-content: center;
   }
 }
+
+/* ===== 过渡动画 ===== */
+.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+
+.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
+.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
 </style>
