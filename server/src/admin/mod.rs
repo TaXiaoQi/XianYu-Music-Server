@@ -170,10 +170,19 @@ pub fn row_to_value(row: &sqlx::mysql::MySqlRow) -> Value {
                 Ok(None) => Value::Null,
                 Err(_) => match row.try_get::<i64, _>(i) {
                     Ok(n) => Value::Number(n.into()),
-                    Err(_) => match row.try_get::<Option<Vec<u8>>, _>(i) {
-                        Ok(Some(b)) => Value::String(String::from_utf8_lossy(&b).into_owned()),
-                        Ok(None) => Value::Null,
-                        Err(_) => Value::Null,
+                    Err(_) => match row.try_get::<u32, _>(i) {
+                        Ok(n) => Value::Number(n.into()),
+                        Err(_) => match row.try_get::<u64, _>(i) {
+                            Ok(n) => match serde_json::Number::from_u128(n as u128) {
+                                Some(v) => Value::Number(v),
+                                None => Value::Null,
+                            },
+                            Err(_) => match row.try_get::<Option<Vec<u8>>, _>(i) {
+                                Ok(Some(b)) => Value::String(String::from_utf8_lossy(&b).into_owned()),
+                                Ok(None) => Value::Null,
+                                Err(_) => Value::Null,
+                            },
+                        },
                     },
                 },
             },
