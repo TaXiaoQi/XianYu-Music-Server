@@ -223,6 +223,11 @@
   background: rgba(15, 23, 42, 0.38);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
+  animation: none !important;
+}
+/* Pattern B 弹窗遮罩同样排除动画干扰 */
+.modal-backdrop {
+  animation: none !important;
 }
 /* 弹窗淡出时立即移除背景模糊，避免 opacity 透明后 backdrop-filter 模糊残留 */
 .mobile-fade-leave-active,
@@ -393,7 +398,8 @@ html[data-theme='dark'] .mobile-dialog-overlay {
 }
 
 /* ---------- 页面内容块入场动画（统一补齐所有页面） ---------- */
-.mobile-page > * {
+/* 排除弹窗遮罩，避免 animation-fill-mode: both 锁定 opacity 干扰 Vue Transition 淡出 */
+.mobile-page > *:not(.mobile-dialog-overlay):not(.modal-backdrop) {
   animation: mobileBlockIn 0.42s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 .mobile-page > *:nth-child(1) { animation-delay: 0.02s; }

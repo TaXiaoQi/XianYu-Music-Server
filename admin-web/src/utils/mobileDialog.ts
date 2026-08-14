@@ -4,6 +4,16 @@
  * 样式：毛玻璃 + 圆角 + 阴影 + 居中
  */
 
+/**
+ * Vue Transition @before-leave 钩子：在淡出动画开始前立即移除 backdrop-filter，
+ * 让浏览器先卸载模糊层，避免遮罩在 opacity 过渡期间残留。
+ */
+export function removeBackdropBlur(el: Element) {
+  const htmlEl = el as HTMLElement
+  htmlEl.style.backdropFilter = 'none'
+  htmlEl.style.setProperty('-webkit-backdrop-filter', 'none')
+}
+
 export interface MobileConfirmOptions {
   title?: string
   confirmText?: string
@@ -56,12 +66,15 @@ function closeDialog(overlay: HTMLDivElement) {
   // 立即移除 backdrop-filter，避免模糊效果在 opacity 透明后残留
   overlay.style.setProperty('backdrop-filter', 'none')
   overlay.style.setProperty('-webkit-backdrop-filter', 'none')
-  overlay.style.opacity = '0'
-  if (dialog) {
-    dialog.style.opacity = '0'
-    dialog.style.transform = 'scale(0.96)'
-  }
-  setTimeout(() => overlay.remove(), 240)
+  // 等待一帧让浏览器先卸载模糊层，再开始淡出，避免遮罩残留
+  requestAnimationFrame(() => {
+    overlay.style.opacity = '0'
+    if (dialog) {
+      dialog.style.opacity = '0'
+      dialog.style.transform = 'scale(0.96)'
+    }
+    setTimeout(() => overlay.remove(), 240)
+  })
 }
 
 function escapeHtml(input: string): string {

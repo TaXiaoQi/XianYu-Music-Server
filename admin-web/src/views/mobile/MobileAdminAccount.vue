@@ -41,7 +41,7 @@
     <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" @change="onFileChange" />
 
     <!-- 修改登录弹窗 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="loginModalVisible" class="mobile-dialog-overlay">
       <div class="mobile-dialog">
         <div class="mobile-dialog-title">修改登录 - {{ loginTarget?.username || '' }}</div>
@@ -80,7 +80,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast, getAdminUser } from '@/api/client'
 import './MobilePage.css'
-import { mobileConfirm } from '@/utils/mobileDialog'
+import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
 const loading = ref(false), list = ref<any[]>([])
 const form = ref({ username: '', password: '', email: '', role: 'admin' })
 const adminUser = getAdminUser()

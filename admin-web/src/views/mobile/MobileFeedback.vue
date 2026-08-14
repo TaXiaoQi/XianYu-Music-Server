@@ -211,7 +211,7 @@
     </div>
 
     <!-- 完成说明弹窗 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="resolveVisible" class="mobile-dialog-overlay" @click.self="closeResolve">
       <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:400px;">
         <div class="mobile-dialog-title">完成反馈</div>
@@ -229,7 +229,7 @@
     </Transition>
 
     <!-- 日志弹窗 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="logVisible" class="mobile-dialog-overlay" @click.self="closeLog">
       <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:440px;max-height:88vh;">
         <div class="mobile-dialog-title">反馈日志</div>
@@ -249,7 +249,7 @@
     </Transition>
 
     <!-- 新建事项弹窗 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="createVisible" class="mobile-dialog-overlay" @click.self="closeCreate">
       <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:360px;max-height:88vh;">
         <div class="mobile-dialog-title">新建事项</div>
@@ -290,7 +290,7 @@
     </Transition>
 
     <!-- 统计弹窗 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="statsVisible" class="mobile-dialog-overlay" @click.self="statsVisible = false">
       <div class="mobile-dialog mfb-stats" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
         <div class="mobile-dialog-title">管理员处理统计</div>
@@ -324,7 +324,7 @@
     </Transition>
 
     <!-- 回收站弹窗 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="recycleVisible" class="mobile-dialog-overlay" @click.self="closeRecycle">
       <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
         <div class="mobile-dialog-title">回收站</div>
@@ -357,7 +357,7 @@
     </Transition>
 
     <!-- 图片查看器 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="viewerVisible" class="mobile-dialog-overlay mfb-viewer" @click.self="viewerVisible = false">
       <button class="mfb-viewer-close" @click="viewerVisible = false">×</button>
       <button v-if="viewerList.length > 1" class="mfb-viewer-nav prev" @click="viewerPrev">‹</button>
@@ -372,7 +372,7 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { adminApi, showToast, getAdminUser } from '@/api/client'
-import { mobileConfirm, mobileActionMenu } from '@/utils/mobileDialog'
+import { mobileConfirm, mobileActionMenu, removeBackdropBlur } from '@/utils/mobileDialog'
 import './MobilePage.css'
 
 // 当前登录管理员用户名（用于判断反馈是否由本人认领）

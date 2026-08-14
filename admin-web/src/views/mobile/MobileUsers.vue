@@ -68,7 +68,7 @@
       </div>
     </div>
     <!-- 插件查看弹窗 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="showPluginsModal" class="mobile-dialog-overlay" @click.self="closePlugins">
       <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:440px;max-height:88vh;">
         <div class="mobile-dialog-head">
@@ -115,7 +115,7 @@
     </Transition>
 
     <!-- 设备信息弹窗 -->
-    <Transition name="mobile-fade">
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="showDeviceModal" class="mobile-dialog-overlay" @click.self="closeDevice">
       <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:460px;max-height:88vh;">
         <div class="mobile-dialog-head">
@@ -189,7 +189,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { mobileConfirm, mobilePrompt, mobileActionMenu } from '@/utils/mobileDialog'
+import { mobileConfirm, mobilePrompt, mobileActionMenu, removeBackdropBlur } from '@/utils/mobileDialog'
 import './MobilePage.css'
 const keyword = ref('')
 const loading = ref(false)

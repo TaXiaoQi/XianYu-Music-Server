@@ -158,7 +158,7 @@
     </div>
 
     <!-- 新增壁纸弹窗 -->
-    <Transition name="modal">
+    <Transition name="modal" @before-leave="removeBackdropBlur">
       <div v-if="addModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
@@ -211,7 +211,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
-import { mobileConfirm } from '@/utils/mobileDialog'
+import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
 
 interface Wallpaper {
   id: number

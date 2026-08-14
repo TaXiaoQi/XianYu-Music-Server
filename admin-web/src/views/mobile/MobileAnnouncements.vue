@@ -83,7 +83,7 @@
     </div>
 
     <!-- 新增/编辑弹窗 -->
-    <Transition name="modal">
+    <Transition name="modal" @before-leave="removeBackdropBlur">
       <div v-if="modalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
@@ -141,7 +141,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
-import { mobileConfirm } from '@/utils/mobileDialog'
+import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
 
 interface Announcement {
   id: string
