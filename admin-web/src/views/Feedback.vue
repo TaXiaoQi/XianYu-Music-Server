@@ -249,9 +249,13 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
                   日志
                 </button>
-                <button v-if="item.status === 'pending' || (item.status === 'processing' && isMineFeedback(item))" class="act-btn act-claim" @click="claimFeedback(item.id)">
+                <button v-if="item.status === 'pending' || (item.status === 'processing' && !isMineFeedback(item))" class="act-btn act-claim" @click="claimFeedback(item.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   认领
+                </button>
+                <button v-if="item.status === 'processing' && isMineFeedback(item)" class="act-btn act-abandon" @click="abandonFeedback(item.id)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  放弃
                 </button>
                 <button v-if="item.status === 'processing' && isMineFeedback(item)" class="act-btn act-resolve" @click="openResolveModal(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -886,6 +890,35 @@ async function claimFeedback(id: number) {
     }
   } else {
     showToast(res.msg || '认领失败')
+  }
+}
+
+// ===== 放弃认领 =====
+async function abandonFeedback(id: number) {
+  const ok = await webConfirm('确认放弃认领该反馈？放弃后回归未认领状态，其他管理员可重新认领。', {
+    title: '放弃认领',
+    confirmText: '放弃',
+    danger: true,
+  })
+  if (!ok) return
+  const res = await adminApi('abandon_feedback', { id })
+  if (res.code === 200) {
+    showToast('已放弃认领，回归未认领状态', 'success')
+    // 本地更新，不刷新页面
+    const item2 = feedbackList.value.find(f => f.id === id)
+    if (item2) {
+      const oldStatus = item2.status
+      item2.status = 'pending'
+      item2.assignee = ''
+      if (stats.value[oldStatus as keyof FbStats] !== undefined) {
+        stats.value[oldStatus as keyof FbStats]--
+      }
+      if (stats.value.pending !== undefined) {
+        stats.value.pending++
+      }
+    }
+  } else {
+    showToast(res.msg || '操作失败')
   }
 }
 
@@ -1650,6 +1683,8 @@ onUnmounted(() => {
 .act-reject:hover { background: #fee2e2; }
 .act-claim { background: #eff6ff; color: #3b82f6; }
 .act-claim:hover { background: #dbeafe; }
+.act-abandon { background: #fffbeb; color: #d97706; }
+.act-abandon:hover { background: #fef3c7; }
 
 /* ===== 认领人 / 完成说明 ===== */
 .assignee-row {

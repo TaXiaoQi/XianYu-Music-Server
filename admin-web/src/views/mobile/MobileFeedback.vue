@@ -196,6 +196,10 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               认领
             </button>
+            <button v-if="f.status === 'processing' && isMineFeedback(f)" class="act-btn act-abandon" @click="abandon(f)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+              放弃
+            </button>
             <button v-if="f.status === 'processing' && isMineFeedback(f)" class="act-btn act-resolve" @click="openResolve(f)">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               完成
@@ -525,6 +529,21 @@ async function claim(f: any) {
     }
     showToast(isTransfer ? '已转认领到自己名下' : '认领成功，已置为处理中', 'success')
   } else { showToast(res.msg || '认领失败') }
+}
+
+// ===== 放弃认领 =====
+async function abandon(f: any) {
+  const ok = await mobileConfirm('确认放弃认领该反馈？放弃后回归未认领状态，其他管理员可重新认领。', { title: '放弃认领', confirmText: '放弃', danger: true })
+  if (!ok) return
+  const res = await adminApi('abandon_feedback', { id: f.id })
+  if (res.code === 200) {
+    const old = f.status
+    f.status = 'pending'
+    f.assignee = ''
+    if (stats.value[old as keyof typeof stats.value] !== undefined) (stats.value as any)[old]--
+    stats.value.pending++
+    showToast('已放弃认领，回归未认领状态', 'success')
+  } else { showToast(res.msg || '操作失败') }
 }
 
 // ===== 状态变更 =====
@@ -965,6 +984,7 @@ onMounted(() => { loadLimit(); loadList() })
 }
 .act-btn:active { transform: scale(0.95); }
 .act-claim { color: #3b82f6; border-color: rgba(59, 130, 246, 0.3); }
+.act-abandon { color: #d97706; border-color: rgba(217, 119, 6, 0.3); }
 .act-resolve { color: #16a34a; border-color: rgba(34, 197, 94, 0.3); }
 .act-reject { color: #EC4141; border-color: rgba(236, 65, 65, 0.3); }
 

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::admin;
 use crate::config::Config;
-use crate::handlers::helpers::{parse_body, random_hex, random_int, str_of};
+use crate::handlers::helpers::{parse_body, random_hex, random_int, str_of, validate_nickname};
 use crate::response::ReqCtx;
 
 const DEBUG_DIR: &str = "data/debug";
@@ -387,6 +387,9 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             let verify_code = str_of(&data, "verify_code");
             if username.chars().count() < 2 || username.chars().count() > 32 {
                 return ctx.err(400, "昵称长度需2-32个字符");
+            }
+            if let Err(msg) = validate_nickname(&username, 2, 32) {
+                return ctx.err(400, msg);
             }
             if password.len() < 6 {
                 return ctx.err(400, "密码长度至少6位");

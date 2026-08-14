@@ -85,6 +85,27 @@ pub fn validate_ciyuanxi_id(id: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
+/// 判断字符是否为汉字（CJK 统一表意文字基本区）
+fn is_cjk_char(c: char) -> bool {
+    ('\u{4e00}'..='\u{9fff}').contains(&c)
+        || ('\u{3400}'..='\u{4dbf}').contains(&c)
+        || ('\u{f900}'..='\u{faff}').contains(&c)
+}
+
+/// 校验昵称：仅允许字母、数字、汉字三种字符，长度在 [min, max] 之间
+pub fn validate_nickname(nickname: &str, min: usize, max: usize) -> Result<(), &'static str> {
+    let len = nickname.chars().count();
+    if len < min || len > max {
+        return Err("昵称长度不符合要求");
+    }
+    for c in nickname.chars() {
+        if !c.is_ascii_alphanumeric() && !is_cjk_char(c) {
+            return Err("昵称仅支持字母、数字、汉字");
+        }
+    }
+    Ok(())
+}
+
 /// 默认昵称：弦予 + 弦予号（如 弦予161）
 pub fn default_nickname(ciyuanxi_id: &str) -> String {
     format!("弦予{}", ciyuanxi_id)

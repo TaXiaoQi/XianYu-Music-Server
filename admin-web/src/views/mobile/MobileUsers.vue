@@ -178,6 +178,38 @@
     </div>
     </Transition>
 
+    <!-- 修改昵称弹窗 -->
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
+    <div v-if="showNicknameModal" class="mobile-dialog-overlay" @click.self="closeNicknameModal">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:400px;max-height:88vh;">
+        <div class="mobile-dialog-head">
+          <span class="mobile-dialog-head-title">修改用户昵称</span>
+          <button class="mobile-dialog-close" @click="closeNicknameModal">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="mobile-dialog-body popup-body">
+          <div class="popup-meta">
+            <span>当前昵称：{{ nicknameForm.oldNickname || '-' }}</span>
+            <span>弦予号：{{ nicknameForm.ciyuanxiId || '-' }}</span>
+          </div>
+          <div class="mobile-form">
+            <label class="mobile-form-label">新昵称 <span class="required">*</span></label>
+            <input v-model="nicknameForm.newNickname" class="mobile-input" placeholder="2-32 位，支持字母、数字、汉字" maxlength="32" />
+            <div class="mobile-form-hint">2-32 个字符，仅支持字母、数字、汉字组合</div>
+            <label class="mobile-form-label">修改原因 <span class="required">*</span></label>
+            <textarea v-model="nicknameForm.reason" class="mobile-textarea" rows="3" placeholder="填写修改原因，将同步下发给客户端通知用户" maxlength="255"></textarea>
+            <div class="mobile-form-hint">原因将作为回执下发给客户端，用户端会收到昵称修改通知</div>
+          </div>
+        </div>
+        <div class="mobile-dialog-actions">
+          <button class="mobile-dialog-btn cancel" @click="closeNicknameModal">取消</button>
+          <button class="mobile-dialog-btn confirm" :disabled="nicknameLoading" @click="submitNicknameChange">{{ nicknameLoading ? '提交中...' : '确定修改' }}</button>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
     <!-- 头像预览 -->
     <transition name="expand">
       <div v-if="avatarPreview" class="mobile-avatar-preview" @click="avatarPreview = ''">
@@ -340,6 +372,7 @@ async function addUser() {
 async function openActionMenu(u: any) {
   const action = await mobileActionMenu(`用户操作 · ${u.nickname || u.username}`, [
     { key: 'toggle', label: u.status == 1 ? '禁用用户' : '启用用户', danger: u.status == 1, success: u.status != 1 },
+    { key: 'nickname', label: '修改昵称' },
     { key: 'ciyuanxi', label: '修改弦予号' },
     { key: 'email', label: '修改邮箱' },
     { key: 'reset', label: '重置听歌时长' },
@@ -351,6 +384,7 @@ async function openActionMenu(u: any) {
   if (!action) return
   switch (action) {
     case 'toggle': await toggleUser(u); break
+    case 'nickname': openNicknameModal(u); break
     case 'ciyuanxi': await changeCiyuanxi(u); break
     case 'email': await changeEmail(u); break
     case 'reset': await resetDuration(u); break
@@ -398,6 +432,44 @@ async function changeEmail(u: any) {
   const res = await adminApi('change_user_email', { user_id: u.id, email: email.trim() })
   if (res.code === 200) { u.email = email.trim(); showToast('邮箱已更新', 'success') } else showToast(res.msg || '更新失败')
 }
+
+// ===== 修改昵称 =====
+const showNicknameModal = ref(false)
+const nicknameLoading = ref(false)
+const nicknameForm = ref({ userId: 0, oldNickname: '', ciyuanxiId: '', newNickname: '', reason: '' })
+
+function openNicknameModal(u: any) {
+  nicknameForm.value = {
+    userId: u.id,
+    oldNickname: u.nickname || u.username || '',
+    ciyuanxiId: u.ciyuanxi_id || '',
+    newNickname: '',
+    reason: '',
+  }
+  showNicknameModal.value = true
+}
+function closeNicknameModal() {
+  if (!nicknameLoading.value) showNicknameModal.value = false
+}
+async function submitNicknameChange() {
+  const newNickname = nicknameForm.value.newNickname.trim()
+  const reason = nicknameForm.value.reason.trim()
+  if (newNickname.length < 2 || newNickname.length > 32) return showToast('昵称需 2-32 个字符', 'error')
+  if (!/^[a-zA-Z0-9\u4e00-\u9fa5]+$/.test(newNickname)) return showToast('昵称仅支持字母、数字、汉字', 'error')
+  if (newNickname === nicknameForm.value.oldNickname) return showToast('新昵称与当前昵称相同', 'error')
+  if (!reason) return showToast('修改原因不能为空', 'error')
+  nicknameLoading.value = true
+  const res = await adminApi('change_user_nickname', { id: nicknameForm.value.userId, new_nickname: newNickname, reason })
+  nicknameLoading.value = false
+  if (res.code === 200) {
+    showToast('昵称已修改，已下发客户端通知', 'success')
+    showNicknameModal.value = false
+    loadList()
+  } else {
+    showToast(res.msg || '修改失败', 'error')
+  }
+}
+
 async function loadPlugins(u: any) {
   showPluginsModal.value = true
   pluginsLoading.value = true
@@ -795,5 +867,50 @@ onMounted(loadList)
   border-radius: 50%;
   object-fit: cover;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+}
+
+/* 修改昵称弹窗表单 */
+.mobile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0 18px 14px;
+}
+.mobile-form-label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--text);
+  margin-top: 4px;
+}
+.mobile-form-label .required {
+  color: #EC4141;
+}
+.mobile-form-label:first-child {
+  margin-top: 0;
+}
+.mobile-form-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: -2px 0 4px;
+  line-height: 1.4;
+}
+.mobile-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  line-height: 1.5;
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+.mobile-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 </style>

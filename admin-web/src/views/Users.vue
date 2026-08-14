@@ -161,6 +161,39 @@
     </div>
     </Transition>
 
+    <!-- 修改昵称弹窗 -->
+    <Transition name="modal">
+    <div v-if="showNicknameModal" class="modal-overlay">
+      <div class="modal">
+        <h3>修改用户昵称</h3>
+        <div class="form-group">
+          <label>当前昵称</label>
+          <input :value="nicknameForm.oldNickname" type="text" disabled />
+        </div>
+        <div class="form-group">
+          <label>弦予号</label>
+          <input :value="nicknameForm.ciyuanxiId || '-'" type="text" disabled />
+        </div>
+        <div class="form-group">
+          <label class="required">新昵称</label>
+          <input v-model="nicknameForm.newNickname" type="text" placeholder="2-32 位，支持字母、数字、汉字" maxlength="32" />
+          <div class="hint">2-32 个字符，支持字母、数字、汉字组合</div>
+        </div>
+        <div class="form-group">
+          <label class="required">修改原因</label>
+          <textarea v-model="nicknameForm.reason" rows="3" placeholder="填写修改原因，将同步下发给客户端通知用户" maxlength="255"></textarea>
+          <div class="hint">原因将作为回执下发给客户端，用户端会收到昵称修改通知</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" @click="showNicknameModal = false">取消</button>
+          <button class="btn btn-primary" @click="submitNicknameChange" :disabled="nicknameLoading">
+            {{ nicknameLoading ? '提交中...' : '确定修改' }}
+          </button>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
     <!-- 修改邮箱弹窗 -->
     <Transition name="modal">
     <div v-if="showEmailModal" class="modal-overlay">
@@ -513,6 +546,7 @@ function formatScriptSize(bytes: number | undefined): string {
 async function openRowMenu(u: User) {
   const action = await webActionMenu(`用户操作 · ${u.nickname || u.username}`, [
     { key: 'toggle', label: u.status != 0 ? '禁用用户' : '启用用户', danger: u.status != 0, success: u.status == 0 },
+    { key: 'nickname', label: '修改昵称' },
     { key: 'ciyuanxi', label: '修改弦予号' },
     { key: 'email', label: '修改邮箱' },
     { key: 'reset', label: '重置听歌时长' },
@@ -524,6 +558,7 @@ async function openRowMenu(u: User) {
   if (!action) return
   switch (action) {
     case 'toggle': await toggleStatus(u); break
+    case 'nickname': openNicknameModal(u); break
     case 'ciyuanxi': await changeCiyuanxi(u); break
     case 'email': openEmailModal(u); break
     case 'reset': openResetModal(u); break
@@ -779,6 +814,57 @@ async function submitAddUser() {
     loadUsers()
   } else {
     showToast(res.msg || '添加失败')
+  }
+}
+
+// ===== 修改昵称弹窗 =====
+const showNicknameModal = ref(false)
+const nicknameLoading = ref(false)
+const nicknameForm = ref({ userId: 0, oldNickname: '', ciyuanxiId: '', newNickname: '', reason: '' })
+
+function openNicknameModal(u: User) {
+  nicknameForm.value = {
+    userId: u.id,
+    oldNickname: u.nickname || u.username || '',
+    ciyuanxiId: u.ciyuanxi_id || '',
+    newNickname: '',
+    reason: '',
+  }
+  showNicknameModal.value = true
+}
+
+async function submitNicknameChange() {
+  const newNickname = nicknameForm.value.newNickname.trim()
+  const reason = nicknameForm.value.reason.trim()
+  if (newNickname.length < 2 || newNickname.length > 32) {
+    showToast('昵称需 2-32 个字符', 'error')
+    return
+  }
+  if (!/^[a-zA-Z0-9\u4e00-\u9fa5]+$/.test(newNickname)) {
+    showToast('昵称仅支持字母、数字、汉字', 'error')
+    return
+  }
+  if (newNickname === nicknameForm.value.oldNickname) {
+    showToast('新昵称与当前昵称相同', 'error')
+    return
+  }
+  if (!reason) {
+    showToast('修改原因不能为空', 'error')
+    return
+  }
+  nicknameLoading.value = true
+  const res = await adminApi('change_user_nickname', {
+    id: nicknameForm.value.userId,
+    new_nickname: newNickname,
+    reason,
+  })
+  nicknameLoading.value = false
+  if (res.code === 200) {
+    showToast('昵称已修改，已下发客户端通知', 'success')
+    showNicknameModal.value = false
+    loadUsers()
+  } else {
+    showToast(res.msg || '修改失败', 'error')
   }
 }
 
@@ -1259,6 +1345,20 @@ onMounted(() => {
 }
 .form-group input:focus { border-color: var(--accent); }
 .form-group input:disabled { background: #fafafa; color: var(--text-muted); }
+.form-group textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.15s;
+  background: var(--white);
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.form-group textarea:focus { border-color: var(--accent); }
 .form-group .hint {
   font-size: 12px;
   color: var(--text-muted);

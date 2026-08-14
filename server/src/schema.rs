@@ -754,4 +754,17 @@ static TABLE_STATEMENTS: &[&str] = &[
             UNIQUE KEY `uk_device_id` (`device_id`),
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `nickname_change_notices` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `old_nickname` varchar(64) NOT NULL DEFAULT '',
+            `new_nickname` varchar(64) NOT NULL DEFAULT '',
+            `reason` varchar(255) NOT NULL DEFAULT '',
+            `changed_by` varchar(64) NOT NULL DEFAULT '',
+            `confirmed_at` datetime DEFAULT NULL,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_ciyuanxi_id` (`ciyuanxi_id`),
+            KEY `idx_confirmed_at` (`confirmed_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];

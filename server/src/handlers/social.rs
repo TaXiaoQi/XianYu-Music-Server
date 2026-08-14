@@ -427,3 +427,67 @@ pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         Err(_) => ctx.err(500, "数据库错误"),
     }
 }
+
+/// 获取当前用户未确认的昵称变更通知（回执），供客户端弹窗展示。
+pub async fn get_nickname_change_notices(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "请先登录");
+    }
+    let rows = sqlx::query(
+        "SELECT id, ciyuanxi_id, old_nickname, new_nickname, reason, changed_by, created_at
+         FROM nickname_change_notices
+         WHERE ciyuanxi_id = ? AND confirmed_at IS NULL
+         ORDER BY created_at DESC",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_all(pool)
+    .await;
+    let list: Vec<Value> = match rows {
+        Ok(rows) => rows.iter().map(row_to_json_notice).collect(),
+        Err(_) => Vec::new(),
+    };
+    ctx.ok("获取通知成功", json!({ "list": list }))
+}
+
+/// 确认昵称变更通知：标记已读，并同步客户端本地昵称。
+pub async fn confirm_nickname_change_notice(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let id = int_of(&data, "id");
+    if ciyuanxi_id.is_empty() || id <= 0 {
+        return ctx.err(400, "参数错误");
+    }
+    let upd = sqlx::query(
+        "UPDATE nickname_change_notices SET confirmed_at = NOW() WHERE id = ? AND ciyuanxi_id = ? AND confirmed_at IS NULL",
+    )
+    .bind(id)
+    .bind(&ciyuanxi_id)
+    .execute(pool)
+    .await;
+    match upd {
+        Ok(_) => ctx.ok("已确认", json!({ "id": id })),
+        Err(_) => ctx.err(500, "服务器错误"),
+    }
+}
+
+/// 将昵称变更通知行转换为 JSON
+fn row_to_json_notice(row: &sqlx::mysql::MySqlRow) -> Value {
+    use sqlx::Row;
+    json!({
+        "id": row.get::<i64, _>("id"),
+        "ciyuanxi_id": row.get::<String, _>("ciyuanxi_id"),
+        "old_nickname": row.get::<String, _>("old_nickname"),
+        "new_nickname": row.get::<String, _>("new_nickname"),
+        "reason": row.get::<String, _>("reason"),
+        "changed_by": row.get::<String, _>("changed_by"),
+        "created_at": row.try_get::<String, _>("created_at").unwrap_or_default(),
+    })
+}

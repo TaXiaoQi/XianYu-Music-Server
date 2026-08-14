@@ -3,7 +3,7 @@ use serde_json::json;
 use sqlx::MySqlPool;
 use sqlx::Row;
 
-use crate::handlers::helpers::{default_nickname, parse_body, str_of, validate_ciyuanxi_id};
+use crate::handlers::helpers::{default_nickname, parse_body, str_of, validate_ciyuanxi_id, validate_nickname};
 use crate::response::ReqCtx;
 
 const CAPTCHA_TTL_MINUTES: i64 = 5;
@@ -345,6 +345,9 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let name_len = nickname.chars().count();
     if name_len < 2 || name_len > 32 {
         return ctx.err(400, "昵称长度需2-32个字符");
+    }
+    if let Err(msg) = validate_nickname(&nickname, 2, 32) {
+        return ctx.err(400, msg);
     }
     // 检查昵称是否与管理员用户名冲突（大小写不敏感）
     {

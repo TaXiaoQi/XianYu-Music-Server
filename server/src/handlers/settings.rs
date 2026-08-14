@@ -4,7 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use crate::audit_policy::{self, AuditDecision};
-use crate::handlers::helpers::{parse_body, str_of, validate_ciyuanxi_id};
+use crate::handlers::helpers::{parse_body, str_of, validate_ciyuanxi_id, validate_nickname};
 use crate::response::ReqCtx;
 
 const SETTINGS_FIELDS: [&str; 8] = [
@@ -231,6 +231,9 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         }
         if len < 2 || len > 20 {
             return ctx.err(400, "昵称长度需为 2 到 20 个字符");
+        }
+        if let Err(msg) = validate_nickname(&nickname, 2, 20) {
+            return ctx.err(400, msg);
         }
         if nickname == current_nickname {
             return ctx.err(400, "新昵称不能与当前昵称相同");
@@ -675,6 +678,12 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok())))
         .unwrap_or(0.0)
         .max(0.0) as i64;
+    // 当日听歌时长（秒），用于日榜/周榜
+    let daily_seconds = data
+        .get("daily_duration")
+        .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok())))
+        .unwrap_or(0.0)
+        .max(0.0) as i64;
     let unique_songs_count = data
         .get("unique_songs_count")
         .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
@@ -741,7 +750,7 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     .execute(pool)
     .await;
 
-    // 同步写入每日统计（用于日榜/周榜）
+    // 同步写入每日统计（用于日榜/周榜），使用客户端上报的当日时长而非累计总时长
     let _ = sqlx::query(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
          VALUES (?, CURDATE(), ?, ?) \
@@ -750,7 +759,7 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
              unique_songs_count = GREATEST(unique_songs_count, VALUES(unique_songs_count))",
     )
     .bind(&ciyuanxi_id)
-    .bind(actual_seconds)
+    .bind(daily_seconds)
     .bind(actual_songs)
     .execute(pool)
     .await;

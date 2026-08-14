@@ -4,7 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use super::{err, log_operation, ok, row_to_value, AdminCtx};
-use crate::handlers::helpers::{default_nickname, int_of, parse_body, str_of, validate_ciyuanxi_id};
+use crate::handlers::helpers::{default_nickname, int_of, parse_body, str_of, validate_ciyuanxi_id, validate_nickname};
 
 /// 获取用户列表（分页 + 关键词搜索）
 pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
@@ -181,6 +181,9 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     if username.len() < 2 || username.len() > 32 {
         return err(400, "昵称需 2-32 个字符");
     }
+    if let Err(msg) = validate_nickname(&username, 2, 32) {
+        return err(400, msg);
+    }
     if password.len() < 6 {
         return err(400, "密码至少 6 位");
     }
@@ -350,6 +353,97 @@ pub async fn get_user_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     }))
 }
 
+/// 后台修改指定账号昵称：填新昵称 + 原因，写库并下发客户端回执通知。
+pub async fn change_user_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    let new_nickname = str_of(&data, "new_nickname").trim().to_string();
+    let reason = str_of(&data, "reason").trim().to_string();
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    if new_nickname.len() < 2 || new_nickname.len() > 32 {
+        return err(400, "昵称需 2-32 个字符");
+    }
+    if let Err(msg) = validate_nickname(&new_nickname, 2, 32) {
+        return err(400, msg);
+    }
+    if reason.is_empty() {
+        return err(400, "修改原因不能为空");
+    }
+    if reason.chars().count() > 255 {
+        return err(400, "修改原因不能超过 255 字");
+    }
+    let user = sqlx::query("SELECT nickname, ciyuanxi_id FROM app_users WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return err(404, "用户不存在");
+    };
+    let old_nickname: String = user.get("nickname");
+    let ciyuanxi_id: String = user.get("ciyuanxi_id");
+    if old_nickname == new_nickname {
+        return err(400, "新昵称与当前昵称相同");
+    }
+    // 昵称唯一性：与注册/新增保持一致，同时检查管理员表和普通用户表
+    let admin_exists = sqlx::query("SELECT id FROM admin_users WHERE username = ? LIMIT 1")
+        .bind(&new_nickname)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    let exists = sqlx::query("SELECT id FROM app_users WHERE nickname = ? AND id <> ? LIMIT 1")
+        .bind(&new_nickname)
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    if admin_exists || exists {
+        return err(409, "昵称已存在");
+    }
+    // 更新昵称
+    let upd = sqlx::query("UPDATE app_users SET nickname = ? WHERE id = ?")
+        .bind(&new_nickname)
+        .bind(id)
+        .execute(pool)
+        .await;
+    if let Err(e) = upd {
+        return err(500, &format!("修改失败: {}", e));
+    }
+    // 同步 user_feedback 表中的昵称（保持头像/昵称一致性）
+    if !ciyuanxi_id.is_empty() {
+        let _ = sqlx::query("UPDATE user_feedback SET nickname = ? WHERE ciyuanxi_id = ? AND nickname = ?")
+            .bind(&new_nickname)
+            .bind(&ciyuanxi_id)
+            .bind(&old_nickname)
+            .execute(pool)
+            .await;
+    }
+    // 写入客户端回执通知
+    let _ = sqlx::query(
+        "INSERT INTO nickname_change_notices (ciyuanxi_id, old_nickname, new_nickname, reason, changed_by) VALUES (?,?,?,?,?)",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(&old_nickname)
+    .bind(&new_nickname)
+    .bind(&reason)
+    .bind(&ctx.username)
+    .execute(pool)
+    .await;
+    log_operation(
+        pool, ctx, "修改用户昵称",
+        &format!("用户ID:{} 昵称:{}", id, old_nickname),
+        &format!("昵称改为:{} 原因:{}", new_nickname, reason),
+    ).await;
+    ok("昵称已修改", json!({ "old_nickname": old_nickname, "new_nickname": new_nickname }))
+}
+
 /// 一键替换 user_id -> ciyuanxi_id
 pub async fn replace_user_id_to_ciyuanxi(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let skip = ["app_users", "admin_users", "admin_operation_log", "admin_login_log"];
@@ -517,7 +611,8 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     let offset = (page - 1) * page_size;
     let keyword = str_of(&data, "keyword").trim().to_string();
 
-    // 关联 app_open_log 取每台设备最新一条记录，再关联 app_users 取昵称，关联 banned_devices 判断是否被封禁
+    // 关联 app_open_log 取每台设备最新一条记录，再关联 app_users 取昵称，关联 banned_devices 判断是否被封禁。
+    // 关联账号优先取 app_users.last_device_id（登录时写入，最可靠），回退到 app_open_log.ciyuanxi_id。
     let base_sql = "
         SELECT
             a.device_id,
@@ -527,10 +622,21 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             a.ciyuanxi_id,
             a.ip,
             a.created_at,
-            u.nickname,
+            COALESCE(
+                (SELECT u2.nickname FROM app_users u2 WHERE u2.last_device_id = a.device_id ORDER BY u2.id DESC LIMIT 1),
+                u.nickname
+            ) AS nickname,
+            COALESCE(
+                (SELECT u2.ciyuanxi_id FROM app_users u2 WHERE u2.last_device_id = a.device_id ORDER BY u2.id DESC LIMIT 1),
+                a.ciyuanxi_id
+            ) AS ciyuanxi_id,
             b.id AS ban_id,
             b.reason AS ban_reason,
-            (SELECT COUNT(DISTINCT ciyuanxi_id) FROM app_open_log WHERE device_id = a.device_id AND ciyuanxi_id != '') AS account_count,
+            (SELECT COUNT(*) FROM (
+                SELECT ciyuanxi_id FROM app_open_log WHERE device_id = a.device_id AND ciyuanxi_id != ''
+                UNION
+                SELECT ciyuanxi_id FROM app_users WHERE last_device_id = a.device_id AND ciyuanxi_id != ''
+            ) t) AS account_count,
             (SELECT COUNT(*) FROM app_users WHERE last_device_id = a.device_id) AS current_account_count
         FROM app_open_log a
         INNER JOIN (
@@ -548,7 +654,7 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         (total, rows)
     } else {
         let pat = format!("%{}%", keyword);
-        let where_clause = "WHERE a.device_id LIKE ? OR a.device_model LIKE ? OR a.ciyuanxi_id LIKE ? OR u.nickname LIKE ?";
+        let where_clause = "WHERE a.device_id LIKE ? OR a.device_model LIKE ? OR a.ciyuanxi_id LIKE ? OR u.nickname LIKE ? OR (SELECT u2.nickname FROM app_users u2 WHERE u2.last_device_id = a.device_id ORDER BY u2.id DESC LIMIT 1) LIKE ?";
         let count_sql = format!(
             "SELECT COUNT(*) FROM (
                 SELECT 1 FROM app_open_log a
@@ -559,10 +665,10 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
                 {}
             ) t", where_clause);
         let total: i64 = sqlx::query_scalar(&count_sql)
-            .bind(&pat).bind(&pat).bind(&pat).bind(&pat)
+            .bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(&pat)
             .fetch_one(pool).await.unwrap_or(0);
         let rows = sqlx::query(&format!("{} {} ORDER BY a.created_at DESC LIMIT ? OFFSET ?", base_sql, where_clause))
-            .bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(page_size).bind(offset).fetch_all(pool).await;
+            .bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(page_size).bind(offset).fetch_all(pool).await;
         (total, rows)
     };
 
@@ -739,13 +845,15 @@ pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
     })).unwrap_or(Value::Null);
 
-    // 关联账号：从 app_open_log 取所有出现过的 ciyuanxi_id
+    // 关联账号：从 app_open_log 取所有出现过的 ciyuanxi_id，并合并 app_users.last_device_id 关联的账号
     let account_rows = sqlx::query(
-        "SELECT DISTINCT a.ciyuanxi_id
-         FROM app_open_log a
-         INNER JOIN app_users u ON a.ciyuanxi_id = u.ciyuanxi_id
-         WHERE a.device_id = ? AND a.ciyuanxi_id != ''",
+        "SELECT DISTINCT ciyuanxi_id FROM (
+            SELECT a.ciyuanxi_id FROM app_open_log a WHERE a.device_id = ? AND a.ciyuanxi_id != ''
+            UNION
+            SELECT u.ciyuanxi_id FROM app_users u WHERE u.last_device_id = ? AND u.ciyuanxi_id != ''
+        ) t",
     )
+    .bind(&device_id)
     .bind(&device_id)
     .fetch_all(pool)
     .await

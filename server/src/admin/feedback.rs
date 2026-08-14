@@ -298,6 +298,34 @@ pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     }
 }
 
+/// 放弃认领反馈：仅当前认领人可放弃，回归未认领（pending）状态，
+/// 清空认领人、认领时间，其他管理员可重新认领。
+pub async fn abandon_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let upd = sqlx::query(
+        "UPDATE user_feedback SET status = 'pending', assignee = '', replied_by = '', replied_at = NULL, claimed_at = NULL, updated_at = NOW()
+         WHERE id = ? AND status = 'processing' AND assignee = ?",
+    )
+    .bind(id)
+    .bind(&ctx.username)
+    .execute(pool)
+    .await;
+    match upd {
+        Ok(r) => {
+            if r.rows_affected() == 0 {
+                return err(409, "该反馈不存在或您不是当前认领人，请刷新后重试");
+            }
+            log_operation(pool, ctx, "放弃认领反馈", &format!("id={}", id), "回归未认领状态").await;
+            ok("已放弃认领，回归未认领状态", json!({ "id": id, "status": "pending" }))
+        }
+        Err(_) => err(500, "服务器错误"),
+    }
+}
+
 /// 完成反馈：必填完成说明，将 processing 状态反馈置为 resolved 并记录说明，
 /// 同时清空 notified_at 以便用户端拉取到该反馈的完成通知。
 pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {

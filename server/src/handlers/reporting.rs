@@ -133,7 +133,7 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     }
 
     let result = sqlx::query(
-        "UPDATE app_users SET listen_duration = GREATEST(listen_duration, ?) WHERE ciyuanxi_id = ?",
+        "UPDATE app_users SET listen_duration = listen_duration + ? WHERE ciyuanxi_id = ?",
     )
     .bind(duration)
     .bind(&ciyuanxi_id)
@@ -144,7 +144,7 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     let _ = sqlx::query(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration) \
          VALUES (?, CURDATE(), ?) \
-         ON DUPLICATE KEY UPDATE listen_duration = GREATEST(listen_duration, VALUES(listen_duration))",
+         ON DUPLICATE KEY UPDATE listen_duration = listen_duration + VALUES(listen_duration)",
     )
     .bind(&ciyuanxi_id)
     .bind(duration)
