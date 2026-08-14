@@ -207,8 +207,7 @@
             <!-- 主体：左内容，右图片（默认展开） -->
             <div class="card-body">
               <div class="card-main">
-                <h3 class="fb-title">{{ item.title || '无标题' }}</h3>
-                <p class="fb-content">{{ item.content || '无内容' }}</p>
+                <p class="fb-content fb-content-main">{{ item.content || '无内容' }}</p>
                 <div class="detail-more">
                   <div v-if="hasErrorLogs(item) || hasAllLogs(item)" class="log-summary">
                     <span v-if="hasErrorLogs(item)" class="log-chip">错误日志 {{ formatLogSize(item.error_logs_chars) }}</span>
@@ -1577,7 +1576,6 @@ onUnmounted(() => {
 .badge-rejected { background: #fef2f2; color: #dc2626; }
 
 .card-body { margin-bottom: 12px; }
-.fb-title { font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 6px 0; }
 .fb-content {
   font-size: 11px;
   color: var(--text-muted);
@@ -1585,6 +1583,16 @@ onUnmounted(() => {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+}
+.fb-content-main {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 6px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .log-summary {
   display: flex;
@@ -2289,9 +2297,10 @@ onUnmounted(() => {
 .batch-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-radius: 12px;
+  gap: 6px;
+  padding: 2px 10px;
+  height: 32px;
+  border-radius: 9px;
   background: var(--accent-soft);
   border: 1px solid var(--border);
 }
@@ -2338,7 +2347,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 5px 10px;
+  padding: 4px 9px;
   border-radius: 6px;
   border: none;
   background: #ef4444;
@@ -2357,7 +2366,7 @@ onUnmounted(() => {
   background: #dc2626;
 }
 .btn-batch-exit {
-  padding: 5px 10px;
+  padding: 4px 9px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
   background: var(--card-bg);

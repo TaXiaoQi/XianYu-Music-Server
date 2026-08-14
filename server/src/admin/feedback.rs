@@ -103,8 +103,8 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
                 COALESCE(CHAR_LENGTH(f.all_logs), 0) AS all_logs_chars,
                 CASE WHEN f.error_logs IS NULL OR f.error_logs = '' THEN 0 ELSE 1 END AS has_error_logs,
                 CASE WHEN f.all_logs IS NULL OR f.all_logs = '' THEN 0 ELSE 1 END AS has_all_logs,
-                u.avatar_url AS avatar_url
-         FROM user_feedback f LEFT JOIN app_users u ON u.ciyuanxi_id = f.ciyuanxi_id {} {}",
+                COALESCE(u.avatar_url, au.avatar_url) AS avatar_url
+         FROM user_feedback f LEFT JOIN app_users u ON u.ciyuanxi_id = f.ciyuanxi_id LEFT JOIN admin_users au ON au.username = f.nickname AND f.ciyuanxi_id = '' {} {}",
         where_clause, order_sql
     );
     let mut list_query = sqlx::query(&list_sql);
@@ -148,7 +148,7 @@ pub async fn get_feedback_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
         return err(400, "参数错误");
     }
     let row = sqlx::query(
-        "SELECT f.*, COALESCE(u.nickname, f.nickname) AS nickname, u.avatar_url AS avatar_url FROM user_feedback f LEFT JOIN app_users u ON u.ciyuanxi_id = f.ciyuanxi_id WHERE f.id = ? LIMIT 1",
+        "SELECT f.*, COALESCE(u.nickname, f.nickname) AS nickname, COALESCE(u.avatar_url, au.avatar_url) AS avatar_url FROM user_feedback f LEFT JOIN app_users u ON u.ciyuanxi_id = f.ciyuanxi_id LEFT JOIN admin_users au ON au.username = f.nickname AND f.ciyuanxi_id = '' WHERE f.id = ? LIMIT 1",
     )
         .bind(id)
         .fetch_optional(pool)

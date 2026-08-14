@@ -150,8 +150,7 @@
         <!-- 主体 -->
         <div class="mfb-main">
           <div class="mfb-left">
-            <h3 class="mfb-title">{{ f.title || '无标题' }}</h3>
-            <p class="mfb-content">{{ f.content || '无内容' }}</p>
+            <p class="mfb-content mfb-content-main">{{ f.content || '无内容' }}</p>
             <div class="detail-more">
               <div v-if="hasErrorLogs(f) || hasAllLogs(f)" class="log-summary">
                 <span v-if="hasErrorLogs(f)" class="log-chip">错误日志 {{ formatLogSize(f.error_logs_chars) }}</span>
@@ -785,7 +784,7 @@ onMounted(() => { loadLimit(); loadList() })
   transition: background 0.16s, color 0.16s, border-color 0.16s;
 }
 .tool-btn.active { border-color: #EC4141; background: #EC4141; color: #fff; }
-.toolbar-right { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.toolbar-right { display: flex; align-items: center; justify-content: space-between; gap: 8px; position: relative; }
 .sort-btn {
   display: inline-flex;
   align-items: center;
@@ -815,13 +814,34 @@ onMounted(() => { loadLimit(); loadList() })
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  min-width: 0;
+  position: relative;
 }
 .batch-abs {
   display: flex;
   align-items: center;
 }
-.batch-bar { display: flex; align-items: center; gap: 8px; justify-content: flex-end; white-space: nowrap; }
-.batch-bar .mobile-btn { flex: 0 0 auto; }
+/* 批量栏悬浮于工具栏行内，不参与布局，避免切换/关闭时挤压页面 */
+.batch-bar {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+  white-space: nowrap;
+  z-index: 5;
+}
+.batch-bar .mobile-btn {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  height: 30px;
+  line-height: 1;
+}
 /* 批量菜单向左弹出/收回动画 */
 .batch-slide-enter-active,
 .batch-slide-leave-active {
@@ -830,14 +850,14 @@ onMounted(() => { loadLimit(); loadList() })
 }
 .batch-slide-enter-from {
   opacity: 0;
-  transform: translateX(30px);
+  transform: translate(30px, -50%);
 }
 .batch-slide-leave-to {
   opacity: 0;
-  transform: translateX(30px);
+  transform: translate(30px, -50%);
 }
-.batch-select-all { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-light); flex-shrink: 0; }
-.batch-count { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
+.batch-select-all { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-light); flex-shrink: 0; padding: 0 4px; }
+.batch-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 
 /* 反馈卡片 */
 .mfb-item { padding: 14px; }
@@ -881,12 +901,17 @@ onMounted(() => { loadLimit(); loadList() })
 /* 主体 */
 .mfb-main { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; }
 .mfb-left { flex: 1; min-width: 0; }
-.mfb-title { margin: 0; font-size: 14px; font-weight: 850; color: var(--text); word-break: break-word; }
 .mfb-content {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 11px; color: var(--text-muted);
   line-height: 1.6; word-break: break-word;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.mfb-content-main {
+  font-size: 14px;
+  font-weight: 850;
+  color: var(--text);
+  margin: 0 0 6px 0;
 }
 .detail-more { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
 .log-summary { display: flex; gap: 6px; flex-wrap: wrap; }
