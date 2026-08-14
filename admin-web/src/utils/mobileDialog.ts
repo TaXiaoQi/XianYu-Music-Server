@@ -53,6 +53,9 @@ function animateIn(overlay: HTMLDivElement, dialog: HTMLDivElement) {
 
 function closeDialog(overlay: HTMLDivElement) {
   const dialog = overlay.querySelector('.mobile-dialog') as HTMLDivElement | null
+  // 立即移除 backdrop-filter，避免模糊效果在 opacity 透明后残留
+  overlay.style.setProperty('backdrop-filter', 'none')
+  overlay.style.setProperty('-webkit-backdrop-filter', 'none')
   overlay.style.opacity = '0'
   if (dialog) {
     dialog.style.opacity = '0'

@@ -28,8 +28,8 @@
 
     <main class="mobile-main">
       <router-view v-slot="{ Component, route: r }">
-        <transition name="mobile-page">
-          <component :is="Component" :key="r.path" class="mobile-page-node" />
+        <transition name="route-fade" mode="out-in">
+          <component :is="Component" :key="r.path" />
         </transition>
       </router-view>
     </main>
@@ -286,23 +286,17 @@ async function handleLogout() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mobile-page-enter-active {
-  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 2;
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.mobile-page-leave-active {
-  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 1;
-}
-.mobile-page-enter-from {
+.route-fade-enter-from {
   opacity: 0;
   transform: translateY(10px);
 }
-.mobile-page-leave-to {
+.route-fade-leave-to {
   opacity: 0;
-}
-.mobile-page-node {
-  position: relative;
+  transform: translateY(-6px);
 }
 </style>

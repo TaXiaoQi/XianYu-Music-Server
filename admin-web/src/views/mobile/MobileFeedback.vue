@@ -811,18 +811,14 @@ onMounted(() => { loadLimit(); loadList() })
 }
 .sort-btn svg { flex-shrink: 0; }
 .batch-slot {
-  position: relative;
-  min-height: 38px;
   flex: 1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
 }
 .batch-abs {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
 }
 .batch-bar { display: flex; align-items: center; gap: 8px; justify-content: flex-end; white-space: nowrap; }
 .batch-bar .mobile-btn { flex: 0 0 auto; }
@@ -834,11 +830,11 @@ onMounted(() => { loadLimit(); loadList() })
 }
 .batch-slide-enter-from {
   opacity: 0;
-  transform: translateY(-50%) translateX(30px);
+  transform: translateX(30px);
 }
 .batch-slide-leave-to {
   opacity: 0;
-  transform: translateY(-50%) translateX(30px);
+  transform: translateX(30px);
 }
 .batch-select-all { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-light); flex-shrink: 0; }
 .batch-count { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
