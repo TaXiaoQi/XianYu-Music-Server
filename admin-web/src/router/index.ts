@@ -172,6 +172,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: 'APP登录日志', mobile: true },
       },
       {
+        path: 'device-banned',
+        name: 'MobileDeviceBanned',
+        component: () => import('@/views/mobile/MobileDeviceBanned.vue'),
+        meta: { title: '设备管理', mobile: true },
+      },
+      {
         path: ':pathMatch(.*)*',
         name: 'MobileNotFound',
         component: () => import('@/views/mobile/MobileMore.vue'),

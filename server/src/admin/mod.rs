@@ -229,6 +229,11 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "ban_device" => users::ban_device(body, &ctx, pool).await,
         "unban_device" => users::unban_device(body, &ctx, pool).await,
         "get_user_devices" => users::get_user_devices(body, &ctx, pool).await,
+        "get_device_detail" => users::get_device_detail(body, &ctx, pool).await,
+        "reset_device_listen_stats" => users::reset_device_listen_stats(body, &ctx, pool).await,
+        "delete_device_record" => users::delete_device_record(body, &ctx, pool).await,
+        "batch_delete_devices" => users::batch_delete_devices(body, &ctx, pool).await,
+        "get_device_plugins" => users::get_device_plugins(body, &ctx, pool).await,
         // db
         "repair_database" => db::repair_database(body, &ctx, pool).await,
         "view_table" => db::view_table(body, &ctx, pool).await,

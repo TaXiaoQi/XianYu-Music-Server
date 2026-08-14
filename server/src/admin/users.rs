@@ -150,6 +150,11 @@ pub async fn delete_user_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     };
     let nickname: String = user.get("nickname");
     let _ = sqlx::query("UPDATE app_users SET avatar_url = '' WHERE id = ?").bind(id).execute(pool).await;
+    let _ = sqlx::query("UPDATE user_feedback SET nickname = (SELECT nickname FROM app_users WHERE id = ?) WHERE ciyuanxi_id = (SELECT ciyuanxi_id FROM app_users WHERE id = ?)")
+        .bind(id)
+        .bind(id)
+        .execute(pool)
+        .await;
     log_operation(pool, ctx, "删除用户头像", &format!("用户ID:{}", id), &format!("昵称:{}", nickname)).await;
     ok("头像已删除", Value::Null)
 }
@@ -514,7 +519,7 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
 
     // 关联 app_open_log 取每台设备最新一条记录，再关联 app_users 取昵称，关联 banned_devices 判断是否被封禁
     let base_sql = "
-        SELECT 
+        SELECT
             a.device_id,
             a.device_model,
             a.os_version,
@@ -524,7 +529,9 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             a.created_at,
             u.nickname,
             b.id AS ban_id,
-            b.reason AS ban_reason
+            b.reason AS ban_reason,
+            (SELECT COUNT(DISTINCT ciyuanxi_id) FROM app_open_log WHERE device_id = a.device_id AND ciyuanxi_id != '') AS account_count,
+            (SELECT COUNT(*) FROM app_users WHERE last_device_id = a.device_id) AS current_account_count
         FROM app_open_log a
         INNER JOIN (
             SELECT device_id, MAX(id) AS max_id FROM app_open_log GROUP BY device_id
@@ -695,6 +702,323 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         "is_banned": is_banned,
         "login_logs": login_list,
         "open_logs": open_list,
+    }))
+}
+
+/// 获取设备详情：关联账号列表、当前关联账号、封禁状态、听歌统计
+pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+
+    // 设备最新一条启动记录
+    let latest = sqlx::query(
+        "SELECT device_id, device_model, os_version, app_version, ip, ciyuanxi_id, created_at
+         FROM app_open_log WHERE device_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&device_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    // 封禁状态
+    let ban_row = sqlx::query("SELECT id, reason, banned_by, created_at FROM banned_devices WHERE device_id = ? LIMIT 1")
+        .bind(&device_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let is_banned = ban_row.is_some();
+    let ban_info = ban_row.map(|r| json!({
+        "id": r.try_get::<i64, _>("id").unwrap_or_default(),
+        "reason": r.try_get::<String, _>("reason").unwrap_or_default(),
+        "banned_by": r.try_get::<String, _>("banned_by").unwrap_or_default(),
+        "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+    })).unwrap_or(Value::Null);
+
+    // 关联账号：从 app_open_log 取所有出现过的 ciyuanxi_id
+    let account_rows = sqlx::query(
+        "SELECT DISTINCT a.ciyuanxi_id
+         FROM app_open_log a
+         INNER JOIN app_users u ON a.ciyuanxi_id = u.ciyuanxi_id
+         WHERE a.device_id = ? AND a.ciyuanxi_id != ''",
+    )
+    .bind(&device_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // 当前关联账号：app_users.last_device_id = device_id
+    let current_account = sqlx::query(
+        "SELECT id, ciyuanxi_id, nickname, listen_duration, unique_songs_count, avatar_url
+         FROM app_users WHERE last_device_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&device_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    let current_ciyuanxi_id: String = current_account
+        .as_ref()
+        .and_then(|r| r.try_get::<String, _>("ciyuanxi_id").ok())
+        .unwrap_or_default();
+
+    let mut accounts: Vec<Value> = Vec::new();
+    for row in &account_rows {
+        let cid: String = row.try_get("ciyuanxi_id").unwrap_or_default();
+        if cid.is_empty() {
+            continue;
+        }
+        // 查每个账号的详情
+        let user_info = sqlx::query(
+            "SELECT id, nickname, listen_duration, unique_songs_count, avatar_url, last_device_id
+             FROM app_users WHERE ciyuanxi_id = ? LIMIT 1",
+        )
+        .bind(&cid)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        if let Some(u) = user_info {
+            let is_current = u.try_get::<String, _>("last_device_id").unwrap_or_default() == device_id;
+            accounts.push(json!({
+                "ciyuanxi_id": cid,
+                "nickname": u.try_get::<String, _>("nickname").unwrap_or_default(),
+                "listen_duration": u.try_get::<u32, _>("listen_duration").unwrap_or_default(),
+                "unique_songs_count": u.try_get::<u32, _>("unique_songs_count").unwrap_or_default(),
+                "avatar_url": u.try_get::<Option<String>, _>("avatar_url").unwrap_or_default(),
+                "is_current": is_current,
+            }));
+        }
+    }
+
+    // 如果 app_open_log 里有 ciyuanxi_id 但 app_users 表里没有的，也加入（未注册的）
+    // 同时确保当前关联账号也在列表中
+    let has_current = accounts.iter().any(|a| a["ciyuanxi_id"].as_str() == Some(&current_ciyuanxi_id));
+    if !has_current && !current_ciyuanxi_id.is_empty() {
+        if let Some(u) = &current_account {
+            accounts.insert(0, json!({
+                "ciyuanxi_id": current_ciyuanxi_id,
+                "nickname": u.try_get::<String, _>("nickname").unwrap_or_default(),
+                "listen_duration": u.try_get::<u32, _>("listen_duration").unwrap_or_default(),
+                "unique_songs_count": u.try_get::<u32, _>("unique_songs_count").unwrap_or_default(),
+                "avatar_url": u.try_get::<Option<String>, _>("avatar_url").unwrap_or_default(),
+                "is_current": true,
+            }));
+        }
+    }
+
+    let device_info = latest.map(|r| json!({
+        "device_model": r.try_get::<String, _>("device_model").unwrap_or_default(),
+        "os_version": r.try_get::<String, _>("os_version").unwrap_or_default(),
+        "app_version": r.try_get::<String, _>("app_version").unwrap_or_default(),
+        "ip": r.try_get::<String, _>("ip").unwrap_or_default(),
+        "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+    })).unwrap_or(Value::Null);
+
+    ok("ok", json!({
+        "device_id": device_id,
+        "device_info": device_info,
+        "is_banned": is_banned,
+        "ban_info": ban_info,
+        "associated_accounts": accounts,
+        "account_count": accounts.len(),
+        "current_ciyuanxi_id": current_ciyuanxi_id,
+    }))
+}
+
+/// 重置设备的听歌统计：对该设备上所有关联账号执行重置
+pub async fn reset_device_listen_stats(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+
+    // 收集所有关联账号的 ciyuanxi_id
+    let rows = sqlx::query(
+        "SELECT DISTINCT ciyuanxi_id FROM app_open_log WHERE device_id = ? AND ciyuanxi_id != ''",
+    )
+    .bind(&device_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    // 也加上 app_users.last_device_id 关联的账号
+    let current = sqlx::query("SELECT ciyuanxi_id FROM app_users WHERE last_device_id = ?")
+        .bind(&device_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+    let mut ciyuanxi_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for r in &rows {
+        let cid: String = r.try_get("ciyuanxi_id").unwrap_or_default();
+        if !cid.is_empty() {
+            ciyuanxi_ids.insert(cid);
+        }
+    }
+    for r in &current {
+        let cid: String = r.try_get("ciyuanxi_id").unwrap_or_default();
+        if !cid.is_empty() {
+            ciyuanxi_ids.insert(cid);
+        }
+    }
+
+    if ciyuanxi_ids.is_empty() {
+        return ok("该设备未关联任何账号，无需重置", Value::Null);
+    }
+
+    let mut reset_count = 0u32;
+    for cid in &ciyuanxi_ids {
+        let _ = sqlx::query(
+            "UPDATE app_users SET listen_duration = 0, unique_songs_count = 0,
+             listen_stats_reset_at = NOW(), listen_duration_offset = 0, unique_songs_offset = 0
+             WHERE ciyuanxi_id = ?",
+        )
+        .bind(cid)
+        .execute(pool)
+        .await;
+        let _ = sqlx::query("DELETE FROM listen_daily_stats WHERE ciyuanxi_id = ?")
+            .bind(cid)
+            .execute(pool)
+            .await;
+        reset_count += 1;
+    }
+
+    log_operation(
+        pool, ctx, "重置设备听歌统计",
+        &format!("device_id={} 关联{}个账号", device_id, reset_count), "",
+    ).await;
+
+    ok(&format!("已重置 {} 个关联账号的听歌统计", reset_count), Value::Null)
+}
+
+/// 删除设备记录：从 app_open_log 和 banned_devices 中删除
+pub async fn delete_device_record(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+
+    let _ = sqlx::query("DELETE FROM app_open_log WHERE device_id = ?")
+        .bind(&device_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM banned_devices WHERE device_id = ?")
+        .bind(&device_id)
+        .execute(pool)
+        .await;
+
+    log_operation(pool, ctx, "删除设备记录", &format!("device_id={}", device_id), "").await;
+
+    ok("设备记录已删除", Value::Null)
+}
+
+/// 批量删除设备记录
+pub async fn batch_delete_devices(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_ids: Vec<String> = data.get("device_ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+
+    if device_ids.is_empty() {
+        return err(400, "请选择要删除的设备");
+    }
+
+    let mut total_deleted = 0u64;
+    for did in &device_ids {
+        let r1 = sqlx::query("DELETE FROM app_open_log WHERE device_id = ?")
+            .bind(did)
+            .execute(pool)
+            .await;
+        let r2 = sqlx::query("DELETE FROM banned_devices WHERE device_id = ?")
+            .bind(did)
+            .execute(pool)
+            .await;
+        if r1.is_ok() || r2.is_ok() {
+            total_deleted += 1;
+        }
+    }
+
+    log_operation(
+        pool, ctx, "批量删除设备记录",
+        &format!("删除{}台设备", total_deleted), "",
+    ).await;
+
+    ok(&format!("已删除 {} 台设备的记录", total_deleted), Value::Null)
+}
+
+/// 获取设备关联账号的插件信息（取当前关联账号）
+pub async fn get_device_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+
+    // 找当前关联账号
+    let row = sqlx::query("SELECT ciyuanxi_id, nickname FROM app_users WHERE last_device_id = ? ORDER BY id DESC LIMIT 1")
+        .bind(&device_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+
+    let Some(row) = row else {
+        return ok("ok", json!({ "device_id": device_id, "nickname": null, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null, "message": "该设备未关联账号" }));
+    };
+
+    let ciyuanxi_id: String = row.get("ciyuanxi_id");
+    let nickname: String = row.get("nickname");
+
+    if ciyuanxi_id.is_empty() {
+        return ok("ok", json!({ "device_id": device_id, "nickname": nickname, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null }));
+    }
+
+    let clean_id: String = ciyuanxi_id.chars().filter(|c| c.is_ascii_digit()).collect();
+    let dir = std::path::Path::new("data").join("sync").join(&clean_id);
+    let file = dir.join("plugins.json");
+    let content = match std::fs::read_to_string(&file) {
+        Ok(c) => c,
+        Err(_) => return ok("ok", json!({ "device_id": device_id, "nickname": nickname, "ciyuanxi_id": ciyuanxi_id, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null })),
+    };
+    let save_data: Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return err(500, "数据解析失败"),
+    };
+    let mut plugins: Vec<Value> = Vec::new();
+    let uploaded_at = save_data.get("uploaded_at").cloned().unwrap_or(Value::Null);
+    if let Some(list) = save_data.get("plugins").and_then(|x| x.as_array()) {
+        for p in list {
+            let script_size = p.get("script").and_then(|s| s.as_str()).map(|s| s.len()).unwrap_or(0);
+            plugins.push(json!({
+                "name": p.get("name").and_then(|x| x.as_str()).unwrap_or("(未知)"),
+                "format": p.get("format").and_then(|x| x.as_str()).unwrap_or("unknown"),
+                "version": p.get("version").and_then(|x| x.as_str()).unwrap_or(""),
+                "author": p.get("author").and_then(|x| x.as_str()).unwrap_or(""),
+                "description": p.get("description").and_then(|x| x.as_str()).unwrap_or(""),
+                "enabled": p.get("enabled").and_then(|x| x.as_bool()).unwrap_or(false),
+                "filePath": p.get("filePath").and_then(|x| x.as_str()).unwrap_or(""),
+                "importedAt": p.get("importedAt").and_then(|x| x.as_i64()).unwrap_or(0),
+                "scriptSize": script_size,
+            }));
+        }
+    }
+    let plugin_count = plugins.len();
+    ok("ok", json!({
+        "device_id": device_id,
+        "nickname": nickname,
+        "ciyuanxi_id": ciyuanxi_id,
+        "plugins": plugins,
+        "plugin_count": plugin_count,
+        "uploaded_at": uploaded_at,
     }))
 }
 

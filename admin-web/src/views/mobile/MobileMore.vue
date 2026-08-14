@@ -28,6 +28,7 @@ const groups = [
   {
     title: '系统管理',
     items: [
+      { to: '/m/device-banned', label: '设备管理', desc: '管理设备封禁与关联账号' },
       { to: '/m/admin-account', label: '后台账号管理', desc: '管理管理员账号与登录' },
       { to: '/m/external-notification', label: '外部通知', desc: '管理后台状态通知邮箱' },
       { to: '/m/email-config', label: '邮箱机设置', desc: '配置邮箱 API 或 SMTP' },

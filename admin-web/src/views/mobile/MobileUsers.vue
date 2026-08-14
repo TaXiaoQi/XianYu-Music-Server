@@ -5,7 +5,10 @@
         <input v-model="keyword" class="mobile-input" placeholder="搜索昵称 / 弦予号 / 邮箱" @keyup.enter="loadList" />
           <button class="mobile-btn primary" @click="loadList">搜索</button>
           <button class="mobile-btn" @click="openAdd = !openAdd">{{ openAdd ? '收起新增' : '新增用户' }}</button>
-          <button class="mobile-btn primary" @click="enterBatchMode">批量管理</button>
+        <router-link to="/m/device-banned" custom v-slot="{ navigate }">
+          <button class="mobile-btn" @click="navigate">设备管理</button>
+        </router-link>
+        <button class="mobile-btn primary" @click="enterBatchMode">批量管理</button>
       </div>
       <div v-else class="mobile-batch-bar">
           <button class="mobile-btn" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</button>
@@ -14,7 +17,6 @@
           <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchBanDevice">封禁ID</button>
           <button class="mobile-btn danger" :disabled="selectedCount === 0" @click="batchDeleteSelected">删除</button>
           <button class="mobile-btn danger" @click="deleteEmptyFavorites">清空歌单</button>
-          <button class="mobile-btn" @click="openBannedDevices">设备管理</button>
           <span class="mobile-batch-count">已选 {{ selectedCount }} 项</span>
           <button class="mobile-btn primary" @click="exitBatchMode">完成</button>
         </div>
@@ -65,41 +67,6 @@
         </div>
       </div>
     </div>
-    <transition name="expand">
-      <section v-if="showBannedPanel" class="mobile-card mobile-form">
-        <h3 class="mobile-card-title">设备管理</h3>
-        <input v-model="banDeviceInput" class="mobile-input" placeholder="设备 ID" />
-        <textarea v-model="banReasonInput" class="mobile-textarea" placeholder="封禁原因"></textarea>
-        <div class="mobile-actions">
-          <button class="mobile-btn primary" @click="manualBanDevice">手动封禁</button>
-          <button class="mobile-btn" @click="loadBannedDevices">刷新列表</button>
-          <button class="mobile-btn" @click="showBannedPanel = false">收起</button>
-        </div>
-        <div v-if="bannedLoading" class="mobile-empty">加载中...</div>
-        <div v-else-if="bannedDevices.length === 0" class="mobile-empty">暂无封禁设备</div>
-        <div v-else class="mobile-list">
-          <div v-for="d in bannedDevices" :key="d.id || deviceIdOf(d)" class="mobile-item">
-            <div class="mobile-item-title">{{ d.device_model || deviceIdOf(d) || '未知设备' }}</div>
-            <div class="mobile-item-sub monospace">{{ deviceIdOf(d) || '-' }}</div>
-            <div class="mobile-item-sub">
-              <template v-if="d.os_version">{{ d.os_version }}<template v-if="d.app_version"> · v{{ d.app_version }}</template></template>
-              <template v-else-if="d.app_version">v{{ d.app_version }}</template>
-              <template v-else>-</template>
-            </div>
-            <div class="mobile-item-sub">
-              <template v-if="d.nickname || d.ciyuanxi_id">账号：{{ d.nickname || '-' }}<template v-if="d.ciyuanxi_id">（{{ d.ciyuanxi_id }}）</template></template>
-              <template v-else>账号：未关联</template>
-            </div>
-            <div class="mobile-item-sub">原因：{{ d.reason || d.ban_reason || '-' }} · {{ d.banned_by ? '操作人：' + d.banned_by : '' }}</div>
-            <div class="mobile-item-sub muted-time">{{ d.created_at || d.banned_at || '-' }}</div>
-            <div class="mobile-actions">
-              <button class="mobile-btn" @click="unbanDeviceById(d.id, deviceIdOf(d))">解封</button>
-            </div>
-          </div>
-        </div>
-      </section>
-    </transition>
-
     <!-- 插件查看弹窗 -->
     <Transition name="mobile-fade">
     <div v-if="showPluginsModal" class="mobile-dialog-overlay" @click.self="closePlugins">
@@ -236,11 +203,6 @@ const pluginsData = ref<any>({})
 const showDeviceModal = ref(false)
 const deviceLoading = ref(false)
 const deviceData = ref<any>({})
-const showBannedPanel = ref(false)
-const bannedLoading = ref(false)
-const bannedDevices = ref<any[]>([])
-const banDeviceInput = ref('')
-const banReasonInput = ref('')
 const avatarPreview = ref('')
 
 function formatDuration(seconds: number | undefined): string {
@@ -476,9 +438,6 @@ async function refreshDeviceInfo(u: any) {
   }
   deviceLoading.value = false
 }
-function deviceIdOf(d: any): string {
-  return String(d?.device_id || d?.deviceId || d?.id || '')
-}
 async function banUserDevice(deviceId: string, username: string) {
   if (!deviceId) return showToast('未读取到设备 ID')
   const reason = await mobilePrompt(`请输入封禁用户 ${username} 的设备原因`, '')
@@ -499,41 +458,6 @@ async function unbanUserDevice(deviceId: string) {
   if (res.code === 200) {
     showToast('设备已解封', 'success')
     deviceData.value.is_banned = false
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-async function openBannedDevices() {
-  showBannedPanel.value = true
-  await loadBannedDevices()
-}
-async function loadBannedDevices() {
-  bannedLoading.value = true
-  const res = await adminApi<any>('list_banned_devices', { page: 1, page_size: 100 })
-  bannedDevices.value = res.code === 200 && res.data ? (res.data.list || []) : []
-  bannedLoading.value = false
-}
-async function manualBanDevice() {
-  const deviceId = banDeviceInput.value.trim()
-  const reason = banReasonInput.value.trim()
-  if (!deviceId) return showToast('请输入设备 ID')
-  if (!reason) return showToast('封禁原因不能为空')
-  const res = await adminApi('ban_device', { device_id: deviceId, reason })
-  if (res.code === 200) {
-    showToast('设备已封禁', 'success')
-    banDeviceInput.value = ''
-    banReasonInput.value = ''
-    await loadBannedDevices()
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-async function unbanDeviceById(id: number, deviceId: string) {
-  if (!(await mobileConfirm(`确定解封设备 ${deviceId || id}？`))) return
-  const res = await adminApi('unban_device', { id, device_id: deviceId })
-  if (res.code === 200) {
-    showToast('设备已解封', 'success')
-    await loadBannedDevices()
   } else {
     showToast(res.msg || '操作失败')
   }

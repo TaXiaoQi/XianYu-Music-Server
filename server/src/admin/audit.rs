@@ -170,6 +170,11 @@ pub async fn approve_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
+    let _ = sqlx::query("UPDATE user_feedback SET nickname = (SELECT nickname FROM app_users WHERE ciyuanxi_id = ?) WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
     let _ = sqlx::query("UPDATE user_avatar_pending SET status = 'approved', reviewed_at = NOW(), reviewed_by = ? WHERE id = ?")
         .bind(&ctx.username)
         .bind(id)
@@ -220,6 +225,11 @@ pub async fn approve_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     let ciyuanxi_id: String = row.get("ciyuanxi_id");
     let nickname: String = row.get("nickname");
     let _ = sqlx::query("UPDATE app_users SET nickname = ? WHERE ciyuanxi_id = ?")
+        .bind(&nickname)
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("UPDATE user_feedback SET nickname = ? WHERE ciyuanxi_id = ?")
         .bind(&nickname)
         .bind(&ciyuanxi_id)
         .execute(pool)
