@@ -399,24 +399,7 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         .execute(pool)
         .await;
 
-    // 检查昵称是否重复
-    let admin_dup = sqlx::query("SELECT id FROM admin_users WHERE username = ?")
-        .bind(&nickname)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .is_some();
-    let user_dup = sqlx::query("SELECT id FROM app_users WHERE nickname = ?")
-        .bind(&nickname)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten()
-        .is_some();
-    if admin_dup || user_dup {
-        return ctx.err(400, "昵称已存在");
-    }
+    // 检查邮箱是否已注册
     let email_user = sqlx::query("SELECT id FROM app_users WHERE email = ?")
         .bind(&email)
         .fetch_optional(pool)
@@ -832,6 +815,41 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
         return resp;
     }
+
+    // 注册类型：发码前预检查邮箱唯一性和弦予号唯一性
+    if typ == "register" {
+        let email_bound = sqlx::query("SELECT id FROM app_users WHERE email = ? LIMIT 1")
+            .bind(&email)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        if email_bound {
+            return ctx.err(400, "该邮箱已绑定账号，请直接登录");
+        }
+        let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+        if !ciyuanxi_id.is_empty() {
+            let id_dup = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+                .bind(&ciyuanxi_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+            let id_pretty = sqlx::query("SELECT id FROM ciyuanxi_pretty_ids WHERE ciyuanxi_id = ? LIMIT 1")
+                .bind(&ciyuanxi_id)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+            if id_dup || id_pretty {
+                return ctx.err(400, "该弦予号已被占用");
+            }
+        }
+    }
+
     let ip = ctx.client_ip.clone();
     let cnt1: i64 = sqlx::query("SELECT COUNT(*) as cnt FROM email_verify_codes WHERE email = ? AND created_at > DATE_SUB(NOW(), INTERVAL 60 SECOND)")
         .bind(&email)
