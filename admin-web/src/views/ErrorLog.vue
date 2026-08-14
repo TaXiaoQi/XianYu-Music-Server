@@ -487,11 +487,11 @@ onMounted(() => {
   border: 1px solid #ffd6d6;
 }
 .error-stack-box {
-  white-space: pre-wrap;
+  white-space: pre;
   font-size: 12px;
   color: #ff6b6b;
   max-height: 400px;
-  overflow-y: auto;
+  overflow: auto;
   background: #fffafa;
   padding: 14px;
   border-radius: 6px;
@@ -500,7 +500,7 @@ onMounted(() => {
   font-family: monospace;
 }
 .request-params-box {
-  white-space: pre-wrap;
+  white-space: pre;
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 8px;
@@ -508,7 +508,7 @@ onMounted(() => {
   padding: 10px;
   border-radius: 6px;
   max-height: 200px;
-  overflow-y: auto;
+  overflow: auto;
   font-family: monospace;
 }
 

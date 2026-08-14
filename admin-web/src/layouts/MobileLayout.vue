@@ -5,18 +5,31 @@
         <div class="mobile-kicker">弦予音乐</div>
       </div>
       <div class="top-actions">
-        <button class="icon-btn" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
-          <span v-if="theme.isDark">月</span>
-          <span v-else>日</span>
+        <button class="icon-btn theme-toggle" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
+          <svg v-if="theme.isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
+          </svg>
+          <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+          </svg>
+          <span class="theme-label">{{ theme.modeLabel }}</span>
         </button>
-        <button class="icon-btn danger" title="退出登录" @click="handleLogout">退</button>
+        <button class="logout-btn" @click="handleLogout">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+          退出
+        </button>
       </div>
     </header>
 
     <main class="mobile-main">
-      <router-view v-slot="{ Component }">
-        <transition name="mobile-page" mode="out-in">
-          <component :is="Component" />
+      <router-view v-slot="{ Component, route: r }">
+        <transition name="mobile-page">
+          <component :is="Component" :key="r.path" class="mobile-page-node" />
         </transition>
       </router-view>
     </main>
@@ -132,6 +145,61 @@ async function handleLogout() {
   color: #EC4141;
   background: rgba(236, 65, 65, 0.08);
 }
+/* 主题切换（参考桌面端设计） */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  height: 38px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  color: var(--text-light);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  transition: transform 0.16s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)),
+              color 0.16s, background 0.16s, border-color 0.16s;
+}
+.theme-toggle:active {
+  transform: scale(0.94);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.theme-toggle svg {
+  flex-shrink: 0;
+}
+/* 退出登录（参考桌面端设计） */
+.logout-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(236, 65, 65, 0.16);
+  background: rgba(236, 65, 65, 0.08);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  transition: transform 0.16s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)),
+              color 0.16s, background 0.16s, border-color 0.16s, box-shadow 0.16s;
+}
+.logout-btn:active {
+  transform: scale(0.94);
+  background: rgba(236, 65, 65, 0.12);
+}
+.logout-btn svg {
+  flex-shrink: 0;
+}
 .mobile-main {
   padding: 14px;
 }
@@ -218,17 +286,23 @@ async function handleLogout() {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.mobile-page-enter-active,
+.mobile-page-enter-active {
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 2;
+}
 .mobile-page-leave-active {
-  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
 }
 .mobile-page-enter-from {
   opacity: 0;
-  transform: translateY(12px);
+  transform: translateY(10px);
 }
 .mobile-page-leave-to {
   opacity: 0;
-  transform: translateY(-10px);
+}
+.mobile-page-node {
+  position: relative;
 }
 </style>

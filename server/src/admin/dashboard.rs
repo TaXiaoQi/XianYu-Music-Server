@@ -88,7 +88,7 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "pending_wallpapers": safe_count(pool, "SELECT COUNT(*) FROM wallpapers WHERE status = 'pending'").await,
         "pending_avatars": safe_count(pool, "SELECT COUNT(*) FROM user_avatar_pending WHERE status = 'pending'").await,
         "pending_nicknames": safe_count(pool, "SELECT COUNT(*) FROM user_nickname_pending WHERE status = 'pending'").await,
-        "pending_feedback": safe_count(pool, "SELECT COUNT(*) FROM user_feedback WHERE status = 'pending'").await,
+        "pending_feedback": safe_count(pool, "SELECT COUNT(*) FROM user_feedback WHERE status = 'pending' AND deleted_at IS NULL").await,
         "api_secret": ctx.config.api_secret.clone(),
     });
 

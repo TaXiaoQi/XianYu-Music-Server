@@ -223,11 +223,6 @@
   background: rgba(15, 23, 42, 0.38);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  opacity: 0;
-  transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1));
-}
-.mobile-dialog-overlay.show {
-  opacity: 1;
 }
 .mobile-dialog {
   width: 100%;
@@ -236,13 +231,24 @@
   background: var(--card-solid, var(--card));
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
   overflow: hidden;
-  transform: scale(0.92) translateY(8px);
-  opacity: 0;
-  transition: transform 0.26s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)), opacity 0.26s;
 }
-.mobile-dialog.show {
-  transform: scale(1) translateY(0);
-  opacity: 1;
+/* Vue Transition: 居中淡入淡出 */
+.mobile-fade-enter-active,
+.mobile-fade-leave-active {
+  transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1));
+}
+.mobile-fade-enter-from,
+.mobile-fade-leave-to {
+  opacity: 0;
+}
+.mobile-fade-enter-active .mobile-dialog,
+.mobile-fade-leave-active .mobile-dialog {
+  transition: transform 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)), opacity 0.24s;
+}
+.mobile-fade-enter-from .mobile-dialog,
+.mobile-fade-leave-to .mobile-dialog {
+  opacity: 0;
+  transform: scale(0.94);
 }
 .mobile-dialog-title {
   padding: 18px 20px 0;

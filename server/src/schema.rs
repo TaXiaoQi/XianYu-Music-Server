@@ -43,6 +43,12 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "notification_emails", "notify_avatar", "tinyint(1) NOT NULL DEFAULT 1").await;
     ensure_column(pool, "notification_emails", "notify_nickname", "tinyint(1) NOT NULL DEFAULT 1").await;
     ensure_column(pool, "notification_emails", "notify_feedback", "tinyint(1) NOT NULL DEFAULT 1").await;
+    // 壁纸表后置补列：旧库可能缺少新增列，缺列会导致列表查询报“数据库错误”
+    ensure_column(pool, "wallpapers", "category", "varchar(64) NOT NULL DEFAULT '默认'").await;
+    ensure_column(pool, "wallpapers", "sort_order", "int(11) NOT NULL DEFAULT 0").await;
+    ensure_column(pool, "wallpapers", "uploaded_by_nickname", "varchar(64) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "wallpapers", "reviewed_at", "datetime NULL").await;
+    ensure_column(pool, "wallpapers", "reviewed_by", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_default_admin(pool).await;
 }
 

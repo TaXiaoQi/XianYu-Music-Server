@@ -76,7 +76,7 @@ pub async fn list_avatar_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     // 查询待审核头像（关联 app_users 获取用户名和当前头像）
     let rows = sqlx::query(
         "SELECT p.id, p.ciyuanxi_id, p.avatar_data, p.status, p.created_at, \
-         u.username, u.avatar_url AS current_avatar \
+         u.nickname AS username, u.avatar_url AS current_avatar \
          FROM user_avatar_pending p \
          LEFT JOIN app_users u ON u.ciyuanxi_id = p.ciyuanxi_id \
          WHERE p.status = 'pending' \
@@ -127,7 +127,7 @@ pub async fn list_nickname_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
 
     let rows = sqlx::query(
         "SELECT n.id, n.ciyuanxi_id, n.nickname AS new_name, n.created_at, \
-         u.username AS old_name \
+         u.nickname AS old_name \
          FROM user_nickname_pending n \
          LEFT JOIN app_users u ON u.ciyuanxi_id = n.ciyuanxi_id \
          WHERE n.status = 'pending' \
@@ -219,7 +219,7 @@ pub async fn approve_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     };
     let ciyuanxi_id: String = row.get("ciyuanxi_id");
     let nickname: String = row.get("nickname");
-    let _ = sqlx::query("UPDATE app_users SET username = ? WHERE ciyuanxi_id = ?")
+    let _ = sqlx::query("UPDATE app_users SET nickname = ? WHERE ciyuanxi_id = ?")
         .bind(&nickname)
         .bind(&ciyuanxi_id)
         .execute(pool)

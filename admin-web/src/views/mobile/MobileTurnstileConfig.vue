@@ -32,6 +32,49 @@
       </template>
     </section>
 
+    <section class="mobile-card mobile-form audit-policy-card">
+      <div class="policy-head">
+        <h3 class="mobile-card-title">外部审核策略</h3>
+        <button class="pill-switch" :class="{ on: auditConfig.enabled }" @click="auditConfig.enabled = !auditConfig.enabled">
+          <span class="pill-knob"></span>
+          <span class="pill-text">{{ auditConfig.enabled ? '已启用' : '未启用' }}</span>
+        </button>
+      </div>
+      <p class="mobile-muted">开启后，昵称、头像、壁纸会先走外部机审；机审无法判断或服务失败时再进入人工审核队列。</p>
+      <label class="mobile-field">
+        <span>服务类型</span>
+        <select v-model="auditConfig.provider" class="mobile-select">
+          <option value="generic">通用 HTTP</option>
+          <option value="aliyun">阿里云内容安全</option>
+          <option value="tencent">腾讯云内容安全</option>
+        </select>
+      </label>
+      <label class="mobile-field">
+        <span>审核接口地址</span>
+        <input v-model.trim="auditConfig.endpoint" class="mobile-input" placeholder="https://example.com/audit" />
+      </label>
+      <label class="mobile-field">
+        <span>接口密钥</span>
+        <input v-model.trim="auditConfig.api_key" class="mobile-input" type="password" placeholder="留空则保留原密钥" />
+      </label>
+      <label class="mobile-field">
+        <span>超时时间 (ms)</span>
+        <input v-model.number="auditConfig.timeout_ms" class="mobile-input" type="number" min="1000" max="30000" />
+      </label>
+      <div class="opt-grid">
+        <label class="check-row"><input v-model="auditConfig.nickname_enabled" type="checkbox" /> 改名机审</label>
+        <label class="check-row"><input v-model="auditConfig.avatar_enabled" type="checkbox" /> 头像机审</label>
+        <label class="check-row"><input v-model="auditConfig.wallpaper_enabled" type="checkbox" /> 壁纸机审</label>
+        <label class="check-row"><input v-model="auditConfig.fail_to_manual" type="checkbox" /> 失败转人工</label>
+      </div>
+      <input v-model.trim="auditTestText" class="mobile-input" placeholder="测试文本，例如：测试昵称" />
+      <div class="mobile-actions">
+        <button class="mobile-btn primary" :disabled="auditSaving" @click="saveAuditConfig">{{ auditSaving ? '保存中...' : '保存策略' }}</button>
+        <button class="mobile-btn" :disabled="auditTesting" @click="testAuditConfig">{{ auditTesting ? '测试中...' : '测试连接' }}</button>
+      </div>
+      <p class="mobile-muted policy-tip">通用 HTTP 服务需返回 <code>{"decision":"pass|reject|review","reason":"原因"}</code>。阿里云可先通过网关或函数计算适配为该格式。</p>
+    </section>
+
     <section class="mobile-card">
       <h3 class="mobile-card-title">使用说明</h3>
       <div class="mobile-tip-list">
@@ -60,6 +103,53 @@ const form = ref({
 
 const siteKeyPlaceholder = computed(() => form.value.provider === 'hcaptcha' ? '10000000-ffff-ffff-ffff-000000000001' : '0x4AAAAAAB...')
 const secretPlaceholder = computed(() => form.value.provider === 'hcaptcha' ? '0x0000000000000000000000000000000000000000' : '0x4AAAAAAB...')
+
+// ===== 外部审核策略 =====
+const auditSaving = ref(false)
+const auditTesting = ref(false)
+const auditTestText = ref('测试昵称')
+const auditConfig = ref({
+  enabled: false,
+  provider: 'generic',
+  endpoint: '',
+  api_key: '',
+  nickname_enabled: true,
+  avatar_enabled: true,
+  wallpaper_enabled: true,
+  timeout_ms: 5000,
+  fail_to_manual: true,
+})
+
+async function loadAuditConfig() {
+  const res = await adminApi<any>('get_audit_external_config')
+  if (res.code === 200 && res.data) {
+    Object.assign(auditConfig.value, res.data, { api_key: '' })
+  }
+}
+
+async function saveAuditConfig() {
+  auditSaving.value = true
+  const res = await adminApi<any>('save_audit_external_config', auditConfig.value as any)
+  auditSaving.value = false
+  if (res.code === 200) {
+    auditConfig.value.api_key = ''
+    showToast('外部审核策略已保存', 'success')
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
+
+async function testAuditConfig() {
+  auditTesting.value = true
+  const res = await adminApi<any>('test_audit_external_config', { text: auditTestText.value || '测试昵称' })
+  auditTesting.value = false
+  if (res.code === 200 && res.data) {
+    const label = res.data.decision === 'pass' ? '通过' : res.data.decision === 'reject' ? '拒绝' : '转人工'
+    showToast(`测试结果：${label}${res.data.reason ? '，' + res.data.reason : ''}`, 'success')
+  } else {
+    showToast(res.msg || '测试失败')
+  }
+}
 
 async function loadConfig() {
   loading.value = true
@@ -97,7 +187,10 @@ async function save() {
   }
 }
 
-onMounted(loadConfig)
+onMounted(() => {
+  loadConfig()
+  loadAuditConfig()
+})
 </script>
 
 <style scoped>
@@ -139,5 +232,59 @@ onMounted(loadConfig)
 .mobile-tip-list p {
   margin: 0;
   word-break: break-word;
+}
+
+/* ===== 外部审核策略 ===== */
+.audit-policy-card { margin-top: 4px; }
+.policy-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.policy-head .mobile-card-title { margin: 0; }
+.pill-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.pill-switch .pill-knob {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: all 0.2s;
+}
+.pill-switch .pill-text { font-size: 12px; font-weight: 800; color: var(--text-light); transition: color 0.2s; }
+.pill-switch.on { background: var(--accent-soft); border-color: var(--accent); }
+.pill-switch.on .pill-knob { background: #16a34a; }
+.pill-switch.on .pill-text { color: var(--accent); }
+.opt-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 12px;
+  margin: 4px 0 12px;
+}
+.check-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+}
+.check-row input { accent-color: #EC4141; }
+.policy-tip code { color: var(--accent); font-size: 11px; }
+.mobile-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
 }
 </style>

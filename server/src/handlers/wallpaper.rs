@@ -269,6 +269,8 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
             "wallpaper",
             "【弦予后台】新壁纸待审核",
             &format!("用户 {} 上传了壁纸「{}」，请及时审核。", ciyuanxi_id, title),
+            &public_url(&ctx, image_url.clone()),
+            &ctx.base_url,
         ).await;
     }
 

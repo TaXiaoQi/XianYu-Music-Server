@@ -108,33 +108,32 @@
         </button>
       </div>
       <div class="toolbar-right">
-        <Transition name="batch-swap" mode="out-in">
-          <div v-if="batchMode" key="batch" class="batch-bar">
-            <button class="btn-batch-select" @click="toggleSelectAll">
-              <span class="checkbox-badge" :class="{ checked: allSelected }">
-                <svg v-if="allSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </span>
-              {{ allSelected ? '取消全选' : '全选' }}
-            </button>
-            <span class="batch-count">已选 {{ selectedIds.size }} 项</span>
-            <button class="btn-batch-delete" :disabled="selectedIds.size === 0" @click="confirmBatchDelete">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              删除所选
-            </button>
-            <button class="btn-batch-exit" @click="exitBatchMode">退出</button>
-          </div>
-          <button v-else key="enter" class="btn-batch-enter" @click="enterBatchMode">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            批量管理
-          </button>
-        </Transition>
-        <div class="sort-wrap">
+        <button class="sort-btn" @click="openSortMenu">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="M3 17l3 3 3-3"/><path d="M6 18V4"/></svg>
-          <select v-model="sortMode" class="sort-select" @change="loadList">
-            <option value="post_time_desc">最新提交</option>
-            <option value="post_time_asc">最早提交</option>
-            <option value="update_desc">最近更新</option>
-          </select>
+          {{ sortLabel }}
+          <svg class="sort-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="batch-slot">
+          <Transition name="batch-slide">
+            <div v-if="batchMode" key="batch" class="batch-bar batch-abs">
+              <button class="btn-batch-select" @click="toggleSelectAll">
+                <span class="checkbox-badge" :class="{ checked: allSelected }">
+                  <svg v-if="allSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </span>
+                {{ allSelected ? '取消全选' : '全选' }}
+              </button>
+              <span class="batch-count">已选 {{ selectedIds.size }} 项</span>
+              <button class="btn-batch-delete" :disabled="selectedIds.size === 0" @click="confirmBatchDelete">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                删除所选
+              </button>
+              <button class="btn-batch-exit" @click="exitBatchMode">退出</button>
+            </div>
+            <button v-else key="enter" class="btn-batch-enter batch-abs" @click="enterBatchMode">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              批量管理
+            </button>
+          </Transition>
         </div>
       </div>
     </div>
@@ -223,10 +222,6 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ item.resolve_note }}</span></div>
                   </div>
-                  <div v-if="item.ip" class="meta-line">
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-                    IP：{{ item.ip || '未知' }}
-                  </div>
                 </div>
               </div>
               <!-- 图片缩略图（堆叠，仅显示第一张，点击查看详情） -->
@@ -255,15 +250,15 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
                   日志
                 </button>
-                <button v-if="item.status === 'pending'" class="act-btn act-claim" @click="claimFeedback(item.id)">
+                <button v-if="item.status === 'pending' || (item.status === 'processing' && isMineFeedback(item))" class="act-btn act-claim" @click="claimFeedback(item.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   认领
                 </button>
-                <button v-if="item.status === 'processing'" class="act-btn act-resolve" @click="openResolveModal(item)">
+                <button v-if="item.status === 'processing' && isMineFeedback(item)" class="act-btn act-resolve" @click="openResolveModal(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   完成
                 </button>
-                <button v-if="item.status === 'pending' || item.status === 'processing'" class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">
+                <button v-if="(item.status === 'pending' || item.status === 'processing') && (item.status === 'pending' || isMineFeedback(item))" class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   拒绝
                 </button>
@@ -376,10 +371,6 @@
               <button class="create-type-btn" :class="{ active: createType === 'suggestion' }" @click="createType = 'suggestion'">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                 功能建议
-              </button>
-              <button class="create-type-btn" :class="{ active: createType === 'appeal' }" @click="createType = 'appeal'">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-                封禁申诉
               </button>
             </div>
             <label class="create-field">
@@ -573,8 +564,15 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { adminApi, showToast } from '@/api/client'
+import { adminApi, showToast, getAdminUser } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
+import { webActionMenu } from '@/utils/webDialog'
+
+// 当前登录管理员用户名（用于判断反馈是否由本人认领）
+const currentAdminName = getAdminUser()?.username || ''
+function isMineFeedback(item: Feedback): boolean {
+  return !!item.assignee && item.assignee === currentAdminName
+}
 
 interface Feedback {
   id: number
@@ -637,6 +635,19 @@ function statusLabel(s: string): string {
 // ===== 类型筛选 + 排序 =====
 const typeFilter = ref('all')
 const sortMode = ref('post_time_desc')
+const sortOptions = [
+  { key: 'post_time_desc', label: '最新提交' },
+  { key: 'post_time_asc', label: '最早提交' },
+  { key: 'update_desc', label: '最近更新' },
+]
+const sortLabel = computed(() => sortOptions.find(o => o.key === sortMode.value)?.label || '排序')
+async function openSortMenu() {
+  const key = await webActionMenu('排序方式', sortOptions.map(o => ({ key: o.key, label: o.label })))
+  if (key && key !== sortMode.value) {
+    sortMode.value = key
+    loadList()
+  }
+}
 
 // ===== 时间戳格式化 =====
 // 按数据库字面时间显示（兼容服务器/客户端），如 2026年12月12日 21时25分
@@ -750,11 +761,10 @@ function closeStats() {
 
 // ===== 新建事项弹窗 =====
 const createModalVisible = ref(false)
-const createType = ref<'problem' | 'suggestion' | 'appeal'>('problem')
+const createType = ref<'problem' | 'suggestion'>('problem')
 // 标题默认取所选类型，无需手动填写
 const createTitle = computed(() => {
   if (createType.value === 'suggestion') return '功能建议'
-  if (createType.value === 'appeal') return '封禁申诉'
   return '问题反馈'
 })
 const createContent = ref('')
@@ -850,25 +860,29 @@ async function submitCreate() {
 
 // ===== 认领功能 =====
 async function claimFeedback(id: number) {
-  const ok = await webConfirm('确认认领该反馈？认领后将自动划入您的名下并移入处理中。', {
+  const item = feedbackList.value.find(f => f.id === id)
+  const isTransfer = item?.status === 'processing'
+  const ok = await webConfirm(isTransfer ? '确认将该反馈转认领到自己名下？认领后问题将转移到您的名下。' : '确认认领该反馈？认领后将自动划入您的名下并移入处理中。', {
     title: '认领反馈',
     confirmText: '认领',
   })
   if (!ok) return
   const res = await adminApi('claim_feedback', { id })
   if (res.code === 200) {
-    showToast('认领成功，已置为处理中', 'success')
+    showToast(isTransfer ? '已转认领到自己名下' : '认领成功，已置为处理中', 'success')
     // 本地更新，不刷新页面
-    const item = feedbackList.value.find(f => f.id === id)
-    if (item) {
-      const oldStatus = item.status
-      item.status = 'processing'
-      item.assignee = res.data?.assignee || ''
-      if (stats.value[oldStatus as keyof FbStats] !== undefined) {
-        stats.value[oldStatus as keyof FbStats]--
-      }
-      if (stats.value.processing !== undefined) {
-        stats.value.processing++
+    const item2 = feedbackList.value.find(f => f.id === id)
+    if (item2) {
+      const oldStatus = item2.status
+      item2.status = 'processing'
+      item2.assignee = res.data?.assignee || ''
+      if (oldStatus !== 'processing') {
+        if (stats.value[oldStatus as keyof FbStats] !== undefined) {
+          stats.value[oldStatus as keyof FbStats]--
+        }
+        if (stats.value.processing !== undefined) {
+          stats.value.processing++
+        }
       }
     }
   } else {
@@ -1292,26 +1306,30 @@ onUnmounted(() => {
 }
 .tool-btn:hover { border-color: var(--accent); color: var(--text); }
 .tool-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
-.sort-wrap {
+.sort-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-muted);
-}
-.sort-select {
   height: 32px;
+  padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 9px;
-  padding: 0 10px;
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
   background: var(--white);
-  outline: none;
   cursor: pointer;
-  transition: border-color 0.2s;
+  white-space: nowrap;
+  transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.sort-select:focus { border-color: var(--accent); }
+.sort-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.sort-btn:active { transform: scale(0.97); }
+.sort-btn svg { flex-shrink: 0; }
+.sort-chevron { opacity: 0.6; }
 
 /* ===== 类型徽标 ===== */
 .type-badge {
@@ -1561,8 +1579,8 @@ onUnmounted(() => {
 .card-body { margin-bottom: 12px; }
 .fb-title { font-size: 15px; font-weight: 700; color: var(--text); margin: 0 0 6px 0; }
 .fb-content {
-  font-size: 13px;
-  color: var(--text-light);
+  font-size: 11px;
+  color: var(--text-muted);
   line-height: 1.6;
   margin: 0;
   white-space: pre-wrap;
@@ -1828,8 +1846,7 @@ onUnmounted(() => {
   padding: 14px;
   font-size: 12px;
   line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
+  white-space: pre;
 }
 .modal-foot {
   display: flex;
@@ -2226,6 +2243,14 @@ onUnmounted(() => {
   align-items: center;
   gap: 10px;
 }
+.batch-slot {
+  display: flex;
+  align-items: center;
+}
+.batch-abs {
+  display: flex;
+  align-items: center;
+}
 
 /* ===== 批量管理 ===== */
 .btn-batch-enter {
@@ -2247,18 +2272,19 @@ onUnmounted(() => {
   border-color: var(--accent-color);
   color: var(--accent-color);
 }
-/* 批量菜单打开/关闭切换动效 */
-.batch-swap-enter-active,
-.batch-swap-leave-active {
-  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+/* 批量菜单向左弹出/收回动效 */
+.batch-slide-enter-active,
+.batch-slide-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.batch-swap-enter-from {
+.batch-slide-enter-from {
   opacity: 0;
-  transform: translateY(-6px) scale(0.97);
+  transform: translateX(30px);
 }
-.batch-swap-leave-to {
+.batch-slide-leave-to {
   opacity: 0;
-  transform: translateY(4px) scale(0.97);
+  transform: translateX(30px);
 }
 .batch-bar {
   display: flex;

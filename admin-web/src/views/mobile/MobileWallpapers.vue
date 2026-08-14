@@ -9,23 +9,9 @@
         </h2>
         <p class="wp-desc">管理员上传的壁纸直接启用；用户在桌面端上传的壁纸状态为「待审核」，需审核通过后才会展示给所有用户。</p>
       </div>
-      <button class="mobile-btn primary" @click="openAddModal">
+      <button class="mobile-btn primary wp-add-btn" @click="openAddModal">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         新增壁纸
-      </button>
-    </div>
-
-    <!-- 状态筛选 -->
-    <div class="wp-tabs">
-      <button
-        v-for="f in filters"
-        :key="f.value"
-        class="wp-tab"
-        :class="{ active: activeFilter === f.value }"
-        @click="activeFilter = f.value"
-      >
-        {{ f.label }}
-        <span v-if="countByStatus(f.value) > 0" class="tab-count">{{ countByStatus(f.value) }}</span>
       </button>
     </div>
 
@@ -86,14 +72,28 @@
     <!-- 加载中 -->
     <div v-if="loading" class="mobile-empty">加载中...</div>
 
+    <!-- 状态筛选 -->
+    <div v-else class="wp-tabs">
+      <button
+        v-for="f in filters"
+        :key="f.value"
+        class="wp-tab"
+        :class="{ active: activeFilter === f.value }"
+        @click="activeFilter = f.value"
+      >
+        {{ f.label }}
+        <span v-if="countByStatus(f.value) > 0" class="tab-count">{{ countByStatus(f.value) }}</span>
+      </button>
+    </div>
+
     <!-- 空状态 -->
-    <div v-else-if="filteredList.length === 0" class="mobile-empty">
+    <div v-if="!loading && filteredList.length === 0" class="mobile-empty">
       <div class="empty-title">{{ activeFilter === 'all' ? '暂无壁纸' : '该分类下暂无壁纸' }}</div>
       <div class="empty-sub">点击上方「新增壁纸」上传第一张壁纸</div>
     </div>
 
     <!-- 壁纸画廊 -->
-    <div v-else class="wp-gallery">
+    <div v-if="!loading && filteredList.length > 0" class="wp-gallery">
       <div
         v-for="(item, idx) in filteredList"
         :key="item.id"
@@ -509,20 +509,22 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 <style scoped>
 .wp-header {
   display: flex;
-  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
   gap: 12px;
 }
-.wp-header-info { min-width: 0; }
+.wp-header-info { min-width: 0; flex: 1; }
 .wp-title { font-size: 18px; font-weight: 850; margin: 0 0 4px; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .pending-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; background: #fffbeb; color: #f59e0b; }
 .wp-desc { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0; }
-.wp-header .mobile-btn {
+.wp-add-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  align-self: flex-start;
-  padding: 10px 20px;
+  flex-shrink: 0;
+  padding: 9px 16px;
+  white-space: nowrap;
 }
 
 /* 状态筛选 */
@@ -780,10 +782,10 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 .modal-btn.save:disabled { opacity: 0.55; }
 
 /* 过渡动画 */
-.modal-enter-active, .modal-leave-active { transition: opacity 0.26s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
+.modal-enter-active, .modal-leave-active { transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
-.modal-enter-active .modal-dialog { animation: modalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
-.modal-leave-active .modal-dialog { animation: modalOut 0.2s ease; }
-@keyframes modalIn { from { opacity: 0; transform: scale(0.92) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-@keyframes modalOut { from { opacity: 1; transform: scale(1) translateY(0); } to { opacity: 0; transform: scale(0.95) translateY(10px); } }
+.modal-enter-active .modal-dialog { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.modal-leave-active .modal-dialog { animation: modalOut 0.2s ease forwards; }
+@keyframes modalIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+@keyframes modalOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
 </style>

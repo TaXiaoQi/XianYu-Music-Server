@@ -165,12 +165,16 @@ pub fn row_to_value(row: &sqlx::mysql::MySqlRow) -> Value {
         let v = match row.try_get::<Option<String>, _>(i) {
             Ok(Some(s)) => Value::String(s),
             Ok(None) => Value::Null,
-            Err(_) => match row.try_get::<i64, _>(i) {
-                Ok(n) => Value::Number(n.into()),
-                Err(_) => match row.try_get::<Option<Vec<u8>>, _>(i) {
-                    Ok(Some(b)) => Value::String(String::from_utf8_lossy(&b).into_owned()),
-                    Ok(None) => Value::Null,
-                    Err(_) => Value::Null,
+            Err(_) => match row.try_get::<Option<chrono::NaiveDateTime>, _>(i) {
+                Ok(Some(dt)) => Value::String(dt.format("%Y-%m-%d %H:%M:%S").to_string()),
+                Ok(None) => Value::Null,
+                Err(_) => match row.try_get::<i64, _>(i) {
+                    Ok(n) => Value::Number(n.into()),
+                    Err(_) => match row.try_get::<Option<Vec<u8>>, _>(i) {
+                        Ok(Some(b)) => Value::String(String::from_utf8_lossy(&b).into_owned()),
+                        Ok(None) => Value::Null,
+                        Err(_) => Value::Null,
+                    },
                 },
             },
         };
@@ -235,6 +239,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "delete_backup" => db::delete_backup(body, &ctx, pool).await,
         "list_tables" => db::list_tables(body, &ctx, pool).await,
         "list_backups" => db::list_backups(body, &ctx, pool).await,
+        "import_db" => db::import_db(body, &ctx, pool).await,
         // logs / feedback / share
         "list_error_logs" => logs::list_error_logs(body, &ctx, pool).await,
         "get_error_stats" => logs::get_error_stats(body, &ctx, pool).await,

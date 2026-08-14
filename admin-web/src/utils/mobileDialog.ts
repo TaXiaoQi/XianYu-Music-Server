@@ -32,19 +32,33 @@ function createDialog(): HTMLDivElement {
 }
 
 function animateIn(overlay: HTMLDivElement, dialog: HTMLDivElement) {
+  // 初始不可见状态
+  overlay.style.opacity = '0'
+  dialog.style.opacity = '0'
+  dialog.style.transform = 'scale(0.94)'
+
   document.body.appendChild(overlay)
   overlay.appendChild(dialog)
-  requestAnimationFrame(() => {
-    overlay.classList.add('show')
-    dialog.classList.add('show')
-  })
+
+  // 强制 reflow 确保初始状态已渲染
+  void overlay.offsetHeight
+
+  // 设置过渡并触发动画到最终状态
+  overlay.style.transition = 'opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1)'
+  dialog.style.transition = 'transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s'
+  overlay.style.opacity = '1'
+  dialog.style.opacity = '1'
+  dialog.style.transform = 'scale(1)'
 }
 
 function closeDialog(overlay: HTMLDivElement) {
-  const dialog = overlay.querySelector('.mobile-dialog')
-  overlay.classList.remove('show')
-  dialog?.classList.remove('show')
-  setTimeout(() => overlay.remove(), 260)
+  const dialog = overlay.querySelector('.mobile-dialog') as HTMLDivElement | null
+  overlay.style.opacity = '0'
+  if (dialog) {
+    dialog.style.opacity = '0'
+    dialog.style.transform = 'scale(0.96)'
+  }
+  setTimeout(() => overlay.remove(), 240)
 }
 
 function escapeHtml(input: string): string {

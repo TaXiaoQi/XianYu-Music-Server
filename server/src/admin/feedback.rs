@@ -170,6 +170,28 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
         return err(400, "参数错误");
     }
     // 拒绝时记录操作人（与认领一致，打上 assignee 和 replied_by）
+    // 归属校验：仅认领人可拒绝自己的反馈；未认领的（空认领人）任意管理员可拒绝
+    if status == "rejected" {
+        let cur = sqlx::query_as::<_, (String, String)>(
+            "SELECT status, COALESCE(assignee, '') FROM user_feedback WHERE id = ?",
+        )
+            .bind(id)
+            .fetch_optional(pool)
+            .await;
+        match cur {
+            Ok(Some((cur_status, assignee))) => {
+                if !assignee.is_empty() && assignee != ctx.username {
+                    return err(403, &format!("该反馈由 {} 认领，仅认领人可拒绝", assignee));
+                }
+                // 终态不可再变更
+                if cur_status == "resolved" || cur_status == "rejected" {
+                    return err(409, "该反馈已处于终态，无法变更");
+                }
+            }
+            Ok(None) => return err(404, "反馈不存在"),
+            Err(_) => return err(500, "服务器错误"),
+        }
+    }
     let upd = if status == "rejected" {
         sqlx::query(
             "UPDATE user_feedback SET status = ?,
@@ -253,19 +275,21 @@ pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     if id <= 0 {
         return err(400, "参数错误");
     }
-    // 仅当当前状态为 pending 时才允许认领，防止重复认领/抢单
+    // 认领：pending 状态可直接认领；processing 且当前认领人不是自己时，可"转认领"到自己名下
     let upd = sqlx::query(
-        "UPDATE user_feedback SET status = 'processing', assignee = ?, replied_by = ?, replied_at = NOW(), claimed_at = NOW(), updated_at = NOW() WHERE id = ? AND status = 'pending'",
+        "UPDATE user_feedback SET status = 'processing', assignee = ?, replied_by = ?, replied_at = NOW(), claimed_at = NOW(), updated_at = NOW()
+         WHERE id = ? AND (status = 'pending' OR (status = 'processing' AND assignee != ?))",
     )
     .bind(&ctx.username)
     .bind(&ctx.username)
     .bind(id)
+    .bind(&ctx.username)
     .execute(pool)
     .await;
     match upd {
         Ok(r) => {
             if r.rows_affected() == 0 {
-                return err(409, "该反馈已被认领或状态已变更，请刷新后重试");
+                return err(409, "该反馈不存在、已被认领或当前不可认领，请刷新后重试");
             }
             log_operation(pool, ctx, "认领反馈", &format!("id={}", id), &format!("assignee={}", ctx.username)).await;
             ok("认领成功，已置为处理中", json!({ "id": id, "assignee": ctx.username, "status": "processing" }))
@@ -288,6 +312,25 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     }
     if note.chars().count() > 1000 {
         return err(400, "完成说明不能超过 1000 字");
+    }
+    // 仅认领人可完成该反馈
+    let cur = sqlx::query_as::<_, (String, String)>(
+        "SELECT status, COALESCE(assignee, '') FROM user_feedback WHERE id = ?",
+    )
+        .bind(id)
+        .fetch_optional(pool)
+        .await;
+    match cur {
+        Ok(Some((status_val, assignee))) => {
+            if status_val != "processing" {
+                return err(409, "该反馈不是处理中状态，无法完成，请刷新后重试");
+            }
+            if !assignee.is_empty() && assignee != ctx.username {
+                return err(403, &format!("该反馈由 {} 认领，仅认领人可完成", assignee));
+            }
+        }
+        Ok(None) => return err(404, "反馈不存在"),
+        Err(_) => return err(500, "服务器错误"),
     }
     let upd = sqlx::query(
         "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, assignee = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
@@ -409,7 +452,7 @@ async fn notify_external_emails(pool: &MySqlPool, ctx: &AdminCtx, feedback_type:
     } else {
         format!("后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}", type_label, title, content)
     };
-    crate::admin::email::notify_external_emails_for_module(pool, &ctx.config, &ctx.ip, "feedback", &subject, &context).await
+    crate::admin::email::notify_external_emails_for_module(pool, &ctx.config, &ctx.ip, "feedback", &subject, &context, "", &ctx.base_url).await
 }
 
 /// 各管理账号处理反馈量统计

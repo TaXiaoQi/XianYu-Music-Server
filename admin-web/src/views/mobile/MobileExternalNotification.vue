@@ -623,16 +623,16 @@ onMounted(loadList)
 .modal-btn.save:disabled { opacity: 0.55; }
 
 /* 过渡动画 */
-.modal-enter-active, .modal-leave-active { transition: opacity 0.26s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
+.modal-enter-active, .modal-leave-active { transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
-.modal-enter-active .modal-dialog { animation: modalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
-.modal-leave-active .modal-dialog { animation: modalOut 0.2s ease; }
+.modal-enter-active .modal-dialog { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.modal-leave-active .modal-dialog { animation: modalOut 0.2s ease forwards; }
 @keyframes modalIn {
-  from { opacity: 0; transform: scale(0.92) translateY(20px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: scale(1); }
 }
 @keyframes modalOut {
-  from { opacity: 1; transform: scale(1) translateY(0); }
-  to { opacity: 0; transform: scale(0.95) translateY(10px); }
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
 }
 </style>

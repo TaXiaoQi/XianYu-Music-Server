@@ -420,7 +420,7 @@ fn general_smtp_account(cfg: &EmailRuntimeConfig) -> Option<SmtpAccount> {
 }
 
 /// 通过 HTTP API 发送邮件（主地址失败回退备用地址）
-async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, context: &str, recipient: &str) -> Result<(), String> {
+async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, plain: &str, html_opts: Option<&str>, recipient: &str) -> Result<(), String> {
     if cfg.api_primary.is_empty() && cfg.api_backup.is_empty() {
         return Err("外部邮箱机 API 地址未配置".to_string());
     }
@@ -432,6 +432,9 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, context: &str,
         Ok(c) => c,
         Err(e) => return Err(format!("HTTP 客户端构建失败: {e}")),
     };
+
+    // 有 HTML 时发送 HTML 内容，否则发送纯文本
+    let context = html_opts.unwrap_or(plain);
 
     let params = [
         ("email", cfg.sender.as_str()),
@@ -478,7 +481,7 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, context: &str,
 
 /// 通过标准 SMTP 发送邮件
 /// 通过指定 SMTP 账号发送邮件
-async fn send_via_smtp_account(account: &SmtpAccount, title: &str, context: &str, recipient: &str) -> Result<(), String> {
+async fn send_via_smtp_account(account: &SmtpAccount, title: &str, plain: &str, html_opts: Option<&str>, recipient: &str) -> Result<(), String> {
     use lettre::message::header::ContentType;
     use lettre::message::{Mailbox, MultiPart, SinglePart};
     use lettre::transport::smtp::authentication::Credentials;
@@ -508,19 +511,39 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, context: &str
     );
     let to_mailbox = Mailbox::new(None, recipient.parse().map_err(|e| format!("收件邮箱地址格式错误: {e}"))?);
 
-    // 构建纯文本邮件
-    let email = Message::builder()
+    // 构建邮件：有 HTML 时使用 multipart/alternative（纯文本 + HTML），否则纯文本
+    let builder = Message::builder()
         .from(from_mailbox)
         .to(to_mailbox)
-        .subject(title)
-        .multipart(
-            MultiPart::mixed().singlepart(
-                SinglePart::builder()
-                    .header(ContentType::TEXT_PLAIN)
-                    .body(context.to_string()),
-            ),
-        )
-        .map_err(|e| format!("邮件构建失败: {e}"))?;
+        .subject(title);
+
+    let email = if let Some(html) = html_opts {
+        builder
+            .multipart(
+                MultiPart::alternative()
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(ContentType::TEXT_PLAIN)
+                            .body(plain.to_string()),
+                    )
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(ContentType::TEXT_HTML)
+                            .body(html.to_string()),
+                    ),
+            )
+            .map_err(|e| format!("邮件构建失败: {e}"))?
+    } else {
+        builder
+            .multipart(
+                MultiPart::mixed().singlepart(
+                    SinglePart::builder()
+                        .header(ContentType::TEXT_PLAIN)
+                        .body(plain.to_string()),
+                ),
+            )
+            .map_err(|e| format!("邮件构建失败: {e}"))?
+    };
 
     // 根据端口选择 TLS 模式
     // 465 → 隐式 TLS (Ssl)
@@ -636,7 +659,8 @@ async fn send_via_builtin_mailer(
     cfg: &EmailRuntimeConfig,
     pool: &MySqlPool,
     title: &str,
-    context: &str,
+    plain: &str,
+    html_opts: Option<&str>,
     recipient: &str,
 ) -> Result<(), String> {
     let log_id = create_builtin_mail_log(pool, recipient, title, "内置邮箱机已接收，等待投递").await;
@@ -669,11 +693,11 @@ async fn send_via_builtin_mailer(
                 } else {
                     format!("{} ({})", account.sender, account.remark)
                 };
-                send_via_smtp_account(&account, title, context, recipient)
+                send_via_smtp_account(&account, title, plain, html_opts, recipient)
                     .await
                     .map_err(|e| format!("SMTP 账号 {} 失败: {}", label, e))
             }
-            MailChannel::Api => send_via_http_api(cfg, title, context, recipient)
+            MailChannel::Api => send_via_http_api(cfg, title, plain, html_opts, recipient)
                 .await
                 .map_err(|e| format!("外部 API 失败: {}", e)),
         };
@@ -707,7 +731,21 @@ pub async fn call_email_api(
     recipient: &str,
 ) -> Result<(), String> {
     let cfg = load_email_config(pool, config).await;
-    send_via_builtin_mailer(&cfg, pool, title, context, recipient).await
+    send_via_builtin_mailer(&cfg, pool, title, context, None, recipient).await
+}
+
+/// 统一邮件发送入口（HTML 卡片版）：正文使用 HTML 渲染，同时附带纯文本兜底。
+/// 各通道发送 HTML 内容；若通道不支持 HTML 会退化到纯文本（multipart/alternative 兜底）。
+pub async fn call_email_api_html(
+    config: &crate::config::Config,
+    pool: &MySqlPool,
+    title: &str,
+    html: &str,
+    plain: &str,
+    recipient: &str,
+) -> Result<(), String> {
+    let cfg = load_email_config(pool, config).await;
+    send_via_builtin_mailer(&cfg, pool, title, plain, Some(html), recipient).await
 }
 
 /// 写操作日志

@@ -296,7 +296,7 @@ pub async fn list_wallpaper_account_limits(_body: &str, _ctx: &AdminCtx, pool: &
             l.remark,
             l.updated_by,
             l.updated_at,
-            COALESCE(u.username, '') AS username,
+            COALESCE(u.nickname, '') AS username,
             COALESCE(u.email, '') AS email,
             COALESCE(w.uploaded_count, 0) AS uploaded_count
          FROM wallpaper_upload_limits l

@@ -1,51 +1,8 @@
 <template>
   <div class="version-wrap">
-    <!-- 桌面端在线更新配置 -->
-    <Transition name="fade-down" appear>
-    <div class="card desktop-card">
-      <h3 class="section-title">桌面端在线更新</h3>
-      <p class="section-desc">
-        桌面端启动时自动比对版本号，低于此版本将弹窗提示更新。仅对桌面端生效，不影响下方安卓 APP 版本管理。
-      </p>
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="required">版本号</label>
-          <input v-model="desktop.version" type="text" placeholder="如 1.2.0" />
-        </div>
-        <div class="form-group form-group-full">
-          <label :class="{ required: desktopEnabled === 1 }">下载渠道</label>
-          <button type="button" class="channel-card" @click="openDesktopChannelModal">
-            <div>
-              <strong>{{ desktopChannelLabel }}</strong>
-              <p>{{ desktopChannelDesc }}</p>
-            </div>
-            <span>选择渠道</span>
-          </button>
-        </div>
-        <div class="form-group form-group-full">
-          <label>更新内容</label>
-          <textarea v-model="desktop.updateContent" rows="3" placeholder="本次更新内容"></textarea>
-        </div>
-        <div class="form-group">
-          <label>启用状态</label>
-          <select v-model="desktopEnabled">
-            <option :value="0">禁用</option>
-            <option :value="1">启用</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" :disabled="desktopSaving" @click="saveDesktop">
-          {{ desktopSaving ? '保存中...' : '保存配置' }}
-        </button>
-        <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ desktop.updated_at }}</span>
-      </div>
-    </div>
-    </Transition>
-
     <!-- 桌面端下载渠道弹窗 -->
     <Transition name="modal">
-    <div v-if="desktopChannelModalVisible" class="modal-overlay">
+    <div v-if="desktopChannelModalVisible" class="modal-overlay channel-overlay">
       <div class="modal">
         <div class="modal-header">
           <span class="modal-title">选择下载渠道</span>
@@ -192,37 +149,50 @@
           <button class="modal-close" @click="closeAddModal">&times;</button>
         </div>
         <div class="modal-body">
-          <div class="form-group">
-            <label class="required">软件名称</label>
-            <input v-model="addForm.appName" type="text" placeholder="弦予·音乐" />
-          </div>
-          <div class="form-group">
-            <label class="required">版本号</label>
-            <input v-model="addForm.versionCode" type="text" placeholder="1.0.0" />
-          </div>
-          <div class="form-group">
-            <label>更新内容</label>
-            <textarea v-model="addForm.updateContent" rows="3" placeholder="请输入更新内容"></textarea>
-          </div>
-          <div class="form-group">
-            <label class="required">安装包</label>
-            <input type="file" accept=".apk" @change="onFileChange" />
-          </div>
-          <div v-if="uploadProgress !== null" class="upload-progress">
-            <div class="progress-bar-track">
-              <div class="progress-bar-fill" :style="{ width: uploadProgress + '%' }"></div>
+        <!-- 桌面端在线更新 -->
+        <div class="modal-section">
+          <h4 class="modal-section-title">
+            <span class="section-dot"></span>
+            桌面端在线更新
+          </h4>
+          <p class="modal-section-desc">桌面端启动时自动比对版本号，低于此版本将弹窗提示更新。</p>
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="required">版本号</label>
+              <input v-model="desktop.version" type="text" placeholder="如 1.2.0" />
             </div>
-            <span class="progress-text">{{ uploadProgress }}%</span>
+            <div class="form-group form-group-full">
+              <label :class="{ required: desktopEnabled === 1 }">下载渠道</label>
+              <button type="button" class="channel-card" @click="openDesktopChannelModal">
+                <div>
+                  <strong>{{ desktopChannelLabel }}</strong>
+                  <p>{{ desktopChannelDesc }}</p>
+                </div>
+                <span>选择渠道</span>
+              </button>
+            </div>
+            <div class="form-group form-group-full">
+              <label>更新内容</label>
+              <textarea v-model="desktop.updateContent" rows="3" placeholder="本次更新内容"></textarea>
+            </div>
+            <div class="form-group">
+              <label>启用状态</label>
+              <select v-model="desktopEnabled">
+                <option :value="0">禁用</option>
+                <option :value="1">启用</option>
+              </select>
+            </div>
           </div>
-          <div v-if="addForm.fileName" class="file-info">
-            已选择：{{ addForm.fileName }}（{{ formatFileSize(addForm.fileSize) }}）
+          <div class="form-actions">
+            <button class="btn btn-primary" :disabled="desktopSaving" @click="saveDesktop">
+              {{ desktopSaving ? '保存中...' : '保存配置' }}
+            </button>
+            <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ desktop.updated_at }}</span>
           </div>
         </div>
+      </div>
         <div class="modal-actions">
           <button class="btn" @click="closeAddModal">取消</button>
-          <button class="btn btn-primary" :disabled="uploading" @click="doAddVersion">
-            {{ uploading ? '上传中...' : '上传' }}
-          </button>
         </div>
       </div>
     </div>
@@ -830,11 +800,14 @@ onMounted(() => {
   justify-content: center;
   align-items: center;
 }
+.modal-overlay.channel-overlay {
+  z-index: 10010;
+}
 .modal {
   background: var(--white);
   border-radius: 12px;
   width: 90%;
-  max-width: 500px;
+  max-width: 620px;
   max-height: 85vh;
   overflow: hidden;
   display: flex;
@@ -880,6 +853,37 @@ onMounted(() => {
   background: var(--white);
   font-family: inherit;
   resize: vertical;
+}
+/* 弹窗内分区 */
+.modal-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 4px 0;
+}
+.section-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.modal-section-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 12px 0;
+}
+.modal-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
+}
+.modal-section .form-actions {
+  margin-top: 10px;
 }
 .modal-body .form-group input:focus,
 .modal-body .form-group textarea:focus {

@@ -136,8 +136,8 @@
         <h3>添加用户</h3>
         <div class="form-group">
           <label class="required">弦予号</label>
-          <input v-model="addForm.username" type="text" placeholder="6-20 位，字母开头" />
-          <div class="hint">用于登录，规则同微信号：6-20 位，字母开头，可含数字/下划线/中划线</div>
+          <input v-model="addForm.username" type="text" placeholder="6-20 位，仅含字母或数字" />
+          <div class="hint">用于登录，6-20 位，仅含字母或数字（支持大小写字母）</div>
         </div>
         <div class="form-group">
           <label class="required">密码</label>
@@ -557,15 +557,15 @@ async function toggleStatus(u: User) {
 }
 
 async function changeCiyuanxi(u: User) {
-  const input = await webPrompt(`请输入 "${u.nickname || u.username}" 的新弦予号：`, u.ciyuanxi_id || '', { title: '修改弦予号', placeholder: '6-20 位，字母开头' })
+  const input = await webPrompt(`请输入 "${u.nickname || u.username}" 的新弦予号：`, u.ciyuanxi_id || '', { title: '修改弦予号', placeholder: '6-20 位，仅含字母或数字' })
   if (input === null) return // 用户取消，静默退出
   const newId = input.trim()
   if (!newId) {
     showToast('请输入弦予号', 'error')
     return
   }
-  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(newId)) {
-    showToast('弦予号需 6-20 位，字母开头，仅含字母、数字、下划线、中划线', 'error')
+  if (!/^[a-zA-Z0-9]{6,20}$/.test(newId)) {
+    showToast('弦予号需 6-20 位，仅含字母或数字', 'error')
     return
   }
   const ok = await webConfirm(`确定将 "${u.nickname || u.username}" 的弦予号由 "${u.ciyuanxi_id || '-'}" 修改为 "${newId}" 吗？`, { title: '修改弦予号', confirmText: '确认修改' })
@@ -752,12 +752,8 @@ async function submitAddUser() {
     showToast('弦予号至少 6 位')
     return
   }
-  if (!/^[a-zA-Z]/.test(ciyuanxi)) {
-    showToast('弦予号必须以字母开头')
-    return
-  }
-  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(ciyuanxi)) {
-    showToast('弦予号需 6-20 位，仅含字母、数字、下划线、中划线')
+  if (!/^[a-zA-Z0-9]{6,20}$/.test(ciyuanxi)) {
+    showToast('弦予号需 6-20 位，仅含字母或数字')
     return
   }
   if (addForm.value.password.length < 6) {

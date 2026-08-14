@@ -36,37 +36,6 @@
       </div>
     </div>
 
-    <!-- 外部审核策略 -->
-    <section class="mobile-card policy-card">
-      <div class="policy-head">
-        <h3>外部审核策略</h3>
-        <button class="pill-switch" :class="{ on: auditConfig.enabled }" @click="auditConfig.enabled = !auditConfig.enabled">
-          <span class="pill-knob"></span>
-          <span class="pill-text">{{ auditConfig.enabled ? '已启用' : '未启用' }}</span>
-        </button>
-      </div>
-      <p class="policy-tip">开启后，昵称、头像、壁纸会先走外部机审；机审无法判断或服务失败时再进入人工审核队列。</p>
-      <select v-model="auditConfig.provider" class="mobile-select">
-        <option value="generic">通用 HTTP</option>
-        <option value="aliyun">阿里云内容安全</option>
-        <option value="tencent">腾讯云内容安全</option>
-      </select>
-      <input v-model.trim="auditConfig.endpoint" class="mobile-input" placeholder="审核接口地址" />
-      <input v-model.trim="auditConfig.api_key" class="mobile-input" type="password" placeholder="接口密钥（留空保留原值）" />
-      <input v-model.number="auditConfig.timeout_ms" class="mobile-input" type="number" placeholder="超时时间 ms" />
-      <div class="opt-grid">
-        <label class="check-row"><input v-model="auditConfig.nickname_enabled" type="checkbox" /> 改名机审</label>
-        <label class="check-row"><input v-model="auditConfig.avatar_enabled" type="checkbox" /> 头像机审</label>
-        <label class="check-row"><input v-model="auditConfig.wallpaper_enabled" type="checkbox" /> 壁纸机审</label>
-        <label class="check-row"><input v-model="auditConfig.fail_to_manual" type="checkbox" /> 失败转人工</label>
-      </div>
-      <input v-model.trim="auditTestText" class="mobile-input" placeholder="测试文本，例如：测试昵称" />
-      <div class="mobile-actions">
-        <button class="mobile-btn primary" :disabled="auditSaving" @click="saveAuditConfig">保存策略</button>
-        <button class="mobile-btn" :disabled="auditTesting" @click="testAuditConfig">测试连接</button>
-      </div>
-    </section>
-
     <!-- tabs -->
     <div class="mobile-tabs">
       <button class="mobile-btn" :class="{ primary: tab === 'avatar' }" @click="tab = 'avatar'">头像 {{ avatarList.length }}</button>
@@ -143,44 +112,9 @@ const loading = ref(true)
 const avatarList = ref<any[]>([])
 const nicknameList = ref<any[]>([])
 const avatarStats = reactive({ pending: 0, approved: 0, rejected: 0 })
-const auditSaving = ref(false)
-const auditTesting = ref(false)
-const auditTestText = ref('测试昵称')
-const auditConfig = reactive<any>({
-  enabled: false,
-  provider: 'generic',
-  endpoint: '',
-  api_key: '',
-  nickname_enabled: true,
-  avatar_enabled: true,
-  wallpaper_enabled: true,
-  timeout_ms: 5000,
-  fail_to_manual: true,
-})
 
 const currentList = computed(() => (tab.value === 'avatar' ? avatarList.value : nicknameList.value))
 const totalPending = computed(() => avatarStats.pending + nicknameList.value.length)
-
-async function loadAvatarConfig() {
-  const res = await adminApi<any>('get_audit_external_config')
-  if (res.code === 200 && res.data) Object.assign(auditConfig, res.data, { api_key: '' })
-}
-async function saveAuditConfig() {
-  auditSaving.value = true
-  const res = await adminApi<any>('save_audit_external_config', auditConfig as any)
-  auditSaving.value = false
-  if (res.code === 200) { auditConfig.api_key = ''; showToast('外部审核策略已保存', 'success'); }
-  else showToast(res.msg || '保存失败')
-}
-async function testAuditConfig() {
-  auditTesting.value = true
-  const res = await adminApi<any>('test_audit_external_config', { text: auditTestText.value || '测试昵称' })
-  auditTesting.value = false
-  if (res.code === 200 && res.data) {
-    const label = res.data.decision === 'pass' ? '通过' : res.data.decision === 'reject' ? '拒绝' : '转人工'
-    showToast(`测试结果：${label}${res.data.reason ? '，' + res.data.reason : ''}`, 'success')
-  } else showToast(res.msg || '测试失败')
-}
 
 async function loadAvatars() {
   const res = await adminApi<any>('list_avatar_pending')
@@ -198,7 +132,7 @@ async function loadNicknames() {
 }
 async function loadAll(silent = false) {
   if (!silent) loading.value = true
-  await Promise.all([loadAvatars(), loadNicknames(), loadAvatarConfig()])
+  await Promise.all([loadAvatars(), loadNicknames()])
   if (!silent) loading.value = false
 }
 
@@ -326,54 +260,6 @@ onUnmounted(() => stopPolling())
 .stat-chip.approved .stat-num { color: #16a34a; }
 .stat-chip.rejected .stat-num { color: #dc2626; }
 .stat-chip.nickname .stat-num { color: #2563eb; }
-
-.policy-card { padding: 16px; }
-.policy-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-.policy-head h3 { margin: 0; font-size: 15px; }
-.policy-tip { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0 0 12px; }
-.pill-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 7px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--control-bg);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-.pill-switch .pill-knob {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-  transition: all 0.2s;
-}
-.pill-switch .pill-text { font-size: 12px; font-weight: 800; color: var(--text-light); transition: color 0.2s; }
-.pill-switch.on { background: var(--accent-soft); border-color: var(--accent); }
-.pill-switch.on .pill-knob { background: #16a34a; }
-.pill-switch.on .pill-text { color: var(--accent); }
-.opt-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px 12px;
-  margin: 4px 0 12px;
-}
-.check-row {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: var(--text);
-  cursor: pointer;
-}
-.check-row input { accent-color: #EC4141; }
 
 .nick-title {
   display: flex;

@@ -27,6 +27,13 @@
           </svg>
           {{ backingUp ? '备份中...' : '数据库备份' }}
         </button>
+        <button class="btn" :disabled="importing" @click="triggerImport">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          {{ importing ? '导入中...' : '导入数据库' }}
+        </button>
+        <input ref="importFileInput" type="file" accept=".sql,.txt" class="hidden-input" @change="onImportFile" />
         <button class="btn-refresh" @click="reloadAll" :disabled="loadingTables || loadingBackups || repairing || backingUp">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ spinning: loadingTables || loadingBackups }">
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -166,7 +173,7 @@
 
     <!-- 表内容查看弹窗 -->
     <Transition name="modal">
-      <div v-if="showTableModal" class="modal-backdrop">
+      <div v-if="showTableModal" class="modal-backdrop" @click.self="closeTableModal">
         <div class="modal-dialog modal-lg">
           <div class="modal-head">
             <h3>表内容 - {{ tableData?.table || '' }}</h3>
@@ -199,6 +206,7 @@
               </div>
               <div v-else class="state-box">该表暂无数据</div>
             </template>
+            <div v-else class="state-box">该表不存在或无法读取，请点击「修复数据库」后刷新重试，或点击空白处关闭。</div>
           </div>
           <div class="modal-foot">
             <div class="pagination" v-if="tableData && tableData.total > 0">
@@ -221,7 +229,7 @@
 
     <!-- 备份内容查看弹窗 -->
     <Transition name="modal">
-      <div v-if="showBackupModal" class="modal-backdrop">
+      <div v-if="showBackupModal" class="modal-backdrop" @click.self="closeBackupModal">
         <div class="modal-dialog modal-lg">
           <div class="modal-head">
             <h3 class="backup-modal-title" :title="backupViewName">备份内容 - {{ backupViewName }}</h3>
@@ -364,6 +372,48 @@ async function doBackup() {
     loadBackups()
   } else {
     showToast(res.msg || '备份失败')
+  }
+}
+
+// ===== 导入数据库 =====
+const importing = ref(false)
+const importFileInput = ref<HTMLInputElement | null>(null)
+
+function triggerImport() {
+  importFileInput.value?.click()
+}
+
+async function onImportFile(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = '' // 允许再次选择同一文件
+  if (!file) return
+  if (!/\.sql$/i.test(file.name)) {
+    showToast('请选择 .sql 备份文件')
+    return
+  }
+  const ok = await webConfirm(`确定导入数据库文件 "${file.name}" 吗？\n\n此操作将执行文件中的 SQL 语句，可能覆盖当前表数据，且不可恢复，请谨慎操作！`, { title: '导入数据库', confirmText: '确认导入' })
+  if (!ok) return
+  importing.value = true
+  try {
+    const text = await file.text()
+    const res = await adminApi<{ filename: string; ok: number; errors: number }>('import_db', { content: text })
+    if (res.code === 200) {
+      const d = res.data
+      if (d && d.errors > 0) {
+        showToast(`导入完成：${d.ok} 条成功，${d.errors} 条失败`, 'error')
+      } else {
+        showToast(`导入成功：${d?.ok ?? 0} 条语句已执行`, 'success')
+      }
+      loadTables()
+      loadBackups()
+    } else {
+      showToast(res.msg || '导入失败')
+    }
+  } catch {
+    showToast('导入失败：文件读取错误')
+  } finally {
+    importing.value = false
   }
 }
 
@@ -652,6 +702,7 @@ onMounted(() => {
 .btn-refresh:active { transform: scale(0.96); }
 .btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
 .spinning { animation: spin 0.8s linear infinite; }
+.hidden-input { display: none; }
 
 /* ===== 统计卡片 ===== */
 .stats-row {

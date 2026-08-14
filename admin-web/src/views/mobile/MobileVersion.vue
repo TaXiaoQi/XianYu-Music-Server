@@ -9,49 +9,6 @@
       <button class="mobile-btn primary" @click="showAddModal">+ 新增版本</button>
     </div>
 
-    <!-- 桌面端在线更新 -->
-    <section class="mobile-card">
-      <div class="section-head">
-        <div class="section-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
-        </div>
-        <div>
-          <h3 class="section-name">桌面端在线更新</h3>
-          <p class="section-desc">桌面端启动时自动比对版本号，低于此版本将弹窗提示更新。仅对桌面端生效。</p>
-        </div>
-      </div>
-
-      <div class="ver-form">
-        <label class="field">
-          <span class="required">版本号</span>
-          <input v-model="desktop.version" type="text" placeholder="如 1.2.0" />
-        </label>
-        <label class="field">
-          <span>下载渠道</span>
-          <button type="button" class="channel-card" @click="openDesktopChannelModal">
-            <div>
-              <strong>{{ desktopChannelLabel }}</strong>
-              <p>{{ desktopChannelDesc }}</p>
-            </div>
-            <span>选择</span>
-          </button>
-        </label>
-        <label class="field">
-          <span>更新内容</span>
-          <textarea v-model="desktop.updateContent" rows="3" placeholder="本次更新内容"></textarea>
-        </label>
-        <label class="field">
-          <span>启用状态</span>
-          <div class="enable-row">
-            <button type="button" class="enable-btn" :class="{ on: desktopEnabled === 1 }" @click="desktopEnabled = 1">启用</button>
-            <button type="button" class="enable-btn" :class="{ on: desktopEnabled === 0 }" @click="desktopEnabled = 0">禁用</button>
-          </div>
-        </label>
-        <button class="mobile-btn primary" :disabled="desktopSaving" @click="saveDesktop">{{ desktopSaving ? '保存中...' : '保存配置' }}</button>
-        <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ desktop.updated_at }}</span>
-      </div>
-    </section>
-
     <!-- 版本管理列表 -->
     <section class="mobile-card list-card">
       <div class="list-head">
@@ -104,7 +61,7 @@
 
     <!-- 桌面端下载渠道弹窗 -->
     <Transition name="modal">
-      <div v-if="desktopChannelModalVisible" class="modal-backdrop">
+      <div v-if="desktopChannelModalVisible" class="modal-backdrop channel-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
             <h3>选择下载渠道</h3>
@@ -159,34 +116,51 @@
             </button>
           </div>
           <div class="modal-body">
-            <label class="field">
-              <span class="required">软件名称</span>
-              <input v-model="addForm.appName" type="text" placeholder="弦予·音乐" />
-            </label>
-            <label class="field">
-              <span class="required">版本号</span>
-              <input v-model="addForm.versionCode" type="text" placeholder="1.0.0" />
-            </label>
-            <label class="field">
-              <span>更新内容</span>
-              <textarea v-model="addForm.updateContent" rows="3" placeholder="请输入更新内容"></textarea>
-            </label>
-            <div class="field">
-              <span class="required">安装包</span>
-              <label class="mobile-upload">
-                <input type="file" accept=".apk" @change="onFileChange" />
-                <span>{{ addForm.fileName ? addForm.fileName : '选择 APK 安装包上传到服务器' }}</span>
-              </label>
-              <div v-if="addForm.fileName" class="file-info">{{ addForm.fileName }}（{{ formatFileSize(addForm.fileSize) }}）</div>
-            </div>
-            <div v-if="uploading" class="upload-progress">
-              <div class="progress-bar-track"><div class="progress-bar-fill" :style="{ width: uploadProgress + '%' }"></div></div>
-              <span class="progress-text">{{ uploadProgress }}%</span>
+            <!-- 桌面端在线更新 -->
+            <div class="modal-section">
+              <div class="section-head">
+                <div class="section-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+                </div>
+                <div>
+                  <h3 class="section-name">桌面端在线更新</h3>
+                  <p class="section-desc">桌面端启动时自动比对版本号，低于此版本将弹窗提示更新。</p>
+                </div>
+              </div>
+
+              <div class="ver-form">
+                <label class="field">
+                  <span class="required">版本号</span>
+                  <input v-model="desktop.version" type="text" placeholder="如 1.2.0" />
+                </label>
+                <label class="field">
+                  <span>下载渠道</span>
+                  <button type="button" class="channel-card" @click="openDesktopChannelModal">
+                    <div>
+                      <strong>{{ desktopChannelLabel }}</strong>
+                      <p>{{ desktopChannelDesc }}</p>
+                    </div>
+                    <span>选择</span>
+                  </button>
+                </label>
+                <label class="field">
+                  <span>更新内容</span>
+                  <textarea v-model="desktop.updateContent" rows="3" placeholder="本次更新内容"></textarea>
+                </label>
+                <label class="field">
+                  <span>启用状态</span>
+                  <div class="enable-row">
+                    <button type="button" class="enable-btn" :class="{ on: desktopEnabled === 1 }" @click="desktopEnabled = 1">启用</button>
+                    <button type="button" class="enable-btn" :class="{ on: desktopEnabled === 0 }" @click="desktopEnabled = 0">禁用</button>
+                  </div>
+                </label>
+                <button class="mobile-btn primary" :disabled="desktopSaving" @click="saveDesktop">{{ desktopSaving ? '保存中...' : '保存配置' }}</button>
+                <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ desktop.updated_at }}</span>
+              </div>
             </div>
           </div>
           <div class="modal-foot">
             <button class="modal-btn cancel" @click="closeAddModal">取消</button>
-            <button class="modal-btn save" :disabled="uploading" @click="doAddVersion">{{ uploading ? '上传中...' : '上传' }}</button>
           </div>
         </div>
       </div>
@@ -612,9 +586,12 @@ onMounted(() => {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
+.modal-backdrop.channel-backdrop {
+  z-index: 11000;
+}
 .modal-dialog {
   width: 100%;
-  max-width: 340px;
+  max-width: 420px;
   max-height: 88vh;
   border-radius: 22px;
   background: var(--card-solid, var(--card));
@@ -623,6 +600,11 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
 }
+/* 弹窗内分区 */
+.modal-section { display: flex; flex-direction: column; gap: 12px; }
+.modal-section .section-head { margin-bottom: 0; }
+.modal-divider { height: 1px; background: var(--border); margin: 2px 0; }
+.modal-section .ver-form { gap: 12px; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 0; }
 .modal-head h3 { margin: 0; font-size: 16px; font-weight: 850; color: var(--text); }
 .modal-close { border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 8px; display: flex; }
@@ -701,10 +683,10 @@ onMounted(() => {
 .progress-text { font-size: 11px; color: var(--text-muted); min-width: 36px; text-align: right; }
 
 /* 过渡动画 */
-.modal-enter-active, .modal-leave-active { transition: opacity 0.26s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
+.modal-enter-active, .modal-leave-active { transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
-.modal-enter-active .modal-dialog { animation: modalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
-.modal-leave-active .modal-dialog { animation: modalOut 0.2s ease; }
-@keyframes modalIn { from { opacity: 0; transform: scale(0.92) translateY(20px); } to { opacity: 1; transform: scale(1) translateY(0); } }
-@keyframes modalOut { from { opacity: 1; transform: scale(1) translateY(0); } to { opacity: 0; transform: scale(0.95) translateY(10px); } }
+.modal-enter-active .modal-dialog { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.modal-leave-active .modal-dialog { animation: modalOut 0.2s ease forwards; }
+@keyframes modalIn { from { opacity: 0; transform: scale(0.94); } to { opacity: 1; transform: scale(1); } }
+@keyframes modalOut { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.96); } }
 </style>

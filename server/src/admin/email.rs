@@ -36,6 +36,8 @@ pub async fn notify_module_enabled(pool: &MySqlPool, module: &str) -> bool {
 }
 
 /// 向开启该板块通知的邮箱发送邮件，返回成功发送的邮箱列表
+/// 使用 HTML 卡片渲染（头像/壁纸可附带图片，带「前往审核」按钮跳转后台登录）。
+/// `image_url` 为空时不展示图片；`base_url` 为空时回退 public_base_url。
 #[allow(dead_code)]
 pub async fn notify_external_emails_for_module(
     pool: &MySqlPool,
@@ -43,7 +45,9 @@ pub async fn notify_external_emails_for_module(
     ip: &str,
     module: &str,
     subject: &str,
-    context: &str,
+    body: &str,
+    image_url: &str,
+    base_url: &str,
 ) -> Vec<String> {
     if !NOTIFY_MODULES.contains(&module) {
         return Vec::new();
@@ -51,6 +55,14 @@ pub async fn notify_external_emails_for_module(
     if !notify_module_enabled(pool, module).await {
         return Vec::new();
     }
+    let login_base = if !base_url.trim().is_empty() {
+        base_url.to_string()
+    } else {
+        "https://back.xymusic.cc/".to_string()
+    };
+    let html = build_review_email_html(subject, body, image_url, &login_base);
+    let plain = body.to_string();
+
     let col = format!("notify_{}", module);
     let q = format!("SELECT email FROM notification_emails WHERE status = 1 AND {} = 1", col);
     let rows = sqlx::query(&q).fetch_all(pool).await.unwrap_or_default();
@@ -60,7 +72,7 @@ pub async fn notify_external_emails_for_module(
         if email.is_empty() || !is_valid_email(&email) {
             continue;
         }
-        match crate::handlers::email_auth::call_email_api(config, pool, subject, context, &email).await {
+        match crate::handlers::email_auth::call_email_api_html(config, pool, subject, &html, &plain, &email).await {
             Ok(_) => {
                 let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,1,'',?)")
                     .bind(&email).bind(subject).bind(ip).execute(pool).await;
@@ -73,6 +85,104 @@ pub async fn notify_external_emails_for_module(
         }
     }
     sent
+}
+
+/// HTML 转义，防止用户内容破坏邮件卡片布局
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
+/// 构建审核通知 HTML 卡片邮件
+/// `title` 为邮件主题（也会作为卡片头部标题），`body` 为正文描述，
+/// `image_url` 为可选审核图片（完整 URL 或 data URI），`login_url_base` 用于拼接「前往审核」链接。
+pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_url_base: &str) -> String {
+    let login_url = if login_url_base.trim().is_empty() {
+        "https://back.xymusic.cc/".to_string()
+    } else {
+        login_url_base.trim_end_matches('/').to_string()
+    };
+    let esc_title = html_escape(title);
+    let esc_body = html_escape(body);
+    let img_html = if image_url.trim().is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<div style="text-align:center;margin:18px 0 0;">
+            <img src="{}" alt="待审核图片" style="max-width:100%;max-height:320px;height:auto;border-radius:12px;border:1px solid #ececec;box-shadow:0 4px 16px rgba(0,0,0,0.08);" />
+          </div>"#,
+            html_escape(image_url)
+        )
+    };
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body style="margin:0;padding:0;background:#f2f3f5;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);">
+      <div style="background:linear-gradient(135deg,#EC4141,#ff6b6b);padding:26px 30px;">
+        <div style="font-size:20px;font-weight:700;color:#ffffff;">弦予音乐 · 后台</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.9);margin-top:4px;">{title}</div>
+      </div>
+      <div style="padding:26px 30px;">
+        <div style="font-size:14px;line-height:1.9;color:#333333;white-space:pre-wrap;word-break:break-word;">{body}</div>
+        {img}
+        <div style="text-align:center;margin-top:26px;">
+          <a href="{link}" style="display:inline-block;background:#EC4141;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 34px;border-radius:10px;box-shadow:0 4px 14px rgba(236,65,65,0.3);">前往审核</a>
+        </div>
+        <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:20px;">此邮件由弦予音乐系统自动发送，请勿直接回复。</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"#,
+        title = esc_title,
+        body = esc_body,
+        img = img_html,
+        link = html_escape(&login_url),
+    )
+}
+
+/// 构建验证码 HTML 卡片邮件
+/// `type_label` 为操作类型（注册/登录/找回密码/注销账号），`code` 为验证码。
+pub fn build_verify_code_email_html(type_label: &str, code: &str) -> String {
+    let esc_label = html_escape(type_label);
+    let esc_code = html_escape(code);
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body style="margin:0;padding:0;background:#f2f3f5;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;">
+  <div style="max-width:560px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);">
+      <div style="background:linear-gradient(135deg,#EC4141,#ff6b6b);padding:26px 30px;">
+        <div style="font-size:20px;font-weight:700;color:#ffffff;">弦予音乐</div>
+        <div style="font-size:13px;color:rgba(255,255,255,0.9);margin-top:4px;">{label}验证码</div>
+      </div>
+      <div style="padding:30px;text-align:center;">
+        <div style="font-size:14px;color:#666;margin-bottom:16px;">您正在进行弦予音乐 APP 的{label}操作，验证码为：</div>
+        <div style="font-size:36px;font-weight:700;letter-spacing:8px;color:#EC4141;background:#fef2f2;border-radius:12px;padding:18px 0;margin:0 20px;">{code}</div>
+        <div style="font-size:13px;color:#9ca3af;margin-top:18px;">验证码 10 分钟内有效，请勿泄露给他人。</div>
+        <div style="font-size:13px;color:#9ca3af;margin-top:6px;">如非本人操作，请忽略此邮件。</div>
+        <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:24px;border-top:1px solid #f0f0f0;padding-top:18px;">此邮件由弦予音乐系统自动发送，请勿直接回复。</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>"#,
+        label = esc_label,
+        code = esc_code,
+    )
 }
 
 /// 通知邮箱列表

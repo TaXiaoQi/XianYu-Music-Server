@@ -41,8 +41,9 @@
     <input ref="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" @change="onFileChange" />
 
     <!-- 修改登录弹窗 -->
-    <div v-if="loginModalVisible" class="mobile-dialog-overlay" :class="{ show: true }">
-      <div class="mobile-dialog show">
+    <Transition name="mobile-fade">
+    <div v-if="loginModalVisible" class="mobile-dialog-overlay">
+      <div class="mobile-dialog">
         <div class="mobile-dialog-title">修改登录 - {{ loginTarget?.username || '' }}</div>
         <div class="mobile-dialog-body">
           <div class="mobile-login-field">
@@ -72,6 +73,7 @@
         </div>
       </div>
     </div>
+    </Transition>
   </div>
 </template>
 <script setup lang="ts">

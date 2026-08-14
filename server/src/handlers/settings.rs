@@ -50,7 +50,7 @@ pub async fn get_user_info(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
         "username": user.get::<String,_>("nickname"),
         "email": email,
         "role": role,
-        "avatar_url": user.get::<String,_>("avatar_url"),
+        "avatar_url": user.try_get::<Option<String>, _>("avatar_url").unwrap_or(None).unwrap_or_default(),
         "ciyuanxi_id": user.get::<String,_>("ciyuanxi_id"),
     });
     ctx.json(200, "ok", Some(payload))
@@ -84,7 +84,7 @@ pub async fn get_user_settings(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
         "download_artist_enabled": row.get::<i64,_>("download_artist_enabled"),
         "search_board_enabled": row.get::<i64,_>("search_board_enabled"),
         "page_animation_enabled": row.get::<i64,_>("page_animation_enabled"),
-        "default_quality": row.get::<String,_>("default_quality"),
+        "default_quality": row.try_get::<Option<String>, _>("default_quality").unwrap_or(None).unwrap_or_else(|| "standard".to_string()),
     });
     ctx.json(200, "ok", Some(payload))
 }
@@ -246,6 +246,19 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         if exists {
             return ctx.err(400, "昵称已被使用");
         }
+        // 检查昵称是否与管理员用户名冲突（大小写不敏感）
+        {
+            let admin_conflict = sqlx::query("SELECT id FROM admin_users WHERE LOWER(username) = LOWER(?) LIMIT 1")
+                .bind(&nickname)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+                .is_some();
+            if admin_conflict {
+                return ctx.err(400, "该昵称不可使用");
+            }
+        }
         if let Some(msg) = nickname_submit_block_message(pool, &ciyuanxi_id).await {
             return ctx.err(429, msg);
         }
@@ -310,6 +323,8 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 "nickname",
                 "【弦予后台】新昵称待审核",
                 &format!("用户 {} 申请改名为「{}」，请及时审核。", ciyuanxi_id, nickname),
+                "",
+                &ctx.base_url,
             ).await;
             nickname_submitted = true;
         }
@@ -374,6 +389,8 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 "avatar",
                 "【弦予后台】新头像待审核",
                 &format!("用户 {} 提交了新头像，请及时审核。", ciyuanxi_id),
+                &avatar_url,
+                &ctx.base_url,
             ).await;
             avatar_submitted = true;
         }

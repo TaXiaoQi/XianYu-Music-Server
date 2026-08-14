@@ -346,6 +346,19 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if name_len < 2 || name_len > 32 {
         return ctx.err(400, "昵称长度需2-32个字符");
     }
+    // 检查昵称是否与管理员用户名冲突（大小写不敏感）
+    {
+        let admin_conflict = sqlx::query("SELECT id FROM admin_users WHERE LOWER(username) = LOWER(?) LIMIT 1")
+            .bind(&nickname)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .is_some();
+        if admin_conflict {
+            return ctx.err(400, "该昵称不可使用");
+        }
+    }
     if password.len() < 6 {
         return ctx.err(400, "密码长度至少6位");
     }
@@ -859,12 +872,14 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         "您正在进行弦予音乐 APP 的{}操作。\n\n您的验证码是：{}\n\n验证码 10 分钟内有效，请勿泄露给他人。如非本人操作，请忽略此邮件。\n\n—— 弦予音乐",
         type_label, code
     );
+    let html = crate::admin::email::build_verify_code_email_html(&type_label, &code);
 
-    // 调用外部邮箱 API 真正发送邮件
-    let send_result = crate::handlers::email_auth::call_email_api(
+    // 调用外部邮箱 API 真正发送邮件（HTML 卡片 + 纯文本兜底）
+    let send_result = crate::handlers::email_auth::call_email_api_html(
         &ctx.config,
         pool,
         &title,
+        &html,
         &context,
         &email,
     )

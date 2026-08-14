@@ -78,29 +78,27 @@
         </button>
       </div>
       <div class="toolbar-right">
-        <div v-if="batchMode" class="batch-bar">
-          <label class="batch-select-all">
-            <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
-            <span>全选</span>
-          </label>
-          <span class="batch-count">已选 {{ selectedIds.size }} 项</span>
-          <button class="mobile-btn primary" :disabled="selectedIds.size === 0" @click="confirmBatchDelete">删除所选</button>
-          <button class="mobile-btn" @click="exitBatchMode">退出</button>
+        <button class="sort-btn" @click="openSortMenu">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="M3 17l3 3 3-3"/><path d="M6 18V4"/></svg>
+          {{ sortLabel }}
+        </button>
+        <div class="batch-slot">
+          <Transition name="batch-slide">
+            <div v-if="batchMode" key="batch" class="batch-bar batch-abs">
+              <label class="batch-select-all">
+                <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
+                <span>全选</span>
+              </label>
+              <span class="batch-count">已选 {{ selectedIds.size }} 项</span>
+              <button class="mobile-btn primary" :disabled="selectedIds.size === 0" @click="confirmBatchDelete">删除所选</button>
+              <button class="mobile-btn" @click="exitBatchMode">退出</button>
+            </div>
+            <button v-else key="enter" class="mobile-btn batch-abs" @click="enterBatchMode">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              批量
+            </button>
+          </Transition>
         </div>
-        <template v-else>
-          <button class="mobile-btn" @click="enterBatchMode">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-            批量
-          </button>
-          <div class="sort-wrap">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5h10"/><path d="M11 9h7"/><path d="M11 13h4"/><path d="M3 17l3 3 3-3"/><path d="M6 18V4"/></svg>
-            <select v-model="sortMode" class="mobile-select" @change="loadList">
-              <option value="post_time_desc">最新提交</option>
-              <option value="post_time_asc">最早提交</option>
-              <option value="update_desc">最近更新</option>
-            </select>
-          </div>
-        </template>
       </div>
     </section>
 
@@ -167,10 +165,6 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ f.resolve_note }}</span></div>
               </div>
-              <div v-if="f.ip" class="meta-line">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
-                IP：{{ f.ip }}
-              </div>
             </div>
           </div>
           <!-- 图片堆叠（仅显示第一张） -->
@@ -199,15 +193,15 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
               日志
             </button>
-            <button v-if="f.status === 'pending'" class="act-btn act-claim" @click="claim(f)">
+            <button v-if="f.status === 'pending' || (f.status === 'processing' && !isMineFeedback(f))" class="act-btn act-claim" @click="claim(f)">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               认领
             </button>
-            <button v-if="f.status === 'processing'" class="act-btn act-resolve" @click="openResolve(f)">
+            <button v-if="f.status === 'processing' && isMineFeedback(f)" class="act-btn act-resolve" @click="openResolve(f)">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               完成
             </button>
-            <button v-if="f.status === 'pending' || f.status === 'processing'" class="act-btn act-reject" @click="setStatusOf(f, 'rejected')">
+            <button v-if="(f.status === 'pending' || f.status === 'processing') && (f.status === 'pending' || isMineFeedback(f))" class="act-btn act-reject" @click="setStatusOf(f, 'rejected')">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               拒绝
             </button>
@@ -217,8 +211,9 @@
     </div>
 
     <!-- 完成说明弹窗 -->
-    <div v-if="resolveVisible" class="mobile-dialog-overlay show" @click.self="closeResolve">
-      <div class="mobile-dialog show" style="display:flex;flex-direction:column;max-width:400px;">
+    <Transition name="mobile-fade">
+    <div v-if="resolveVisible" class="mobile-dialog-overlay" @click.self="closeResolve">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:400px;">
         <div class="mobile-dialog-title">完成反馈</div>
         <div class="resolve-target-info" v-if="resolveTarget">
           <strong>{{ resolveTarget.title || '无标题' }}</strong>
@@ -231,10 +226,12 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 日志弹窗 -->
-    <div v-if="logVisible" class="mobile-dialog-overlay show" @click.self="closeLog">
-      <div class="mobile-dialog show" style="display:flex;flex-direction:column;max-width:440px;max-height:88vh;">
+    <Transition name="mobile-fade">
+    <div v-if="logVisible" class="mobile-dialog-overlay" @click.self="closeLog">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:440px;max-height:88vh;">
         <div class="mobile-dialog-title">反馈日志</div>
         <div class="log-tabs">
           <button class="log-tab" :class="{ active: activeLogTab === 'error' }" :disabled="!logTarget?.error_logs" @click="activeLogTab = 'error'">错误日志</button>
@@ -249,16 +246,17 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 新建事项弹窗 -->
-    <div v-if="createVisible" class="mobile-dialog-overlay show" @click.self="closeCreate">
-      <div class="mobile-dialog show mfb-create" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
+    <Transition name="mobile-fade">
+    <div v-if="createVisible" class="mobile-dialog-overlay" @click.self="closeCreate">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:360px;max-height:88vh;">
         <div class="mobile-dialog-title">新建事项</div>
         <div class="mfb-create-body">
           <div class="mfb-type-row">
             <button class="mfb-type-btn" :class="{ active: createType === 'problem' }" @click="createType = 'problem'">问题反馈</button>
             <button class="mfb-type-btn" :class="{ active: createType === 'suggestion' }" @click="createType = 'suggestion'">功能建议</button>
-            <button class="mfb-type-btn" :class="{ active: createType === 'appeal' }" @click="createType = 'appeal'">封禁申诉</button>
           </div>
           <textarea v-model="createContent" class="mobile-dialog-input" rows="4" placeholder="请输入内容描述（最多 1000 字）" maxlength="1000" style="min-height:90px;resize:vertical;"></textarea>
           <div class="mfb-dropzone" :class="{ dragging: createDragging, has: createImages.length > 0 }" @dragover.prevent="createDragging = true" @dragleave.prevent="createDragging = false" @drop.prevent="onDrop" @click="fileInput?.click()">
@@ -289,10 +287,12 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 统计弹窗 -->
-    <div v-if="statsVisible" class="mobile-dialog-overlay show" @click.self="statsVisible = false">
-      <div class="mobile-dialog show mfb-stats" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
+    <Transition name="mobile-fade">
+    <div v-if="statsVisible" class="mobile-dialog-overlay" @click.self="statsVisible = false">
+      <div class="mobile-dialog mfb-stats" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
         <div class="mobile-dialog-title">管理员处理统计</div>
         <div class="mfb-stats-body">
           <div v-if="statsLoading" class="mobile-empty">加载中...</div>
@@ -321,10 +321,12 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 回收站弹窗 -->
-    <div v-if="recycleVisible" class="mobile-dialog-overlay show" @click.self="closeRecycle">
-      <div class="mobile-dialog show" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
+    <Transition name="mobile-fade">
+    <div v-if="recycleVisible" class="mobile-dialog-overlay" @click.self="closeRecycle">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:420px;max-height:88vh;">
         <div class="mobile-dialog-title">回收站</div>
         <div class="recycle-body">
           <div class="recycle-tip">已删除的记录将保留 14 天，超期自动永久清除。可点击「恢复」将记录还原。</div>
@@ -352,23 +354,32 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 图片查看器 -->
-    <div v-if="viewerVisible" class="mobile-dialog-overlay show mfb-viewer" @click.self="viewerVisible = false">
+    <Transition name="mobile-fade">
+    <div v-if="viewerVisible" class="mobile-dialog-overlay mfb-viewer" @click.self="viewerVisible = false">
       <button class="mfb-viewer-close" @click="viewerVisible = false">×</button>
       <button v-if="viewerList.length > 1" class="mfb-viewer-nav prev" @click="viewerPrev">‹</button>
       <img v-if="viewerList[viewerIndex]" :src="viewerList[viewerIndex]" class="mfb-viewer-img" />
       <button v-if="viewerList.length > 1" class="mfb-viewer-nav next" @click="viewerNext">›</button>
       <div v-if="viewerList.length > 1" class="mfb-viewer-counter">{{ viewerIndex + 1 }} / {{ viewerList.length }}</div>
     </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
-import { adminApi, showToast } from '@/api/client'
-import { mobileConfirm } from '@/utils/mobileDialog'
+import { adminApi, showToast, getAdminUser } from '@/api/client'
+import { mobileConfirm, mobileActionMenu } from '@/utils/mobileDialog'
 import './MobilePage.css'
+
+// 当前登录管理员用户名（用于判断反馈是否由本人认领）
+const currentAdminName = getAdminUser()?.username || ''
+function isMineFeedback(f: any): boolean {
+  return !!f.assignee && f.assignee === currentAdminName
+}
 
 const loading = ref(false)
 const status = ref('')
@@ -377,6 +388,21 @@ const sortMode = ref('post_time_desc')
 const list = ref<any[]>([])
 const limitInput = ref(20)
 const limitSaving = ref(false)
+
+const sortOptions = [
+  { key: 'post_time_desc', label: '最新提交' },
+  { key: 'post_time_asc', label: '最早提交' },
+  { key: 'update_desc', label: '最近更新' },
+]
+const sortLabel = computed(() => sortOptions.find(o => o.key === sortMode.value)?.label || '排序')
+
+async function openSortMenu() {
+  const key = await mobileActionMenu('排序方式', sortOptions.map(o => ({ key: o.key, label: o.label })))
+  if (key) {
+    sortMode.value = key
+    loadList()
+  }
+}
 
 const statusMap: Record<string, string> = { pending: '待处理', processing: '处理中', resolved: '已解决', rejected: '已拒绝' }
 const statusLabel = (s: string) => statusMap[s] || s
@@ -486,16 +512,19 @@ async function saveLimit() {
 
 // ===== 认领 =====
 async function claim(f: any) {
-  const ok = await mobileConfirm('确认认领该反馈？认领后将自动划入您的名下并移入处理中。', { title: '认领反馈', confirmText: '认领' })
+  const isTransfer = f.status === 'processing'
+  const ok = await mobileConfirm(isTransfer ? '确认将该反馈转认领到自己名下？认领后问题将转移到您的名下。' : '确认认领该反馈？认领后将自动划入您的名下并移入处理中。', { title: '认领反馈', confirmText: '认领' })
   if (!ok) return
   const res = await adminApi('claim_feedback', { id: f.id })
   if (res.code === 200) {
     const old = f.status
     f.status = 'processing'
     f.assignee = res.data?.assignee || ''
-    if (stats.value[old as keyof typeof stats.value] !== undefined) (stats.value as any)[old]--
-    stats.value.processing++
-    showToast('认领成功，已置为处理中', 'success')
+    if (old !== 'processing') {
+      if (stats.value[old as keyof typeof stats.value] !== undefined) (stats.value as any)[old]--
+      stats.value.processing++
+    }
+    showToast(isTransfer ? '已转认领到自己名下' : '认领成功，已置为处理中', 'success')
   } else { showToast(res.msg || '认领失败') }
 }
 
@@ -591,7 +620,7 @@ async function restoreItem(id: number) {
 
 // ===== 新建事项 =====
 const createVisible = ref(false)
-const createType = ref<'problem' | 'suggestion' | 'appeal'>('problem')
+const createType = ref<'problem' | 'suggestion'>('problem')
 const createContent = ref('')
 const createImages = ref<string[]>([])
 const createNotify = ref(false)
@@ -630,7 +659,7 @@ async function submitCreate() {
   createSaving.value = true
   const res = await adminApi('create_feedback', {
     feedback_type: createType.value,
-    title: createType.value === 'suggestion' ? '功能建议' : createType.value === 'appeal' ? '封禁申诉' : '问题反馈',
+    title: createType.value === 'suggestion' ? '功能建议' : '问题反馈',
     content: createContent.value.trim(),
     images: createImages.value,
     notify_external: createNotify.value ? 1 : 0,
@@ -743,7 +772,7 @@ onMounted(() => { loadLimit(); loadList() })
 
 /* 工具条 */
 .toolbar { display: flex; flex-direction: column; gap: 8px; }
-.toolbar-group { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.toolbar-group { display: flex; gap: 6px; justify-content: center; }
 .tool-btn {
   flex: 0 0 auto;
   border: 1px solid var(--border);
@@ -757,11 +786,62 @@ onMounted(() => { loadLimit(); loadList() })
 }
 .tool-btn.active { border-color: #EC4141; background: #EC4141; color: #fff; }
 .toolbar-right { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.sort-wrap { display: flex; align-items: center; gap: 5px; color: var(--text-muted); }
-.sort-wrap .mobile-select { width: auto; padding: 6px 10px; font-size: 12px; border-radius: 999px; }
-.batch-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.batch-select-all { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-light); }
-.batch-count { font-size: 12px; color: var(--text-muted); }
+.sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 12px;
+  height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--control-bg);
+  color: var(--text-light);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: transform 0.16s var(--motion), color 0.16s, background 0.16s, border-color 0.16s;
+}
+.sort-btn:active {
+  transform: scale(0.94);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.sort-btn svg { flex-shrink: 0; }
+.batch-slot {
+  position: relative;
+  min-height: 38px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+.batch-abs {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.batch-bar { display: flex; align-items: center; gap: 8px; justify-content: flex-end; white-space: nowrap; }
+.batch-bar .mobile-btn { flex: 0 0 auto; }
+/* 批量菜单向左弹出/收回动画 */
+.batch-slide-enter-active,
+.batch-slide-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.batch-slide-enter-from {
+  opacity: 0;
+  transform: translateY(-50%) translateX(30px);
+}
+.batch-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-50%) translateX(30px);
+}
+.batch-select-all { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-light); flex-shrink: 0; }
+.batch-count { font-size: 12px; color: var(--text-muted); flex-shrink: 0; }
 
 /* 反馈卡片 */
 .mfb-item { padding: 14px; }
@@ -808,7 +888,7 @@ onMounted(() => { loadLimit(); loadList() })
 .mfb-title { margin: 0; font-size: 14px; font-weight: 850; color: var(--text); word-break: break-word; }
 .mfb-content {
   margin: 4px 0 0;
-  font-size: 12px; color: var(--text-light);
+  font-size: 11px; color: var(--text-muted);
   line-height: 1.6; word-break: break-word;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
@@ -825,7 +905,6 @@ onMounted(() => { loadLimit(); loadList() })
 .resolve-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .resolve-label { font-weight: 800; }
 .resolve-text span { word-break: break-word; }
-.meta-line { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); }
 
 /* 图片堆叠 */
 .img-stack {
@@ -889,8 +968,8 @@ onMounted(() => { loadLimit(); loadList() })
 .log-content {
   margin: 0; padding: 12px; border-radius: 12px;
   background: var(--control-bg); color: var(--text-light);
-  font-size: 11px; line-height: 1.6; white-space: pre-wrap; word-break: break-all;
-  max-height: 50vh; overflow-y: auto;
+  font-size: 11px; line-height: 1.6; white-space: pre;
+  max-height: 50vh; overflow: auto;
 }
 .recycle-body { padding: 10px 20px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .recycle-tip {
@@ -912,6 +991,11 @@ onMounted(() => { loadLimit(); loadList() })
 
 /* 新建弹窗 */
 .mfb-create-body { padding: 10px 20px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.mfb-create-body .mobile-dialog-input {
+  width: 100%;
+  margin: 0;
+  box-sizing: border-box;
+}
 .mfb-type-row { display: flex; gap: 8px; }
 .mfb-type-btn {
   flex: 1;

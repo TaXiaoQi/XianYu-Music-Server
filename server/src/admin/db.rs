@@ -160,18 +160,23 @@ pub async fn view_table(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respons
     }
     let db_name = &ctx.config.db_name;
     tracing::info!("view_table: db_name={}, table_name={}", db_name, table_name);
-    let exists: Option<String> = sqlx::query_scalar::<_, String>(
+    match sqlx::query_scalar::<_, String>(
         "SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
     )
     .bind(db_name)
     .bind(&table_name)
     .fetch_optional(pool)
     .await
-    .ok()
-    .flatten();
-    if exists.is_none() {
-        tracing::warn!("view_table: table not found in information_schema: db_name={}, table_name={}", db_name, table_name);
-        return err(400, "表不存在");
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            tracing::warn!("view_table: table not found in information_schema: db_name={}, table_name={}", db_name, table_name);
+            return err(400, "表不存在");
+        }
+        Err(e) => {
+            tracing::error!("view_table: information_schema query failed: {}", e);
+            return err(500, "查询数据库失败，请检查数据库连接");
+        }
     }
     let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM `{}`", table_name))
         .fetch_one(pool)
@@ -341,6 +346,45 @@ pub async fn restore_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     let _ = sqlx::query("SET FOREIGN_KEY_CHECKS=1").execute(pool).await;
     log_operation(pool, ctx, "数据库恢复", &filename, "").await;
     ok("恢复成功", Value::Null)
+}
+
+/// 导入数据库：从前端上传的 SQL 文本执行导入（覆盖式，与恢复备份一致）
+pub async fn import_db(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let content = str_of(&data, "content");
+    if content.trim().is_empty() {
+        return err(400, "导入内容为空");
+    }
+    if content.len() > 256 * 1024 * 1024 {
+        return err(400, "导入文件过大");
+    }
+    // 记录导入文件到 beifen/import_*.sql（命名带 import_ 前缀，不进入备份列表）
+    let dir = backup_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let now = chrono::Local::now();
+    let filename = format!("import_{}.sql", now.format("%Y%m%d_%H%M%S"));
+    let _ = std::fs::write(dir.join(&filename), &content);
+
+    let mut ok_count = 0;
+    let mut err_count = 0;
+    let _ = sqlx::query("SET FOREIGN_KEY_CHECKS=0").execute(pool).await;
+    for stmt in content.split(';') {
+        let s = stmt.trim();
+        if s.is_empty() {
+            continue;
+        }
+        match sqlx::query(s).execute(pool).await {
+            Ok(_) => ok_count += 1,
+            Err(_) => err_count += 1,
+        }
+    }
+    let _ = sqlx::query("SET FOREIGN_KEY_CHECKS=1").execute(pool).await;
+    log_operation(pool, ctx, "数据库导入", &filename, &format!("成功 {} 失败 {}", ok_count, err_count)).await;
+    if err_count > 0 {
+        ok("导入完成（部分语句失败）", json!({ "filename": filename, "ok": ok_count, "errors": err_count }))
+    } else {
+        ok("导入成功", json!({ "filename": filename, "ok": ok_count, "errors": 0 }))
+    }
 }
 
 /// 删除备份文件

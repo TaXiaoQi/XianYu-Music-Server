@@ -19,14 +19,16 @@
           <button class="mobile-btn primary" @click="exitBatchMode">完成</button>
         </div>
       </div>
-    <transition name="expand">
-      <div v-if="openAdd" class="mobile-card mobile-form">
-        <h3 class="mobile-card-title">新增用户</h3>
-        <input v-model="addForm.ciyuanxi_id" class="mobile-input" placeholder="弦予号（必填，字母开头）" />
-        <input v-model="addForm.password" class="mobile-input" placeholder="密码（必填）" type="password" />
-        <input v-model="addForm.nickname" class="mobile-input" placeholder="昵称（选填，留空默认弦予+号）" />
-        <input v-model="addForm.email" class="mobile-input" placeholder="邮箱（选填）" />
-        <button class="mobile-btn primary" :disabled="saving" @click="addUser">{{ saving ? '提交中...' : '确认新增' }}</button>
+    <transition name="user-expand">
+      <div v-if="openAdd" class="mobile-card mobile-form user-expand-wrap">
+        <div class="user-expand-inner">
+          <h3 class="mobile-card-title">新增用户</h3>
+          <input v-model="addForm.ciyuanxi_id" class="mobile-input" placeholder="弦予号（必填，仅含字母或数字）" />
+          <input v-model="addForm.password" class="mobile-input" placeholder="密码（必填）" type="password" />
+          <input v-model="addForm.nickname" class="mobile-input" placeholder="昵称（选填，留空默认弦予+号）" />
+          <input v-model="addForm.email" class="mobile-input" placeholder="邮箱（选填）" />
+          <button class="mobile-btn primary" :disabled="saving" @click="addUser">{{ saving ? '提交中...' : '确认新增' }}</button>
+        </div>
       </div>
     </transition>
     <div v-if="loading" class="mobile-empty">加载中...</div>
@@ -99,8 +101,9 @@
     </transition>
 
     <!-- 插件查看弹窗 -->
-    <div v-if="showPluginsModal" class="mobile-dialog-overlay show" @click.self="closePlugins">
-      <div class="mobile-dialog show" style="display:flex;flex-direction:column;max-width:440px;max-height:88vh;">
+    <Transition name="mobile-fade">
+    <div v-if="showPluginsModal" class="mobile-dialog-overlay" @click.self="closePlugins">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:440px;max-height:88vh;">
         <div class="mobile-dialog-head">
           <span class="mobile-dialog-head-title">用户插件 - {{ pluginsData.nickname || pluginsData.username || '-' }}</span>
           <button class="mobile-dialog-close" @click="closePlugins">
@@ -142,10 +145,12 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 设备信息弹窗 -->
-    <div v-if="showDeviceModal" class="mobile-dialog-overlay show" @click.self="closeDevice">
-      <div class="mobile-dialog show" style="display:flex;flex-direction:column;max-width:460px;max-height:88vh;">
+    <Transition name="mobile-fade">
+    <div v-if="showDeviceModal" class="mobile-dialog-overlay" @click.self="closeDevice">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:460px;max-height:88vh;">
         <div class="mobile-dialog-head">
           <span class="mobile-dialog-head-title">设备信息 - {{ deviceData.nickname || deviceData.username || '-' }}</span>
           <button class="mobile-dialog-close" @click="closeDevice">
@@ -204,6 +209,7 @@
         </div>
       </div>
     </div>
+    </Transition>
 
     <!-- 头像预览 -->
     <transition name="expand">
@@ -362,7 +368,7 @@ async function loadList() {
 async function addUser() {
   const ciyuanxi = addForm.value.ciyuanxi_id.trim()
   if (!ciyuanxi) return showToast('请填写弦予号')
-  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(ciyuanxi)) return showToast('弦予号需 6-20 位，字母开头')
+  if (!/^[a-zA-Z0-9]{6,20}$/.test(ciyuanxi)) return showToast('弦予号需 6-20 位，仅含字母或数字')
   if (!addForm.value.password) return showToast('请填写密码')
   saving.value = true
   const res = await adminApi('add_user', { username: ciyuanxi, nickname: addForm.value.nickname.trim(), password: addForm.value.password, email: addForm.value.email.trim() })
@@ -409,7 +415,7 @@ async function changeCiyuanxi(u: any) {
   if (input === null) return
   const newId = input.trim()
   if (!newId) return showToast('请输入弦予号', 'error')
-  if (!/^[a-zA-Z][a-zA-Z0-9_-]{5,19}$/.test(newId)) return showToast('弦予号需 6-20 位，字母开头', 'error')
+  if (!/^[a-zA-Z0-9]{6,20}$/.test(newId)) return showToast('弦予号需 6-20 位，仅含字母或数字', 'error')
   if (!(await mobileConfirm(`确认将 ${u.nickname || u.username} 的弦予号修改为 ${newId} 吗？`))) return
   const res = await adminApi('change_ciyuanxi_id', { user_id: u.id, new_ciyuanxi_id: newId })
   if (res.code === 200) {
@@ -550,6 +556,30 @@ async function deleteUser(u: any) {
 onMounted(loadList)
 </script>
 <style scoped>
+/* 新增用户面板展开/收起 - 平滑高度动画 */
+.user-expand-wrap.mobile-card { padding: 0; }
+.user-expand-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 15px;
+  overflow: hidden;
+  min-height: 0;
+}
+.user-expand-enter-active,
+.user-expand-leave-active {
+  display: grid;
+  grid-template-rows: 1fr;
+  overflow: hidden;
+  transition: grid-template-rows 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+              opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.user-expand-enter-from,
+.user-expand-leave-to {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
 /* 弹窗头部 */
 .mobile-dialog-head {
   display: flex;
