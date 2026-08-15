@@ -204,7 +204,7 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               完成
             </button>
-            <button v-if="(f.status === 'pending' || f.status === 'processing') && (f.status === 'pending' || isMineFeedback(f))" class="act-btn act-reject" @click="setStatusOf(f, 'rejected')">
+            <button v-if="f.status === 'pending'" class="act-btn act-reject" @click="setStatusOf(f, 'rejected')">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               拒绝
             </button>
@@ -837,6 +837,10 @@ onMounted(() => { loadLimit(); loadList() })
   position: relative;
 }
 .batch-abs {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   align-items: center;
 }
@@ -879,10 +883,26 @@ onMounted(() => { loadLimit(); loadList() })
 .batch-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 
 /* 反馈卡片 */
-.mfb-item { padding: 14px; }
+.mfb-item { position: relative; padding: 14px; }
 .mfb-item.batch-selected { border-color: #EC4141; }
-.card-checkbox { margin-bottom: 8px; }
-.card-checkbox input { width: 16px; height: 16px; }
+/* 批量勾选框：参考桌面版，绝对定位悬浮卡片右上角，不参与布局，避免挤压底部悬浮底栏 */
+.card-checkbox {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 3;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border-radius: 7px;
+  background: var(--card-solid, var(--card));
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+.card-checkbox input { width: 16px; height: 16px; accent-color: #EC4141; cursor: pointer; }
 .mfb-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
 .mfb-user { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .user-avatar {

@@ -95,6 +95,16 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move {
             admin::db::auto_backup_loop(&auto_pool).await;
         });
+        // 启动通信工具服务调度任务（HTTP/SSE/WebSocket，按配置动态启停）
+        let comm_pool = pool.clone();
+        tokio::spawn(async move {
+            admin::commtool::comm_server_loop(comm_pool).await;
+        });
+        // 启动 WS 客户端自动重连调度任务
+        let ws_pool = pool.clone();
+        tokio::spawn(async move {
+            admin::commtool::ws_client_loop(ws_pool).await;
+        });
     }
 
     axum::serve(listener, app).await?;

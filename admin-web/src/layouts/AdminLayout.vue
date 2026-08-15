@@ -84,6 +84,64 @@
           <span v-if="isDebugMode" class="debug-chip">本地调试</span>
         </div>
         <div class="topbar-right">
+          <div class="notify-wrap">
+            <button class="notify-btn" :title="notifyLabel" @click="notifyOpen = !notifyOpen">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+              <span v-if="notify.pendingTotal > 0" class="notify-badge">{{ notify.pendingTotal }}</span>
+            </button>
+
+            <transition name="notify-pop">
+              <div v-if="notifyOpen" class="notify-panel">
+                <div class="notify-panel-head">
+                  <span class="notify-title">{{ notify.nativeBridgeAvailable ? '系统通知' : '浏览器通知' }}</span>
+                  <span class="notify-status" :class="notify.permission">{{ notify.permissionLabel }}</span>
+                </div>
+
+                <div v-if="!notify.supportedByBrowser" class="notify-tip warn">
+                  当前环境不支持系统通知，请改用最新版 Chrome / Edge / Firefox 或系统浏览器打开。
+                </div>
+
+                <template v-else>
+                  <div v-if="notify.permission === 'default'" class="notify-perm-row">
+                    <button class="btn btn-primary btn-sm" @click="handleRequestPermission">授权通知</button>
+                    <span class="notify-hint">{{ notify.nativeBridgeAvailable ? '系统将询问是否允许发送通知' : '浏览器将询问是否允许本站发送通知' }}</span>
+                  </div>
+                  <div v-else-if="notify.permission === 'denied'" class="notify-tip warn">
+                    {{ notify.nativeBridgeAvailable ? '系统通知权限已被拒绝' : '浏览器已拒绝通知权限，请在浏览器设置中允许本站通知后重试。' }}
+                    <button v-if="notify.nativeBridgeAvailable" class="notify-settings-btn" @click="notify.openNotificationSettings()">打开系统设置</button>
+                  </div>
+                  <div v-else class="notify-perm-ok">
+                    <span class="notify-hint">已授权，有新事件时将在此提醒</span>
+                  </div>
+
+                  <div class="notify-divider"></div>
+
+                  <div class="notify-row">
+                    <span class="notify-row-label">启用通知</span>
+                    <span class="switch" :class="{ on: notify.enabled }" @click="notify.setEnabled(!notify.enabled)"><span class="switch-knob"></span></span>
+                  </div>
+
+                  <div class="notify-modules">
+                    <div v-for="m in notify.moduleList" :key="m.key" class="notify-row">
+                      <span class="notify-row-label">
+                        {{ m.label }}
+                        <span class="notify-row-desc">{{ m.desc }}</span>
+                      </span>
+                      <span class="switch" :class="{ on: notify.modules[m.key] }" @click="notify.toggleModule(m.key)"><span class="switch-knob"></span></span>
+                    </div>
+                  </div>
+
+                  <div class="notify-divider"></div>
+
+                  <button class="btn btn-sm" :disabled="!notify.granted" @click="notify.testNotification()">发送测试通知</button>
+                  <div class="notify-tip">有新反馈或待审核项时，将弹出系统通知提醒。</div>
+                </template>
+              </div>
+            </transition>
+          </div>
           <button class="theme-toggle" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
             <svg v-if="theme.isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
@@ -119,10 +177,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
 import { loadSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
 
@@ -130,14 +189,46 @@ const route = useRoute()
 const router = useRouter()
 const auth = useAuthStore()
 const theme = useThemeStore()
+const notify = useNotificationStore()
 
 const sidebarOpen = ref(false)
 const openMenu = ref<string | null>(null)
+const notifyOpen = ref(false)
 const isDebugMode = import.meta.env.DEV
 
 const pageTitle = computed(() => (route.meta.title as string) || '仪表盘')
+const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
 
-onMounted(loadSiteLogo)
+onMounted(() => {
+  loadSiteLogo()
+  document.addEventListener('click', onClickOutside)
+  notify.startPolling()
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onClickOutside)
+  notify.stopPolling()
+})
+
+watch(notifyOpen, (open) => {
+  if (open) notify.refreshPermission()
+})
+
+function onClickOutside(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.notify-wrap')) {
+    notifyOpen.value = false
+  }
+}
+
+async function handleRequestPermission() {
+  const p = await notify.requestPermission()
+  if (p === 'granted') {
+    showToast('已允许系统通知', 'success')
+  } else if (p === 'denied') {
+    showToast('通知权限被拒绝，请在系统设置中开启', 'error')
+  }
+}
 
 function toggleSubmenu(id: string) {
   openMenu.value = openMenu.value === id ? null : id
@@ -165,6 +256,203 @@ const icons = {
 </script>
 
 <style scoped>
+/* ===== 浏览器通知下拉面板 ===== */
+.notify-wrap {
+  position: relative;
+}
+.notify-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  color: var(--text-light);
+  cursor: pointer;
+  transition: transform 0.2s var(--motion), background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.notify-btn:hover {
+  transform: translateY(-1px);
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: var(--shadow-soft);
+}
+.notify-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #EC4141;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--card-solid, var(--white));
+}
+.notify-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 300px;
+  max-height: calc(100vh - 90px);
+  overflow-y: auto;
+  padding: 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-solid, var(--white));
+  box-shadow: var(--shadow-card);
+  z-index: 60;
+}
+.notify-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.notify-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--text);
+}
+.notify-status {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.notify-status.granted {
+  background: rgba(34, 197, 94, 0.12);
+  color: #16a34a;
+}
+.notify-status.denied {
+  background: rgba(236, 65, 65, 0.12);
+  color: #EC4141;
+}
+.notify-status.default {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.notify-status.unsupported {
+  background: var(--control-bg);
+  color: var(--text-muted);
+}
+.notify-perm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.notify-perm-ok {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.08);
+}
+.notify-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.notify-tip {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.notify-tip.warn {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(236, 65, 65, 0.08);
+  color: #EC4141;
+}
+.notify-settings-btn {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #EC4141;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.notify-settings-btn:hover {
+  opacity: 0.9;
+}
+.notify-divider {
+  height: 1px;
+  margin: 10px 0;
+  background: var(--border);
+}
+.notify-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+}
+.notify-row-label {
+  display: inline-flex;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.notify-row-desc {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.notify-modules {
+  display: flex;
+  flex-direction: column;
+}
+/* 开关（与外部通知页一致的外观） */
+.switch {
+  width: 40px;
+  height: 22px;
+  border-radius: 12px;
+  border: none;
+  background: #d1d5db;
+  cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: background 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.switch.on {
+  background: var(--accent);
+}
+.switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.switch.on .switch-knob {
+  transform: translateX(18px);
+}
+.notify-pop-enter-active,
+.notify-pop-leave-active {
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+}
+.notify-pop-enter-from,
+.notify-pop-leave-to {
+  opacity: 0;
+  transform: scale(0.95) translateY(-6px);
+}
 .debug-chip {
   display: inline-flex;
   align-items: center;

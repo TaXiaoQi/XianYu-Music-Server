@@ -86,7 +86,9 @@ button, input, textarea, select { font-family: inherit; }
 .layout {
     display: flex;
     min-height: 100vh;
-    animation: pageFadeIn 0.42s var(--motion) both;
+    /* 用 backwards 而非 both：动画结束后不保留 translateY(0)，避免残留 transform
+       使 .layout 内 position:fixed 弹窗按整页而非视口居中 */
+    animation: pageFadeIn 0.42s var(--motion) backwards;
 }
 .overlay {
     display: none;

@@ -169,7 +169,11 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     let email = str_of(&data, "email").trim().to_string();
     let master_quota = int_of(&data, "master_quota");
     let master_quota = if master_quota == 0 { 200 } else { master_quota };
-    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let mut ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    // 兼容前端将弦予号放在 username 字段的提交方式
+    if ciyuanxi_id.is_empty() {
+        ciyuanxi_id = str_of(&data, "username").trim().to_string();
+    }
     // 弦予号必填 + 微信号规则校验
     if let Err(msg) = validate_ciyuanxi_id(&ciyuanxi_id) {
         return err(400, msg);

@@ -29,6 +29,7 @@ pub mod turnstile;
 pub mod users;
 pub mod version;
 pub mod wallpaper;
+pub mod commtool;
 
 /// JWT 载荷：管理员身份
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -333,6 +334,29 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "get_email_config" => email::get_email_config(body, &ctx, pool).await,
         "update_email_config" => email::update_email_config(body, &ctx, pool).await,
         "test_email_config" => email::test_email_config(body, &ctx, pool).await,
+        // comm tool (HTTP / SSE / WebSocket)
+        "comm_get_status" => commtool::comm_get_status(body, &ctx, pool).await,
+        "comm_http_logs" => commtool::comm_http_logs(body, &ctx, pool).await,
+        "comm_http_clear" => commtool::comm_http_clear(body, &ctx, pool).await,
+        "comm_http_client" => commtool::comm_http_client(body, &ctx, pool).await,
+        "comm_sse_push" => commtool::comm_sse_push(body, &ctx, pool).await,
+        "comm_ws_server_list" => commtool::comm_ws_server_list(body, &ctx, pool).await,
+        "comm_ws_server_send" => commtool::comm_ws_server_send(body, &ctx, pool).await,
+        "comm_ws_server_broadcast" => commtool::comm_ws_server_broadcast(body, &ctx, pool).await,
+        "comm_ws_client_connect" => commtool::comm_ws_client_connect(body, &ctx, pool).await,
+        "comm_ws_client_send" => commtool::comm_ws_client_send(body, &ctx, pool).await,
+        "comm_ws_client_disconnect" => commtool::comm_ws_client_disconnect(body, &ctx, pool).await,
+        "comm_ws_client_logs" => commtool::comm_ws_client_logs(body, &ctx, pool).await,
+        "comm_ws_clear" => commtool::comm_ws_clear(body, &ctx, pool).await,
+        // ws client 自动重连配置 + 连接鉴权
+        "comm_ws_client_config" => commtool::comm_ws_client_config(body, &ctx, pool).await,
+        "comm_ws_client_save_config" => commtool::comm_ws_client_save_config(body, &ctx, pool).await,
+        "comm_auth_config" => commtool::comm_auth_config(body, &ctx, pool).await,
+        "comm_auth_save_config" => commtool::comm_auth_save_config(body, &ctx, pool).await,
+        // webhook notification
+        "get_webhook_config" => commtool::get_webhook_config(body, &ctx, pool).await,
+        "save_webhook_config" => commtool::save_webhook_config(body, &ctx, pool).await,
+        "test_webhook" => commtool::test_webhook(body, &ctx, pool).await,
         // captcha config
         "get_captcha_config" => turnstile::get_captcha_config(body, &ctx, pool).await,
         "save_captcha_config" => turnstile::save_captcha_config(body, &ctx, pool).await,

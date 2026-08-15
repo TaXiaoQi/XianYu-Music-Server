@@ -843,8 +843,8 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         return resp;
     }
 
-    // 注册类型：发码前预检查邮箱唯一性和弦予号唯一性
-    if typ == "register" {
+    // 注册/绑定邮箱类型：发码前预检查邮箱唯一性（注册还需检查弦予号唯一性）
+    if typ == "register" || typ == "bind" {
         let email_bound = sqlx::query("SELECT id FROM app_users WHERE email = ? LIMIT 1")
             .bind(&email)
             .fetch_optional(pool)
@@ -855,24 +855,26 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         if email_bound {
             return ctx.err(400, "该邮箱已绑定账号，请直接登录");
         }
-        let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
-        if !ciyuanxi_id.is_empty() {
-            let id_dup = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
-                .bind(&ciyuanxi_id)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten()
-                .is_some();
-            let id_pretty = sqlx::query("SELECT id FROM ciyuanxi_pretty_ids WHERE ciyuanxi_id = ? LIMIT 1")
-                .bind(&ciyuanxi_id)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten()
-                .is_some();
-            if id_dup || id_pretty {
-                return ctx.err(400, "该弦予号已被占用");
+        if typ == "register" {
+            let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+            if !ciyuanxi_id.is_empty() {
+                let id_dup = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+                    .bind(&ciyuanxi_id)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some();
+                let id_pretty = sqlx::query("SELECT id FROM ciyuanxi_pretty_ids WHERE ciyuanxi_id = ? LIMIT 1")
+                    .bind(&ciyuanxi_id)
+                    .fetch_optional(pool)
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some();
+                if id_dup || id_pretty {
+                    return ctx.err(400, "该弦予号已被占用");
+                }
             }
         }
     }
@@ -910,6 +912,7 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         "login" => "登录",
         "reset_password" => "找回密码",
         "delete_account" => "注销账号",
+        "bind" => "绑定邮箱",
         _ => "注册",
     };
     let title = format!("【弦予音乐】{}验证码", type_label);
