@@ -1,0 +1,2 @@
+[target.x86_64-unknown-linux-musl]
+linker = "d:/Program Files/MC/开发端/开发组/弦予音乐/XianYu-Music-Server/server/zigcc.cmd"

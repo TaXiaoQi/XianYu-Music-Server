@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>DB Modal Reproduction</title>
+<link rel="stylesheet" href="/src/styles/main.css">
+<style>
+/* ===== 复现 AdminLayout 结构 ===== */
+.layout {
+    display: flex;
+    min-height: 100vh;
+    animation: pageFadeIn 0.42s var(--motion) both;
+}
+.main {
+    flex: 1;
+    padding: 28px;
+    overflow-y: auto;
+    min-width: 0;
+    height: 100vh;
+}
+
+/* ===== 复现 Database.vue 弹窗 CSS（编译后） ===== */
+.modal-backdrop {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.modal-dialog {
+  background: var(--white);
+  border-radius: 16px;
+  width: 100%;
+  max-width: 800px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  display: flex;
+  flex-direction: column;
+}
+.modal-lg { max-width: 960px; }
+.modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.modal-head h3 { font-size: 16px; font-weight: 700; margin: 0; }
+.modal-close {
+  width: 32px; height: 32px;
+  border: none;
+  background: #f5f5f5;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted);
+}
+.modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+.modal-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.btn-cancel {
+  padding: 9px 18px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text-light);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.state-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 20px;
+  color: var(--text-muted);
+  gap: 12px;
+  font-size: 14px;
+}
+.spinner {
+  width: 32px; height: 32px;
+  border: 3px solid #e5e5e5;
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+
+/* ===== 过渡动画（编译后） ===== */
+.modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+.modal-enter-active .modal-dialog { animation: modalIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes modalIn {
+  from { opacity: 0; transform: scale(0.92) translateY(20px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* 模拟页面内容 */
+.fake-content { padding: 20px; background: var(--card); border: 1px solid var(--border); border-radius: 14px; margin-bottom: 18px; }
+.fake-content h3 { margin: 0 0 12px; color: var(--text); }
+.fake-table { width: 100%; border-collapse: collapse; }
+.fake-table th, .fake-table td { padding: 10px 14px; border-bottom: 1px solid var(--border); text-align: left; color: var(--text); font-size: 13px; }
+.fake-table th { color: var(--text-muted); font-weight: 600; background: var(--control-bg); }
+.open-btn {
+  margin: 10px 0 30px;
+  padding: 10px 18px;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+</style>
+</head>
+<body>
+  <div class="layout">
+    <div class="main">
+      <div class="fake-content">
+        <h3>数据库表状态</h3>
+        <table class="fake-table">
+          <thead><tr><th>表名</th><th>状态</th><th>行数</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>app_users</td><td>存在</td><td>12345</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>user_feedback</td><td>存在</td><td>678</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>wallpapers</td><td>存在</td><td>89</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>admin_logs</td><td>存在</td><td>4321</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>app_versions</td><td>存在</td><td>15</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>announcements</td><td>存在</td><td>7</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>login_logs</td><td>存在</td><td>9999</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>device_bans</td><td>存在</td><td>3</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>pretty_ids</td><td>存在</td><td>120</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+            <tr><td>server_settings</td><td>存在</td><td>55</td><td><button class="open-btn" onclick="openModal()">查看内容</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="fake-content">
+        <h3>备份列表</h3>
+        <table class="fake-table">
+          <thead><tr><th>文件名</th><th>大小</th><th>创建时间</th><th>操作</th></tr></thead>
+          <tbody>
+            <tr><td>backup_20260815.sql</td><td>2.3 MB</td><td>2026-08-15 10:00</td><td><button class="open-btn" onclick="openModal()">查看</button></td></tr>
+            <tr><td>backup_20260814.sql</td><td>2.1 MB</td><td>2026-08-14 10:00</td><td><button class="open-btn" onclick="openModal()">查看</button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-root">
+    <div class="modal-backdrop" id="backdrop" style="display:none" onclick="if(event.target===this)closeModal()">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-head">
+          <h3>表内容 - app_users</h3>
+          <button class="modal-close" onclick="closeModal()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="state-box">
+            <div class="spinner"></div>
+            <span>加载中...</span>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn-cancel" onclick="closeModal()">关闭</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function openModal() {
+      const b = document.getElementById('backdrop')
+      b.style.display = 'flex'
+      b.classList.add('modal-enter-active')
+      b.classList.add('modal-enter-from')
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          b.classList.remove('modal-enter-from')
+        })
+      })
+      setTimeout(() => b.classList.remove('modal-enter-active'), 350)
+    }
+    function closeModal() {
+      const b = document.getElementById('backdrop')
+      b.classList.add('modal-leave-active')
+      b.classList.add('modal-leave-to')
+      setTimeout(() => {
+        b.style.display = 'none'
+        b.classList.remove('modal-leave-active', 'modal-leave-to')
+      }, 350)
+    }
+    // 自动打开弹窗
+    setTimeout(() => openModal(), 800)
+  </script>
+</body>
+</html>

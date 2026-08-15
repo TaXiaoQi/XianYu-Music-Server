@@ -90,6 +90,11 @@ async fn main() -> anyhow::Result<()> {
             db::ping(&cfg, &pool2).await;
             schema::ensure_schema(&pool2).await;
         });
+        // 启动后台自动备份调度任务
+        let auto_pool = pool.clone();
+        tokio::spawn(async move {
+            admin::db::auto_backup_loop(&auto_pool).await;
+        });
     }
 
     axum::serve(listener, app).await?;
@@ -122,11 +127,11 @@ async fn handle_api(
     let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
 
     // 签名验证（免签操作放行）
-    let no_sign: [&str; 18] = [
+    let no_sign: [&str; 19] = [
         "install", "check", "get_source_status", "upload_avatar",
         "debug_sign", "deduct_master_quota", "get_master_quota_usage",
         "get_captcha", "verify_captcha", "email_send_code", "email_get_captcha_config", "email_get_turnstile_config", "email_register", "email_login", "email_reset_password", "email_get_profile",
-        "open", "get_user_agreement",
+        "open", "get_user_agreement", "get_site_logo",
     ];
     if !state.config.local_debug_no_db && !no_sign.contains(&action.as_str()) {
         let timestamp = headers

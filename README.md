@@ -24,6 +24,68 @@
 | 数据库 | MySQL 8.0+，`utf8mb4` 编码 |
 | 部署 | Nginx 反向代理 + systemd 或 supervisor 守护进程 |
 
+## 架构设计
+
+服务端采用 **Rust + Axum 纯 API 服务** 架构，管理后台前端由服务端直接托管静态文件。整体分为客户端接口（`/api`）、后台接口（`/admin/api`）、静态资源（`/uploads`）三条通道。
+
+![弦予音乐服务端架构](docs/architecture.svg)
+
+### 整体分层
+
+```text
+请求 → Axum Router
+        ├── /api         → handle_api        （客户端接口，action 分发）
+        ├── /admin/api   → handle_admin_api  （后台接口，JWT 鉴权）
+        ├── /uploads     → ServeDir          （静态资源：头像/壁纸/APK）
+        └── 其他         → admin-web dist    （后台前端页面，Spa fallback）
+```
+
+服务端是纯 API 服务，非 `/api`、`/admin/api`、`/uploads` 的路由统一返回 JSON 404（`{code:404,msg:"接口不存在",data:null}`）。
+
+### 客户端请求处理链（/api）
+
+`handle_api` 是客户端接口的统一入口，按 `?action=` 参数分发到具体 handler：
+
+1. **读取请求体**（上限 128MB）
+2. **签名验证**：除免签白名单操作（install/check/验证码/邮箱注册登录等）外，全部校验 `HMAC-SHA256`（兼容旧版 MD5）+ 时间戳容差
+3. **AES 解密**：请求带 `x-encrypted-iv` 头时，用 `api_secret` 派生密钥解密请求体
+4. **限流检查**：账号 + IP 维度限流
+5. **分发**：`handlers::dispatch` 按 action 路由到对应业务模块
+
+### 后台请求处理链（/admin/api）
+
+- `admin_login` 免鉴权，其余接口全部要求 **Bearer JWT**（24 小时时效，20 分钟无操作自动登出）
+- 后台请求体不加密，直接按 JSON 解析
+- 分发到 `admin::dispatch`，覆盖用户、反馈、审核、壁纸、日志、数据库、配置等模块
+
+### 模块组织
+
+```text
+server/src/
+├── main.rs          # 入口 + 双入口路由 + 鉴权/解密/限流管线
+├── config.rs        # config.json + 环境变量双通道配置
+├── db.rs            # MySQL 连接池（10 连接）
+├── schema.rs        # 建表 + ensure_column 平滑补列（兼容旧库）
+├── sign.rs          # 签名验证 + AES 加解密
+├── rate_limit.rs    # API 限流
+├── response.rs      # 统一响应 {code,msg,data} + 加密响应
+├── debug.rs         # 无数据库时的本地缓存降级模式
+├── audit_policy.rs  # 审核策略
+├── handlers/        # 客户端业务：auth/email_auth/settings/social/reporting/sync/upload/wallpaper/playlist/system
+└── admin/           # 后台业务：users/feedback/audit/wallpaper/dashboard/logs/db/config_file/prettyid/version 等
+```
+
+### 关键设计决策
+
+| 设计 | 说明 |
+|---|---|
+| 统一响应格式 | 所有接口返回 `{code, msg, data}`，客户端与后台一致 |
+| 安全双保险 | 客户端接口签名 + 可选 AES 加密（防篡改/防重放），后台 JWT 鉴权 |
+| 数据库降级 | `db_ready` 标志，MySQL 不可用时自动切到本地缓存模式（`data/debug/state.json`），后台仍可用 |
+| Schema 平滑演进 | `ensure_column` 启动时自动 `ALTER TABLE` 补列，旧库升级不报错 |
+| 后台会话管理 | JWT 24 小时时效 + 20 分钟无操作自动登出 |
+| 限流与冷却 | 登录失败触发账号 + IP 冷却，反馈提交每日限额等 |
+
 ## 运行要求
 
 - Rust stable

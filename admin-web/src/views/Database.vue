@@ -27,6 +27,13 @@
           </svg>
           {{ backingUp ? '备份中...' : '数据库备份' }}
         </button>
+        <button class="btn btn-auto-backup" :class="{ active: autoEnabled }" @click="openAutoBackupModal">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
+          </svg>
+          自动备份
+          <span v-if="autoEnabled" class="auto-dot"></span>
+        </button>
         <button class="btn" :disabled="importing" @click="triggerImport">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
@@ -250,6 +257,91 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 自动备份设置弹窗 -->
+    <Transition name="modal">
+      <div v-if="showAutoBackupModal" class="modal-backdrop" @click.self="closeAutoBackupModal">
+        <div class="modal-dialog modal-sm">
+          <div class="modal-head">
+            <h3>自动备份设置</h3>
+            <button class="modal-close" @click="closeAutoBackupModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="autoLoading" class="state-box">
+              <div class="spinner"></div>
+              <span>加载中...</span>
+            </div>
+            <template v-else>
+              <!-- 开关 -->
+              <div class="form-row">
+                <label class="form-label">启用自动备份</label>
+                <label class="toggle">
+                  <input type="checkbox" v-model="autoForm.enabled" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+
+              <!-- 备份间隔 -->
+              <div class="form-row">
+                <label class="form-label">备份间隔</label>
+                <select class="form-select" v-model.number="autoForm.interval_minutes">
+                  <option :value="30">每 30 分钟</option>
+                  <option :value="60">每 1 小时</option>
+                  <option :value="180">每 3 小时</option>
+                  <option :value="360">每 6 小时</option>
+                  <option :value="720">每 12 小时</option>
+                  <option :value="1440">每天</option>
+                  <option :value="2880">每 2 天</option>
+                  <option :value="4320">每 3 天</option>
+                  <option :value="10080">每周</option>
+                </select>
+              </div>
+
+              <!-- 最大保留次数 -->
+              <div class="form-row">
+                <label class="form-label">最大保留份数</label>
+                <div class="form-input-group">
+                  <input type="number" class="form-input" v-model.number="autoForm.max_count" min="1" max="1000" />
+                  <span class="form-hint">超出自动清理最旧备份</span>
+                </div>
+              </div>
+
+              <!-- 备份模式 -->
+              <div class="form-row">
+                <label class="form-label">备份模式</label>
+                <div class="radio-group">
+                  <label class="radio">
+                    <input type="radio" v-model="autoForm.mode" value="full" />
+                    <span class="radio-dot"></span>
+                    <span>全量备份</span>
+                  </label>
+                  <label class="radio">
+                    <input type="radio" v-model="autoForm.mode" value="incremental" />
+                    <span class="radio-dot"></span>
+                    <span>增量备份</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- 说明 -->
+              <div class="form-desc">
+                <p><strong>全量备份</strong>：每次备份所有表的完整结构和数据，文件较大。</p>
+                <p><strong>增量备份</strong>：仅备份行数发生变化的表（基于行数快照对比），文件较小、速度更快。</p>
+                <p class="form-desc-muted">下次自动备份将在设置保存后按间隔时间生效。</p>
+              </div>
+            </template>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeAutoBackupModal">取消</button>
+            <button class="btn btn-primary" :disabled="autoSaving" @click="saveAutoBackupConfig">
+              {{ autoSaving ? '保存中...' : '保存设置' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
@@ -372,6 +464,74 @@ async function doBackup() {
     loadBackups()
   } else {
     showToast(res.msg || '备份失败')
+  }
+}
+
+// ===== 自动备份设置 =====
+interface AutoBackupConfig {
+  enabled: boolean
+  interval_minutes: number
+  max_count: number
+  mode: string
+  last_run?: string
+}
+
+const showAutoBackupModal = ref(false)
+const autoLoading = ref(false)
+const autoSaving = ref(false)
+const autoEnabled = ref(false)
+const autoForm = ref<AutoBackupConfig>({ enabled: false, interval_minutes: 1440, max_count: 20, mode: 'full' })
+
+async function openAutoBackupModal() {
+  showAutoBackupModal.value = true
+  autoLoading.value = true
+  const res = await adminApi<AutoBackupConfig>('get_auto_backup_config')
+  autoLoading.value = false
+  if (res.code === 200 && res.data) {
+    autoForm.value = {
+      enabled: !!res.data.enabled,
+      interval_minutes: Number(res.data.interval_minutes) || 1440,
+      max_count: Number(res.data.max_count) || 20,
+      mode: res.data.mode === 'incremental' ? 'incremental' : 'full',
+      last_run: res.data.last_run,
+    }
+    autoEnabled.value = autoForm.value.enabled
+  } else {
+    showToast(res.msg || '自动备份配置加载失败')
+  }
+}
+
+function closeAutoBackupModal() {
+  if (autoSaving.value) return
+  showAutoBackupModal.value = false
+}
+
+async function saveAutoBackupConfig() {
+  if (autoSaving.value) return
+  const interval = Number(autoForm.value.interval_minutes)
+  const maxCount = Number(autoForm.value.max_count)
+  if (!interval || interval < 1 || interval > 43200) {
+    showToast('备份间隔需在 1 ~ 43200 分钟之间')
+    return
+  }
+  if (!maxCount || maxCount < 1 || maxCount > 1000) {
+    showToast('备份最大次数需在 1 ~ 1000 之间')
+    return
+  }
+  autoSaving.value = true
+  const res = await adminApi<AutoBackupConfig>('save_auto_backup_config', {
+    enabled: autoForm.value.enabled ? 1 : 0,
+    interval_minutes: interval,
+    max_count: maxCount,
+    mode: autoForm.value.mode,
+  })
+  autoSaving.value = false
+  if (res.code === 200) {
+    autoEnabled.value = !!autoForm.value.enabled
+    showToast('自动备份设置已保存', 'success')
+    closeAutoBackupModal()
+  } else {
+    showToast(res.msg || '保存失败')
   }
 }
 
@@ -648,6 +808,28 @@ onMounted(() => {
   background: #16a34a;
   color: #fff;
   border-color: #16a34a;
+}
+.btn-auto-backup {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #7c3aed;
+  position: relative;
+}
+.btn-auto-backup.active {
+  background: #6d28d9;
+  border-color: #6d28d9;
+}
+.auto-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.3);
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 .btn-warning {
   background: #fff;
@@ -982,6 +1164,129 @@ onMounted(() => {
   max-height: 60vh;
   overflow-y: auto;
 }
+
+/* 自动备份表单 */
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+.form-row:first-of-type { padding-top: 0; }
+.form-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.form-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text);
+  font-size: 13px;
+  min-width: 160px;
+  cursor: pointer;
+}
+.form-input-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.form-input {
+  width: 90px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  color: var(--text);
+  font-size: 13px;
+}
+.form-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.radio-group {
+  display: flex;
+  gap: 16px;
+}
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.radio input { display: none; }
+.radio-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  position: relative;
+  transition: border-color 0.2s;
+  flex-shrink: 0;
+}
+.radio input:checked + .radio-dot {
+  border-color: var(--accent);
+}
+.radio input:checked + .radio-dot::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.form-desc {
+  margin-top: 14px;
+  padding: 12px 14px;
+  background: #fafafa;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+.form-desc p {
+  margin: 0 0 6px 0;
+  font-size: 12px;
+  color: var(--text-light);
+  line-height: 1.6;
+}
+.form-desc p:last-child { margin-bottom: 0; }
+.form-desc-muted { color: var(--text-muted) !important; }
+/* 开关 */
+.toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: #d1d5db;
+  border-radius: 24px;
+  transition: background 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  left: 3px;
+  top: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+.toggle input:checked + .toggle-slider { background: var(--accent); }
+.toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
 
 /* 分页 */
 .pagination {

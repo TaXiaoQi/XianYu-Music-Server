@@ -38,7 +38,7 @@ if exist "%~dp0admin-web\dist" (
     echo [3/4] No dist, skip
 )
 if exist "%~dp0admin-web\node_modules\.vite" (
-    echo [3/4] Removing Vite dev cache (.vite)...
+    echo [3/4] Removing Vite dev cache [.vite]...
     rmdir /s /q "%~dp0admin-web\node_modules\.vite"
 )
 echo.

@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 665" width="100%" font-family="'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L7 4 L1 7 Z" fill="#9ca3af"/>
+    </marker>
+    <marker id="arrow-brand" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L7 4 L1 7 Z" fill="#7c5cff"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="760" height="665" fill="#ffffff"/>
+
+  <!-- ===== Row 1: 客户端 ===== -->
+  <rect x="80" y="30" width="270" height="52" rx="10" fill="#f5f3ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text x="215" y="62" text-anchor="middle" font-size="15" font-weight="600" fill="#4c1d95">客户端桌面 App</text>
+
+  <rect x="410" y="30" width="270" height="52" rx="10" fill="#f5f3ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text x="545" y="62" text-anchor="middle" font-size="15" font-weight="600" fill="#4c1d95">管理后台浏览器</text>
+
+  <path d="M215 82 C215 100, 340 100, 340 122" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M545 82 C545 100, 420 100, 420 122" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== Row 2: Axum Router ===== -->
+  <rect x="280" y="122" width="200" height="56" rx="10" fill="#7c5cff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text x="380" y="147" text-anchor="middle" font-size="15" font-weight="600" fill="#ffffff">Axum Router</text>
+  <text x="380" y="166" text-anchor="middle" font-size="11" fill="#e9d5ff">统一入口 · 按 action 分发</text>
+
+  <path d="M320 178 L160 218" fill="none" stroke="#7c5cff" stroke-width="1.5" marker-end="url(#arrow-brand)"/>
+  <path d="M380 178 L380 218" fill="none" stroke="#7c5cff" stroke-width="1.5" marker-end="url(#arrow-brand)"/>
+  <path d="M440 178 L600 218" fill="none" stroke="#7c5cff" stroke-width="1.5" marker-end="url(#arrow-brand)"/>
+
+  <!-- ===== Row 3: 三条通道 ===== -->
+  <rect x="60" y="218" width="200" height="56" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="160" y="246" text-anchor="middle" font-size="14" font-weight="600" fill="#111827">/api</text>
+  <text x="160" y="264" text-anchor="middle" font-size="11" fill="#6b7280">客户端接口 · action 分发</text>
+
+  <rect x="280" y="218" width="200" height="56" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="380" y="246" text-anchor="middle" font-size="14" font-weight="600" fill="#111827">/admin/api</text>
+  <text x="380" y="264" text-anchor="middle" font-size="11" fill="#6b7280">后台接口 · JWT 鉴权</text>
+
+  <rect x="500" y="218" width="200" height="56" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="600" y="246" text-anchor="middle" font-size="14" font-weight="600" fill="#111827">/uploads</text>
+  <text x="600" y="264" text-anchor="middle" font-size="11" fill="#6b7280">静态资源 · ServeDir</text>
+
+  <path d="M160 274 L160 314" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M380 274 L380 314" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M600 274 L600 314" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== Row 4: 处理管线 ===== -->
+  <rect x="60" y="314" width="200" height="88" rx="10" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text x="160" y="340" text-anchor="middle" font-size="13" fill="#374151">签名验证</text>
+  <text x="160" y="360" text-anchor="middle" font-size="13" fill="#374151">AES 解密</text>
+  <text x="160" y="380" text-anchor="middle" font-size="13" fill="#374151">限流检查</text>
+
+  <rect x="280" y="314" width="200" height="88" rx="10" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text x="380" y="348" text-anchor="middle" font-size="13" fill="#374151">JWT 鉴权</text>
+  <text x="380" y="368" text-anchor="middle" font-size="13" fill="#374151">Bearer Token</text>
+
+  <rect x="500" y="314" width="200" height="88" rx="10" fill="#f3f4f6" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text x="600" y="348" text-anchor="middle" font-size="13" fill="#374151">ServeDir</text>
+  <text x="600" y="368" text-anchor="middle" font-size="13" fill="#374151">静态文件服务</text>
+
+  <path d="M160 402 L160 442" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M380 402 L380 442" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M600 402 L600 442" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== Row 5: 分发 ===== -->
+  <rect x="60" y="442" width="200" height="56" rx="10" fill="#f5f3ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text x="160" y="470" text-anchor="middle" font-size="13" font-family="Consolas, monospace" font-weight="600" fill="#4c1d95">handlers::dispatch</text>
+  <text x="160" y="488" text-anchor="middle" font-size="11" fill="#6b7280">60+ action</text>
+
+  <rect x="280" y="442" width="200" height="56" rx="10" fill="#f5f3ff" stroke="#7c5cff" stroke-width="1.5"/>
+  <text x="380" y="470" text-anchor="middle" font-size="13" font-family="Consolas, monospace" font-weight="600" fill="#4c1d95">admin::dispatch</text>
+  <text x="380" y="488" text-anchor="middle" font-size="11" fill="#6b7280">90+ action</text>
+
+  <rect x="500" y="442" width="200" height="56" rx="10" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="600" y="470" text-anchor="middle" font-size="13" fill="#374151">uploads/ 目录</text>
+  <text x="600" y="488" text-anchor="middle" font-size="11" fill="#6b7280">头像 · 壁纸 · APK</text>
+
+  <path d="M160 498 L160 538" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <path d="M380 498 L380 538" fill="none" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- ===== Row 6: 数据层 ===== -->
+  <rect x="60" y="538" width="440" height="80" rx="10" fill="#eef2ff" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="280" y="566" text-anchor="middle" font-size="15" font-weight="600" fill="#1e3a8a">MySQL 数据库</text>
+  <text x="280" y="588" text-anchor="middle" font-size="11" fill="#6b7280">app_users · admin_users · user_feedback · wallpapers · ...</text>
+
+  <rect x="520" y="538" width="200" height="80" rx="10" fill="#f9fafb" stroke="#d1d5db" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="620" y="566" text-anchor="middle" font-size="13" font-weight="600" fill="#374151">本地缓存</text>
+  <text x="620" y="586" text-anchor="middle" font-size="11" fill="#6b7280">data/debug/state.json</text>
+  <text x="620" y="604" text-anchor="middle" font-size="11" fill="#9ca3af">数据库不可用时自动降级</text>
+
+  <!-- ===== 脚注 ===== -->
+  <text x="380" y="645" text-anchor="middle" font-size="12" fill="#6b7280">其他路由 → admin-web dist（Spa fallback）</text>
+</svg>

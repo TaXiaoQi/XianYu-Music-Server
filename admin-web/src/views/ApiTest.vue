@@ -70,6 +70,8 @@
                 v-for="(r, i) in mainResults"
                 :key="'main-' + r.name"
                 :class="rowClass(r)"
+                class="row-anim"
+                :style="{ animationDelay: `${i * 40}ms` }"
               >
                 <td class="col-idx">{{ i + 1 }}</td>
                 <td>
@@ -363,6 +365,15 @@ function clearMain() {
 .data-table tbody tr.row-testing { background: #fbfbfe; }
 .data-table tbody tr.row-failed { background: #fffdfd; }
 .data-table tbody tr.row-failed:hover { background: #fff8f8; }
+
+/* 表格行逐条加载动画（与数据库管理页一致） */
+.data-table tbody tr.row-anim {
+  animation: rowIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
 
 .col-idx { width: 44px; color: var(--text-muted); font-weight: 600; text-align: center; }
 .col-status { width: 92px; white-space: nowrap; }

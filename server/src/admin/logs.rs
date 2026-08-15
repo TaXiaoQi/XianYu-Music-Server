@@ -150,11 +150,11 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     let status_filter = str_of(&data, "status_filter").trim().to_string();
     let offset = (page - 1) * page_size;
 
-    // 构建条件
+    // 构建条件（列名带 l. 前缀，便于与兜底左连接一起使用）
     let mut conditions: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
     if !keyword.is_empty() {
-        conditions.push("(admin_username LIKE ? OR ip LIKE ? OR device_id LIKE ? OR device_model LIKE ?)".to_string());
+        conditions.push("(l.admin_username LIKE ? OR l.ip LIKE ? OR l.device_id LIKE ? OR l.device_model LIKE ?)".to_string());
         let pat = format!("%{}%", keyword);
         binds.push(pat.clone());
         binds.push(pat.clone());
@@ -162,9 +162,9 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
         binds.push(pat);
     }
     if status_filter == "success" {
-        conditions.push("status = 1".to_string());
+        conditions.push("l.status = 1".to_string());
     } else if status_filter == "failed" {
-        conditions.push("status = 0".to_string());
+        conditions.push("l.status = 0".to_string());
     }
     let where_clause = if conditions.is_empty() {
         String::new()
@@ -173,16 +173,24 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     };
 
     // 查询总数
-    let count_sql = format!("SELECT COUNT(*) FROM admin_app_login_log {}", where_clause);
+    let count_sql = format!("SELECT COUNT(*) FROM admin_app_login_log l {}", where_clause);
     let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
     for b in &binds {
         count_query = count_query.bind(b);
     }
     let filtered_total = count_query.fetch_one(pool).await.unwrap_or(0);
 
-    // 查询列表
+    // 查询列表：若某条日志的 device_model / app_version / os_version 为空，
+    // 则从 app_open_log 取该设备最近一次记录的设备信息兜底补全（与设备管理页一致）：
     let list_sql = format!(
-        "SELECT * FROM admin_app_login_log {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        "SELECT l.*, \
+         COALESCE(NULLIF(l.device_model, ''), ao.device_model, '') AS device_model, \
+         COALESCE(NULLIF(l.app_version, ''), ao.app_version, '') AS app_version, \
+         COALESCE(NULLIF(l.os_version, ''), ao.os_version, '') AS os_version \
+         FROM admin_app_login_log l \
+         LEFT JOIN (SELECT device_id, device_model, app_version, os_version FROM app_open_log WHERE id IN (SELECT MAX(id) FROM app_open_log GROUP BY device_id)) ao \
+         ON ao.device_id = l.device_id AND l.device_id != '' \
+         {} ORDER BY l.created_at DESC LIMIT ? OFFSET ?",
         where_clause
     );
     let mut list_query = sqlx::query(&list_sql);

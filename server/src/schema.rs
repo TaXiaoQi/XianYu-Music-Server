@@ -392,6 +392,10 @@ static TABLE_STATEMENTS: &[&str] = &[
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('turnstile_enabled', '0', '是否启用 Cloudflare Turnstile 人机验证：1=启用，0=关闭')",
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('turnstile_site_key', '', 'Cloudflare Turnstile Site Key（前端展示用）')",
         "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('turnstile_secret', '', 'Cloudflare Turnstile Secret Key（后端校验用，留空则回退环境变量 TURNSTILE_SECRET）')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('auto_backup_enabled', '0', '自动备份开关：1=开启，0=关闭')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('auto_backup_interval', '1440', '自动备份间隔（分钟），默认 1440=每天')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('auto_backup_max_count', '20', '自动备份最大保留份数，超出自动清理最旧备份')",
+        "INSERT IGNORE INTO `server_settings` (`setting_key`, `setting_value`, `description`) VALUES ('auto_backup_mode', 'full', '备份模式：full=全量，incremental=增量')",
         "CREATE TABLE IF NOT EXISTS `wallpaper_upload_limits` (
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `upload_limit` int(11) NOT NULL DEFAULT 20,

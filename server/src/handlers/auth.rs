@@ -554,7 +554,31 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let master_quota: i64 = user.try_get::<i64, _>("master_quota").unwrap_or(0);
     clear_login_failures(&matched, &ctx, pool).await;
 
-    // 记录 APP 登录日志
+    // 记录 APP 登录日志（若请求未携带设备信息，则从 app_open_log 按 device_id 兜底补全）
+    let mut log_device_model = str_of(&data, "device_model").trim().to_string();
+    let mut log_app_version = str_of(&data, "app_version").trim().to_string();
+    let mut log_os_version = str_of(&data, "os_version").trim().to_string();
+    if !login_device_id.is_empty()
+        && (log_device_model.is_empty() || log_app_version.is_empty() || log_os_version.is_empty())
+    {
+        if let Ok(Some(r)) = sqlx::query(
+            "SELECT device_model, app_version, os_version FROM app_open_log WHERE device_id = ? AND device_id != '' ORDER BY id DESC LIMIT 1",
+        )
+        .bind(&login_device_id)
+        .fetch_optional(pool)
+        .await
+        {
+            if log_device_model.is_empty() {
+                log_device_model = r.try_get::<String, _>("device_model").unwrap_or_default();
+            }
+            if log_app_version.is_empty() {
+                log_app_version = r.try_get::<String, _>("app_version").unwrap_or_default();
+            }
+            if log_os_version.is_empty() {
+                log_os_version = r.try_get::<String, _>("os_version").unwrap_or_default();
+            }
+        }
+    }
     let _ = sqlx::query(
         "INSERT INTO admin_app_login_log (admin_id, admin_username, ip, user_agent, device_id, device_model, app_version, os_version, status, extra) VALUES (?,?,?,?,?,?,?,?,1,?)",
     )
@@ -562,10 +586,10 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     .bind(&uname)
     .bind(&ctx.client_ip)
     .bind("")
-    .bind(str_of(&data, "device_id"))
-    .bind(str_of(&data, "device_model"))
-    .bind(str_of(&data, "app_version"))
-    .bind(str_of(&data, "os_version"))
+    .bind(&login_device_id)
+    .bind(&log_device_model)
+    .bind(&log_app_version)
+    .bind(&log_os_version)
     .bind("user_login")
     .execute(pool)
     .await;

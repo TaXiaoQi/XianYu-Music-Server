@@ -516,12 +516,12 @@ onMounted(() => {
   .detail-grid { grid-template-columns: 1fr; }
 }
 
-/* 表格行逐条加载动画 */
-.data-table tr.table-row {
-  animation: rowIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+/* 表格行逐条加载动画（与数据库管理页一致） */
+tr.table-row {
+  animation: rowIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes rowIn {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
