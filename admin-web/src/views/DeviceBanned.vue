@@ -101,8 +101,7 @@
                     <svg v-if="isAllSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                   </span>
                 </th>
-                <th>设备ID</th>
-                <th>硬件型号</th>
+                <th>设备</th>
                 <th>系统版本</th>
                 <th>应用版本</th>
                 <th>关联账号</th>
@@ -118,8 +117,12 @@
                     <svg v-if="selectedIds.has(d.device_id)" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                   </span>
                 </td>
-                <td class="col-device" :title="d.device_id">{{ d.device_id }}</td>
-                <td class="col-model">{{ d.device_model || '-' }}</td>
+                <td class="col-device-cell">
+                  <div class="device-cell">
+                    <span class="device-model">{{ d.device_model || '未知型号' }}</span>
+                    <span class="device-id" :title="d.device_id">{{ d.device_id }}</span>
+                  </div>
+                </td>
                 <td class="col-os">{{ d.os_version || '-' }}</td>
                 <td class="col-version">{{ d.app_version || '-' }}</td>
                 <td class="col-account">
@@ -760,8 +763,26 @@ tbody tr.table-row { animation: rowIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
 tbody tr:hover td { background: #fafbfc; }
 @keyframes rowIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-.col-device { font-family: monospace; font-size: 11px; word-break: break-all; max-width: 200px; }
-.col-model { white-space: nowrap; max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.col-device-cell { min-width: 200px; max-width: 240px; }
+.device-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.device-model {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
+.device-id {
+  font-family: monospace;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 220px;
+}
 .col-os { white-space: nowrap; font-size: 12px; }
 .col-version { white-space: nowrap; font-size: 12px; color: var(--text-muted); }
 .col-account { min-width: 120px; }

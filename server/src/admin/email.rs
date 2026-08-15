@@ -52,14 +52,16 @@ pub async fn notify_external_emails_for_module(
     if !NOTIFY_MODULES.contains(&module) {
         return Vec::new();
     }
-    if !notify_module_enabled(pool, module).await {
-        return Vec::new();
-    }
     let login_base = if !base_url.trim().is_empty() {
         base_url.to_string()
     } else {
         "https://back.xymusic.cc/".to_string()
     };
+    // 触发统一事件广播（Webhook + WS订阅 + SSE订阅），内部自行检查各通道开关与板块配置
+    super::commtool::broadcast_event(pool, module, subject, body, image_url, &login_base).await;
+    if !notify_module_enabled(pool, module).await {
+        return Vec::new();
+    }
     let html = build_review_email_html(subject, body, image_url, &login_base);
     let plain = body.to_string();
 

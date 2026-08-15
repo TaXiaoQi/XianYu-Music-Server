@@ -421,6 +421,24 @@ onMounted(() => {
 .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* 详情弹窗 */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal {
+  background: var(--white);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  width: 500px;
+  max-width: 100%;
+}
 .modal-wide {
   width: 90%;
   max-width: 800px;

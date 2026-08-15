@@ -204,7 +204,7 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               完成
             </button>
-            <button v-if="(f.status === 'pending' || f.status === 'processing') && (f.status === 'pending' || isMineFeedback(f))" class="act-btn act-reject" @click="setStatusOf(f, 'rejected')">
+            <button v-if="f.status === 'pending'" class="act-btn act-reject" @click="setStatusOf(f, 'rejected')">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               拒绝
             </button>

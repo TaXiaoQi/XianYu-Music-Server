@@ -15,28 +15,27 @@
       </div>
 
       <div class="toolbar-actions">
-        <Transition name="batch-swap" mode="out-in">
-          <div v-if="!isBatchMode" key="normal" class="toolbar-actions-row">
-            <button class="btn btn-primary" @click="showAddModal = true">+ 添加用户</button>
-            <button class="btn btn-dark" @click="enterBatchMode">批量管理</button>
-          </div>
-
-          <div v-else key="batch" class="batch-mode-bar">
-            <button class="btn btn-sm" @click="toggleSelectAll">
-              <span class="checkbox-badge" :class="{ checked: isAllSelected }">
-                <svg v-if="isAllSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              </span>
-              {{ isAllSelected ? '取消全选' : '全选' }}
-            </button>
-            <button class="btn btn-sm" @click="batchToggleSelected(0)" :disabled="selectedCount === 0 || batchLoading">封禁</button>
-            <button class="btn btn-sm" @click="batchToggleSelected(1)" :disabled="selectedCount === 0 || batchLoading">启用</button>
-            <button class="btn btn-sm" @click="batchBanDevice" :disabled="selectedCount === 0 || batchLoading">封禁ID</button>
-            <button class="btn btn-sm btn-danger" @click="batchDeleteSelected" :disabled="selectedCount === 0 || batchLoading">删除</button>
-            <button class="btn btn-sm" @click="deleteEmptyPlaylists" :disabled="batchLoading">清空歌单</button>
-            <span class="batch-count">已选 {{ selectedCount }} 项</span>
-            <button class="btn btn-sm btn-primary" @click="exitBatchMode">完成</button>
-          </div>
-        </Transition>
+        <button class="btn btn-primary" @click="openAddModal">+ 添加用户</button>
+        <div class="batch-slot">
+          <Transition name="batch-slide">
+            <div v-if="isBatchMode" key="batch" class="batch-bar">
+              <button class="batch-act" @click="toggleSelectAll">
+                <span class="checkbox-badge" :class="{ checked: isAllSelected }">
+                  <svg v-if="isAllSelected" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                </span>
+                {{ isAllSelected ? '取消全选' : '全选' }}
+              </button>
+              <button class="batch-act" @click="batchToggleSelected(0)" :disabled="selectedCount === 0 || batchLoading">封禁</button>
+              <button class="batch-act" @click="batchToggleSelected(1)" :disabled="selectedCount === 0 || batchLoading">启用</button>
+              <button class="batch-act" @click="batchBanDevice" :disabled="selectedCount === 0 || batchLoading">封禁ID</button>
+              <button class="batch-act batch-act--danger" @click="batchDeleteSelected" :disabled="selectedCount === 0 || batchLoading">删除</button>
+              <button class="batch-act" @click="deleteEmptyPlaylists" :disabled="batchLoading">清空歌单</button>
+              <span class="batch-count">已选 {{ selectedCount }} 项</span>
+              <button class="batch-act batch-act--primary" @click="exitBatchMode">完成</button>
+            </div>
+            <button v-else key="enter" class="btn-batch-enter" @click="enterBatchMode">批量管理</button>
+          </Transition>
+        </div>
       </div>
     </div>
     </Transition>
@@ -136,20 +135,20 @@
         <h3>添加用户</h3>
         <div class="form-group">
           <label class="required">弦予号</label>
-          <input v-model="addForm.username" type="text" placeholder="6-20 位，仅含字母或数字" />
+          <input v-model="addForm.username" type="text" placeholder="6-20 位，仅含字母或数字" autocomplete="off" />
           <div class="hint">用于登录，6-20 位，仅含字母或数字（支持大小写字母）</div>
         </div>
         <div class="form-group">
           <label class="required">密码</label>
-          <input v-model="addForm.password" type="password" placeholder="至少 6 位" />
+          <input v-model="addForm.password" type="password" placeholder="至少 6 位" autocomplete="new-password" />
         </div>
         <div class="form-group">
           <label>昵称（选填）</label>
-          <input v-model="addForm.nickname" type="text" placeholder='留空默认"弦予+弦予号"' />
+          <input v-model="addForm.nickname" type="text" placeholder='留空默认"弦予+弦予号"' autocomplete="off" />
         </div>
         <div class="form-group">
           <label>邮箱（选填）</label>
-          <input v-model="addForm.email" type="email" placeholder="留空则不绑定" />
+          <input v-model="addForm.email" type="email" placeholder="留空则不绑定" autocomplete="off" />
         </div>
         <div class="modal-actions">
           <button class="btn" @click="showAddModal = false">取消</button>
@@ -781,6 +780,11 @@ const showAddModal = ref(false)
 const addLoading = ref(false)
 const addForm = ref({ username: '', nickname: '', password: '', email: '' })
 
+function openAddModal() {
+  addForm.value = { username: '', nickname: '', password: '', email: '' }
+  showAddModal.value = true
+}
+
 async function submitAddUser() {
   const ciyuanxi = addForm.value.username.trim()
   if (ciyuanxi.length < 6) {
@@ -1131,28 +1135,98 @@ onMounted(() => {
   gap: 10px;
   flex-wrap: wrap;
 }
-/* 批量菜单打开/关闭切换动效 */
-.batch-swap-enter-active,
-.batch-swap-leave-active {
-  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.batch-swap-enter-from {
-  opacity: 0;
-  transform: translateY(-6px) scale(0.97);
-}
-.batch-swap-leave-to {
-  opacity: 0;
-  transform: translateY(4px) scale(0.97);
-}
-.batch-mode-bar {
+/* 批量菜单向左弹出/收回动效（参考反馈页，固定高度避免挤压主表） */
+.batch-slot {
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
+}
+.batch-slide-enter-active,
+.batch-slide-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.batch-slide-enter-from {
+  opacity: 0;
+  transform: translateX(30px);
+}
+.batch-slide-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
+}
+.btn-batch-enter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.btn-batch-enter:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  height: 32px;
+  border-radius: 9px;
   background: var(--accent-soft);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+.batch-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.batch-act:hover {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+.batch-act:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.batch-act--danger {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: #fff;
+}
+.batch-act--danger:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+.batch-act--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.batch-act--primary:hover {
+  border-color: var(--accent);
+  color: #fff;
 }
 .batch-count {
   font-size: 12px;

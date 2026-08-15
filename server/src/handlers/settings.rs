@@ -561,6 +561,70 @@ pub async fn update_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     ctx.ok("弦予号修改成功", json!({ "ciyuanxi_id": new_ciyuanxi_id }))
 }
 
+/// 绑定邮箱（通过 type='bind' 的邮箱验证码）
+pub async fn bind_email(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = extract_id(&data);
+    let email = str_of(&data, "email").trim().to_string();
+    let verify_code = str_of(&data, "verify_code").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "当前账号不能为空");
+    }
+    if email.is_empty() || !email.contains('@') || email.contains(' ') {
+        return ctx.err(400, "邮箱格式不正确");
+    }
+    if verify_code.is_empty() {
+        return ctx.err(400, "请输入邮箱验证码");
+    }
+    let user = sqlx::query("SELECT id, email FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
+        .bind(&ciyuanxi_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return ctx.err(404, "用户不存在");
+    };
+    let current_email: String = user.get("email");
+    if !current_email.is_empty() {
+        return ctx.err(400, "当前账号已绑定邮箱");
+    }
+    let dup = sqlx::query("SELECT id FROM app_users WHERE email = ? LIMIT 1")
+        .bind(&email)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+        .is_some();
+    if dup {
+        return ctx.err(400, "该邮箱已绑定其他账号");
+    }
+    let code_row = sqlx::query(
+        "SELECT id FROM email_verify_codes WHERE email = ? AND code = ? AND type = 'bind' AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&email)
+    .bind(&verify_code)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    let Some(code_row) = code_row else {
+        return ctx.err(400, "验证码无效或已过期");
+    };
+    let code_id: i64 = code_row.get("id");
+    let uid: i64 = user.get("id");
+    let _ = sqlx::query("UPDATE app_users SET email = ?, email_verified = 1 WHERE id = ?")
+        .bind(&email)
+        .bind(uid)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("UPDATE email_verify_codes SET used = 1 WHERE id = ?")
+        .bind(code_id)
+        .execute(pool)
+        .await;
+    ctx.ok("邮箱绑定成功", json!({ "email": email }))
+}
+
 pub async fn get_avatar_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = extract_id(&data);

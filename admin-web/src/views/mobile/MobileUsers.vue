@@ -1,34 +1,39 @@
 <template>
   <div class="mobile-page">
     <div class="mobile-card mobile-toolbar">
-      <div v-if="!isBatchMode" class="mobile-search-row">
+      <!-- 第一行：仅搜索 -->
+      <div class="mobile-search-row">
         <input v-model="keyword" class="mobile-input" placeholder="搜索昵称 / 弦予号 / 邮箱" @keyup.enter="loadList" />
-          <button class="mobile-btn primary" @click="loadList">搜索</button>
-          <button class="mobile-btn" @click="openAdd = !openAdd">{{ openAdd ? '收起新增' : '新增用户' }}</button>
-        <router-link to="/m/device-banned" custom v-slot="{ navigate }">
-          <button class="mobile-btn" @click="navigate">设备管理</button>
-        </router-link>
-        <button class="mobile-btn primary" @click="enterBatchMode">批量管理</button>
+        <button class="mobile-btn primary" @click="loadList">搜索</button>
       </div>
-      <div v-else class="mobile-batch-bar">
-          <button class="mobile-btn" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</button>
-          <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchToggleSelected(0)">封禁</button>
-          <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchToggleSelected(1)">启用</button>
-          <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchBanDevice">封禁ID</button>
-          <button class="mobile-btn danger" :disabled="selectedCount === 0" @click="batchDeleteSelected">删除</button>
-          <button class="mobile-btn danger" @click="deleteEmptyFavorites">清空歌单</button>
-          <span class="mobile-batch-count">已选 {{ selectedCount }} 项</span>
-          <button class="mobile-btn primary" @click="exitBatchMode">完成</button>
+      <!-- 第二行：新增用户（左）+ 批量菜单（右） -->
+      <div class="mobile-toolbar-row">
+        <button class="mobile-btn" @click="toggleAdd">{{ openAdd ? '收起新增' : '新增用户' }}</button>
+        <div class="batch-slot">
+          <Transition name="batch-slide">
+            <div v-if="isBatchMode" key="batch" class="mobile-batch-bar">
+              <button class="mobile-btn" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</button>
+              <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchToggleSelected(0)">封禁</button>
+              <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchToggleSelected(1)">启用</button>
+              <button class="mobile-btn" :disabled="selectedCount === 0" @click="batchBanDevice">封禁ID</button>
+              <button class="mobile-btn danger" :disabled="selectedCount === 0" @click="batchDeleteSelected">删除</button>
+              <button class="mobile-btn danger" @click="deleteEmptyFavorites">清空歌单</button>
+              <span class="mobile-batch-count">已选 {{ selectedCount }} 项</span>
+              <button class="mobile-btn primary" @click="exitBatchMode">完成</button>
+            </div>
+            <button v-else key="enter" class="mobile-btn" @click="enterBatchMode">批量管理</button>
+          </Transition>
         </div>
       </div>
+    </div>
     <transition name="user-expand">
       <div v-if="openAdd" class="mobile-card mobile-form user-expand-wrap">
         <div class="user-expand-inner">
           <h3 class="mobile-card-title">新增用户</h3>
-          <input v-model="addForm.ciyuanxi_id" class="mobile-input" placeholder="弦予号（必填，仅含字母或数字）" />
-          <input v-model="addForm.password" class="mobile-input" placeholder="密码（必填）" type="password" />
-          <input v-model="addForm.nickname" class="mobile-input" placeholder="昵称（选填，留空默认弦予+号）" />
-          <input v-model="addForm.email" class="mobile-input" placeholder="邮箱（选填）" />
+          <input v-model="addForm.ciyuanxi_id" class="mobile-input" placeholder="弦予号（必填，仅含字母或数字）" autocomplete="off" />
+          <input v-model="addForm.password" class="mobile-input" placeholder="密码（必填）" type="password" autocomplete="new-password" />
+          <input v-model="addForm.nickname" class="mobile-input" placeholder="昵称（选填，留空默认弦予+号）" autocomplete="off" />
+          <input v-model="addForm.email" class="mobile-input" placeholder="邮箱（选填）" autocomplete="off" />
           <button class="mobile-btn primary" :disabled="saving" @click="addUser">{{ saving ? '提交中...' : '确认新增' }}</button>
         </div>
       </div>
@@ -229,6 +234,13 @@ const saving = ref(false)
 const openAdd = ref(false)
 const list = ref<any[]>([])
 const addForm = ref({ ciyuanxi_id: '', nickname: '', password: '', email: '' })
+
+function toggleAdd() {
+  openAdd.value = !openAdd.value
+  if (openAdd.value) {
+    addForm.value = { ciyuanxi_id: '', nickname: '', password: '', email: '' }
+  }
+}
 const showPluginsModal = ref(false)
 const pluginsLoading = ref(false)
 const pluginsData = ref<any>({})
@@ -691,7 +703,7 @@ onMounted(loadList)
 .badge-success { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
 .badge-error { background: rgba(236, 65, 65, 0.10); color: #EC4141; }
 
-/* 顶部工具栏：搜索框 + 搜索/新增/批量按钮同行，按钮在右侧 */
+/* 顶部工具栏：第一行搜索，第二行 新增用户(左) + 批量菜单(右) */
 .mobile-toolbar {
   display: flex;
   flex-direction: column;
@@ -701,6 +713,8 @@ onMounted(loadList)
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 36px;
+  overflow: hidden;
 }
 .mobile-search-row .mobile-input {
   flex: 1;
@@ -710,24 +724,59 @@ onMounted(loadList)
   flex: 0 0 auto;
   white-space: nowrap;
 }
-.mobile-toolbar-actions {
-  width: 100%;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-}
-.mobile-toolbar-actions > .mobile-batch-bar {
-  width: 100%;
-}
 
-/* 批量选择模式 */
-.mobile-batch-bar {
+/* 第二行：新增用户（左）+ 批量菜单槽位（右），固定高度，批量条替换按钮时高度不变，不挤压主表 */
+.mobile-toolbar-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 0 2px;
-  border-top: 1px dashed var(--border);
-  margin-top: 2px;
+  height: 36px;
+}
+.batch-slot {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* 批量条：参考桌面端用户管理样式，向右弹出，固定高度不改动布局 */
+.mobile-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 9px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  overflow-x: auto;
+  max-width: 100%;
+  scrollbar-width: thin;
+}
+.mobile-batch-bar .mobile-btn {
+  flex: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+.mobile-batch-bar .mobile-batch-count {
+  flex: none;
+}
+
+/* 批量菜单向右弹出/收回动画（参考桌面端用户管理） */
+.batch-slide-enter-active,
+.batch-slide-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.batch-slide-enter-from,
+.batch-slide-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
 }
 .mobile-batch-count {
   margin-left: auto;

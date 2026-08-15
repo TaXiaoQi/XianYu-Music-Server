@@ -2,17 +2,21 @@
   <div class="mobile-page">
     <!-- 搜索工具栏 -->
     <div class="mobile-card mobile-toolbar">
-      <div v-if="!isBatchMode" class="mobile-search-row">
-        <input v-model="keyword" class="mobile-input" placeholder="搜索设备ID / 型号 / 弦予号" @keyup.enter="loadDevices" />
-        <button class="mobile-btn primary" @click="loadDevices">搜索</button>
-        <button class="mobile-btn" @click="showBanForm = !showBanForm">{{ showBanForm ? '收起' : '手动封禁' }}</button>
-        <button class="mobile-btn primary" @click="enterBatchMode">批量管理</button>
-      </div>
-      <div v-else class="mobile-batch-bar">
-        <button class="mobile-btn" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</button>
-        <button class="mobile-btn danger" :disabled="selectedCount === 0 || batchLoading" @click="batchDelete">删除</button>
-        <span class="mobile-batch-count">已选 {{ selectedCount }} 项</span>
-        <button class="mobile-btn primary" @click="exitBatchMode">完成</button>
+      <div class="toolbar-slot">
+        <div class="mobile-search-row">
+          <input v-model="keyword" class="mobile-input" placeholder="搜索设备ID / 型号 / 弦予号" @keyup.enter="loadDevices" />
+          <button class="mobile-btn primary" @click="loadDevices">搜索</button>
+          <button class="mobile-btn" @click="showBanForm = !showBanForm">{{ showBanForm ? '收起' : '手动封禁' }}</button>
+          <button class="mobile-btn primary" @click="enterBatchMode">批量管理</button>
+        </div>
+        <Transition name="batch-slide">
+          <div v-if="isBatchMode" class="mobile-batch-bar">
+            <button class="mobile-btn" @click="toggleSelectAll">{{ isAllSelected ? '取消全选' : '全选' }}</button>
+            <button class="mobile-btn danger" :disabled="selectedCount === 0 || batchLoading" @click="batchDelete">删除</button>
+            <span class="mobile-batch-count">已选 {{ selectedCount }} 项</span>
+            <button class="mobile-btn primary" @click="exitBatchMode">完成</button>
+          </div>
+        </Transition>
       </div>
     </div>
 
@@ -458,10 +462,16 @@ onMounted(loadDevices)
   flex-direction: column;
   gap: 10px;
 }
+/* 工具栏槽位：搜索行始终占位，批量条悬浮覆盖其上，切换时高度不变，避免挤压主表 */
+.toolbar-slot {
+  position: relative;
+}
 .mobile-search-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 40px;
+  overflow: hidden;
 }
 .mobile-search-row .mobile-input {
   flex: 1;
@@ -472,15 +482,40 @@ onMounted(loadDevices)
   white-space: nowrap;
 }
 
-/* 批量模式 */
+/* 批量模式：绝对定位悬浮覆盖搜索行，不参与文档流，切换时零位移 */
 .mobile-batch-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
-  padding: 10px 0 2px;
-  border-top: 1px dashed var(--border);
-  margin-top: 2px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 0;
+  border: none;
+  margin: 0;
+  background: var(--card);
+  scrollbar-width: thin;
+  z-index: 5;
+}
+.mobile-batch-bar .mobile-btn {
+  flex: none;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+/* 批量条向左滑出/收回动画 */
+.batch-slide-enter-active,
+.batch-slide-leave-active {
+  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.batch-slide-enter-from,
+.batch-slide-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
 }
 .mobile-batch-count {
   margin-left: auto;
