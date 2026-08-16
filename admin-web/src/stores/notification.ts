@@ -133,6 +133,9 @@ export const useNotificationStore = defineStore('notification', () => {
     Object.values(state.value.totals).reduce((sum, n) => sum + Number(n || 0), 0),
   )
 
+  /** 各模块待处理数量（供铃铛消息通知列表展示） */
+  const totals = computed(() => ({ ...state.value.totals }))
+
   const permissionLabel = computed(() => {
     switch (permission.value) {
       case 'granted':
@@ -323,6 +326,7 @@ export const useNotificationStore = defineStore('notification', () => {
     nativeBridgeAvailable,
     supportedByBrowser,
     pendingTotal,
+    totals,
     permissionLabel,
     moduleList: MODULE_META,
     requestPermission,

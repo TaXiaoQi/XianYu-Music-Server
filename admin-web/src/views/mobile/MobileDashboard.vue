@@ -81,27 +81,6 @@
       </div>
     </div>
 
-    <!-- 消息通知 -->
-    <div v-if="!loading && !loadError" class="mobile-card notice-section">
-      <div class="notice-head">
-        <div>
-          <h3>消息通知</h3>
-          <p>待处理的审核与反馈会在这里汇总显示</p>
-        </div>
-        <span class="notice-total">{{ noticeTotal }} 条待处理</span>
-      </div>
-      <div class="notice-list">
-        <router-link v-for="item in noticeItems" :key="item.label" :to="item.to" class="notice-item">
-          <span class="notice-dot" :class="item.className"></span>
-          <div class="notice-text">
-            <strong>{{ item.label }}</strong>
-            <small>{{ item.desc }}</small>
-          </div>
-          <b>{{ item.count }}</b>
-        </router-link>
-      </div>
-    </div>
-
     <!-- 服务器 API -->
     <div class="mobile-card api-section">
       <div class="api-head">
@@ -182,15 +161,6 @@ const sourceRingStyle = computed(() => {
   })
   return `conic-gradient(${parts.join(', ')})`
 })
-
-const noticeItems = computed(() => [
-  { label: '新壁纸审核', desc: '用户上传壁纸待审核', count: stats.value.pending_wallpapers ?? 0, to: '/m/wallpapers', className: 'wallpaper' },
-  { label: '新头像审核', desc: '用户头像变更待审核', count: stats.value.pending_avatars ?? 0, to: '/m/avatar-audit', className: 'avatar' },
-  { label: '新名称审核', desc: '用户改名申请待审核', count: stats.value.pending_nicknames ?? 0, to: '/m/avatar-audit', className: 'nickname' },
-  { label: '新问题反馈', desc: '用户反馈待处理', count: stats.value.pending_feedback ?? 0, to: '/m/feedback', className: 'feedback' },
-])
-
-const noticeTotal = computed(() => noticeItems.value.reduce((sum, item) => sum + Number(item.count || 0), 0))
 
 const clientApiSecret = computed(() => normalizeApiSecret(stats.value.api_secret || ''))
 
@@ -489,90 +459,6 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* 消息通知 */
-.notice-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.notice-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-.notice-head h3 {
-  margin: 0 0 4px;
-  font-size: 15px;
-  color: var(--text);
-}
-.notice-head p {
-  margin: 0;
-  color: var(--text-light);
-  font-size: 12px;
-}
-.notice-total {
-  flex-shrink: 0;
-  padding: 5px 10px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 11px;
-  font-weight: 800;
-}
-.notice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  overflow: hidden;
-}
-.notice-item {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 13px 14px;
-  background: var(--card);
-  color: var(--text);
-  text-decoration: none;
-}
-.notice-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-.notice-dot.wallpaper { background: #3b82f6; }
-.notice-dot.avatar { background: #22c55e; }
-.notice-dot.nickname { background: #f97316; }
-.notice-dot.feedback { background: #8b5cf6; }
-.notice-text {
-  min-width: 0;
-}
-.notice-text strong {
-  display: block;
-  font-size: 13px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.notice-text small {
-  display: block;
-  margin-top: 3px;
-  color: var(--text-light);
-  font-size: 11px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.notice-item b {
-  color: var(--accent);
-  font-size: 18px;
 }
 
 /* 常用操作（去卡片化） */

@@ -93,54 +93,43 @@
               <span v-if="notify.pendingTotal > 0" class="notify-badge">{{ notify.pendingTotal }}</span>
             </button>
 
-            <transition name="notify-pop">
-              <div v-if="notifyOpen" class="notify-panel">
-                <div class="notify-panel-head">
-                  <span class="notify-title">{{ notify.nativeBridgeAvailable ? '系统通知' : '浏览器通知' }}</span>
-                  <span class="notify-status" :class="notify.permission">{{ notify.permissionLabel }}</span>
-                </div>
-
-                <div v-if="!notify.supportedByBrowser" class="notify-tip warn">
-                  当前环境不支持系统通知，请改用最新版 Chrome / Edge / Firefox 或系统浏览器打开。
-                </div>
-
-                <template v-else>
-                  <div v-if="notify.permission === 'default'" class="notify-perm-row">
-                    <button class="btn btn-primary btn-sm" @click="handleRequestPermission">授权通知</button>
-                    <span class="notify-hint">{{ notify.nativeBridgeAvailable ? '系统将询问是否允许发送通知' : '浏览器将询问是否允许本站发送通知' }}</span>
-                  </div>
-                  <div v-else-if="notify.permission === 'denied'" class="notify-tip warn">
-                    {{ notify.nativeBridgeAvailable ? '系统通知权限已被拒绝' : '浏览器已拒绝通知权限，请在浏览器设置中允许本站通知后重试。' }}
-                    <button v-if="notify.nativeBridgeAvailable" class="notify-settings-btn" @click="notify.openNotificationSettings()">打开系统设置</button>
-                  </div>
-                  <div v-else class="notify-perm-ok">
-                    <span class="notify-hint">已授权，有新事件时将在此提醒</span>
+            <teleport to="body">
+              <transition name="notify-pop">
+                <div v-if="notifyOpen" class="notify-panel notify-panel--msg" :style="panelStyle">
+                  <div class="notify-panel-head">
+                    <span class="notify-title">消息通知</span>
+                    <span class="notify-total">{{ noticeTotal }} 条待处理</span>
                   </div>
 
-                  <div class="notify-divider"></div>
-
-                  <div class="notify-row">
-                    <span class="notify-row-label">启用通知</span>
-                    <span class="switch" :class="{ on: notify.enabled }" @click="notify.setEnabled(!notify.enabled)"><span class="switch-knob"></span></span>
+                  <div v-if="noticeTotal === 0" class="notify-empty">
+                    <p>暂无待处理事项</p>
+                    <span>有新反馈或待审核项时会显示在这里</span>
                   </div>
 
-                  <div class="notify-modules">
-                    <div v-for="m in notify.moduleList" :key="m.key" class="notify-row">
-                      <span class="notify-row-label">
-                        {{ m.label }}
-                        <span class="notify-row-desc">{{ m.desc }}</span>
+                  <div v-else class="notify-msg-list">
+                    <button
+                      v-for="item in noticeItems"
+                      :key="item.label"
+                      type="button"
+                      class="notify-msg-item"
+                      @click="goNotice(item.to)"
+                    >
+                      <span class="notify-msg-dot" :class="item.className"></span>
+                      <span class="notify-msg-text">
+                        <strong>{{ item.label }}</strong>
+                        <small>{{ item.desc }}</small>
                       </span>
-                      <span class="switch" :class="{ on: notify.modules[m.key] }" @click="notify.toggleModule(m.key)"><span class="switch-knob"></span></span>
-                    </div>
+                      <b>{{ item.count }}</b>
+                    </button>
                   </div>
 
-                  <div class="notify-divider"></div>
-
-                  <button class="btn btn-sm" :disabled="!notify.granted" @click="notify.testNotification()">发送测试通知</button>
-                  <div class="notify-tip">有新反馈或待审核项时，将弹出系统通知提醒。</div>
-                </template>
-              </div>
-            </transition>
+                  <div class="notify-actions notify-actions--split">
+                    <button type="button" class="notify-settings-link" @click="goNotice('/external-notification?tab=settings')">通知设置</button>
+                    <button type="button" class="notify-close" @click="notifyOpen = false">关闭</button>
+                  </div>
+                </div>
+              </transition>
+            </teleport>
           </div>
           <button class="theme-toggle" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
             <svg v-if="theme.isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -194,10 +183,25 @@ const notify = useNotificationStore()
 const sidebarOpen = ref(false)
 const openMenu = ref<string | null>(null)
 const notifyOpen = ref(false)
+const panelStyle = ref<Record<string, string>>({})
 const isDebugMode = import.meta.env.DEV
 
 const pageTitle = computed(() => (route.meta.title as string) || '仪表盘')
 const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
+
+/** 铃铛消息通知列表（与仪表盘「消息通知」一致） */
+const noticeItems = computed(() => [
+  { label: '新壁纸审核', desc: '用户上传壁纸待审核', count: notify.totals.wallpaper || 0, to: '/wallpapers', className: 'wallpaper' },
+  { label: '新头像审核', desc: '用户头像变更待审核', count: notify.totals.avatar || 0, to: '/avatar-audit', className: 'avatar' },
+  { label: '新名称审核', desc: '用户改名申请待审核', count: notify.totals.nickname || 0, to: '/avatar-audit', className: 'nickname' },
+  { label: '新问题反馈', desc: '用户反馈待处理', count: notify.totals.feedback || 0, to: '/feedback', className: 'feedback' },
+])
+const noticeTotal = computed(() => noticeItems.value.reduce((sum, i) => sum + Number(i.count || 0), 0))
+
+function goNotice(to: string) {
+  notifyOpen.value = false
+  router.push(to)
+}
 
 onMounted(() => {
   loadSiteLogo()
@@ -211,22 +215,26 @@ onUnmounted(() => {
 })
 
 watch(notifyOpen, (open) => {
-  if (open) notify.refreshPermission()
+  if (open) {
+    notify.refreshPermission()
+    const btn = document.querySelector('.notify-btn') as HTMLElement | null
+    if (btn) {
+      const rect = btn.getBoundingClientRect()
+      const panelW = 320
+      const gap = 8
+      const left = Math.max(8, Math.min(rect.right - panelW, window.innerWidth - panelW - 8))
+      panelStyle.value = {
+        top: `${rect.bottom + gap}px`,
+        left: `${left}px`,
+      }
+    }
+  }
 })
 
 function onClickOutside(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target.closest('.notify-wrap')) {
     notifyOpen.value = false
-  }
-}
-
-async function handleRequestPermission() {
-  const p = await notify.requestPermission()
-  if (p === 'granted') {
-    showToast('已允许系统通知', 'success')
-  } else if (p === 'denied') {
-    showToast('通知权限被拒绝，请在系统设置中开启', 'error')
   }
 }
 
@@ -297,18 +305,15 @@ const icons = {
   box-shadow: 0 0 0 2px var(--card-solid, var(--white));
 }
 .notify-panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  width: 300px;
+  position: fixed;
+  width: 320px;
   max-height: calc(100vh - 90px);
   overflow-y: auto;
-  padding: 14px;
-  border-radius: 14px;
-  border: 1px solid var(--border);
-  background: var(--card-solid, var(--white));
-  box-shadow: var(--shadow-card);
-  z-index: 60;
+  padding: 18px 20px 0;
+  border-radius: 22px;
+  background: var(--card-solid, var(--card));
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+  z-index: 99999;
 }
 .notify-panel-head {
   display: flex;
@@ -321,126 +326,127 @@ const icons = {
   font-weight: 800;
   color: var(--text);
 }
-.notify-status {
+.notify-total {
   padding: 2px 9px;
   border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
   font-size: 11px;
   font-weight: 700;
 }
-.notify-status.granted {
-  background: rgba(34, 197, 94, 0.12);
-  color: #16a34a;
+.notify-empty {
+  padding: 26px 10px;
+  text-align: center;
 }
-.notify-status.denied {
-  background: rgba(236, 65, 65, 0.12);
-  color: #EC4141;
-}
-.notify-status.default {
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.notify-status.unsupported {
-  background: var(--control-bg);
-  color: var(--text-muted);
-}
-.notify-perm-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.notify-perm-ok {
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(34, 197, 94, 0.08);
-}
-.notify-hint {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-.notify-tip {
-  margin-top: 10px;
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-.notify-tip.warn {
-  padding: 8px 10px;
-  border-radius: 10px;
-  background: rgba(236, 65, 65, 0.08);
-  color: #EC4141;
-}
-.notify-settings-btn {
-  display: inline-block;
-  margin-top: 8px;
-  padding: 6px 12px;
-  border: none;
-  border-radius: 8px;
-  background: #EC4141;
-  color: #fff;
-  font-size: 12px;
-  cursor: pointer;
-}
-.notify-settings-btn:hover {
-  opacity: 0.9;
-}
-.notify-divider {
-  height: 1px;
-  margin: 10px 0;
-  background: var(--border);
-}
-.notify-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 0;
-}
-.notify-row-label {
-  display: inline-flex;
-  flex-direction: column;
-  font-size: 13px;
-  font-weight: 600;
+.notify-empty p {
+  font-size: 14px;
+  font-weight: 700;
   color: var(--text);
+  margin-bottom: 6px;
 }
-.notify-row-desc {
-  font-size: 11px;
-  font-weight: 400;
+.notify-empty span {
+  font-size: 12px;
   color: var(--text-muted);
 }
-.notify-modules {
+.notify-msg-list {
   display: flex;
   flex-direction: column;
+  gap: 8px;
 }
-/* 开关（与外部通知页一致的外观） */
-.switch {
-  width: 40px;
-  height: 22px;
+.notify-msg-item {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
   border-radius: 12px;
-  border: none;
-  background: #d1d5db;
+  background: var(--control-bg, #fafafa);
+  color: var(--text);
+  text-align: left;
   cursor: pointer;
-  position: relative;
-  flex-shrink: 0;
-  transition: background 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.16s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)),
+              border-color 0.16s, background 0.16s;
 }
-.switch.on {
+.notify-msg-item:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.notify-msg-item:active {
+  transform: scale(0.97);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.notify-msg-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: var(--accent);
 }
-.switch-knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+.notify-msg-dot.wallpaper { background: #3b82f6; }
+.notify-msg-dot.avatar { background: #22c55e; }
+.notify-msg-dot.nickname { background: #f97316; }
+.notify-msg-dot.feedback { background: #8b5cf6; }
+.notify-msg-text {
+  min-width: 0;
 }
-.switch.on .switch-knob {
-  transform: translateX(18px);
+.notify-msg-text strong,
+.notify-msg-text small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notify-msg-text strong {
+  font-size: 13px;
+}
+.notify-msg-text small {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.notify-msg-item b {
+  color: var(--accent);
+  font-size: 18px;
+}
+.notify-actions {
+  display: flex;
+  margin: 14px -20px 0;
+  border-top: 1px solid var(--border);
+}
+.notify-actions--split {
+  position: sticky;
+  bottom: 0;
+  background: var(--card-solid, var(--card));
+}
+.notify-settings-link {
+  flex: 1;
+  border: none;
+  padding: 15px 0;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.notify-settings-link:hover {
+  background: var(--control-bg);
+}
+.notify-close {
+  flex: 1;
+  border: none;
+  padding: 15px 0;
+  background: transparent;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.18s;
+}
+.notify-close:hover {
+  background: var(--control-bg);
 }
 .notify-pop-enter-active,
 .notify-pop-leave-active {

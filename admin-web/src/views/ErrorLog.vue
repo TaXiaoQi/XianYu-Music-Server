@@ -384,6 +384,10 @@ onMounted(() => {
 }
 
 /* 表格 */
+.table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
 .ellipsis {
   max-width: 250px;
   overflow: hidden;
@@ -469,6 +473,7 @@ onMounted(() => {
   padding: 20px;
   overflow-y: auto;
   flex: 1;
+  min-width: 0;
 }
 
 /* 详情内容 */
@@ -509,7 +514,8 @@ onMounted(() => {
   font-size: 12px;
   color: #ff6b6b;
   max-height: 400px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   background: #fffafa;
   padding: 14px;
   border-radius: 6px;
@@ -526,7 +532,8 @@ onMounted(() => {
   padding: 10px;
   border-radius: 6px;
   max-height: 200px;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   font-family: monospace;
 }
 

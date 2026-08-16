@@ -75,29 +75,6 @@
     </div>
     </Transition>
 
-    <!-- 消息通知 -->
-    <Transition name="fade-up" appear>
-    <div class="notice-card" v-if="!loading && !loadError">
-      <div class="notice-head">
-        <div>
-          <h3>消息通知</h3>
-          <p>待处理的审核与反馈会在这里汇总显示</p>
-        </div>
-        <span class="notice-total">{{ noticeTotal }} 条待处理</span>
-      </div>
-      <div class="notice-grid">
-        <router-link v-for="(item, idx) in noticeItems" :key="item.label" :to="item.to" class="notice-item" :style="{ animationDelay: `${idx * 70}ms` }">
-          <span class="notice-dot" :class="item.className"></span>
-          <div class="notice-text">
-            <strong>{{ item.label }}</strong>
-            <small>{{ item.desc }}</small>
-          </div>
-          <b>{{ item.count }}</b>
-        </router-link>
-      </div>
-    </div>
-    </Transition>
-
     <!-- 服务器 API -->
     <Transition name="fade-up" appear>
     <div class="card api-card">
@@ -217,39 +194,6 @@ const sourceRingStyle = computed(() => {
   })
   return `conic-gradient(${parts.join(', ')})`
 })
-
-const noticeItems = computed(() => [
-  {
-    label: '新壁纸审核',
-    desc: '用户上传壁纸待审核',
-    count: stats.value.pending_wallpapers ?? 0,
-    to: '/wallpapers',
-    className: 'wallpaper',
-  },
-  {
-    label: '新头像审核',
-    desc: '用户头像变更待审核',
-    count: stats.value.pending_avatars ?? 0,
-    to: '/avatar-audit',
-    className: 'avatar',
-  },
-  {
-    label: '新名称审核',
-    desc: '用户改名申请待审核',
-    count: stats.value.pending_nicknames ?? 0,
-    to: '/avatar-audit',
-    className: 'nickname',
-  },
-  {
-    label: '新问题反馈',
-    desc: '用户反馈待处理',
-    count: stats.value.pending_feedback ?? 0,
-    to: '/feedback',
-    className: 'feedback',
-  },
-])
-
-const noticeTotal = computed(() => noticeItems.value.reduce((sum, item) => sum + Number(item.count || 0), 0))
 
 const clientApiSecret = computed(() => normalizeApiSecret(stats.value.api_secret || ''))
 
@@ -580,123 +524,8 @@ onMounted(async () => {
   color: var(--accent);
 }
 
-.notice-card {
-  margin-top: 20px;
-  padding: 22px;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  background: var(--card, var(--white));
-  box-shadow: var(--shadow-soft, 0 10px 30px rgba(0, 0, 0, 0.04));
-}
-
-.notice-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.notice-head h3 {
-  margin: 0 0 6px;
-  color: var(--text);
-  font-size: 17px;
-}
-
-.notice-head p {
-  margin: 0;
-  color: var(--text-light);
-  font-size: 13px;
-}
-
-.notice-total {
-  flex-shrink: 0;
-  padding: 6px 12px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.notice-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.notice-item {
-  display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--control-bg, #fafafa);
-  color: var(--text);
-  text-decoration: none;
-  transition: transform 0.2s, border-color 0.2s;
-}
-
-.notice-item:hover {
-  transform: translateY(-1px);
-  border-color: var(--accent);
-}
-
-.notice-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-}
-
-.notice-dot.wallpaper {
-  background: #3b82f6;
-}
-
-.notice-dot.avatar {
-  background: #22c55e;
-}
-
-.notice-dot.nickname {
-  background: #f97316;
-}
-
-.notice-dot.feedback {
-  background: #8b5cf6;
-}
-
-.notice-text {
-  min-width: 0;
-}
-
-.notice-text strong,
-.notice-text small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.notice-text strong {
-  font-size: 14px;
-}
-
-.notice-text small {
-  margin-top: 4px;
-  color: var(--text-light);
-  font-size: 12px;
-}
-
-.notice-item b {
-  color: var(--accent);
-  font-size: 22px;
-}
-
 @media (max-width: 640px) {
   .source-chart-head,
-  .notice-head,
   .api-card-head,
   .api-copy-row {
     flex-direction: column;
@@ -711,13 +540,10 @@ onMounted(async () => {
   .source-legend {
     grid-template-columns: 1fr;
   }
-  .notice-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ===== 动效 ===== */
-.stat-card, .notice-item {
+.stat-card {
   animation: dashIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 @keyframes dashIn {

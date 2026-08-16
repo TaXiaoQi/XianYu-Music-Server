@@ -14,6 +14,10 @@
 
     <!-- 标签栏 -->
     <div class="tab-bar">
+      <button class="tab-item" :class="{ active: activeTab === 'settings' }" @click="activeTab = 'settings'">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        通知设置
+      </button>
       <button class="tab-item" :class="{ active: activeTab === 'email' }" @click="activeTab = 'email'">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
         通知邮箱
@@ -27,6 +31,67 @@
         通信工具
       </button>
     </div>
+
+    <!-- ==================== 通知设置 Tab ==================== -->
+    <template v-if="activeTab === 'settings'">
+      <section class="mobile-card">
+        <div class="module-head">
+          <div class="module-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </div>
+          <div class="module-text">
+            <h3 class="module-name">通知设置</h3>
+            <p class="module-desc">配置浏览器 / 系统通知的授权状态、总开关与各板块开关。</p>
+          </div>
+        </div>
+
+        <div v-if="!notify.supportedByBrowser" class="notify-tip warn">
+          当前环境不支持系统通知，请改用最新版 Chrome / Edge / Firefox 或系统浏览器打开。
+        </div>
+
+        <template v-else>
+          <div v-if="notify.permission === 'default'" class="notify-perm-row">
+            <button class="mobile-btn primary" @click="handleRequestPermission">授权通知</button>
+            <span class="notify-hint">{{ notify.nativeBridgeAvailable ? '系统将询问是否允许发送通知' : '浏览器将询问是否允许本站发送通知' }}</span>
+          </div>
+          <div v-else-if="notify.permission === 'denied'" class="notify-tip warn">
+            {{ notify.nativeBridgeAvailable ? '系统通知权限已被拒绝' : '浏览器已拒绝通知权限，请在浏览器设置中允许本站通知后重试。' }}
+            <button v-if="notify.nativeBridgeAvailable" class="notify-settings-btn" @click="notify.openNotificationSettings()">打开系统设置</button>
+          </div>
+          <div v-else class="notify-perm-ok">
+            <span class="notify-hint">已授权，有新事件时将在此提醒</span>
+          </div>
+
+          <div class="notify-divider"></div>
+
+          <div class="notify-row">
+            <span class="notify-row-label">启用通知</span>
+            <label class="switch">
+              <input :checked="notify.enabled" type="checkbox" @change="notify.setEnabled(!notify.enabled)" />
+              <span class="track"><span class="thumb"></span></span>
+            </label>
+          </div>
+
+          <div class="settings-modules">
+            <div v-for="m in notify.moduleList" :key="m.key" class="notify-row">
+              <span class="notify-row-label">
+                {{ m.label }}
+                <span class="notify-row-desc">{{ m.desc }}</span>
+              </span>
+              <label class="switch">
+                <input :checked="notify.modules[m.key]" type="checkbox" @change="notify.toggleModule(m.key)" />
+                <span class="track"><span class="thumb"></span></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="notify-divider"></div>
+
+          <button class="mobile-btn" :disabled="!notify.granted" @click="notify.testNotification()">发送测试通知</button>
+          <div class="notify-tip">有新反馈或待审核项时，将弹出系统通知提醒。</div>
+        </template>
+      </section>
+    </template>
 
     <!-- ==================== 通知邮箱 Tab ==================== -->
     <template v-if="activeTab === 'email'">
@@ -646,7 +711,9 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import { adminApi, showToast } from '@/api/client'
+import { useNotificationStore } from '@/stores/notification'
 import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
 
@@ -665,7 +732,9 @@ const moduleList: ModuleItem[] = [
 ]
 
 // ===== 标签页 =====
-const activeTab = ref<'email' | 'webhook' | 'commtool'>('email')
+const notify = useNotificationStore()
+const route = useRoute()
+const activeTab = ref<'settings' | 'email' | 'webhook' | 'commtool'>('settings')
 const commSubTab = ref<'http-server' | 'http-client' | 'sse-server' | 'ws-server' | 'ws-client' | 'auth'>('http-server')
 
 const loading = ref(true)
@@ -1246,7 +1315,20 @@ watch(commSubTab, (sub) => {
   }
 })
 
+async function handleRequestPermission() {
+  const p = await notify.requestPermission()
+  if (p === 'granted') {
+    showToast('已允许系统通知', 'success')
+  } else if (p === 'denied') {
+    showToast('通知权限被拒绝，请在系统设置中开启', 'error')
+  }
+}
+
 onMounted(() => {
+  const tab = route.query.tab as string
+  if (['settings', 'email', 'webhook', 'commtool'].includes(tab)) {
+    activeTab.value = tab as 'settings' | 'email' | 'webhook' | 'commtool'
+  }
   loadList()
   loadWebhookConfig()
   loadCommStatus()
@@ -1419,6 +1501,78 @@ onMounted(() => {
 }
 .switch input:checked + .track { background: #EC4141; }
 .switch input:checked + .track .thumb { transform: translateX(18px); }
+
+/* ===== 通知设置 ===== */
+.notify-perm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.notify-perm-ok {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.08);
+}
+.notify-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.notify-tip {
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.notify-tip.warn {
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(236, 65, 65, 0.08);
+  color: #EC4141;
+}
+.notify-settings-btn {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: #EC4141;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.notify-settings-btn:active {
+  opacity: 0.85;
+}
+.notify-divider {
+  height: 1px;
+  margin: 10px 0;
+  background: var(--border);
+}
+.notify-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 0;
+}
+.notify-row-label {
+  display: inline-flex;
+  flex-direction: column;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.notify-row-desc {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+.settings-modules {
+  display: flex;
+  flex-direction: column;
+}
 
 /* 统计 */
 .stats-grid {
