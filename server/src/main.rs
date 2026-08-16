@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::CorsLayer;
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -61,7 +61,6 @@ async fn main() -> anyhow::Result<()> {
     let cors = CorsLayer::permissive();
     let pool = state.pool.clone();
     let static_dir = config.static_dir.clone();
-    let index_file = format!("{}/index.html", static_dir.trim_end_matches(|c| c == '/' || c == '\\'));
 
     // 确保 uploads 目录及子目录存在
     let _ = std::fs::create_dir_all("uploads/wallpapers");
@@ -72,7 +71,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
         .route("/admin/api/", get(handle_admin_api).post(handle_admin_api))
         .nest_service("/uploads", ServeDir::new("uploads"))
-        .fallback_service(ServeDir::new(static_dir).not_found_service(ServeFile::new(index_file)))
+        .fallback(spa_fallback)
         .layer(cors)
         .with_state(state);
 
@@ -291,4 +290,96 @@ async fn handle_admin_api(
         return debug::handle_admin_api(&action);
     }
     admin::dispatch(&action, &raw_body, ctx, &state.pool).await
+}
+
+/// SPA 静态资源 fallback：
+/// - 已存在的静态文件（/assets/*、/logo.png 等）正常返回
+/// - 其余路径（SPA 深层路由，如 /dashboard、/m/dashboard）返回 index.html 且状态码 200，
+///   避免前端 history 路由刷新时 404
+async fn spa_fallback(State(state): State<AppState>, req: Request<Body>) -> Response {
+    let static_dir = state.config.static_dir.clone();
+    let index_file = format!(
+        "{}/index.html",
+        static_dir.trim_end_matches(|c| c == '/' || c == '\\')
+    );
+
+    let path = req.uri().path().trim_start_matches('/');
+    let file_path = if path.contains('.') {
+        // 有扩展名的资源路径：映射到 static_dir 下，防路径穿越
+        let mut base = static_dir.trim_end_matches(|c| c == '/' || c == '\\').to_string();
+        for seg in path.split('/') {
+            if seg.is_empty() || seg == "." {
+                continue;
+            }
+            if seg == ".." {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                    "bad request",
+                )
+                    .into_response();
+            }
+            base.push('/');
+            base.push_str(seg);
+        }
+        base
+    } else {
+        // 无扩展名：SPA 深层路由，返回 index.html
+        index_file.clone()
+    };
+
+    match tokio::fs::read(&file_path).await {
+        Ok(bytes) => {
+            let ctype = mime_of(&file_path);
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, ctype)],
+                bytes,
+            )
+                .into_response()
+        }
+        Err(_) => {
+            // 资源不存在时仍回退 index.html（200），保证 SPA 可用
+            match tokio::fs::read(&index_file).await {
+                Ok(bytes) => (
+                    StatusCode::OK,
+                    [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                    bytes,
+                )
+                    .into_response(),
+                Err(_) => (
+                    StatusCode::NOT_FOUND,
+                    [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+                    "not found",
+                )
+                    .into_response(),
+            }
+        }
+    }
+}
+
+fn mime_of(path: &str) -> &'static str {
+    let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    match ext.as_str() {
+        "html" | "htm" => "text/html; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "js" | "mjs" => "application/javascript; charset=utf-8",
+        "json" => "application/json; charset=utf-8",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "webp" => "image/webp",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "eot" => "application/vnd.ms-fontobject",
+        "txt" => "text/plain; charset=utf-8",
+        "mp3" => "audio/mpeg",
+        "mp4" => "video/mp4",
+        "exe" => "application/octet-stream",
+        "apk" => "application/vnd.android.package-archive",
+        _ => "application/octet-stream",
+    }
 }

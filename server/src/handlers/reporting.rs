@@ -96,6 +96,60 @@ pub async fn app_open(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
 }
 
+/// 写入一条音源调用记录（source_call_log）。
+/// dashboard 的音源调用分布与热搜均依赖此表。
+/// fire-and-forget：写入失败静默，不阻塞主流程。
+async fn record_source_call(
+    pool: &MySqlPool,
+    data: &serde_json::Value,
+    ctx: &ReqCtx,
+    action: &str,
+    source_fallback: &str,
+) {
+    let info = data;
+    let source_name = str_of(info, "source").trim().to_string();
+    let source_name = if source_name.is_empty() {
+        source_fallback.to_string()
+    } else {
+        source_name
+    };
+    let song_name = str_of(info, "song_name");
+    let song_name = if song_name.is_empty() {
+        str_of(info, "keyword")
+    } else {
+        song_name
+    };
+    let _ = sqlx::query(
+        "INSERT INTO source_call_log (ip, device_id, source_name, action, song_name, singer, status, platform, source_type, duration_ms, request_params) \
+         VALUES (?,?,?,?,?,?,1,?,?,?,?)",
+    )
+    .bind(&ctx.client_ip)
+    .bind(str_of(info, "device_id"))
+    .bind(&source_name)
+    .bind(action)
+    .bind(&song_name)
+    .bind(str_of(info, "singer"))
+    .bind(str_of(info, "platform"))
+    .bind(str_of(info, "source_type"))
+    .bind(int_of(info, "duration_ms").max(0))
+    .bind(info.to_string())
+    .execute(pool)
+    .await;
+}
+
+/// search 搜索上报
+///
+/// 客户端 Search.vue 在完成一次音源搜索后上报（fire-and-forget）。
+/// 写入 source_call_log（action='search'），dashboard 据此统计热搜关键词。
+pub async fn search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    record_source_call(pool, &data, &ctx, "search", "未知音源").await;
+    ctx.ok_empty("ok")
+}
+
 /// report_user_behavior 播放行为上报
 ///
 /// 客户端播放/切歌时会上报本次播放时长。排行榜依赖 app_users.listen_duration，
@@ -106,6 +160,13 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     if data.is_null() {
         return ctx.err(400, "参数错误");
     }
+
+    // 无论是否登录都记录音源调用（音源调用分布统计不依赖账号）
+    let ua_action = {
+        let a = str_of(&data, "action");
+        if a.is_empty() { "play" } else { &a }.to_string()
+    };
+    record_source_call(pool, &data, &ctx, &ua_action, "未知音源").await;
 
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
     if ciyuanxi_id.is_empty() {

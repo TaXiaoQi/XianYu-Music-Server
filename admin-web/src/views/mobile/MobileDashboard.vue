@@ -28,15 +28,43 @@
         <span class="source-total">总调用 {{ stats.today_source_calls ?? 0 }} 次</span>
       </div>
       <div class="source-body">
-        <div class="source-donut" :style="{ background: sourceRingStyle }">
+        <div class="source-donut" :class="{ 'has-active': activeIndex >= 0 }" @click="onDonutClick" @mouseleave="activeIndex = -1">
+          <svg viewBox="0 0 120 120" class="donut-svg">
+            <circle class="donut-track" cx="60" cy="60" :r="DONUT_R" />
+            <circle
+              v-for="seg in donutSegments"
+              :key="seg.source_name"
+              class="donut-seg"
+              :cx="60" :cy="60" :r="DONUT_R"
+              :stroke="seg.color"
+              :stroke-dasharray="seg.dasharray"
+              :stroke-dashoffset="seg.dashoffset"
+              :class="{ 'seg-active': activeIndex === seg.index }"
+              @mouseenter="activeIndex = seg.index"
+            />
+          </svg>
           <div class="source-donut-center">
-            <strong>{{ stats.today_source_calls ?? 0 }}</strong>
-            <span>今日调用</span>
+            <template v-if="activeIndex >= 0 && activeItem">
+              <strong class="center-name">{{ activeItem.source_name }}</strong>
+              <span>{{ activeItem.count }} 次 · {{ activeItem.percent }}%</span>
+            </template>
+            <template v-else>
+              <strong>{{ stats.today_source_calls ?? 0 }}</strong>
+              <span>今日调用</span>
+            </template>
           </div>
         </div>
-        <div class="source-legend">
+        <div ref="legendRef" class="source-legend">
           <div v-if="sourceItems.length === 0" class="source-empty">今日暂无音源调用数据</div>
-          <div v-for="item in sourceItems" :key="item.source_name" class="source-legend-item">
+          <div
+            v-for="(item, idx) in sourceItems"
+            :key="item.source_name"
+            class="source-legend-item"
+            :class="{ 'legend-active': activeIndex === idx }"
+            @mouseenter="activeIndex = idx"
+            @mouseleave="activeIndex = -1"
+            @click="toggleActive(idx)"
+          >
             <i :style="{ background: item.color }"></i>
             <span class="source-name">{{ item.source_name }}</span>
             <span class="source-count">{{ item.count }} 次</span>
@@ -48,22 +76,11 @@
 
     <!-- 数据概览 -->
     <div v-if="!loading && !loadError" class="stats-section">
-      <div class="stats-row">
-        <div class="stat-chip">
-          <strong>{{ stats.total_users ?? 0 }}</strong>
-          <span>总用户数</span>
-        </div>
-        <div class="stat-chip">
-          <strong class="hot-keyword">{{ stats.today_hot_search_keyword || '暂无' }}</strong>
-          <span>今日热搜</span>
-        </div>
-        <div class="stat-chip">
-          <strong>{{ stats.active_users ?? 0 }}</strong>
-          <span>今日用户</span>
-        </div>
-        <div class="stat-chip">
-          <strong>{{ stats.today_shares ?? 0 }}</strong>
-          <span>今日分享</span>
+      <div class="stats-grid">
+        <div v-for="(card, idx) in statCards" :key="card.label" class="stat-card" :style="{ animationDelay: `${idx * 80}ms` }">
+          <div class="label">{{ card.label }}</div>
+          <div class="value" :class="{ 'hot-keyword': card.hot }">{{ card.value() }}</div>
+          <div class="sub">{{ card.sub() }}</div>
         </div>
       </div>
     </div>
@@ -147,20 +164,133 @@ const sourceItems = computed(() => {
   }))
 })
 
-const sourceRingStyle = computed(() => {
+// 统计卡片配置（支持动态值，与桌面版一致，今日热搜在最后）
+const statCards = [
+  {
+    label: '总用户数',
+    key: 'total_users',
+    sub: () => `今日新增 ${stats.value.today_users ?? 0} · 昨日 ${stats.value.yesterday_users ?? 0}`,
+    value: () => stats.value.total_users ?? 0,
+  },
+  {
+    label: '今日用户',
+    key: 'active_users',
+    value: () => stats.value.active_users ?? 0,
+    sub: () => '今日活跃设备数',
+  },
+  {
+    label: '今日分享',
+    key: 'today_shares',
+    value: () => stats.value.today_shares ?? 0,
+    sub: () => `总计 ${stats.value.total_shares ?? 0} 次`,
+  },
+  {
+    label: '今日热搜',
+    key: 'today_hot_search_keyword',
+    value: () => stats.value.today_hot_search_keyword || '暂无',
+    sub: () => `今日搜索 ${stats.value.today_hot_search_count ?? 0} 次`,
+    hot: true,
+  },
+]
+
+// ─── SVG 圆环分段 ───────────────────────────────────────────
+const DONUT_R = 48
+const DONUT_STROKE = 20
+const DONUT_C = 2 * Math.PI * DONUT_R
+const activeIndex = ref(-1)
+const legendRef = ref<HTMLElement | null>(null)
+
+const donutSegments = computed(() => {
   const items = sourceItems.value
-  if (items.length === 0) return 'conic-gradient(var(--track) 0deg 360deg)'
   const total = items.reduce((sum, item) => sum + Number(item.count || 0), 0)
-  let start = 0
-  const parts = items.map((item) => {
-    const angle = total > 0 ? (Number(item.count || 0) / total) * 360 : 0
-    const end = start + angle
-    const part = `${item.color} ${start}deg ${end}deg`
-    start = end
-    return part
+  if (total <= 0) return []
+  let acc = 0
+  return items.map((item, index) => {
+    const len = total > 0 ? (Number(item.count || 0) / total) * DONUT_C : 0
+    const seg = {
+      ...item,
+      index,
+      dasharray: `${len} ${DONUT_C - len}`,
+      dashoffset: -acc,
+    }
+    acc += len
+    return seg
   })
-  return `conic-gradient(${parts.join(', ')})`
 })
+
+const activeItem = computed(() => {
+  if (activeIndex.value < 0) return null
+  return sourceItems.value[activeIndex.value] || null
+})
+
+function toggleActive(index: number) {
+  activeIndex.value = activeIndex.value === index ? -1 : index
+  // 选中时把对应列表项滚动到滚动容器可见位置，避免被遮住
+  if (activeIndex.value >= 0) {
+    scrollLegendToActive(activeIndex.value)
+  }
+}
+
+/** 直接选中指定索引对应的列表项（圆环点击用，避免移动端 mouseenter 先行设置 activeIndex 后被 toggle 取消的问题） */
+function setActive(index: number) {
+  activeIndex.value = index
+  scrollLegendToActive(index)
+}
+
+/** 滚动右侧图例容器，使指定索引的列表项可见 */
+function scrollLegendToActive(index: number) {
+  const container = legendRef.value
+  if (!container) return
+  const item = container.querySelectorAll('.source-legend-item')[index] as HTMLElement | undefined
+  if (!item) return
+  // 用 getBoundingClientRect 计算列表项相对滚动容器的位置（offsetTop 相对定位祖先，基准不可靠）
+  const cRect = container.getBoundingClientRect()
+  const iRect = item.getBoundingClientRect()
+  const cTop = container.scrollTop
+  const cBottom = cTop + container.clientHeight
+  const iTop = iRect.top - cRect.top + cTop
+  const iBottom = iTop + iRect.height
+  if (iTop < cTop) {
+    container.scrollTop = iTop
+  } else if (iBottom > cBottom) {
+    container.scrollTop = iBottom - container.clientHeight
+  }
+}
+
+/** 点击圆环区域，按角度计算落在哪个扇区 */
+function onDonutClick(e: MouseEvent | TouchEvent) {
+  const el = e.currentTarget as HTMLElement | null
+  if (!el || donutSegments.value.length === 0) return
+  const rect = el.getBoundingClientRect()
+  const cx = rect.width / 2
+  const cy = rect.height / 2
+  const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX
+  const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY
+  const dx = clientX - rect.left - cx
+  const dy = clientY - rect.top - cy
+  const radius = Math.sqrt(dx * dx + dy * dy)
+  // 点击在圆环内孔（中心总调用区域）或超出外缘都忽略，避免误触
+  // 坐标基于 CSS 像素，需按元素实际尺寸换算 viewBox 半径
+  const scale = rect.width / 120
+  const innerR = (DONUT_R - DONUT_STROKE / 2) * scale
+  const outerR = (DONUT_R + DONUT_STROKE / 2) * scale
+  if (radius < innerR || radius > outerR) return
+  // 视觉角度：0° 在正上方，顺时针递增
+  let angle = Math.atan2(dx, -dy) * (180 / Math.PI)
+  if (angle < 0) angle += 360
+  // 根据累计角度找扇区
+  const items = sourceItems.value
+  const total = items.reduce((s, it) => s + Number(it.count || 0), 0)
+  let acc = 0
+  for (let i = 0; i < items.length; i++) {
+    const segAngle = (Number(items[i].count || 0) / total) * 360
+    if (angle >= acc && angle < acc + segAngle) {
+      setActive(i)
+      return
+    }
+    acc += segAngle
+  }
+}
 
 const clientApiSecret = computed(() => normalizeApiSecret(stats.value.api_secret || ''))
 
@@ -331,54 +461,112 @@ onMounted(async () => {
 }
 .source-body {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: 14px;
-  align-items: center;
+  align-items: stretch;
 }
+
+/* 左侧圆环 */
 .source-donut {
+  position: relative;
   width: 130px;
+  min-width: 130px;
   height: 130px;
-  border-radius: 50%;
   display: grid;
   place-items: center;
-  box-shadow: inset 0 0 0 1px var(--border);
+}
+.donut-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform: rotate(-90deg);
+}
+.donut-track {
+  fill: none;
+  stroke: var(--track, var(--border));
+  stroke-width: 20;
+}
+.donut-seg {
+  fill: none;
+  stroke-width: 20;
+  cursor: pointer;
+  transition: stroke-width 0.2s, opacity 0.2s;
+  opacity: 0.85;
+}
+.donut-seg:hover,
+.donut-seg.seg-active {
+  stroke-width: 24;
+  opacity: 1;
+}
+.source-donut.has-active .donut-seg:not(.seg-active) {
+  opacity: 0.4;
 }
 .source-donut-center {
-  width: 80px;
-  height: 80px;
-  border-radius: 50%;
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
   align-content: center;
-  background: var(--card-solid, var(--card));
-  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  text-align: center;
+  padding: 4px;
 }
 .source-donut-center strong {
-  font-size: 22px;
-  line-height: 1;
+  font-size: 18px;
+  line-height: 1.1;
   color: var(--text);
+  display: block;
+}
+.source-donut-center .center-name {
+  font-size: 10px;
+  line-height: 1.2;
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .source-donut-center span {
-  margin-top: 3px;
+  margin-top: 2px;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: 9px;
+  display: block;
 }
+
+/* 右侧滚动列表 */
 .source-legend {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  max-height: 130px;
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  width: 100%;
+  gap: 6px;
+  padding-right: 2px;
+}
+.source-legend::-webkit-scrollbar {
+  width: 3px;
+}
+.source-legend::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }
 .source-legend-item {
   display: grid;
   grid-template-columns: 8px minmax(0, 1fr) auto auto;
   align-items: center;
-  gap: 7px;
-  padding: 8px 10px;
+  gap: 6px;
+  padding: 5px 8px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 8px;
   background: var(--control-bg);
-  font-size: 12px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+.source-legend-item:hover,
+.source-legend-item.legend-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 .source-legend-item i {
   width: 8px;
@@ -395,11 +583,11 @@ onMounted(async () => {
 }
 .source-count {
   color: var(--text-light);
-  font-size: 11px;
+  font-size: 10px;
 }
 .source-percent {
   color: var(--accent);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
 }
 .source-empty {
@@ -411,54 +599,47 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-/* 数据概览（一行并行，无卡片嵌套） */
+/* 数据概览（4 个卡片单行排列，覆盖全局 2 列网格） */
 .stats-section {
   display: flex;
   flex-direction: column;
   padding: 0 2px;
 }
-.stats-row {
-  display: flex;
-  flex-direction: row;
-  gap: 10px;
-  overflow-x: auto;
-  padding-bottom: 4px;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+.stats-section .stats-grid {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  flex-direction: row !important;
+  gap: 8px;
+  margin-bottom: 0;
 }
-.stats-row::-webkit-scrollbar {
-  display: none;
+.stats-section .stat-card {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 12px 6px;
+  text-align: center;
 }
-.stat-chip {
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 4px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: var(--control-bg);
-  border: 1px solid var(--border);
-  min-width: 90px;
-}
-.stat-chip strong {
-  font-size: 22px;
-  line-height: 1;
-  color: var(--accent);
-  font-weight: 800;
-}
-.stat-chip span {
+.stats-section .stat-card .label {
+  margin-bottom: 6px;
   font-size: 11px;
-  color: var(--text-muted);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.stat-chip .hot-keyword {
+.stats-section .stat-card .value {
   font-size: 18px;
-  max-width: 120px;
+  line-height: 1.2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.stats-section .stat-card .sub {
+  margin-top: 5px;
+  font-size: 9px;
+  line-height: 1.3;
+  word-break: break-all;
+}
+.stats-section .stat-card .hot-keyword {
+  font-size: 15px;
 }
 
 /* 常用操作（去卡片化） */

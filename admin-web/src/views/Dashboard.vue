@@ -26,15 +26,43 @@
         <span class="source-total">总调用 {{ stats.today_source_calls ?? 0 }} 次</span>
       </div>
       <div class="source-chart-body">
-        <div class="source-donut" :style="{ background: sourceRingStyle }">
+        <div class="source-donut" :class="{ 'has-active': activeIndex >= 0 }">
+          <svg viewBox="0 0 200 200" class="donut-svg">
+            <circle class="donut-track" cx="100" cy="100" :r="DONUT_R" />
+            <circle
+              v-for="seg in donutSegments"
+              :key="seg.source_name"
+              class="donut-seg"
+              :cx="100" :cy="100" :r="DONUT_R"
+              :stroke="seg.color"
+              :stroke-dasharray="seg.dasharray"
+              :stroke-dashoffset="seg.dashoffset"
+              :class="{ 'seg-active': activeIndex === seg.index }"
+              @mouseenter="onLegendHover(seg.index)"
+              @mouseleave="activeIndex = -1"
+            />
+          </svg>
           <div class="source-donut-center">
-            <strong>{{ stats.today_source_calls ?? 0 }}</strong>
-            <span>今日调用</span>
+            <template v-if="activeIndex >= 0 && activeItem">
+              <strong class="center-name">{{ activeItem.source_name }}</strong>
+              <span>{{ activeItem.count }} 次 · {{ activeItem.percent }}%</span>
+            </template>
+            <template v-else>
+              <strong>{{ stats.today_source_calls ?? 0 }}</strong>
+              <span>今日调用</span>
+            </template>
           </div>
         </div>
-        <div class="source-legend">
+        <div ref="legendRef" class="source-legend">
           <div v-if="sourceItems.length === 0" class="source-empty">今日暂无音源调用数据</div>
-          <div v-for="item in sourceItems" :key="item.source_name" class="source-legend-item">
+          <div
+            v-for="(item, idx) in sourceItems"
+            :key="item.source_name"
+            class="source-legend-item"
+            :class="{ 'legend-active': activeIndex === idx }"
+            @mouseenter="onLegendHover(idx)"
+            @mouseleave="activeIndex = -1"
+          >
             <i :style="{ background: item.color }"></i>
             <span class="source-name">{{ item.source_name }}</span>
             <span class="source-count">{{ item.count }} 次</span>
@@ -158,13 +186,6 @@ const statCards = [
     value: () => stats.value.total_users ?? 0,
   },
   {
-    label: '今日热搜',
-    key: 'today_hot_search_keyword',
-    value: () => stats.value.today_hot_search_keyword || '暂无',
-    sub: () => `今日搜索 ${stats.value.today_hot_search_count ?? 0} 次`,
-    hot: true,
-  },
-  {
     label: '今日用户',
     key: 'active_users',
     value: () => stats.value.active_users ?? 0,
@@ -176,23 +197,60 @@ const statCards = [
     value: () => stats.value.today_shares ?? 0,
     sub: () => `总计 ${stats.value.total_shares ?? 0} 次`,
   },
+  {
+    label: '今日热搜',
+    key: 'today_hot_search_keyword',
+    value: () => stats.value.today_hot_search_keyword || '暂无',
+    sub: () => `今日搜索 ${stats.value.today_hot_search_count ?? 0} 次`,
+    hot: true,
+  },
 ]
 
-const sourceRingStyle = computed(() => {
-  const items = sourceItems.value
-  if (items.length === 0) {
-    return 'conic-gradient(var(--track) 0deg 360deg)'
+// ─── SVG 圆环分段 ───────────────────────────────────────────
+const DONUT_R = 84
+const DONUT_C = 2 * Math.PI * DONUT_R
+const activeIndex = ref(-1)
+const legendRef = ref<HTMLElement | null>(null)
+
+/** 悬停/点击联动：设置高亮并滚动列表项到可见位置 */
+function onLegendHover(index: number) {
+  activeIndex.value = index
+  const container = legendRef.value
+  if (!container) return
+  const item = container.querySelectorAll('.source-legend-item')[index] as HTMLElement | undefined
+  if (!item) return
+  const cTop = container.scrollTop
+  const cBottom = cTop + container.clientHeight
+  const iTop = item.offsetTop
+  const iBottom = iTop + item.offsetHeight
+  if (iTop < cTop) {
+    container.scrollTop = iTop
+  } else if (iBottom > cBottom) {
+    container.scrollTop = iBottom - container.clientHeight
   }
+}
+
+const donutSegments = computed(() => {
+  const items = sourceItems.value
   const total = items.reduce((sum, item) => sum + Number(item.count || 0), 0)
-  let start = 0
-  const parts = items.map((item) => {
-    const angle = total > 0 ? (Number(item.count || 0) / total) * 360 : 0
-    const end = start + angle
-    const part = `${item.color} ${start}deg ${end}deg`
-    start = end
-    return part
+  if (total <= 0) return []
+  let acc = 0
+  return items.map((item, index) => {
+    const len = total > 0 ? (Number(item.count || 0) / total) * DONUT_C : 0
+    const seg = {
+      ...item,
+      index,
+      dasharray: `${len} ${DONUT_C - len}`,
+      dashoffset: -acc,
+    }
+    acc += len
+    return seg
   })
-  return `conic-gradient(${parts.join(', ')})`
+})
+
+const activeItem = computed(() => {
+  if (activeIndex.value < 0) return null
+  return sourceItems.value[activeIndex.value] || null
 })
 
 const clientApiSecret = computed(() => normalizeApiSecret(stats.value.api_secret || ''))
@@ -371,41 +429,94 @@ onMounted(async () => {
 }
 
 .source-donut {
+  position: relative;
   width: 200px;
   height: 200px;
-  border-radius: 50%;
   display: grid;
   place-items: center;
-  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.donut-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  transform: rotate(-90deg);
+}
+
+.donut-track {
+  fill: none;
+  stroke: var(--track, var(--border));
+  stroke-width: 22;
+}
+
+.donut-seg {
+  fill: none;
+  stroke-width: 22;
+  cursor: pointer;
+  transition: stroke-width 0.2s, opacity 0.2s;
+  opacity: 0.9;
+}
+
+.donut-seg:hover,
+.donut-seg.seg-active {
+  stroke-width: 26;
+  opacity: 1;
+}
+
+.source-donut.has-active .donut-seg:not(.seg-active) {
+  opacity: 0.35;
 }
 
 .source-donut-center {
-  width: 122px;
-  height: 122px;
-  border-radius: 50%;
+  position: absolute;
+  inset: 0;
   display: grid;
   place-items: center;
   align-content: center;
-  background: var(--card-solid, var(--card));
-  box-shadow: var(--shadow-soft);
+  pointer-events: none;
+  text-align: center;
+  padding: 8px;
 }
 
 .source-donut-center strong {
   font-size: 30px;
-  line-height: 1;
+  line-height: 1.1;
   color: var(--text);
+  display: block;
+}
+
+.source-donut-center .center-name {
+  font-size: 14px;
+  line-height: 1.2;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .source-donut-center span {
-  margin-top: 6px;
+  margin-top: 4px;
   color: var(--text-muted);
   font-size: 12px;
+  display: block;
 }
 
 .source-legend {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.source-legend::-webkit-scrollbar {
+  width: 4px;
+}
+
+.source-legend::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
 }
 
 .source-legend-item {
@@ -418,6 +529,14 @@ onMounted(async () => {
   border-radius: 12px;
   background: var(--control-bg, #fafafa);
   font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.source-legend-item:hover,
+.source-legend-item.legend-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .source-legend-item i {
