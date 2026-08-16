@@ -336,6 +336,9 @@ async function handleLogout() {
   background: color-mix(in srgb, var(--card) 92%, transparent);
   box-shadow: var(--shadow-card);
   backdrop-filter: blur(22px);
+  /* 预分配稳定的 backdrop 合成层，避免页内元素（如批量菜单）增删合成层时
+     trigger tabbar 反复重栅格化，导致"抽搐/闪烁" */
+  will-change: backdrop-filter;
 }
 .mobile-tabbar a {
   display: flex;

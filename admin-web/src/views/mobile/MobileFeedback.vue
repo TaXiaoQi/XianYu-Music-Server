@@ -865,19 +865,17 @@ onMounted(() => { loadLimit(); loadList() })
   height: 30px;
   line-height: 1;
 }
-/* 批量菜单向左弹出/收回动画 */
+/* 批量菜单切换：仅淡入淡出，不做 transform 动画。
+   避免切换时合成层创建/销毁，触发底部 fixed tabbar 的 backdrop-filter 重栅格化闪烁 */
 .batch-slide-enter-active,
 .batch-slide-leave-active {
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .batch-slide-enter-from {
   opacity: 0;
-  transform: translate(30px, -50%);
 }
 .batch-slide-leave-to {
   opacity: 0;
-  transform: translate(30px, -50%);
 }
 .batch-select-all { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-light); flex-shrink: 0; padding: 0 4px; }
 .batch-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
