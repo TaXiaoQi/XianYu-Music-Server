@@ -309,8 +309,8 @@ pub async fn check_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
     }
 }
 
-/// 获取当前用户的反馈完成通知：返回该用户已解决（resolved）且尚未确认（notified_at 为空）的反馈。
-/// 客户端据此调用公告弹窗展示处理管理员与完成说明。
+/// 获取当前用户的反馈处理通知：返回该用户已解决（resolved）或已拒绝（rejected）
+/// 且尚未确认（notified_at 为空）的反馈。客户端据此展示处理管理员与完成说明/拒绝理由。
 pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -321,9 +321,12 @@ pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySql
         return ctx.err(400, "请先登录");
     }
     let rows = sqlx::query(
-        "SELECT id, title, content, assignee, resolve_note, replied_at, updated_at
+        "SELECT id, title, content, status, assignee, replied_by, resolve_note, reject_reason, replied_at, updated_at
          FROM user_feedback
-         WHERE ciyuanxi_id = ? AND status = 'resolved' AND assignee <> '' AND resolve_note IS NOT NULL AND resolve_note <> '' AND notified_at IS NULL AND deleted_at IS NULL
+         WHERE ciyuanxi_id = ? AND status IN ('resolved','rejected') AND assignee <> ''
+           AND ((status = 'resolved' AND resolve_note IS NOT NULL AND resolve_note <> '')
+                OR (status = 'rejected' AND reject_reason IS NOT NULL AND reject_reason <> ''))
+           AND notified_at IS NULL AND deleted_at IS NULL
          ORDER BY updated_at DESC",
     )
     .bind(&ciyuanxi_id)
@@ -336,7 +339,7 @@ pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySql
     ctx.ok("获取通知成功", json!({ "list": list }))
 }
 
-/// 确认反馈完成通知：将指定反馈的 notified_at 置为当前时间，标记该用户已读。
+/// 确认反馈处理通知：将指定反馈的 notified_at 置为当前时间，标记该用户已读。
 pub async fn confirm_feedback_notification(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -348,7 +351,7 @@ pub async fn confirm_feedback_notification(body: &str, ctx: ReqCtx, pool: &MySql
         return ctx.err(400, "参数错误");
     }
     let upd = sqlx::query(
-        "UPDATE user_feedback SET notified_at = NOW() WHERE id = ? AND ciyuanxi_id = ? AND status = 'resolved'",
+        "UPDATE user_feedback SET notified_at = NOW() WHERE id = ? AND ciyuanxi_id = ? AND status IN ('resolved','rejected')",
     )
     .bind(id)
     .bind(&ciyuanxi_id)
@@ -368,7 +371,10 @@ fn row_to_json(row: &sqlx::mysql::MySqlRow) -> Value {
         "title": row.get::<String, _>("title"),
         "content": row.get::<Option<String>, _>("content").unwrap_or_default(),
         "assignee": row.get::<String, _>("assignee"),
+        "replied_by": row.get::<String, _>("replied_by"),
+        "status": row.try_get::<String, _>("status").unwrap_or_default(),
         "resolve_note": row.get::<Option<String>, _>("resolve_note").unwrap_or_default(),
+        "reject_reason": row.get::<Option<String>, _>("reject_reason").unwrap_or_default(),
         "replied_at": row.try_get::<String, _>("replied_at").unwrap_or_default(),
         "updated_at": row.try_get::<String, _>("updated_at").unwrap_or_default(),
     })
@@ -385,7 +391,7 @@ pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         return ctx.err(400, "请先登录");
     }
     let rows = sqlx::query(
-        "SELECT id, title, content, feedback_type, images, status, category, assignee, resolve_note, error_logs, all_logs, created_at, replied_at, updated_at
+        "SELECT id, title, content, feedback_type, images, status, category, assignee, replied_by, resolve_note, reject_reason, error_logs, all_logs, created_at, replied_at, updated_at
          FROM user_feedback
          WHERE ciyuanxi_id = ? AND category = 'feedback' AND deleted_at IS NULL
          ORDER BY created_at DESC
@@ -413,7 +419,9 @@ pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
                         "status": r.get::<String, _>("status"),
                         "category": r.get::<String, _>("category"),
                         "assignee": r.get::<String, _>("assignee"),
+                        "repliedBy": r.get::<Option<String>, _>("replied_by").unwrap_or_default(),
                         "resolveNote": r.get::<Option<String>, _>("resolve_note").unwrap_or_default(),
+                        "rejectReason": r.get::<Option<String>, _>("reject_reason").unwrap_or_default(),
                         "hasErrorLogs": r.get::<Option<String>, _>("error_logs").map(|v| !v.is_empty()).unwrap_or(false),
                         "hasAllLogs": r.get::<Option<String>, _>("all_logs").map(|v| !v.is_empty()).unwrap_or(false),
                         "createdAt": r.try_get::<String, _>("created_at").unwrap_or_default(),

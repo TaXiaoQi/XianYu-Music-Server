@@ -261,7 +261,7 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   完成
                 </button>
-                <button v-if="item.status === 'pending'" class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">
+                <button v-if="item.status === 'pending'" class="act-btn act-reject" @click="openRejectModal(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   拒绝
                 </button>
@@ -303,6 +303,43 @@
             <button class="btn-cancel" :disabled="resolveSaving" @click="closeResolveModal">取消</button>
             <button class="btn-confirm" :disabled="resolveSaving || !resolveNote.trim()" @click="confirmResolve">
               {{ resolveSaving ? '提交中...' : '确认完成' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 拒绝理由弹窗 -->
+    <Transition name="modal">
+      <div v-if="rejectModalVisible" class="modal-backdrop">
+        <div class="modal-dialog resolve-dialog">
+          <div class="modal-head">
+            <h3>拒绝反馈</h3>
+            <button class="modal-close" @click="closeRejectModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="rejectTarget" class="resolve-target-info">
+              <strong>{{ rejectTarget.title || '无标题' }}</strong>
+              <span>{{ rejectTarget.nickname || '匿名用户' }} · {{ rejectTarget.ciyuanxi_id || '-' }}</span>
+            </div>
+            <label class="resolve-field">
+              <span class="resolve-field-label">拒绝理由 <em>*</em></span>
+              <textarea
+                v-model="rejectNote"
+                class="resolve-textarea"
+                rows="5"
+                maxlength="1000"
+                placeholder="请填写拒绝理由（必填），该理由将展示给提交反馈的用户"
+              ></textarea>
+              <span class="resolve-count">{{ rejectNote.length }}/1000</span>
+            </label>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" :disabled="rejectSaving" @click="closeRejectModal">取消</button>
+            <button class="btn-confirm btn-danger" :disabled="rejectSaving || !rejectNote.trim()" @click="confirmReject">
+              {{ rejectSaving ? '提交中...' : '确认拒绝' }}
             </button>
           </div>
         </div>
@@ -953,6 +990,44 @@ async function confirmResolve() {
   if (res.code === 200) {
     showToast('已标记为已完成', 'success')
     closeResolveModal()
+    await loadList()
+  } else {
+    showToast(res.msg || '操作失败')
+  }
+}
+
+// ===== 拒绝弹窗 =====
+const rejectModalVisible = ref(false)
+const rejectTarget = ref<Feedback | null>(null)
+const rejectNote = ref('')
+const rejectSaving = ref(false)
+
+function openRejectModal(item: Feedback) {
+  rejectTarget.value = item
+  rejectNote.value = ''
+  rejectSaving.value = false
+  rejectModalVisible.value = true
+}
+
+function closeRejectModal() {
+  if (rejectSaving.value) return
+  rejectModalVisible.value = false
+  rejectTarget.value = null
+  rejectNote.value = ''
+}
+
+async function confirmReject() {
+  if (!rejectTarget.value || !rejectNote.value.trim()) return
+  rejectSaving.value = true
+  const res = await adminApi('update_feedback_status', {
+    id: rejectTarget.value.id,
+    status: 'rejected',
+    reason: rejectNote.value.trim(),
+  })
+  rejectSaving.value = false
+  if (res.code === 200) {
+    showToast('已拒绝该反馈', 'success')
+    closeRejectModal()
     await loadList()
   } else {
     showToast(res.msg || '操作失败')

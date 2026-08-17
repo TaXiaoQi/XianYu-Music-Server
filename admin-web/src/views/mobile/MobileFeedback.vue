@@ -204,7 +204,7 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               完成
             </button>
-            <button v-if="f.status === 'pending'" class="act-btn act-reject" @click="setStatusOf(f, 'rejected')">
+            <button v-if="f.status === 'pending'" class="act-btn act-reject" @click="openReject(f)">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               拒绝
             </button>
@@ -226,6 +226,24 @@
         <div class="mobile-dialog-actions">
           <button class="mobile-dialog-btn cancel" @click="closeResolve">取消</button>
           <button class="mobile-dialog-btn confirm" :disabled="!resolveNote.trim()" @click="confirmResolve">{{ resolveSaving ? '提交中...' : '确认完成' }}</button>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
+    <!-- 拒绝理由弹窗 -->
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
+    <div v-if="rejectVisible" class="mobile-dialog-overlay" @click.self="closeReject">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:400px;">
+        <div class="mobile-dialog-title">拒绝反馈</div>
+        <div class="resolve-target-info" v-if="rejectTarget">
+          <strong>{{ rejectTarget.title || '无标题' }}</strong>
+          <span>{{ rejectTarget.nickname || '匿名用户' }} · {{ rejectTarget.ciyuanxi_id || '-' }}</span>
+        </div>
+        <textarea v-model="rejectNote" class="mobile-dialog-input" rows="4" placeholder="请填写拒绝理由（必填）" style="min-height:90px;resize:vertical;"></textarea>
+        <div class="mobile-dialog-actions">
+          <button class="mobile-dialog-btn cancel" @click="closeReject">取消</button>
+          <button class="mobile-dialog-btn confirm danger" :disabled="!rejectNote.trim()" @click="confirmReject">{{ rejectSaving ? '提交中...' : '确认拒绝' }}</button>
         </div>
       </div>
     </div>
@@ -577,6 +595,26 @@ async function confirmResolve() {
     resolveTarget.value.resolve_note = resolveNote.value.trim()
     closeResolve()
     showToast('已标记为已完成', 'success')
+  } else { showToast(res.msg || '操作失败') }
+}
+
+// ===== 拒绝弹窗 =====
+const rejectVisible = ref(false)
+const rejectTarget = ref<any>(null)
+const rejectNote = ref('')
+const rejectSaving = ref(false)
+function openReject(f: any) { rejectTarget.value = f; rejectNote.value = ''; rejectSaving.value = false; rejectVisible.value = true }
+function closeReject() { if (!rejectSaving.value) { rejectVisible.value = false; rejectTarget.value = null } }
+async function confirmReject() {
+  if (!rejectTarget.value || !rejectNote.value.trim()) return
+  rejectSaving.value = true
+  const res = await adminApi('update_feedback_status', { id: rejectTarget.value.id, status: 'rejected', reason: rejectNote.value.trim() })
+  rejectSaving.value = false
+  if (res.code === 200) {
+    rejectTarget.value.status = 'rejected'
+    rejectTarget.value.reject_reason = rejectNote.value.trim()
+    closeReject()
+    showToast('已拒绝该反馈', 'success')
   } else { showToast(res.msg || '操作失败') }
 }
 

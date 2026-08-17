@@ -165,6 +165,7 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     let data = parse_body(body);
     let id = int_of(&data, "id");
     let status = str_of(&data, "status").trim().to_string();
+    let reason = str_of(&data, "reason").trim().to_string();
     let valid = ["pending", "processing", "resolved", "rejected"];
     if id <= 0 || !valid.contains(&status.as_str()) {
         return err(400, "参数错误");
@@ -172,6 +173,13 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     // 拒绝时记录操作人（与认领一致，打上 assignee 和 replied_by）
     // 归属校验：仅认领人可拒绝自己的反馈；未认领的（空认领人）任意管理员可拒绝
     if status == "rejected" {
+        // 拒绝理由必填（与完成说明保持一致），并作为拒绝通知展示给用户
+        if reason.is_empty() {
+            return err(400, "拒绝理由不能为空");
+        }
+        if reason.chars().count() > 1000 {
+            return err(400, "拒绝理由不能超过 1000 字");
+        }
         let cur = sqlx::query_as::<_, (String, String)>(
             "SELECT status, COALESCE(assignee, '') FROM user_feedback WHERE id = ?",
         )
@@ -196,12 +204,14 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
         sqlx::query(
             "UPDATE user_feedback SET status = ?,
                     assignee = ?, replied_by = ?, replied_at = NOW(),
+                    reject_reason = ?, notified_at = NULL,
                     resolved_at = CASE WHEN ? = 'resolved' THEN COALESCE(resolved_at, NOW()) ELSE resolved_at END,
                     updated_at = NOW() WHERE id = ?",
         )
         .bind(&status)
         .bind(&ctx.username)
         .bind(&ctx.username)
+        .bind(&reason)
         .bind(&status)
         .bind(id)
         .execute(pool)

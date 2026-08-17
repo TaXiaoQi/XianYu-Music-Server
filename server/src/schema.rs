@@ -110,6 +110,8 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     // 认领人（管理员账号名）与完成说明、通知确认时间（反馈 todo 化）
     ensure_column(pool, "user_feedback", "assignee", "VARCHAR(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "resolve_note", "TEXT").await;
+    // 拒绝理由：反馈被拒绝时必填，展示给提交用户（与 resolve_note 相对）
+    ensure_column(pool, "user_feedback", "reject_reason", "TEXT").await;
     ensure_column(pool, "user_feedback", "notified_at", "DATETIME DEFAULT NULL").await;
     // 认领时间与完成时间（用于后台反馈时间线展示）
     ensure_column(pool, "user_feedback", "claimed_at", "DATETIME DEFAULT NULL").await;
