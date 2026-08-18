@@ -446,12 +446,12 @@ onMounted(async () => {
 .donut-track {
   fill: none;
   stroke: var(--track, var(--border));
-  stroke-width: 22;
+  stroke-width: 20;
 }
 
 .donut-seg {
   fill: none;
-  stroke-width: 22;
+  stroke-width: 20;
   cursor: pointer;
   transition: stroke-width 0.2s, opacity 0.2s;
   opacity: 0.9;
@@ -459,7 +459,7 @@ onMounted(async () => {
 
 .donut-seg:hover,
 .donut-seg.seg-active {
-  stroke-width: 26;
+  stroke-width: 24;
   opacity: 1;
 }
 

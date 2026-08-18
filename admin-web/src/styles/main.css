@@ -242,7 +242,7 @@ button, input, textarea, select { font-family: inherit; }
 }
 
 /* ---------- 主内容区 ---------- */
-.main { flex: 1; padding: 28px; overflow-y: auto; min-width: 0; }
+.main { flex: 1; padding: 28px; overflow-y: auto; min-width: 0; scrollbar-gutter: stable; }
 .topbar {
     display: flex;
     justify-content: space-between;

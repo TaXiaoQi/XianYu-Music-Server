@@ -1,17 +1,15 @@
 <template>
   <div class="mobile-page mobile-dashboard">
     <!-- 标题区 -->
-    <div class="mobile-card dsh-head-card">
-      <div class="dsh-head">
-        <div class="dsh-head-l">
-          <div class="dsh-head-label">Dashboard Overview</div>
-          <div class="dsh-head-title">数据<em>概览</em></div>
-          <div class="dsh-head-date">{{ today }} · 弦予音乐后台</div>
-        </div>
-        <div class="dsh-head-r">
-          <span class="dsh-live-dot"></span>
-          <span>实时同步</span>
-        </div>
+    <div class="dsh-head">
+      <div class="dsh-head-l">
+        <div class="dsh-head-label">Dashboard Overview</div>
+        <div class="dsh-head-title">数据<em>概览</em></div>
+        <div class="dsh-head-date">{{ today }} · 弦予音乐后台</div>
+      </div>
+      <div class="dsh-head-r">
+        <span class="dsh-live-dot"></span>
+        <span>实时同步</span>
       </div>
     </div>
 
@@ -355,14 +353,14 @@ onMounted(async () => {
 }
 
 /* 标题区 */
-.dsh-head-card {
-  padding: 18px 16px;
-}
 .dsh-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
   gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
 }
 .dsh-head-label {
   font-size: 10px;

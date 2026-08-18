@@ -525,15 +525,12 @@ const icons = {
 }
 .route-fade-enter-active,
 .route-fade-leave-active {
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.1s ease;
 }
 .route-fade-enter-from {
   opacity: 0;
-  transform: translateY(10px);
 }
 .route-fade-leave-to {
   opacity: 0;
-  transform: translateY(-6px);
 }
 </style>
