@@ -32,13 +32,6 @@
       </div>
     </div>
 
-    <!-- tabs -->
-    <div class="mobile-tabs">
-      <button class="mobile-btn" :class="{ primary: tab === 'pending' }" @click="switchTab('pending')">待审核 {{ stats.pending }}</button>
-      <button class="mobile-btn" :class="{ primary: tab === 'approved' }" @click="switchTab('approved')">已通过 {{ stats.approved }}</button>
-      <button class="mobile-btn" :class="{ primary: tab === 'rejected' }" @click="switchTab('rejected')">已拒绝 {{ stats.rejected }}</button>
-    </div>
-
     <!-- 加载中 -->
     <div v-if="loading" class="mobile-empty">加载中...</div>
 

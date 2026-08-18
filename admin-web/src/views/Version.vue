@@ -6,37 +6,15 @@
         <div class="header-info">
           <h2 class="page-title">版本管理</h2>
           <p class="page-desc">
-            管理桌面端在线更新配置与安卓 APP 版本。新增或编辑版本后，卡片列表实时刷新。启用的版本将对客户端生效。
+            管理桌面端在线更新配置。新增或编辑版本后，卡片实时刷新。启用的版本将对客户端生效。
           </p>
         </div>
-        <button class="btn-add" @click="openAddModal">
+        <button class="btn-add" @click="openDesktopModal">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
           新增版本
         </button>
-      </div>
-    </Transition>
-
-    <!-- 统计栏 -->
-    <Transition name="fade-up" appear>
-      <div class="stats-row">
-        <div class="stat-chip stat-total">
-          <span class="stat-num">{{ total }}</span>
-          <span class="stat-label">全部版本</span>
-        </div>
-        <div class="stat-chip stat-on">
-          <span class="stat-num">{{ enabledCount }}</span>
-          <span class="stat-label">已启用</span>
-        </div>
-        <div class="stat-chip stat-off">
-          <span class="stat-num">{{ disabledCount }}</span>
-          <span class="stat-label">已禁用</span>
-        </div>
-        <div class="stat-chip stat-desktop" v-if="desktop.enabled">
-          <span class="stat-num">1</span>
-          <span class="stat-label">桌面端已启用</span>
-        </div>
       </div>
     </Transition>
 
@@ -91,88 +69,6 @@
       </div>
     </Transition>
 
-    <!-- APP 版本卡片列表 -->
-    <div class="app-section">
-      <div class="section-label">
-        <span class="section-dot dot-app"></span>
-        <h3>APP 版本管理</h3>
-      </div>
-
-      <div v-if="loading" class="state-box">
-        <div class="spinner"></div>
-        <span>加载中...</span>
-      </div>
-      <div v-else-if="loadError" class="state-box state-error">
-        <span>{{ loadError }}</span>
-      </div>
-      <Transition name="fade-up" appear v-else-if="versions.length === 0">
-        <div class="state-box state-empty">
-          <div class="empty-icon">
-            <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-            </svg>
-          </div>
-          <p class="empty-title">暂无 APP 版本</p>
-          <p class="empty-sub">点击右上角「新增版本」上传第一个 APK</p>
-        </div>
-      </Transition>
-
-      <div v-else class="card-grid">
-        <TransitionGroup name="card">
-          <div
-            v-for="(v, idx) in versions"
-            :key="v.id"
-            class="ann-card"
-            :class="[{ disabled: v.status === 'disabled' }]"
-            :style="{ animationDelay: `${idx * 60}ms` }"
-          >
-            <div class="type-bar" :class="statusBarClass(v.status)"></div>
-            <div class="card-body">
-              <div class="card-top">
-                <span class="type-badge" :class="statusBadgeClass(v.status)">{{ statusLabel(v.status) }}</span>
-                <label class="toggle-switch" :title="v.status === 'disabled' ? '点击启用' : '点击禁用'">
-                  <input type="checkbox" :checked="v.status !== 'disabled'" @change="toggleVersion(v, ($event.target as HTMLInputElement).checked)" />
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-              <h3 class="card-title">{{ v.app_name || '-' }} <span class="ver-code">{{ v.version_code || '-' }}</span></h3>
-              <p class="card-content">{{ v.update_content || '无更新说明' }}</p>
-              <div v-if="v.download_url" class="card-link">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-                <a :href="v.download_url" target="_blank">下载安装包</a>
-              </div>
-              <div class="card-footer">
-                <span class="card-date">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                  {{ v.created_at || '-' }}
-                </span>
-                <div class="card-actions">
-                  <button class="icon-btn" title="编辑" @click="openEditModal(v)">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  </button>
-                  <button class="icon-btn icon-btn-danger" title="删除" @click="deleteVersion(v.id)">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </TransitionGroup>
-      </div>
-
-      <!-- 分页 -->
-      <div v-if="!loading && total > 0" class="pagination">
-        <button :disabled="page <= 1" @click="goPage(page - 1)">上一页</button>
-        <button
-          v-for="p in pageNumbers"
-          :key="p"
-          :class="{ active: p === page }"
-          @click="goPage(p)"
-        >{{ p }}</button>
-        <button :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
-      </div>
-    </div>
-
     <!-- 桌面端配置弹窗 -->
     <Transition name="modal">
       <div v-if="desktopModalVisible" class="modal-backdrop">
@@ -200,7 +96,7 @@
             </div>
             <div class="field">
               <label>更新内容</label>
-              <textarea v-model="desktopDraft.updateContent" rows="9" placeholder="本次更新内容"></textarea>
+              <textarea v-model="desktopDraft.updateContent" rows="18" placeholder="本次更新内容"></textarea>
             </div>
             <div class="field">
               <label>启用状态</label>
@@ -269,54 +165,6 @@
       </div>
     </Transition>
 
-    <!-- 新增/编辑 APP 版本弹窗 -->
-    <Transition name="modal">
-      <div v-if="addModalVisible" class="modal-backdrop">
-        <div class="modal-dialog">
-          <div class="modal-head">
-            <h3>{{ editingId ? '编辑版本' : '新增 APP 版本' }}</h3>
-            <button class="modal-close" @click="closeAddModal">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-          <div class="modal-form">
-            <div class="field">
-              <label class="required">软件名称</label>
-              <input v-model="addForm.appName" type="text" placeholder="如 弦予·音乐" />
-            </div>
-            <div class="field">
-              <label class="required">版本号</label>
-              <input v-model="addForm.versionCode" type="text" placeholder="如 1.2.0" />
-            </div>
-            <div class="field">
-              <label>更新内容</label>
-              <textarea v-model="addForm.updateContent" rows="9" placeholder="本次更新内容"></textarea>
-            </div>
-            <div v-if="!editingId" class="field">
-              <label class="required">安装包</label>
-              <div class="package-dropzone" :class="{ dragging: addPackageDragging, selected: !!addForm.fileName }" @click="triggerApkFileInput" @dragover.prevent="addPackageDragging = true" @dragleave.prevent="addPackageDragging = false" @drop.prevent="onApkPackageDrop">
-                <input ref="apkFileInputRef" type="file" accept=".apk" class="file-hidden" @change="onFileChange" />
-                <div class="dropzone-icon">⬆</div>
-                <strong>{{ addForm.fileName ? '已选择安装包' : '点击或拖拽 APK 到此处' }}</strong>
-                <span>仅支持 APK 格式</span>
-              </div>
-              <div v-if="addForm.fileName" class="file-info">已选择：{{ addForm.fileName }}（{{ formatFileSize(addForm.fileSize) }}）</div>
-            </div>
-            <div v-if="uploading" class="upload-progress">
-              <div class="progress-bar-track"><div class="progress-bar-fill" :style="{ width: uploadProgress + '%' }"></div></div>
-              <span class="progress-text">{{ uploadProgress }}%</span>
-            </div>
-          </div>
-          <div class="modal-foot">
-            <button class="btn-cancel" @click="closeAddModal">取消</button>
-            <button class="btn-save" :disabled="uploading" @click="saveVersion">
-              <span v-if="uploading" class="btn-spinner"></span>
-              {{ uploading ? '保存中...' : (editingId ? '保存修改' : '上传安装包') }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
   </div>
 </template>
 
@@ -324,47 +172,6 @@
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
-import { fmtDateTime } from '@/utils/time'
-
-interface AppVersion {
-  id: number
-  app_name: string
-  version_code: string
-  download_url: string
-  update_content: string
-  status: string
-  file_size: number
-  created_at: string
-  [key: string]: any
-}
-
-const statusOptions = [
-  { value: 'normal', label: '正常' },
-  { value: 'update', label: '更新' },
-  { value: 'force_update', label: '强制更新' },
-  { value: 'disabled', label: '禁用' },
-  { value: 'crash', label: '闪退' },
-  { value: 'group_update', label: '进群更新' },
-]
-
-const statusMap: Record<string, { label: string; bar: string; badge: string }> = {
-  normal: { label: '正常', bar: 'bar-normal', badge: 'badge-normal' },
-  update: { label: '更新', bar: 'bar-update', badge: 'badge-update' },
-  force_update: { label: '强制更新', bar: 'bar-force', badge: 'badge-force' },
-  disabled: { label: '禁用', bar: 'bar-disabled', badge: 'badge-disabled' },
-  crash: { label: '闪退', bar: 'bar-crash', badge: 'badge-crash' },
-  group_update: { label: '进群更新', bar: 'bar-group', badge: 'badge-group' },
-}
-
-function statusLabel(status: string): string {
-  return statusMap[status]?.label || '未知'
-}
-function statusBarClass(status: string): string {
-  return statusMap[status]?.bar || 'bar-normal'
-}
-function statusBadgeClass(status: string): string {
-  return statusMap[status]?.badge || 'badge-normal'
-}
 
 // ===== 桌面端配置 =====
 const desktop = ref<any>({ version: '', downloadUrl: '', updateContent: '', enabled: false, updated_at: '' })
@@ -570,149 +377,6 @@ function setDesktopPackageFile(file: File) {
   desktopChannelLinkDraft.value = ''
 }
 
-// ===== APP 版本列表 =====
-const versions = ref<AppVersion[]>([])
-const loading = ref(true)
-const loadError = ref('')
-const page = ref(1)
-const pageSize = 15
-const total = ref(0)
-const totalPages = ref(0)
-
-const enabledCount = computed(() => versions.value.filter(v => v.status !== 'disabled').length)
-const disabledCount = computed(() => versions.value.filter(v => v.status === 'disabled').length)
-
-const pageNumbers = computed(() => {
-  const max = 7
-  const pages: number[] = []
-  if (totalPages.value <= max) {
-    for (let i = 1; i <= totalPages.value; i++) pages.push(i)
-  } else {
-    let start = Math.max(1, page.value - 3)
-    let end = Math.min(totalPages.value, start + max - 1)
-    if (end - start < max - 1) start = Math.max(1, end - max + 1)
-    for (let i = start; i <= end; i++) pages.push(i)
-  }
-  return pages
-})
-
-async function loadList() {
-  loading.value = true
-  loadError.value = ''
-  const res = await adminApi<{ total: number; total_pages: number; list: AppVersion[] }>('list_versions', {
-    page: page.value,
-    page_size: pageSize,
-  })
-  if (res.code === 200 && res.data) {
-    versions.value = res.data.list || []
-    total.value = res.data.total
-    totalPages.value = res.data.total_pages
-  } else {
-    loadError.value = res.msg || '加载失败'
-    versions.value = []
-  }
-  loading.value = false
-}
-
-function goPage(p: number) {
-  if (p < 1 || p > totalPages.value || p === page.value) return
-  page.value = p
-  loadList()
-}
-
-async function toggleVersion(v: AppVersion, enabled: boolean) {
-  const newStatus = enabled ? 'normal' : 'disabled'
-  const res = await adminApi('change_version_status', { id: v.id, status: newStatus })
-  if (res.code === 200) {
-    showToast(enabled ? '已启用' : '已禁用', 'success')
-    v.status = newStatus
-  } else {
-    showToast(res.msg || '操作失败')
-    loadList()
-  }
-}
-
-async function deleteVersion(id: number) {
-  const ok = await webConfirm('确认删除该版本？此操作不可恢复。', { title: '删除版本', confirmText: '确认删除' })
-  if (!ok) return
-  const res = await adminApi('delete_version', { id })
-  if (res.code === 200) {
-    showToast('删除成功', 'success')
-    loadList()
-  } else {
-    showToast(res.msg || '删除失败')
-  }
-}
-
-// ===== 新增/编辑弹窗 =====
-const addModalVisible = ref(false)
-const editingId = ref(0)
-const uploading = ref(false)
-const uploadProgress = ref(0)
-const apkFileInputRef = ref<HTMLInputElement | null>(null)
-const addPackageDragging = ref(false)
-const addForm = ref({
-  appName: '弦予·音乐',
-  versionCode: '',
-  updateContent: '',
-  fileName: '',
-  fileSize: 0,
-  fileBase64: '',
-})
-
-function openAddModal() {
-  editingId.value = 0
-  addForm.value = { appName: '弦予·音乐', versionCode: '', updateContent: '', fileName: '', fileSize: 0, fileBase64: '' }
-  uploadProgress.value = 0
-  addModalVisible.value = true
-}
-
-function openEditModal(v: AppVersion) {
-  editingId.value = v.id
-  addForm.value = {
-    appName: v.app_name || '',
-    versionCode: v.version_code || '',
-    updateContent: v.update_content || '',
-    fileName: '',
-    fileSize: 0,
-    fileBase64: '',
-  }
-  uploadProgress.value = 0
-  addModalVisible.value = true
-}
-
-function closeAddModal() {
-  if (uploading.value) return
-  addModalVisible.value = false
-}
-
-function triggerApkFileInput() {
-  apkFileInputRef.value?.click()
-}
-
-function onFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (!input.files || input.files.length === 0) return
-  setApkFile(input.files[0])
-}
-
-function onApkPackageDrop(e: DragEvent) {
-  addPackageDragging.value = false
-  const file = e.dataTransfer?.files?.[0]
-  if (!file) return
-  setApkFile(file)
-}
-
-function setApkFile(file: File) {
-  const ext = file.name.split('.').pop()?.toLowerCase()
-  if (ext !== 'apk') {
-    showToast('只允许上传 APK 文件')
-    return
-  }
-  addForm.value.fileName = file.name
-  addForm.value.fileSize = file.size
-}
-
 function formatFileSize(bytes: number): string {
   if (!bytes) return '-'
   if (bytes < 1024) return bytes + ' B'
@@ -729,72 +393,8 @@ function readFileAsBase64(file: File): Promise<string> {
   })
 }
 
-async function saveVersion() {
-  if (!addForm.value.appName.trim() || !addForm.value.versionCode.trim()) {
-    showToast('请填写软件名称和版本号')
-    return
-  }
-
-  if (editingId.value) {
-    uploading.value = true
-    const res = await adminApi('update_version', {
-      id: editingId.value,
-      app_name: addForm.value.appName.trim(),
-      version_code: addForm.value.versionCode.trim(),
-      update_content: addForm.value.updateContent.trim(),
-    })
-    uploading.value = false
-    if (res.code === 200) {
-      showToast('修改成功', 'success')
-      closeAddModal()
-      loadList()
-    } else {
-      showToast(res.msg || '修改失败')
-    }
-    return
-  }
-
-  const fileInput = apkFileInputRef.value
-  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
-    showToast('请选择安装包')
-    return
-  }
-
-  uploading.value = true
-  uploadProgress.value = 10
-  const file = fileInput.files[0]
-  let base64 = ''
-  try {
-    base64 = await readFileAsBase64(file)
-  } catch {
-    uploading.value = false
-    uploadProgress.value = 0
-    showToast('文件读取失败')
-    return
-  }
-  uploadProgress.value = 50
-
-  const res = await adminApi('add_version', {
-    app_name: addForm.value.appName.trim(),
-    version_code: addForm.value.versionCode.trim(),
-    update_content: addForm.value.updateContent.trim(),
-    file_data: base64,
-  })
-  uploadProgress.value = 100
-  uploading.value = false
-
-  if (res.code === 200) {
-    showToast('上传成功', 'success')
-    closeAddModal()
-    loadList()
-  } else {
-    showToast(res.msg || '上传失败')
-  }
-}
-
 onMounted(() => {
   loadDesktop()
-  loadList()
 })
 </script>
 

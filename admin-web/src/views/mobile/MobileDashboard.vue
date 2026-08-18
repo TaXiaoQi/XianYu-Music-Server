@@ -362,6 +362,10 @@ onMounted(async () => {
   padding-bottom: 14px;
   border-bottom: 1px solid var(--border);
 }
+.dsh-head-l {
+  flex: 1;
+  min-width: 0;
+}
 .dsh-head-label {
   font-size: 10px;
   letter-spacing: 0.25em;
@@ -394,6 +398,7 @@ onMounted(async () => {
   font-size: 11px;
   color: var(--text-light);
   white-space: nowrap;
+  flex-shrink: 0;
 }
 .dsh-live-dot {
   width: 7px;

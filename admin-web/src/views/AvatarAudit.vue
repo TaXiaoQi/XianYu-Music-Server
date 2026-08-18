@@ -54,23 +54,6 @@
       </div>
     </Transition>
 
-    <!-- 标签页 -->
-    <Transition name="fade-up" appear>
-      <div class="audit-tabs">
-        <button
-          v-for="t in tabs"
-          :key="t.value"
-          class="audit-tab"
-          :class="{ active: activeTab === t.value }"
-          @click="switchTab(t.value)"
-        >
-          <span class="tab-dot" :class="t.value"></span>
-          {{ t.label }}
-          <span v-if="stats[t.value] > 0" class="tab-count" :class="t.value">{{ stats[t.value] }}</span>
-        </button>
-      </div>
-    </Transition>
-
     <!-- 加载中 -->
     <div v-if="loading" class="state-box">
       <div class="spinner"></div>
@@ -191,12 +174,6 @@ interface AuditRecord {
 }
 
 type TabKey = 'pending' | 'approved' | 'rejected'
-
-const tabs: { value: TabKey; label: string }[] = [
-  { value: 'pending', label: '待审核' },
-  { value: 'approved', label: '已通过' },
-  { value: 'rejected', label: '已拒绝' },
-]
 
 // ===== 状态 =====
 const loading = ref(true)
