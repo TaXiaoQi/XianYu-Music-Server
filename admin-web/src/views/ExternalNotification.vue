@@ -7,19 +7,6 @@
           <h2 class="page-title">外部通知</h2>
           <p class="page-desc">管理用于接收后台状态通知的绑定邮箱，并可分别设置壁纸审核、头像审核、昵称审核、反馈更新等板块的通知开关。</p>
         </div>
-        <div class="header-actions">
-          <button class="btn-ghost" @click="doImportAdmin" :disabled="importing">
-            <span v-if="importing" class="btn-spinner btn-spinner-dark"></span>
-            <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            导入管理员邮箱
-          </button>
-          <button class="btn-add" @click="openAddModal">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            新增通知邮箱
-          </button>
-        </div>
       </div>
     </Transition>
 
@@ -104,6 +91,23 @@
 
     <!-- ==================== 通知邮箱 Tab ==================== -->
     <div v-if="activeTab === 'email'">
+      <!-- 顶部操作区 -->
+      <Transition name="fade-up" appear>
+        <div class="email-actions">
+          <button class="btn-ghost" @click="doImportAdmin" :disabled="importing">
+            <span v-if="importing" class="btn-spinner btn-spinner-dark"></span>
+            <svg v-else width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            导入管理员邮箱
+          </button>
+          <button class="btn-add" @click="openAddModal">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            新增通知邮箱
+          </button>
+        </div>
+      </Transition>
+
       <!-- 通知板块设置 -->
       <Transition name="fade-up" appear>
         <div class="module-block">
@@ -209,7 +213,7 @@
                     </span>
                   </div>
                   <p class="notify-remark">{{ item.remark || '暂无备注' }}</p>
-                  <p class="notify-time">创建时间：{{ item.created_at || '-' }}</p>
+                  <p class="notify-time">创建时间：{{ fmtDateTime(item.created_at) || '-' }}</p>
                   <div class="notify-modules">
                     <span
                       v-for="mod in moduleList"
@@ -407,428 +411,394 @@
 
     <!-- ==================== 通信工具 Tab ==================== -->
     <div v-if="activeTab === 'commtool'" class="tab-panel">
-      <div class="sub-tab-bar">
-        <button class="sub-tab-item" :class="{ active: commSubTab === 'http-server' }" @click="commSubTab = 'http-server'">HTTP服务器</button>
-        <button class="sub-tab-item" :class="{ active: commSubTab === 'http-client' }" @click="commSubTab = 'http-client'">HTTP客户端</button>
-        <button class="sub-tab-item" :class="{ active: commSubTab === 'sse-server' }" @click="commSubTab = 'sse-server'">HTTP SSE服务器</button>
-        <button class="sub-tab-item" :class="{ active: commSubTab === 'ws-server' }" @click="commSubTab = 'ws-server'">WebSocket服务器</button>
-        <button class="sub-tab-item" :class="{ active: commSubTab === 'ws-client' }" @click="commSubTab = 'ws-client'">WebSocket客户端</button>
-        <button class="sub-tab-item" :class="{ active: commSubTab === 'auth' }" @click="commSubTab = 'auth'">连接鉴权</button>
-      </div>
 
-      <!-- HTTP 服务器 -->
-      <div v-if="commSubTab === 'http-server'" class="sub-panel">
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-blue">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>
+      <!-- ====== 服务管理 ====== -->
+      <Transition name="fade-up" appear>
+        <div class="comm-service-card">
+          <div class="service-head">
+            <div class="service-title">
+              <span class="service-icon mi-server">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/></svg>
               </span>
               <div>
-                <h3 class="module-name">HTTP 服务器</h3>
-                <p class="module-desc">监听独立端口，接收并记录所有发来的 HTTP 请求。服务根据配置自动启停。</p>
+                <h3>服务管理</h3>
+                <p>管理 HTTP/SSE/WebSocket 多协议通信服务的启用状态与端口配置</p>
               </div>
             </div>
-            <span class="status-badge" :class="commStatus.server_running ? 'on' : 'off'">
-              <span class="status-dot"></span>{{ commStatus.server_running ? '运行中' : '未运行' }}
-            </span>
+            <button class="switch" :class="{ on: commService.enabled }" @click="toggleService">
+              <span class="switch-knob"></span>
+            </button>
           </div>
-          <div class="info-line">
-            <span>监听端口：<strong>{{ commStatus.server_port || '-' }}</strong></span>
-            <span class="info-hint">服务随配置自动启停，无需手动操作</span>
-          </div>
-        </div>
 
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-green">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">收到的请求</h3>
-                <p class="module-desc">最近收到的 HTTP 请求记录（最多 200 条）</p>
-              </div>
-            </div>
-            <button class="btn-ghost btn-small" @click="clearHttpLogs">清空日志</button>
-          </div>
-          <div v-if="httpLogs.length === 0" class="empty-mini">暂无请求记录</div>
-          <div v-else class="log-list">
-            <div v-for="(log, i) in httpLogs" :key="i" class="log-item">
-              <div class="log-item-head">
-                <span class="log-method" :class="log.method">{{ log.method }}</span>
-                <span class="log-path">{{ log.path }}</span>
-                <span class="log-time">{{ log.time }}</span>
-              </div>
-              <pre v-if="log.body" class="log-body">{{ log.body }}</pre>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- HTTP 客户端 -->
-      <div v-if="commSubTab === 'http-client'" class="sub-panel">
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-green">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">HTTP 客户端</h3>
-                <p class="module-desc">从后台发起 HTTP 请求，用于调试接口与验证回调。</p>
-              </div>
-            </div>
-          </div>
-          <div class="form-section">
-            <div class="form-row-inline">
-              <label class="form-field form-field-grow">
-                <span class="form-label">请求地址</span>
-                <input v-model="httpClientUrl" type="text" placeholder="https://example.com/api" />
+          <div class="service-config" v-if="commService.enabled">
+            <div class="service-config-row">
+              <label class="field">
+                <span>监听端口</span>
+                <input v-model="commService.port" type="number" min="1024" max="65535" />
               </label>
-              <label class="form-field form-field-method">
-                <span class="form-label">请求方法</span>
-                <select v-model="httpClientMethod">
-                  <option value="GET">GET</option>
-                  <option value="POST">POST</option>
-                </select>
-              </label>
+              <span class="service-status-badge" :class="commStatus.server_running ? 'on' : 'off'">
+                <span class="status-dot"></span>{{ commStatus.server_running ? '运行中' : '未运行' }}
+              </span>
             </div>
-            <label class="form-field">
-              <span class="form-label">请求头（每行 Key: Value）</span>
-              <textarea v-model="httpClientHeaders" rows="3" placeholder="Authorization: Bearer xxx"></textarea>
-            </label>
-            <label class="form-field">
-              <span class="form-label">请求体</span>
-              <textarea v-model="httpClientBody" rows="4" placeholder='{"key": "value"}'></textarea>
-            </label>
-            <div class="form-actions">
-              <button class="btn-add" :disabled="httpClientSending" @click="sendHttpClient">
-                <span v-if="httpClientSending" class="btn-spinner"></span>
-                {{ httpClientSending ? '发送中...' : '发送请求' }}
+            <div class="service-actions">
+              <button class="btn-add" :disabled="serviceSaving" @click="saveServiceConfig">
+                <span v-if="serviceSaving" class="btn-spinner"></span>
+                {{ serviceSaving ? '保存中...' : '保存配置' }}
+              </button>
+              <button class="btn-ghost" @click="openAuthDialog">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                连接鉴权
               </button>
             </div>
           </div>
-
-          <div v-if="httpClientResult" class="result-box">
-            <div class="result-head">
-              响应结果
-              <span class="status-badge" :class="httpClientResult.status < 400 ? 'on' : 'off'">
-                <span class="status-dot"></span>状态码 {{ httpClientResult.status }}
-              </span>
-              <span class="result-elapsed">耗时 {{ httpClientResult.elapsed_ms }}ms</span>
-            </div>
-            <div class="result-body">
-              <p class="result-label">响应头</p>
-              <pre>{{ formatHeaders(httpClientResult.headers) }}</pre>
-              <p class="result-label">响应体</p>
-              <pre>{{ httpClientResult.body }}</pre>
-            </div>
-          </div>
         </div>
-      </div>
+      </Transition>
 
-      <!-- HTTP SSE 服务器 -->
-      <div v-if="commSubTab === 'sse-server'" class="sub-panel">
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-purple">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">HTTP SSE 服务器</h3>
-                <p class="module-desc">服务端推送事件（Server-Sent Events），客户端连接后可实时接收推送消息。</p>
-              </div>
-            </div>
-            <span class="status-badge" :class="commStatus.server_running ? 'on' : 'off'">
-              <span class="status-dot"></span>{{ commStatus.server_running ? '运行中' : '未运行' }}
-            </span>
-          </div>
-          <div class="info-line">
-            <span>SSE 地址：<code>http://服务器IP:{{ commStatus.server_port || '8090' }}/sse</code></span>
-          </div>
-          <div class="form-section form-section-gap">
-            <label class="form-field">
-              <span class="form-label">推送消息</span>
-              <textarea v-model="sseMessage" rows="3" placeholder="输入要推送的内容"></textarea>
-            </label>
-            <div class="form-actions">
-              <button class="btn-add" @click="sendSsePush">推送消息</button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- WebSocket 服务器 -->
-      <div v-if="commSubTab === 'ws-server'" class="sub-panel">
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-pink">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-9-9"/><path d="M21 3v6h-6"/><path d="M12 8v8M8 12h8"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">WebSocket 服务器</h3>
-                <p class="module-desc">监听 /ws 路径，管理客户端连接并收发消息。</p>
-              </div>
-            </div>
-            <span class="status-badge" :class="commStatus.server_running ? 'on' : 'off'">
-              <span class="status-dot"></span>{{ commStatus.server_running ? '运行中' : '未运行' }}
-            </span>
-          </div>
-          <div class="info-line">
-            <span>连接数：<strong>{{ commStatus.ws_server_count }}</strong></span>
-            <span>WS 地址：<code>ws://服务器IP:{{ commStatus.server_port || '8090' }}/ws</code></span>
-          </div>
-        </div>
-
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-blue">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">已连接客户端</h3>
-                <p class="module-desc">向指定客户端发送消息</p>
-              </div>
-            </div>
-          </div>
-          <div v-if="wsServerClients.length === 0" class="empty-mini">暂无客户端连接</div>
-          <div v-else class="client-list">
-            <div v-for="c in wsServerClients" :key="c.id" class="client-item">
-              <div class="client-info">
-                <span class="client-id">{{ c.id.slice(0, 8) }}</span>
-                <span class="client-time">{{ c.connected_at }}</span>
-                <span v-if="c.events && c.events.length" class="client-events">
-                  <span v-for="ev in c.events" :key="ev" class="client-event-tag">{{ ev }}</span>
-                </span>
-                <span v-else class="client-events">
-                  <span class="client-event-tag tag-all">全部事件</span>
-                </span>
-              </div>
-              <input v-model="wsMessage" type="text" placeholder="输入消息..." @keydown.enter="sendWsServerMessage(c.id)" />
-              <button class="btn-add btn-small" @click="sendWsServerMessage(c.id)">发送</button>
-            </div>
-          </div>
-          <div class="form-section form-section-gap">
-            <label class="form-field">
-              <span class="form-label">广播消息</span>
-              <input v-model="wsBroadcastMessage" type="text" placeholder="输入要广播给所有连接的消息..." @keydown.enter="broadcastWsMessage" />
-            </label>
-            <div class="form-actions">
-              <button class="btn-add" @click="broadcastWsMessage">广播</button>
-            </div>
-          </div>
-        </div>
-
+      <!-- ====== 客户端管理 ====== -->
+      <Transition name="fade-up" appear>
         <div class="module-block">
           <div class="module-head">
             <div class="module-title">
               <span class="module-icon mi-green">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
               </span>
               <div>
-                <h3 class="module-name">消息日志</h3>
-                <p class="module-desc">服务器收发消息记录</p>
+                <h3 class="module-name">客户端管理</h3>
+                <p class="module-desc">管理外部通信客户端连接，支持 HTTP 回调查看、WebSocket 客户端自动重连、SSE 推送等。</p>
               </div>
             </div>
-            <button class="btn-ghost btn-small" @click="clearWsLogs">清空日志</button>
+            <button class="btn-add" @click="openAddClientModal">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              添加客户端
+            </button>
           </div>
-          <div v-if="wsLogs.length === 0" class="empty-mini">暂无消息记录</div>
-          <div v-else class="log-list">
-            <div v-for="(log, i) in wsLogs" :key="i" class="log-item">
-              <div class="log-item-head">
-                <span class="log-direction" :class="log.direction">{{ log.direction === 'in' ? '接收' : '发送' }}</span>
-                <span class="log-time">{{ log.time }}</span>
+
+          <!-- 已添加客户端 -->
+          <div v-if="commClients.length > 0" class="added-clients">
+            <div class="added-clients-head">
+              <span class="added-clients-title">已添加客户端</span>
+              <span class="added-clients-count">{{ commClients.length }} 个</span>
+            </div>
+            <div class="added-client-list">
+              <div v-for="c in commClients" :key="c.id" class="added-client-item" :class="{ disabled: !c.enabled }">
+                <span class="added-client-type" :class="'t-' + c.type">{{ c.type.toUpperCase() }}</span>
+                <div class="added-client-info">
+                  <strong>{{ c.name }}</strong>
+                  <span class="added-client-url">{{ c.url }}</span>
+                  <span v-if="c.events" class="added-client-events">订阅：{{ c.events }}</span>
+                </div>
+                <button class="switch" :class="{ on: c.enabled }" @click="toggleClientEnabled(c)">
+                  <span class="switch-knob"></span>
+                </button>
+                <button v-if="c.type === 'ws'" class="btn-ghost btn-small" @click.stop="connectClient(c)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                  连接
+                </button>
+                <button class="btn-ghost btn-small btn-danger" @click.stop="deleteClient(c)">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  删除
+                </button>
               </div>
-              <pre class="log-body">{{ log.data }}</pre>
+            </div>
+          </div>
+          <div v-else class="added-clients-empty">
+            尚未添加客户端，点击右上角「添加客户端」创建外部连接。
+          </div>
+
+          <!-- 客户端列表 -->
+          <div class="client-grid">
+            <!-- HTTP 客户端 -->
+            <div class="client-card" :class="{ expanded: expandedClient === 'http' }" @click="toggleClient('http')">
+              <div class="client-card-head">
+                <div class="client-card-info">
+                  <span class="client-card-icon mi-blue">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+                  </span>
+                  <div>
+                    <strong>HTTP 客户端</strong>
+                    <span>发送 HTTP 请求调试接口与验证回调</span>
+                  </div>
+                </div>
+                <span class="client-expand-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+              </div>
+              <div class="client-card-body">
+                <div class="form-section">
+                  <div class="form-row-inline">
+                    <label class="form-field form-field-grow">
+                      <span class="form-label">请求地址</span>
+                      <input v-model="httpClientUrl" type="text" placeholder="https://example.com/api" />
+                    </label>
+                    <label class="form-field form-field-method">
+                      <span class="form-label">请求方法</span>
+                      <select v-model="httpClientMethod">
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label class="form-field">
+                    <span class="form-label">请求头（每行 Key: Value）</span>
+                    <textarea v-model="httpClientHeaders" rows="2" placeholder="Authorization: Bearer xxx"></textarea>
+                  </label>
+                  <label class="form-field">
+                    <span class="form-label">请求体</span>
+                    <textarea v-model="httpClientBody" rows="3" placeholder='{"key": "value"}'></textarea>
+                  </label>
+                  <div class="form-actions">
+                    <button class="btn-add" :disabled="httpClientSending" @click="sendHttpClient">
+                      <span v-if="httpClientSending" class="btn-spinner"></span>
+                      {{ httpClientSending ? '发送中...' : '发送请求' }}
+                    </button>
+                  </div>
+                  <div v-if="httpClientResult" class="result-box">
+                    <div class="result-head">
+                      响应结果
+                      <span class="status-badge" :class="httpClientResult.status < 400 ? 'on' : 'off'">
+                        <span class="status-dot"></span>状态码 {{ httpClientResult.status }}
+                      </span>
+                      <span class="result-elapsed">耗时 {{ httpClientResult.elapsed_ms }}ms</span>
+                    </div>
+                    <div class="result-body">
+                      <p class="result-label">响应头</p>
+                      <pre>{{ formatHeaders(httpClientResult.headers) }}</pre>
+                      <p class="result-label">响应体</p>
+                      <pre>{{ httpClientResult.body }}</pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- WebSocket 客户端 -->
+            <div class="client-card" :class="{ expanded: expandedClient === 'ws' }" @click="toggleClient('ws')">
+              <div class="client-card-head">
+                <div class="client-card-info">
+                  <span class="client-card-icon mi-cyan">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                  </span>
+                  <div>
+                    <strong>WebSocket 客户端</strong>
+                    <span>连接外部 WebSocket 服务，支持自动重连与心跳</span>
+                  </div>
+                </div>
+                <span class="client-expand-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+              </div>
+              <div class="client-card-body">
+                <div class="form-section">
+                  <div class="form-row">
+                    <div class="form-row-text">
+                      <span class="form-label">启用自动重连</span>
+                      <span class="form-hint">开启后，后台定时检查并按配置自动连接/重连</span>
+                    </div>
+                    <button class="switch" :class="{ on: wsClientConfig.auto_reconnect }" @click="wsClientConfig.auto_reconnect = !wsClientConfig.auto_reconnect">
+                      <span class="switch-knob"></span>
+                    </button>
+                  </div>
+                  <label class="form-field">
+                    <span class="form-label">重连地址</span>
+                    <input v-model="wsClientConfig.url" type="text" placeholder="ws://example.com/ws" />
+                  </label>
+                  <div class="form-row-inline">
+                    <label class="form-field form-field-half">
+                      <span class="form-label">重连间隔（秒）</span>
+                      <input v-model="wsClientConfig.reconnect_interval" type="number" min="5" placeholder="10" />
+                    </label>
+                    <label class="form-field form-field-half">
+                      <span class="form-label">心跳间隔（秒）</span>
+                      <input v-model="wsClientConfig.heartbeat_interval" type="number" min="1" placeholder="30" />
+                    </label>
+                  </div>
+                  <div class="form-actions">
+                    <button class="btn-add" :disabled="wsClientConfigSaving" @click="saveWsClientConfig">
+                      <span v-if="wsClientConfigSaving" class="btn-spinner"></span>
+                      {{ wsClientConfigSaving ? '保存中...' : '保存配置' }}
+                    </button>
+                    <button v-if="!wsClientConnected" class="btn-ghost" @click="manualConnectWs">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                      手动连接
+                    </button>
+                    <button v-else class="btn-ghost btn-danger" @click="disconnectWsClient">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      断开连接
+                    </button>
+                  </div>
+                  <div v-if="wsClientConnected" class="ws-client-row">
+                    <div class="form-row-inline">
+                      <label class="form-field form-field-grow">
+                        <span class="form-label">发送消息</span>
+                        <input v-model="wsClientMessage" type="text" placeholder="输入要发送的消息..." @keydown.enter="sendWsClientMessage" />
+                      </label>
+                      <button class="btn-add btn-small" style="margin-top:22px" @click="sendWsClientMessage">发送</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SSE 服务器 -->
+            <div class="client-card" :class="{ expanded: expandedClient === 'sse' }" @click="toggleClient('sse')">
+              <div class="client-card-head">
+                <div class="client-card-info">
+                  <span class="client-card-icon mi-purple">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                  </span>
+                  <div>
+                    <strong>SSE 推送</strong>
+                    <span>服务端推送事件，连接的客户端可实时接收消息</span>
+                  </div>
+                </div>
+                <span class="client-expand-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+              </div>
+              <div class="client-card-body">
+                <div class="info-line">
+                  <span>SSE 地址：<code>http://服务器IP:{{ commStatus.server_port || '8090' }}/sse</code></span>
+                </div>
+                <div class="form-section">
+                  <label class="form-field">
+                    <span class="form-label">推送消息</span>
+                    <textarea v-model="sseMessage" rows="3" placeholder="输入要推送的内容"></textarea>
+                  </label>
+                  <div class="form-actions">
+                    <button class="btn-add" @click="sendSsePush">推送消息</button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </Transition>
 
-      <!-- WebSocket 客户端 -->
-      <div v-if="commSubTab === 'ws-client'" class="sub-panel">
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-cyan">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">WebSocket 客户端</h3>
-                <p class="module-desc">作为客户端连接外部 WebSocket 服务并收发消息。</p>
-              </div>
-            </div>
-            <span class="status-badge" :class="wsClientConnected ? 'on' : 'off'">
-              <span class="status-dot"></span>{{ wsClientConnected ? '已连接' : '未连接' }}
-            </span>
-          </div>
-          <div class="form-section">
-            <label class="form-field">
-              <span class="form-label">连接地址</span>
-              <input v-model="wsClientUrl" type="text" placeholder="ws://example.com/ws" :disabled="wsClientConnected" />
-            </label>
-            <div class="form-actions">
-              <button v-if="!wsClientConnected" class="btn-add" @click="connectWsClient">连接</button>
-              <button v-else class="btn-ghost btn-danger" @click="disconnectWsClient">断开连接</button>
-            </div>
-          </div>
-          <div v-if="wsClientConnected" class="form-section form-section-gap">
-            <label class="form-field">
-              <span class="form-label">发送消息</span>
-              <input v-model="wsClientMessage" type="text" placeholder="输入要发送的消息..." @keydown.enter="sendWsClientMessage" />
-            </label>
-            <div class="form-actions">
-              <button class="btn-add" @click="sendWsClientMessage">发送</button>
-            </div>
-          </div>
-        </div>
-
+      <!-- ====== 连接日志 ====== -->
+      <Transition name="fade-up" appear>
         <div class="module-block">
           <div class="module-head">
             <div class="module-title">
               <span class="module-icon mi-orange">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">自动重连配置</h3>
-                <p class="module-desc">保存后，后台将按此配置自动连接外部服务，断线后自动重连（参考 napcat 反向 WS）。</p>
-              </div>
-            </div>
-          </div>
-          <div class="form-section">
-            <div class="form-row">
-              <div class="form-row-text">
-                <span class="form-label">启用自动重连</span>
-                <span class="form-hint">开启后，后台定时检查并按配置自动连接/重连</span>
-              </div>
-              <button
-                class="switch"
-                :class="{ on: wsClientConfig.auto_reconnect }"
-                @click="wsClientConfig.auto_reconnect = !wsClientConfig.auto_reconnect"
-              >
-                <span class="switch-knob"></span>
-              </button>
-            </div>
-            <label class="form-field">
-              <span class="form-label">重连地址</span>
-              <input v-model="wsClientConfig.url" type="text" placeholder="ws://example.com/ws" />
-            </label>
-            <div class="form-row-inline">
-              <label class="form-field form-field-half">
-                <span class="form-label">重连间隔（秒）</span>
-                <input v-model="wsClientConfig.reconnect_interval" type="number" min="5" placeholder="10" />
-              </label>
-              <label class="form-field form-field-half">
-                <span class="form-label">心跳间隔（秒）</span>
-                <input v-model="wsClientConfig.heartbeat_interval" type="number" min="1" placeholder="30" />
-              </label>
-            </div>
-            <div class="form-actions">
-              <button class="btn-add" :disabled="wsClientConfigSaving" @click="saveWsClientConfig">
-                <span v-if="wsClientConfigSaving" class="btn-spinner"></span>
-                {{ wsClientConfigSaving ? '保存中...' : '保存配置' }}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-green">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
               </span>
               <div>
-                <h3 class="module-name">消息日志</h3>
-                <p class="module-desc">客户端收发消息记录</p>
+                <h3 class="module-name">连接日志</h3>
+                <p class="module-desc">HTTP 请求记录与 WebSocket 消息日志</p>
               </div>
             </div>
-            <button class="btn-ghost btn-small" @click="clearWsLogs">清空日志</button>
+            <button class="btn-ghost btn-small" @click="clearAllLogs">清空日志</button>
           </div>
-          <div v-if="wsLogs.length === 0" class="empty-mini">暂无消息记录</div>
-          <div v-else class="log-list">
-            <div v-for="(log, i) in wsLogs" :key="i" class="log-item">
+          <div v-if="httpLogs.length === 0 && wsLogs.length === 0" class="empty-mini">暂无日志记录</div>
+          <div v-else class="log-merged">
+            <div v-for="(log, i) in mergedLogs" :key="i" class="log-item">
               <div class="log-item-head">
-                <span class="log-direction" :class="log.direction">{{ log.direction === 'in' ? '接收' : '发送' }}</span>
+                <span class="log-source" :class="log.source">{{ log.source === 'http' ? 'HTTP' : 'WS' }}</span>
+                <span v-if="log.method" class="log-method" :class="log.method">{{ log.method }}</span>
+                <span v-if="log.path" class="log-path">{{ log.path }}</span>
+                <span v-if="log.direction" class="log-direction" :class="log.direction">{{ log.direction === 'in' ? '接收' : '发送' }}</span>
                 <span class="log-time">{{ log.time }}</span>
               </div>
-              <pre class="log-body">{{ log.data }}</pre>
+              <pre v-if="log.data || log.body" class="log-body">{{ log.data || log.body }}</pre>
             </div>
           </div>
         </div>
-      </div>
+      </Transition>
 
-      <!-- 连接鉴权 -->
-      <div v-if="commSubTab === 'auth'" class="sub-panel">
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-red">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">连接鉴权</h3>
-                <p class="module-desc">设置通信工具服务访问令牌。设置后，所有 HTTP / SSE / WebSocket 连接必须携带有效的 Token，防止未授权访问。</p>
+      <!-- 连接鉴权弹窗 -->
+      <Transition name="modal">
+        <div v-if="authDialogVisible" class="modal-backdrop">
+          <div class="modal-dialog">
+            <div class="modal-head">
+              <h3>连接鉴权</h3>
+              <button class="modal-close" @click="closeAuthDialog">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="modal-field">
+                <span>访问令牌 Token</span>
+                <div class="input-with-action">
+                  <input v-model="authForm.token" :type="authShowToken ? 'text' : 'password'" placeholder="留空表示不开启鉴权" />
+                  <button class="btn-ghost btn-small" @click="authShowToken = !authShowToken">{{ authShowToken ? '隐藏' : '显示' }}</button>
+                </div>
+              </div>
+              <p class="modal-tip">客户端连接时通过 <code>?token=xxx</code> 查询参数、<code>Authorization: Bearer xxx</code> 或 <code>X-Token</code> 请求头携带该令牌。留空则关闭鉴权。</p>
+              <div class="hint-codes">
+                <div class="hint-code-row">
+                  <span class="hint-code-label">WebSocket：</span>
+                  <code>ws://服务器IP:{{ commStatus.server_port || '8090' }}/ws?token=你的令牌</code>
+                </div>
+                <div class="hint-code-row">
+                  <span class="hint-code-label">SSE：</span>
+                  <code>http://服务器IP:{{ commStatus.server_port || '8090' }}/sse?token=你的令牌</code>
+                </div>
+                <div class="hint-code-row">
+                  <span class="hint-code-label">HTTP：</span>
+                  <code>http://服务器IP:{{ commStatus.server_port || '8090' }}/任意路径?token=你的令牌</code>
+                </div>
               </div>
             </div>
-            <span class="status-badge" :class="authForm.token_enabled ? 'on' : 'off'">
-              <span class="status-dot"></span>{{ authForm.token_enabled ? '鉴权已开启' : '鉴权未开启' }}
-            </span>
+            <div class="modal-foot">
+              <button class="btn-cancel" @click="closeAuthDialog">取消</button>
+              <button class="btn-save" :disabled="authSaving" @click="saveAuthConfig">
+                <span v-if="authSaving" class="btn-spinner"></span>
+                {{ authSaving ? '保存中...' : '保存配置' }}
+              </button>
+            </div>
           </div>
+        </div>
+      </Transition>
 
-          <div class="form-section">
-            <label class="form-field">
-              <span class="form-label">访问令牌 Token</span>
-              <div class="input-with-action">
-                <input v-model="authForm.token" :type="authShowToken ? 'text' : 'password'" placeholder="留空表示不开启鉴权" />
-                <button class="btn-ghost btn-small" @click="authShowToken = !authShowToken">{{ authShowToken ? '隐藏' : '显示' }}</button>
+      <!-- 添加客户端弹窗 -->
+      <Transition name="modal">
+        <div v-if="addClientDialogVisible" class="modal-backdrop">
+          <div class="modal-dialog">
+            <div class="modal-head">
+              <h3>添加客户端</h3>
+              <button class="modal-close" @click="closeAddClientDialog">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div class="modal-body">
+              <div class="modal-field">
+                <span class="required">名称</span>
+                <input v-model="addClientForm.name" type="text" placeholder="例如：测试服务器" />
               </div>
-            </label>
-            <p class="form-hint-text">客户端连接时通过 <code>?token=xxx</code> 查询参数、<code>Authorization: Bearer xxx</code> 或 <code>X-Token</code> 请求头携带该令牌。</p>
-          </div>
-        </div>
-
-        <div class="module-block">
-          <div class="module-head">
-            <div class="module-title">
-              <span class="module-icon mi-blue">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-              </span>
-              <div>
-                <h3 class="module-name">连接地址示例</h3>
-                <p class="module-desc">开启鉴权后，客户端需按以下格式携带 Token 连接</p>
+              <div class="modal-field">
+                <span class="required">连接地址</span>
+                <input v-model="addClientForm.url" type="text" placeholder="ws://192.168.1.100/ws" />
               </div>
+              <div class="modal-field">
+                <span class="required">类型</span>
+                <div class="type-picker">
+                  <button
+                    v-for="t in clientTypeOptions"
+                    :key="t.value"
+                    class="type-option"
+                    :class="{ active: addClientForm.type === t.value }"
+                    @click="addClientForm.type = t.value"
+                  >
+                    <span class="pick-dot"></span>{{ t.label }}
+                  </button>
+                </div>
+              </div>
+              <div class="modal-field">
+                <span>订阅事件（逗号分隔，留空订阅全部）</span>
+                <input v-model="addClientForm.events" type="text" placeholder="wallpaper,avatar,nickname,feedback" />
+              </div>
+              <p class="modal-tip">添加后，后台将尝试连接该地址，并按照配置自动重连。</p>
             </div>
-          </div>
-          <div class="hint-codes">
-            <div class="hint-code-row">
-              <span class="hint-code-label">WebSocket：</span>
-              <code>ws://服务器IP:{{ commStatus.server_port || '8090' }}/ws?token=你的令牌</code>
-            </div>
-            <div class="hint-code-row">
-              <span class="hint-code-label">SSE：</span>
-              <code>http://服务器IP:{{ commStatus.server_port || '8090' }}/sse?token=你的令牌</code>
-            </div>
-            <div class="hint-code-row">
-              <span class="hint-code-label">HTTP：</span>
-              <code>http://服务器IP:{{ commStatus.server_port || '8090' }}/任意路径?token=你的令牌</code>
+            <div class="modal-foot">
+              <button class="btn-cancel" @click="closeAddClientDialog">取消</button>
+              <button class="btn-save" :disabled="addClientSaving" @click="doAddClient">
+                <span v-if="addClientSaving" class="btn-spinner"></span>
+                {{ addClientSaving ? '添加中...' : '确认添加' }}
+              </button>
             </div>
           </div>
         </div>
-
-        <div class="module-block">
-          <div class="form-actions">
-            <button class="btn-add" :disabled="authSaving" @click="saveAuthConfig">
-              <span v-if="authSaving" class="btn-spinner"></span>
-              {{ authSaving ? '保存中...' : '保存配置' }}
-            </button>
-          </div>
-        </div>
-      </div>
+      </Transition>
     </div>
   </div>
 </template>
@@ -839,6 +809,7 @@ import { useRoute } from 'vue-router'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 import { useNotificationStore } from '@/stores/notification'
+import { fmtDateTime } from '@/utils/time'
 
 const notify = useNotificationStore()
 const route = useRoute()
@@ -869,7 +840,6 @@ const moduleList: ModuleItem[] = [
 
 // ===== 标签页 =====
 const activeTab = ref<'settings' | 'email' | 'webhook' | 'commtool'>('settings')
-const commSubTab = ref<'http-server' | 'http-client' | 'sse-server' | 'ws-server' | 'ws-client' | 'auth'>('http-server')
 
 // ===== 状态 =====
 const loading = ref(true)
@@ -1153,6 +1123,8 @@ function toggleWebhookModule(key: string) {
 interface CommStatus {
   server_running: boolean
   server_port: number
+  server_enabled?: boolean
+  server_port_config?: number
   ws_server_count: number
   sse_count?: number
   token_enabled?: boolean
@@ -1291,6 +1263,12 @@ async function loadCommStatus() {
   if (res.code === 200 && res.data) {
     commStatus.value = res.data
     wsClientConnected.value = !!res.data.ws_client
+    if (res.data.server_enabled != null) {
+      commService.enabled = !!res.data.server_enabled
+    }
+    if (res.data.server_port_config) {
+      commService.port = res.data.server_port_config
+    }
     if (res.data.ws_client_config) {
       const cfg = res.data.ws_client_config
       wsClientConfig.url = cfg.url || ''
@@ -1458,6 +1436,198 @@ async function clearWsLogs() {
   }
 }
 
+// ===== 服务管理 =====
+const commService = reactive({
+  enabled: false,
+  port: 8090,
+})
+const serviceSaving = ref(false)
+
+async function toggleService() {
+  commService.enabled = !commService.enabled
+  await saveServiceConfig()
+}
+
+async function saveServiceConfig() {
+  if (commService.port < 1024 || commService.port > 65535) {
+    showToast('端口必须在1024-65535之间')
+    return
+  }
+  serviceSaving.value = true
+  const res = await adminApi('comm_service_config', {
+    enabled: commService.enabled,
+    port: commService.port,
+  })
+  serviceSaving.value = false
+  if (res.code === 200) {
+    showToast('服务配置已保存', 'success')
+    loadCommStatus()
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
+
+// ===== 连接鉴权弹窗 =====
+const authDialogVisible = ref(false)
+function openAuthDialog() {
+  loadAuthConfig()
+  authDialogVisible.value = true
+}
+function closeAuthDialog() {
+  if (authSaving.value) return
+  authDialogVisible.value = false
+}
+
+// ===== 添加客户端弹窗 =====
+const addClientDialogVisible = ref(false)
+const addClientSaving = ref(false)
+const clientTypeOptions = [
+  { value: 'ws', label: 'WebSocket' },
+  { value: 'http', label: 'HTTP' },
+  { value: 'sse', label: 'SSE' },
+]
+const addClientForm = reactive({
+  name: '',
+  url: '',
+  type: 'ws',
+  events: '',
+})
+function openAddClientModal() {
+  addClientForm.name = ''
+  addClientForm.url = ''
+  addClientForm.type = 'ws'
+  addClientForm.events = ''
+  addClientDialogVisible.value = true
+}
+function closeAddClientDialog() {
+  if (addClientSaving.value) return
+  addClientDialogVisible.value = false
+}
+async function doAddClient() {
+  const name = addClientForm.name.trim()
+  const url = addClientForm.url.trim()
+  if (!name) {
+    showToast('请输入名称')
+    return
+  }
+  if (!url) {
+    showToast('请输入连接地址')
+    return
+  }
+  addClientSaving.value = true
+  const res = await adminApi('comm_client_add', {
+    name,
+    url,
+    type: addClientForm.type,
+    events: addClientForm.events.trim(),
+  })
+  addClientSaving.value = false
+  if (res.code === 200) {
+    showToast('添加成功', 'success')
+    addClientDialogVisible.value = false
+    loadCommClients()
+    loadCommStatus()
+  } else {
+    showToast(res.msg || '添加失败')
+  }
+}
+
+// ===== 已添加客户端列表 =====
+interface CommClient {
+  id: number
+  name: string
+  type: string
+  url: string
+  events: string
+  enabled: boolean
+  created_at: string
+}
+const commClients = ref<CommClient[]>([])
+async function loadCommClients() {
+  const res = await adminApi<CommClient[]>('comm_client_list')
+  if (res.code === 200 && Array.isArray(res.data)) {
+    commClients.value = res.data
+  }
+}
+async function deleteClient(item: CommClient) {
+  const ok = await webConfirm(`确认删除客户端 "${item.name}"？`, { title: '删除客户端', confirmText: '确认删除' })
+  if (!ok) return
+  const res = await adminApi('comm_client_delete', { id: item.id })
+  if (res.code === 200) {
+    showToast('已删除', 'success')
+    loadCommClients()
+  } else {
+    showToast(res.msg || '删除失败')
+  }
+}
+async function toggleClientEnabled(item: CommClient) {
+  const res = await adminApi('comm_client_toggle', { id: item.id, enabled: !item.enabled })
+  if (res.code === 200) {
+    item.enabled = !item.enabled
+    showToast('已更新', 'success')
+  } else {
+    showToast(res.msg || '操作失败')
+  }
+}
+async function connectClient(item: CommClient) {
+  if (item.type !== 'ws') return
+  const res = await adminApi('comm_ws_client_connect', { url: item.url })
+  if (res.code === 200) {
+    wsClientConnected.value = true
+    showToast(res.msg || '连接成功', 'success')
+    loadCommStatus()
+  } else {
+    showToast(res.msg || '连接失败')
+  }
+}
+
+// ===== 展开卡片 =====
+const expandedClient = ref<string | null>(null)
+function toggleClient(key: string) {
+  expandedClient.value = expandedClient.value === key ? null : key
+}
+
+// ===== 合并日志 =====
+interface MergedLog {
+  source: string
+  time: string
+  method?: string
+  path?: string
+  direction?: string
+  data?: string
+  body?: string
+}
+const mergedLogs = computed<MergedLog[]>(() => {
+  const httpArr: MergedLog[] = httpLogs.value.map(l => ({ ...l, source: 'http' }))
+  const wsArr: MergedLog[] = wsLogs.value.map(l => ({ ...l, source: 'ws' }))
+  return [...httpArr, ...wsArr].sort((a, b) => (b.time || '').localeCompare(a.time || ''))
+})
+
+async function clearAllLogs() {
+  const ok = await webConfirm('确认清空所有连接日志？', { title: '清空日志', confirmText: '确认清空' })
+  if (!ok) return
+  await Promise.all([adminApi('comm_http_clear'), adminApi('comm_ws_clear')])
+  httpLogs.value = []
+  wsLogs.value = []
+  showToast('已清空', 'success')
+}
+
+// ===== 手动连接 WS 客户端 =====
+async function manualConnectWs() {
+  if (!wsClientConfig.url.trim()) {
+    showToast('请先填写重连地址')
+    return
+  }
+  const res = await adminApi('comm_ws_client_connect', { url: wsClientConfig.url.trim() })
+  if (res.code === 200) {
+    wsClientConnected.value = true
+    showToast(res.msg || '连接成功', 'success')
+    loadCommStatus()
+  } else {
+    showToast(res.msg || '连接失败')
+  }
+}
+
 function formatHeaders(headers: Record<string, string>): string {
   return Object.entries(headers || {}).map(([k, v]) => `${k}: ${v}`).join('\n')
 }
@@ -1471,26 +1641,7 @@ watch(activeTab, (tab) => {
     loadHttpLogs()
     loadWsServerClients()
     loadWsLogs()
-  }
-})
-
-watch(commSubTab, (sub) => {
-  if (sub === 'http-server') {
-    loadCommStatus()
-    loadHttpLogs()
-  } else if (sub === 'sse-server') {
-    loadCommStatus()
-  } else if (sub === 'ws-server') {
-    loadCommStatus()
-    loadWsServerClients()
-    loadWsLogs()
-  } else if (sub === 'ws-client') {
-    loadCommStatus()
-    loadWsLogs()
-    loadWsClientConfig()
-  } else if (sub === 'auth') {
-    loadCommStatus()
-    loadAuthConfig()
+    loadCommClients()
   }
 })
 
@@ -1620,6 +1771,13 @@ onMounted(() => {
   display: flex;
   gap: 10px;
   flex-shrink: 0;
+}
+/* 通知邮箱页顶部操作区 */
+.email-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-bottom: 16px;
 }
 .btn-ghost {
   display: inline-flex;
@@ -2152,28 +2310,6 @@ onMounted(() => {
   background: var(--accent);
 }
 
-/* ==================== 子标签栏 ==================== */
-.sub-tab-bar {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-.sub-tab-item {
-  padding: 8px 14px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: transparent;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-muted);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.sub-tab-item:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.sub-tab-item.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-
 /* ==================== Tab 面板 ==================== */
 .tab-panel {
   animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -2252,6 +2388,295 @@ onMounted(() => {
   justify-content: flex-end;
   flex-wrap: wrap;
 }
+
+/* ==================== 通信工具：服务管理 ==================== */
+.comm-service-card {
+  background: var(--card, var(--white));
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 18px;
+  margin-bottom: 20px;
+}
+.service-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.service-title { display: flex; align-items: center; gap: 12px; }
+.service-icon {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  background: #eff6ff; color: #3b82f6;
+}
+.service-title h3 { font-size: 15px; font-weight: 700; margin: 0; color: var(--text); }
+.service-title p { font-size: 12px; color: var(--text-muted); margin: 2px 0 0; max-width: 560px; line-height: 1.5; }
+.service-config {
+  margin-top: 16px;
+  padding: 14px;
+  background: var(--control-bg, #f7f7f8);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.service-config-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.service-config-row .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 180px;
+}
+.service-config-row .field span {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-light);
+}
+.service-config-row .field input {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  background: var(--white);
+  color: var(--text);
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.service-config-row .field input:focus { border-color: var(--accent); }
+.service-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.service-status-badge .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.service-status-badge.on { background: #f0fdf4; color: #16a34a; }
+.service-status-badge.on .status-dot { background: #16a34a; }
+.service-status-badge.off { background: #f3f4f6; color: #9ca3af; }
+.service-status-badge.off .status-dot { background: #9ca3af; }
+.service-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* ==================== 通信工具：已添加客户端 ==================== */
+.added-clients {
+  margin-bottom: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.added-clients-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.added-clients-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.added-clients-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--control-bg, #f7f7f8);
+  border-radius: 20px;
+  padding: 2px 10px;
+}
+.added-client-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.added-client-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  transition: all 0.2s;
+}
+.added-client-item:hover { border-color: var(--accent); }
+.added-client-item.disabled { opacity: 0.55; }
+.added-client-type {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.added-client-type.t-ws { background: #ecfeff; color: #06b6d4; }
+.added-client-type.t-http { background: #eff6ff; color: #3b82f6; }
+.added-client-type.t-sse { background: #f5f3ff; color: #8b5cf6; }
+.added-client-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.added-client-info strong {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.added-client-url {
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+.added-client-events {
+  font-size: 11px;
+  color: var(--accent);
+}
+.added-clients-empty {
+  margin-bottom: 16px;
+  padding: 16px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--control-bg, #f7f7f8);
+  border-radius: 10px;
+}
+
+/* ==================== 通信工具：客户端卡片 ==================== */
+.client-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.client-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--white);
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.client-card:hover { border-color: var(--accent); }
+.client-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.client-card-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.client-card-icon {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.client-card-info strong {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.client-card-info span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.client-expand-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.client-card.expanded .client-expand-icon { transform: rotate(180deg); }
+.client-card-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.client-card.expanded .client-card-body {
+  max-height: 1200px;
+}
+.client-card-body .form-section {
+  padding: 0 16px 16px;
+}
+
+/* ==================== WS 客户端连接行 ==================== */
+.ws-client-row {
+  margin-top: 4px;
+}
+
+/* ==================== 合并日志 ==================== */
+.log-merged {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.log-source {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+.log-source.http { background: #eff6ff; color: #3b82f6; }
+.log-source.ws { background: #ecfeff; color: #06b6d4; }
+
+/* ==================== 类型选择器 ==================== */
+.type-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.type-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.type-option:hover { border-color: var(--accent); color: var(--accent); }
+.type-option.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.pick-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  transition: all 0.2s;
+}
+.type-option.active .pick-dot { border-color: var(--accent); background: var(--accent); }
 
 /* ==================== 状态徽标 ==================== */
 .status-badge {
@@ -2480,6 +2905,7 @@ onMounted(() => {
 .mi-pink { background: #fdf2f8; color: #ec4899; }
 .mi-cyan { background: #ecfeff; color: #06b6d4; }
 .mi-red { background: #fef2f2; color: #ef4444; }
+.mi-server { background: #eff6ff; color: #3b82f6; }
 
 /* ==================== 鉴权面板 ==================== */
 .input-with-action {
@@ -2569,7 +2995,6 @@ onMounted(() => {
   .form-actions { justify-content: stretch; }
   .form-actions .btn-add, .form-actions .btn-ghost { flex: 1; }
   .tab-item { padding: 10px 14px; font-size: 13px; }
-  .sub-tab-item { flex: 1; text-align: center; }
   .client-item { flex-wrap: wrap; }
   .client-item input { min-width: 100%; }
 }

@@ -72,6 +72,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { emailGetProfile, getEmailToken, clearEmailToken, emailToast, type EmailProfile } from '@/api/email'
+import { fmtDateTime } from '@/utils/time'
 
 const router = useRouter()
 const profile = ref<EmailProfile | null>(null)
@@ -109,7 +110,7 @@ function actionClass(action: string): string {
 
 function formatDate(s: string): string {
   if (!s) return '—'
-  return s.replace('T', ' ').substring(0, 16)
+  return fmtDateTime(s).substring(0, 16)
 }
 
 async function loadProfile() {

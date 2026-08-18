@@ -92,7 +92,7 @@
         <router-link to="/m/announcements" class="mobile-btn primary">公告管理</router-link>
         <router-link to="/m/version" class="mobile-btn primary">版本管理</router-link>
         <router-link to="/m/email-config" class="mobile-btn">邮箱机设置</router-link>
-        <router-link to="/m/turnstile-config" class="mobile-btn">人机验证</router-link>
+        <router-link to="/m/turnstile-config" class="mobile-btn">审核设置</router-link>
         <router-link to="/m/about-config" class="mobile-btn">关于页设置</router-link>
         <router-link to="/m/database" class="mobile-btn">数据库管理</router-link>
       </div>

@@ -130,7 +130,7 @@
                   </span>
                   <span class="meta-time">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                    {{ item.created_at || '-' }}
+                    {{ fmtDateTime(item.created_at) || '-' }}
                   </span>
                 </div>
                 <div v-if="isSuper || item.id === currentAdminId" class="foot-actions">
@@ -335,6 +335,7 @@ import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast, getAdminUser, setAdminUser } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 import { useAuthStore } from '@/stores/auth'
+import { fmtDateTime } from '@/utils/time'
 
 interface Admin {
   id: number

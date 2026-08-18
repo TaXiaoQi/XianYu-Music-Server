@@ -165,7 +165,7 @@
               <div>
                 <div class="mobile-item-title">{{ item.email }}</div>
                 <div class="mobile-item-sub">{{ item.remark || '暂无备注' }}</div>
-                <div class="mobile-item-sub muted-time">创建时间：{{ item.created_at || '-' }}</div>
+                <div class="mobile-item-sub muted-time">创建时间：{{ fmtDateTime(item.created_at) || '-' }}</div>
               </div>
             </div>
             <span class="mobile-badge" :class="item.status == 1 ? 'green' : 'red'">{{ item.status == 1 ? '启用中' : '已停用' }}</span>
@@ -716,6 +716,7 @@ import { adminApi, showToast } from '@/api/client'
 import { useNotificationStore } from '@/stores/notification'
 import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
+import { fmtDateTime } from '@/utils/time'
 
 interface ModuleItem {
   key: string

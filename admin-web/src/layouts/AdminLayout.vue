@@ -40,7 +40,7 @@
             <li><router-link to="/admin-account">后台账号管理</router-link></li>
             <li><router-link to="/external-notification">外部通知</router-link></li>
             <li><router-link to="/email-config">邮箱机设置</router-link></li>
-            <li><router-link to="/turnstile-config">人机验证设置</router-link></li>
+            <li><router-link to="/turnstile-config">审核设置</router-link></li>
             <li><router-link to="/config-file">配置文件管理</router-link></li>
             <li><router-link to="/site-config">Logo 配置</router-link></li>
           </ul>

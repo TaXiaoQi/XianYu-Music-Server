@@ -3,136 +3,196 @@
     <!-- 页面头部动效 -->
     <Transition name="fade-down" appear>
       <div class="page-header">
-      <div>
-        <h2 class="page-title">人机验证设置</h2>
-        <p class="page-desc">
-          配置注册和找回密码验证码接口的人机验证，当前支持 Cloudflare Turnstile 与 hCaptcha。
-          在对应平台创建站点后获取 Site Key 和 Secret Key，填入下方并启用即可。
-        </p>
+        <div>
+          <h2 class="page-title">审核设置</h2>
+          <p class="page-desc">
+            管理注册和找回密码的人机验证，以及昵称、头像、壁纸等内容审核策略。内容审核支持接入外部审核服务与内置违禁词库。
+          </p>
+        </div>
       </div>
-      <button class="btn-save" :disabled="saving" @click="save">
-        <span v-if="saving" class="spinner"></span>
-        {{ saving ? '保存中...' : '保存配置' }}
-      </button>
-    </div>
     </Transition>
 
-    <Transition name="fade-up" appear>
-      <div v-if="loading" class="state-box"><span class="loader"></span> 加载中...</div>
-      <div v-else class="config-card">
-        <div class="section-title">基本设置</div>
-        <div class="toggle-row">
-          <div>
-            <div class="toggle-label">启用人机验证</div>
-            <div class="toggle-desc">开启后，注册和找回密码页面发送验证码前需完成所选服务商的人机验证</div>
-          </div>
-          <label class="switch">
-            <input type="checkbox" v-model="form.enabled" />
-            <span class="slider"></span>
-          </label>
-        </div>
+    <!-- 标签栏 -->
+    <div class="tab-bar">
+      <button class="tab-item" :class="{ active: activeTab === 'captcha' }" @click="activeTab = 'captcha'">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+        人机验证
+      </button>
+      <button class="tab-item" :class="{ active: activeTab === 'content' }" @click="activeTab = 'content'">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        内容审核
+      </button>
+    </div>
 
-        <div class="field-grid" style="margin-top: 20px">
-          <div class="field">
-            <span>验证服务商 <em class="required">*</em></span>
-            <select v-model="form.provider" :disabled="saving">
-              <option value="turnstile">Cloudflare Turnstile</option>
-              <option value="hcaptcha">hCaptcha</option>
-            </select>
-            <small class="hint">切换后需填写对应平台的 Site Key 和 Secret Key</small>
+    <!-- ==================== 人机验证 Tab ==================== -->
+    <div v-if="activeTab === 'captcha'" class="tab-panel">
+      <Transition name="fade-up" appear>
+        <div v-if="loading" class="state-box"><span class="loader"></span> 加载中...</div>
+        <div v-else class="config-card">
+          <div class="section-title">基本设置</div>
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">启用人机验证</div>
+              <div class="toggle-desc">开启后，注册和找回密码页面发送验证码前需完成所选服务商的人机验证</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" v-model="form.enabled" />
+              <span class="slider"></span>
+            </label>
           </div>
-          <div class="field">
-            <span>Site Key <em class="required">*</em></span>
-            <input
-              v-model="form.site_key"
-              type="text"
-              :placeholder="siteKeyPlaceholder"
-              :disabled="saving"
-            />
-            <small class="hint">前端展示用，在所选验证服务商控制台获取</small>
+
+          <div class="field-grid" style="margin-top: 20px">
+            <div class="field">
+              <span>验证服务商 <em class="required">*</em></span>
+              <select v-model="form.provider" :disabled="saving">
+                <option value="turnstile">Cloudflare Turnstile</option>
+                <option value="hcaptcha">hCaptcha</option>
+              </select>
+              <small class="hint">切换后需填写对应平台的 Site Key 和 Secret Key</small>
+            </div>
+            <div class="field">
+              <span>Site Key <em class="required">*</em></span>
+              <input
+                v-model="form.site_key"
+                type="text"
+                :placeholder="siteKeyPlaceholder"
+                :disabled="saving"
+              />
+              <small class="hint">前端展示用，在所选验证服务商控制台获取</small>
+            </div>
+            <div class="field">
+              <span>Secret Key</span>
+              <input
+                v-model="form.secret"
+                type="password"
+                :placeholder="secretPlaceholder"
+                :disabled="saving"
+              />
+              <small class="hint">
+                后端校验用{{ hasSecret ? '（已设置，留空保留原值）' : '（留空则回退环境变量 CAPTCHA_SECRET / 服务商专用 Secret）' }}
+              </small>
+            </div>
           </div>
-          <div class="field">
-            <span>Secret Key</span>
-            <input
-              v-model="form.secret"
-              type="password"
-              :placeholder="secretPlaceholder"
-              :disabled="saving"
-            />
-            <small class="hint">
-              后端校验用{{ hasSecret ? '（已设置，留空保留原值）' : '（留空则回退环境变量 CAPTCHA_SECRET / 服务商专用 Secret）' }}
-            </small>
+
+          <div class="card-actions">
+            <button class="btn-save" :disabled="saving" @click="save">
+              <span v-if="saving" class="spinner"></span>
+              {{ saving ? '保存中...' : '保存配置' }}
+            </button>
           </div>
         </div>
-      </div>
       </Transition>
 
       <Transition name="fade-up" appear>
-      <div class="config-card">
-        <div class="section-title">使用说明</div>
-        <ul class="tips-list">
-          <li>Turnstile：在 Cloudflare 控制台创建 Turnstile widget，建议选择 "Managed" 模式。</li>
-          <li>hCaptcha：在 hCaptcha 控制台创建 site，获取对应的 Site Key 和 Secret Key。</li>
-          <li>勾选"启用人机验证"并保存后，注册页和找回密码页会自动加载验证组件。</li>
-          <li>关闭开关后，前端不会显示验证组件，后端也不会校验 token。</li>
-          <li>Secret Key 为空时会依次回退环境变量 <code>CAPTCHA_SECRET</code>、<code>TURNSTILE_SECRET</code> 或 <code>HCAPTCHA_SECRET</code>。</li>
-          <li>配置保存后立即生效，无需重启服务端。</li>
-        </ul>
-      </div>
+        <div class="config-card">
+          <div class="section-title">使用说明</div>
+          <ul class="tips-list">
+            <li>Turnstile：在 Cloudflare 控制台创建 Turnstile widget，建议选择 "Managed" 模式。</li>
+            <li>hCaptcha：在 hCaptcha 控制台创建 site，获取对应的 Site Key 和 Secret Key。</li>
+            <li>勾选"启用人机验证"并保存后，注册页和找回密码页会自动加载验证组件。</li>
+            <li>关闭开关后，前端不会显示验证组件，后端也不会校验 token。</li>
+            <li>Secret Key 为空时会依次回退环境变量 <code>CAPTCHA_SECRET</code>、<code>TURNSTILE_SECRET</code> 或 <code>HCAPTCHA_SECRET</code>。</li>
+            <li>配置保存后立即生效，无需重启服务端。</li>
+          </ul>
+        </div>
+      </Transition>
+    </div>
+
+    <!-- ==================== 内容审核 Tab ==================== -->
+    <div v-else class="tab-panel">
+      <!-- 外部内容审核 -->
+      <Transition name="fade-up" appear>
+        <section class="audit-policy-card">
+          <div class="policy-head">
+            <div>
+              <h3>外部内容审核</h3>
+              <p>开启后，昵称、头像、壁纸会先走外部机审；机审无法判断或服务失败时，再进入人工审核队列。</p>
+            </div>
+            <label class="switch-line">
+              <input v-model="auditConfig.enabled" type="checkbox" />
+              <span>{{ auditConfig.enabled ? '已启用' : '未启用' }}</span>
+            </label>
+          </div>
+
+          <div class="policy-grid">
+            <label>
+              <span :class="{ required: auditConfig.enabled }">服务类型</span>
+              <select v-model="auditConfig.provider">
+                <option value="generic">通用 HTTP</option>
+                <option value="aliyun">阿里云内容安全</option>
+                <option value="tencent">腾讯云内容安全</option>
+              </select>
+            </label>
+            <label>
+              <span :class="{ required: auditConfig.enabled }">审核接口地址</span>
+              <input v-model.trim="auditConfig.endpoint" placeholder="https://example.com/audit" />
+            </label>
+            <label>
+              <span>接口密钥</span>
+              <input v-model.trim="auditConfig.api_key" type="password" placeholder="留空则保留原密钥" />
+            </label>
+            <label>
+              <span :class="{ required: auditConfig.enabled }">超时时间</span>
+              <input v-model.number="auditConfig.timeout_ms" type="number" min="1000" max="30000" />
+            </label>
+          </div>
+
+          <div class="policy-options">
+            <label><input v-model="auditConfig.nickname_enabled" type="checkbox" /> 改名机审</label>
+            <label><input v-model="auditConfig.avatar_enabled" type="checkbox" /> 头像机审</label>
+            <label><input v-model="auditConfig.wallpaper_enabled" type="checkbox" /> 壁纸机审</label>
+            <label><input v-model="auditConfig.fail_to_manual" type="checkbox" /> 失败转人工</label>
+          </div>
+
+          <div class="policy-actions">
+            <input v-model.trim="auditTestText" class="test-input" placeholder="测试文本，例如：测试昵称" />
+            <button class="btn btn-primary btn-sm" @click="saveAuditConfig" :disabled="auditSaving">保存策略</button>
+            <button class="btn btn-sm" @click="testAuditConfig" :disabled="auditTesting">测试连接</button>
+          </div>
+          <p class="policy-tip">
+            通用 HTTP 服务需返回 <code>{"decision":"pass|reject|review","reason":"原因"}</code>。阿里云可先通过网关或函数计算适配为该格式。
+          </p>
+        </section>
       </Transition>
 
-      <!-- 外部审核策略 -->
-      <section class="audit-policy-card" v-if="!loading">
-        <div class="policy-head">
-          <div>
-            <h3>外部审核策略</h3>
-            <p>开启后，昵称、头像、壁纸会先走外部机审；机审无法判断或服务失败时，再进入人工审核队列。</p>
+      <!-- 内置违禁词库 -->
+      <Transition name="fade-up" appear>
+        <section class="audit-policy-card">
+          <div class="policy-head">
+            <div>
+              <h3>内置违禁词库</h3>
+              <p>开启后，昵称等文本内容会先在本机匹配违禁词，命中直接拒绝；未命中再走外部审核或人工审核。</p>
+            </div>
+            <label class="switch-line">
+              <input v-model="bannedWords.enabled" type="checkbox" />
+              <span>{{ bannedWords.enabled ? '已启用' : '未启用' }}</span>
+            </label>
           </div>
-          <label class="switch-line">
-            <input v-model="auditConfig.enabled" type="checkbox" />
-            <span>{{ auditConfig.enabled ? '已启用' : '未启用' }}</span>
-          </label>
-        </div>
 
-        <div class="policy-grid">
-          <label>
-            <span :class="{ required: auditConfig.enabled }">服务类型</span>
-            <select v-model="auditConfig.provider">
-              <option value="generic">通用 HTTP</option>
-              <option value="aliyun">阿里云内容安全</option>
-              <option value="tencent">腾讯云内容安全</option>
-            </select>
-          </label>
-          <label>
-            <span :class="{ required: auditConfig.enabled }">审核接口地址</span>
-            <input v-model.trim="auditConfig.endpoint" placeholder="https://example.com/audit" />
-          </label>
-          <label>
-            <span>接口密钥</span>
-            <input v-model.trim="auditConfig.api_key" type="password" placeholder="留空则保留原密钥" />
-          </label>
-          <label>
-            <span :class="{ required: auditConfig.enabled }">超时时间</span>
-            <input v-model.number="auditConfig.timeout_ms" type="number" min="1000" max="30000" />
-          </label>
-        </div>
+          <div class="banned-words-area">
+            <textarea
+              v-model="bannedWordsText"
+              class="banned-words-textarea"
+              rows="8"
+              placeholder="每行一个违禁词，例如：&#10;违禁词1&#10;违禁词2"
+            ></textarea>
+            <div class="banned-words-meta">
+              <span>共 {{ bannedWordCount }} 个词条</span>
+              <span class="banned-words-hint">按行分隔，保存时自动去重、去除空行</span>
+            </div>
+          </div>
 
-        <div class="policy-options">
-          <label><input v-model="auditConfig.nickname_enabled" type="checkbox" /> 改名机审</label>
-          <label><input v-model="auditConfig.avatar_enabled" type="checkbox" /> 头像机审</label>
-          <label><input v-model="auditConfig.wallpaper_enabled" type="checkbox" /> 壁纸机审</label>
-          <label><input v-model="auditConfig.fail_to_manual" type="checkbox" /> 失败转人工</label>
-        </div>
-
-        <div class="policy-actions">
-          <input v-model.trim="auditTestText" class="test-input" placeholder="测试文本，例如：测试昵称" />
-          <button class="btn btn-primary btn-sm" @click="saveAuditConfig" :disabled="auditSaving">保存策略</button>
-          <button class="btn btn-sm" @click="testAuditConfig" :disabled="auditTesting">测试连接</button>
-        </div>
-        <p class="policy-tip">
-          通用 HTTP 服务需返回 <code>{"decision":"pass|reject|review","reason":"原因"}</code>。阿里云可先通过网关或函数计算适配为该格式。
-        </p>
-      </section>
+          <div class="policy-actions">
+            <input v-model.trim="bannedTestText" class="test-input" placeholder="测试文本，例如：测试昵称" />
+            <button class="btn btn-primary btn-sm" @click="saveBannedWords" :disabled="bannedSaving">保存词库</button>
+            <button class="btn btn-sm" @click="testBannedWords" :disabled="bannedTesting">测试词库</button>
+          </div>
+          <p class="policy-tip">
+            内置违禁词库在本机匹配，无需联网；命中后返回「拒绝」并记录命中词条。建议与外部内容审核搭配使用。
+          </p>
+        </section>
+      </Transition>
+    </div>
   </div>
 </template>
 
@@ -140,6 +200,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 
+const activeTab = ref<'captcha' | 'content'>('captcha')
 const loading = ref(true)
 const saving = ref(false)
 const hasSecret = ref(false)
@@ -151,7 +212,7 @@ const form = ref({
   secret: '',
 })
 
-// ===== 外部审核策略 =====
+// ===== 外部内容审核 =====
 const auditSaving = ref(false)
 const auditTesting = ref(false)
 const auditTestText = ref('测试昵称')
@@ -166,6 +227,17 @@ const auditConfig = ref({
   timeout_ms: 5000,
   fail_to_manual: true,
 })
+
+// ===== 内置违禁词库 =====
+const bannedSaving = ref(false)
+const bannedTesting = ref(false)
+const bannedTestText = ref('测试昵称')
+const bannedWords = ref({ enabled: false, words: [] as string[] })
+const bannedWordsText = ref('')
+
+const bannedWordCount = computed(() =>
+  bannedWordsText.value.split('\n').map(s => s.trim()).filter(Boolean).length
+)
 
 async function loadAuditConfig() {
   const res = await adminApi<any>('get_audit_external_config')
@@ -194,6 +266,47 @@ async function testAuditConfig() {
   auditTesting.value = false
   if (res.code === 200 && res.data) {
     const label = res.data.decision === 'pass' ? '通过' : res.data.decision === 'reject' ? '拒绝' : '转人工'
+    showToast(`测试结果：${label}${res.data.reason ? '，' + res.data.reason : ''}`, 'success')
+  } else {
+    showToast(res.msg || '测试失败')
+  }
+}
+
+async function loadBannedWords() {
+  const res = await adminApi<any>('get_banned_words_config')
+  if (res.code === 200 && res.data) {
+    bannedWords.value.enabled = !!res.data.enabled
+    bannedWords.value.words = res.data.words || []
+    bannedWordsText.value = (res.data.words || []).join('\n')
+  }
+}
+
+async function saveBannedWords() {
+  bannedSaving.value = true
+  const words = bannedWordsText.value.split('\n').map(s => s.trim()).filter(Boolean)
+  const res = await adminApi<any>('save_banned_words_config', {
+    enabled: bannedWords.value.enabled ? 1 : 0,
+    words,
+  })
+  bannedSaving.value = false
+  if (res.code === 200) {
+    const saved = res.data?.words || words
+    bannedWords.value.words = saved
+    bannedWordsText.value = saved.join('\n')
+    showToast('违禁词库已保存', 'success')
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
+
+async function testBannedWords() {
+  bannedTesting.value = true
+  const res = await adminApi<any>('test_banned_words', {
+    text: bannedTestText.value || '测试昵称',
+  })
+  bannedTesting.value = false
+  if (res.code === 200 && res.data) {
+    const label = res.data.decision === 'pass' ? '通过' : '拒绝'
     showToast(`测试结果：${label}${res.data.reason ? '，' + res.data.reason : ''}`, 'success')
   } else {
     showToast(res.msg || '测试失败')
@@ -247,6 +360,7 @@ async function save() {
 onMounted(() => {
   loadConfig()
   loadAuditConfig()
+  loadBannedWords()
 })
 </script>
 
@@ -281,6 +395,52 @@ onMounted(() => {
 .page-desc a:hover {
   text-decoration: underline;
 }
+
+/* ===== 标签栏 ===== */
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 20px;
+  padding: 0 4px;
+  overflow-x: auto;
+}
+.tab-item {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 18px;
+  border: none;
+  background: transparent;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  border-radius: 10px 10px 0 0;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.tab-item:hover { color: var(--accent); background: var(--accent-soft); }
+.tab-item.active { color: var(--accent); background: var(--accent-soft); }
+.tab-item.active::after {
+  content: '';
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: -1px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+}
+.tab-panel {
+  animation: fadeUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 .btn-save {
   display: inline-flex;
   align-items: center;
@@ -303,6 +463,13 @@ onMounted(() => {
 .btn-save:disabled {
   opacity: 0.65;
   cursor: not-allowed;
+}
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
 }
 .spinner,
 .loader {
@@ -471,7 +638,7 @@ onMounted(() => {
 .config-card { animation: cardIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 
-/* ===== 外部审核策略 ===== */
+/* ===== 外部内容审核 / 内置违禁词库 ===== */
 .audit-policy-card {
   margin-bottom: 20px;
   padding: 18px;
@@ -568,5 +735,43 @@ onMounted(() => {
 }
 .policy-tip code {
   color: var(--accent);
+}
+
+/* ===== 内置违禁词库 ===== */
+.banned-words-area {
+  margin-top: 4px;
+}
+.banned-words-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 160px;
+  padding: 12px 14px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.7;
+  resize: vertical;
+  outline: none;
+  transition: all 0.2s;
+}
+.banned-words-textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.banned-words-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.banned-words-hint {
+  color: var(--text-muted);
+  opacity: 0.85;
 }
 </style>

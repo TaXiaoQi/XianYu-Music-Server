@@ -66,7 +66,7 @@
         <div class="mobile-item-foot">
           <div class="mobile-item-foot-info">
             <span>听歌时长 {{ formatDuration(u.listen_duration) }}</span>
-            <span>注册 {{ u.created_at || '-' }}</span>
+            <span>注册 {{ fmtDateTime(u.created_at) || '-' }}</span>
           </div>
           <button class="mobile-op-btn" @click="openActionMenu(u)">操作</button>
         </div>
@@ -87,7 +87,7 @@
           <template v-else>
             <div class="popup-meta">
               <span>插件数量：{{ pluginsData.plugin_count || 0 }}</span>
-              <span v-if="pluginsData.uploaded_at">上传时间：{{ pluginsData.uploaded_at }}</span>
+              <span v-if="pluginsData.uploaded_at">上传时间：{{ fmtDateTime(pluginsData.uploaded_at) }}</span>
               <span v-if="pluginsData.ciyuanxi_id">弦予号：{{ pluginsData.ciyuanxi_id }}</span>
             </div>
             <div v-if="pluginsData.plugins && pluginsData.plugins.length > 0" class="popup-table-wrap">
@@ -152,7 +152,7 @@
                     <tr v-for="(log, i) in deviceData.login_logs" :key="'l'+i">
                       <td class="td-mono">{{ log.device_id }}</td>
                       <td>{{ log.ip }}</td>
-                      <td>{{ log.created_at }}</td>
+                      <td>{{ fmtDateTime(log.created_at) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -169,7 +169,7 @@
                       <td class="td-mono">{{ log.device_id }}</td>
                       <td>{{ log.ip }}</td>
                       <td>{{ log.app_version }}</td>
-                      <td>{{ log.created_at }}</td>
+                      <td>{{ fmtDateTime(log.created_at) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -227,6 +227,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { mobileConfirm, mobilePrompt, mobileActionMenu, removeBackdropBlur } from '@/utils/mobileDialog'
+import { fmtDateTime } from '@/utils/time'
 import './MobilePage.css'
 const keyword = ref('')
 const loading = ref(false)

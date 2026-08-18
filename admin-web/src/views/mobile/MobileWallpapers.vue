@@ -129,9 +129,9 @@
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
               {{ uploaderText(item) }}
             </span>
-            <span class="meta-date">{{ item.created_at || '-' }}</span>
+            <span class="meta-date">{{ fmtDateTime(item.created_at) || '-' }}</span>
           </div>
-          <div v-if="item.reviewed_by && item.reviewed_at" class="review-info">审核人：{{ item.reviewed_by }} · {{ item.reviewed_at }}</div>
+          <div v-if="item.reviewed_by && item.reviewed_at" class="review-info">审核人：{{ item.reviewed_by }} · {{ fmtDateTime(item.reviewed_at) }}</div>
           <div v-else-if="item.status === 'pending'" class="review-info review-pending">等待审核</div>
 
           <!-- 操作按钮 -->
@@ -212,6 +212,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
+import { fmtDateTime } from '@/utils/time'
 
 interface Wallpaper {
   id: number

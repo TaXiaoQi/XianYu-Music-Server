@@ -133,7 +133,7 @@
                   </span>
                   <span v-else class="muted">未关联</span>
                 </td>
-                <td class="col-time">{{ d.created_at || '-' }}</td>
+                <td class="col-time">{{ fmtDateTime(d.created_at) || '-' }}</td>
                 <td>
                   <span v-if="d.ban_id" class="badge badge-error">已封禁</span>
                   <span v-else class="badge badge-success">正常</span>
@@ -191,7 +191,7 @@
                   <span class="detail-label">IP</span><span class="detail-value mono">{{ detailData.device_info.ip || '-' }}</span>
                 </div>
                 <div v-if="detailData.device_info" class="detail-item">
-                  <span class="detail-label">最后活跃</span><span class="detail-value">{{ detailData.device_info.created_at || '-' }}</span>
+                  <span class="detail-label">最后活跃</span><span class="detail-value">{{ fmtDateTime(detailData.device_info.created_at) || '-' }}</span>
                 </div>
                 <div class="detail-item">
                   <span class="detail-label">封禁状态</span>
@@ -202,7 +202,7 @@
               <div v-if="detailData.is_banned && detailData.ban_info" class="ban-detail-box">
                 <span>封禁原因: {{ detailData.ban_info.reason || '-' }}</span>
                 <span>操作人: {{ detailData.ban_info.banned_by || '-' }}</span>
-                <span>封禁时间: {{ detailData.ban_info.created_at || '-' }}</span>
+                <span>封禁时间: {{ fmtDateTime(detailData.ban_info.created_at) || '-' }}</span>
               </div>
             </div>
 
@@ -246,7 +246,7 @@
           <div v-else>
             <div class="plugins-meta">
               <span>插件数量: {{ pluginsData.plugin_count || 0 }}</span>
-              <span v-if="pluginsData.uploaded_at">上传时间: {{ pluginsData.uploaded_at }}</span>
+              <span v-if="pluginsData.uploaded_at">上传时间: {{ fmtDateTime(pluginsData.uploaded_at) }}</span>
               <span v-if="pluginsData.ciyuanxi_id">弦予号: {{ pluginsData.ciyuanxi_id }}</span>
               <span v-if="pluginsData.message" class="muted">{{ pluginsData.message }}</span>
             </div>
@@ -277,6 +277,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm, webPrompt, webActionMenu } from '@/utils/webDialog'
+import { fmtDateTime } from '@/utils/time'
 
 interface Device {
   device_id: string

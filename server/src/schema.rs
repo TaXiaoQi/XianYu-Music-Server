@@ -122,6 +122,9 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     // 回收站：软删除时间与删除人，14天后自动过期
     ensure_column(pool, "user_feedback", "deleted_at", "DATETIME DEFAULT NULL").await;
     ensure_column(pool, "user_feedback", "deleted_by", "VARCHAR(64) NOT NULL DEFAULT ''").await;
+    // 协同功能：collaborators 存储所有协作者列表（JSON 数组），completed_by 存储已完成者列表
+    ensure_column(pool, "user_feedback", "collaborators", "TEXT").await;
+    ensure_column(pool, "user_feedback", "completed_by", "TEXT").await;
 }
 
 /// 账号系统重构迁移：将 app_users.username 列改名为 nickname。
@@ -514,6 +517,8 @@ static TABLE_STATEMENTS: &[&str] = &[
             `admin_reply` text,
             `replied_at` datetime DEFAULT NULL,
             `replied_by` varchar(64) NOT NULL DEFAULT '',
+            `collaborators` text COMMENT '协同认领人列表(JSON数组)',
+            `completed_by` text COMMENT '协同完成确认人列表(JSON数组)',
             `ip` varchar(45) NOT NULL DEFAULT '',
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -594,6 +599,16 @@ static TABLE_STATEMENTS: &[&str] = &[
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
             UNIQUE KEY `uk_email` (`email`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `comm_clients` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `name` varchar(128) NOT NULL DEFAULT '',
+            `type` varchar(20) NOT NULL DEFAULT 'ws',
+            `url` varchar(512) NOT NULL DEFAULT '',
+            `events` varchar(512) NOT NULL DEFAULT '',
+            `enabled` tinyint(1) NOT NULL DEFAULT 1,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `wallpapers` (
             `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -785,5 +800,33 @@ static TABLE_STATEMENTS: &[&str] = &[
             PRIMARY KEY (`id`),
             KEY `idx_ciyuanxi_id` (`ciyuanxi_id`),
             KEY `idx_confirmed_at` (`confirmed_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `feedback_collab_requests` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `feedback_id` bigint(20) NOT NULL DEFAULT 0,
+            `feedback_title` varchar(60) NOT NULL DEFAULT '',
+            `requester` varchar(64) NOT NULL DEFAULT '',
+            `assignee` varchar(64) NOT NULL DEFAULT '',
+            `status` varchar(16) NOT NULL DEFAULT 'pending',
+            `responded_at` datetime DEFAULT NULL,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_feedback_id` (`feedback_id`),
+            KEY `idx_assignee` (`assignee`),
+            KEY `idx_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `feedback_admin_notifications` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `feedback_id` bigint(20) NOT NULL DEFAULT 0,
+            `to_admin` varchar(64) NOT NULL DEFAULT '',
+            `from_admin` varchar(64) NOT NULL DEFAULT '',
+            `type` varchar(32) NOT NULL DEFAULT '',
+            `content` varchar(500) NOT NULL DEFAULT '',
+            `read_at` datetime DEFAULT NULL,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_to_admin` (`to_admin`),
+            KEY `idx_read_at` (`read_at`),
+            KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];

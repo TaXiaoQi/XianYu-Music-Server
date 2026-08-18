@@ -174,12 +174,12 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 {{ uploaderText(item) }}
               </span>
-              <span class="meta-date">{{ item.created_at || '-' }}</span>
+              <span class="meta-date">{{ fmtDateTime(item.created_at) || '-' }}</span>
             </div>
 
             <!-- 审核信息 -->
             <div v-if="item.reviewed_by && item.reviewed_at" class="review-info">
-              审核人：{{ item.reviewed_by }} · {{ item.reviewed_at }}
+              审核人：{{ item.reviewed_by }} · {{ fmtDateTime(item.reviewed_at) }}
             </div>
             <div v-else-if="item.status === 'pending'" class="review-info review-pending">
               等待审核
@@ -287,6 +287,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
+import { fmtDateTime } from '@/utils/time'
 
 interface Wallpaper {
   id: number

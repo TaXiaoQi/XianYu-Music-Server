@@ -9,6 +9,72 @@
       <button class="mobile-btn primary" @click="showAddModal">+ 新增版本</button>
     </div>
 
+    <!-- 桌面端在线更新配置卡片 -->
+    <section class="mobile-card desktop-card">
+      <div class="section-head">
+        <div class="section-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+        </div>
+        <div>
+          <h3 class="section-name">桌面端在线更新</h3>
+          <p class="section-desc">桌面端启动时自动比对版本号，低于此版本将弹窗提示更新。</p>
+        </div>
+      </div>
+      <div class="ver-form">
+        <label class="field">
+          <span class="required">版本号</span>
+          <input v-model="desktop.version" type="text" placeholder="如 1.2.0" />
+        </label>
+        <label class="field">
+          <span>下载渠道</span>
+          <button type="button" class="channel-card" @click="openDesktopChannelModal">
+            <div>
+              <strong>{{ desktopChannelLabel }}</strong>
+              <p>{{ desktopChannelDesc }}</p>
+            </div>
+            <span>选择</span>
+          </button>
+        </label>
+        <label class="field">
+          <span>更新内容</span>
+          <button type="button" class="content-editor" @click="openContentEdit('desktop-update')">
+            <span>{{ desktop.updateContent ? desktop.updateContent : '点击填写更新内容' }}</span>
+            <span class="expand-hint">展开编辑</span>
+          </button>
+        </label>
+        <label class="field">
+          <span>启用状态</span>
+          <div class="enable-row">
+            <button type="button" class="enable-btn" :class="{ on: desktopEnabled === 1 }" @click="desktopEnabled = 1">启用</button>
+            <button type="button" class="enable-btn" :class="{ on: desktopEnabled === 0 }" @click="desktopEnabled = 0">禁用</button>
+          </div>
+        </label>
+        <button class="mobile-btn primary" :disabled="desktopSaving" @click="saveDesktop">{{ desktopSaving ? '保存中...' : '保存配置' }}</button>
+        <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ fmtDateTime(desktop.updated_at) }}</span>
+      </div>
+    </section>
+
+    <!-- 更新内容编辑弹窗 -->
+    <Transition name="modal" @before-leave="removeBackdropBlur">
+      <div v-if="contentEditVisible" class="modal-backdrop">
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>编辑更新内容</h3>
+            <button class="modal-close" @click="closeContentEdit">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <textarea v-model="contentDraft" class="content-edit-area" rows="10" placeholder="请输入本次更新内容"></textarea>
+          </div>
+          <div class="modal-foot">
+            <button class="modal-btn cancel" @click="closeContentEdit">取消</button>
+            <button class="modal-btn save" @click="confirmContentEdit">确定</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 版本管理列表 -->
     <section class="mobile-card list-card">
       <div class="list-head">
@@ -28,7 +94,7 @@
               <div class="ver-badge">{{ String(v.id).slice(-2) }}</div>
               <div>
                 <div class="mobile-item-title">{{ v.app_name || '-' }} <span class="ver-code">{{ v.version_code || '-' }}</span></div>
-                <div class="mobile-item-sub">{{ v.created_at }} · {{ formatSize(v.file_size) }}</div>
+                <div class="mobile-item-sub">{{ fmtDateTime(v.created_at) }} · {{ formatSize(v.file_size) }}</div>
               </div>
             </div>
             <span class="mobile-badge" :class="statusClass(v.status)">{{ statusLabel(v.status) }}</span>
@@ -116,46 +182,46 @@
             </button>
           </div>
           <div class="modal-body">
-            <!-- 桌面端在线更新 -->
+            <!-- 新增 APP 版本 -->
             <div class="modal-section">
               <div class="section-head">
                 <div class="section-icon">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 </div>
                 <div>
-                  <h3 class="section-name">桌面端在线更新</h3>
-                  <p class="section-desc">桌面端启动时自动比对版本号，低于此版本将弹窗提示更新。</p>
+                  <h3 class="section-name">新增 APP 版本</h3>
+                  <p class="section-desc">上传安卓安装包并配置版本信息与更新说明。</p>
                 </div>
               </div>
 
               <div class="ver-form">
                 <label class="field">
-                  <span class="required">版本号</span>
-                  <input v-model="desktop.version" type="text" placeholder="如 1.2.0" />
+                  <span class="required">软件名称</span>
+                  <input v-model="addForm.appName" type="text" placeholder="如 弦予·音乐" />
                 </label>
                 <label class="field">
-                  <span>下载渠道</span>
-                  <button type="button" class="channel-card" @click="openDesktopChannelModal">
-                    <div>
-                      <strong>{{ desktopChannelLabel }}</strong>
-                      <p>{{ desktopChannelDesc }}</p>
-                    </div>
-                    <span>选择</span>
-                  </button>
+                  <span class="required">版本号</span>
+                  <input v-model="addForm.versionCode" type="text" placeholder="如 1.2.0" />
                 </label>
                 <label class="field">
                   <span>更新内容</span>
-                  <textarea v-model="desktop.updateContent" rows="3" placeholder="本次更新内容"></textarea>
+                  <button type="button" class="content-editor" @click="openContentEdit('add-update')">
+                    <span>{{ addForm.updateContent ? addForm.updateContent : '点击填写更新内容' }}</span>
+                    <span class="expand-hint">展开编辑</span>
+                  </button>
                 </label>
                 <label class="field">
-                  <span>启用状态</span>
-                  <div class="enable-row">
-                    <button type="button" class="enable-btn" :class="{ on: desktopEnabled === 1 }" @click="desktopEnabled = 1">启用</button>
-                    <button type="button" class="enable-btn" :class="{ on: desktopEnabled === 0 }" @click="desktopEnabled = 0">禁用</button>
+                  <span class="required">安装包</span>
+                  <div class="mobile-upload" @click="triggerApkInput">
+                    <input ref="apkFileInputRef" type="file" accept=".apk" @change="onFileChange" />
+                    <strong>{{ addForm.fileName ? '已选择：' + addForm.fileName : '点击选择 APK 安装包' }}</strong>
                   </div>
                 </label>
-                <button class="mobile-btn primary" :disabled="desktopSaving" @click="saveDesktop">{{ desktopSaving ? '保存中...' : '保存配置' }}</button>
-                <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ desktop.updated_at }}</span>
+                <div v-if="uploading" class="upload-progress">
+                  <div class="progress-bar-track"><div class="progress-bar-fill" :style="{ width: uploadProgress + '%' }"></div></div>
+                  <span class="progress-text">{{ uploadProgress }}%</span>
+                </div>
+                <button class="mobile-btn primary" :disabled="uploading" @click="doAddVersion">{{ uploading ? '上传中...' : '上传安装包' }}</button>
               </div>
             </div>
           </div>
@@ -172,6 +238,7 @@ import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
+import { fmtDateTime } from '@/utils/time'
 
 interface AppVersion {
   id: number
@@ -379,10 +446,30 @@ async function deleteVersion(v: any) {
   else showToast(res.msg || '删除失败')
 }
 
+// ===== 更新内容展开编辑 =====
+const contentEditVisible = ref(false)
+const contentDraft = ref('')
+const contentEditField = ref<'desktop-update' | 'add-update' | null>(null)
+
+function openContentEdit(field: 'desktop-update' | 'add-update') {
+  contentEditField.value = field
+  contentDraft.value = field === 'desktop-update' ? desktop.value.updateContent : addForm.value.updateContent
+  contentEditVisible.value = true
+}
+
+function closeContentEdit() { contentEditVisible.value = false }
+
+function confirmContentEdit() {
+  if (contentEditField.value === 'desktop-update') desktop.value.updateContent = contentDraft.value
+  else if (contentEditField.value === 'add-update') addForm.value.updateContent = contentDraft.value
+  contentEditVisible.value = false
+}
+
 // ===== 新增版本 =====
 const addModalVisible = ref(false)
 const uploading = ref(false)
 const uploadProgress = ref(0)
+const apkFileInputRef = ref<HTMLInputElement | null>(null)
 const addForm = ref({ appName: '弦予·音乐', versionCode: '', updateContent: '', fileName: '', fileSize: 0, fileBase64: '' })
 
 function showAddModal() {
@@ -396,9 +483,15 @@ function closeAddModal() {
   addModalVisible.value = false
 }
 
+function triggerApkInput() { apkFileInputRef.value?.click() }
+
 function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement
-  if (!input.files || input.files.length === 0) return
+  if (!input.files || input.files.length === 0) {
+    addForm.value.fileName = ''
+    addForm.value.fileSize = 0
+    return
+  }
   const file = input.files[0]
   const ext = file.name.split('.').pop()?.toLowerCase()
   if (ext !== 'apk') {
@@ -430,7 +523,7 @@ async function doAddVersion() {
     showToast('请填写软件名称和版本号')
     return
   }
-  const fileInput = document.querySelector('.modal-backdrop input[type="file"]') as HTMLInputElement
+  const fileInput = apkFileInputRef.value
   if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
     showToast('请选择安装包')
     return
@@ -536,6 +629,47 @@ onMounted(() => {
 }
 .enable-btn.on { background: #EC4141; border-color: #EC4141; color: #fff; }
 .last-saved { font-size: 11px; color: var(--text-muted); }
+.desktop-card { display: flex; flex-direction: column; gap: 12px; }
+.content-editor {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--control-bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.18s;
+}
+.content-editor:active { border-color: var(--accent); }
+.content-editor > span:first-child {
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  flex: 1;
+}
+.expand-hint { flex-shrink: 0; font-size: 12px; color: var(--accent); font-weight: 700; }
+.content-edit-area {
+  width: 100%;
+  min-height: 200px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 12px;
+  font-size: 14px;
+  font-family: inherit;
+  background: var(--control-bg);
+  color: var(--text);
+  outline: none;
+  resize: vertical;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+.content-edit-area:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 /* 版本列表 */
 .list-card { display: flex; flex-direction: column; gap: 12px; }

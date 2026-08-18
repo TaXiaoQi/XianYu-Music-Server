@@ -10,6 +10,52 @@ const DEFAULT_FEEDBACK_DAILY_LIMIT: i64 = 20;
 const MAX_ADMIN_FEEDBACK_IMAGES: usize = 6;
 const MAX_ADMIN_FEEDBACK_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 
+/// 解析 collaborators JSON 数组（不含 assignee 的额外协作者）
+fn parse_collaborators(v: Option<&str>) -> Vec<String> {
+    let s = v.unwrap_or("").trim();
+    if s.is_empty() || s == "[]" {
+        return Vec::new();
+    }
+    serde_json::from_str::<Vec<String>>(s).unwrap_or_default()
+}
+
+/// 解析 completed_by JSON 数组（[{admin, note}]）
+fn parse_completed_by(v: Option<&str>) -> Vec<Value> {
+    let s = v.unwrap_or("").trim();
+    if s.is_empty() || s == "[]" {
+        return Vec::new();
+    }
+    serde_json::from_str::<Vec<Value>>(s).unwrap_or_default()
+}
+
+/// 反馈参与人列表（assignee + 协作者，去重）
+fn participants(assignee: &str, collaborators: &[String]) -> Vec<String> {
+    let mut list: Vec<String> = Vec::new();
+    if !assignee.is_empty() {
+        list.push(assignee.to_string());
+    }
+    for c in collaborators {
+        if c != assignee && !list.contains(c) {
+            list.push(c.clone());
+        }
+    }
+    list
+}
+
+/// 写入一条管理员通知
+async fn push_admin_notification(pool: &MySqlPool, feedback_id: i64, to_admin: &str, from_admin: &str, ntype: &str, content: &str) {
+    let _ = sqlx::query(
+        "INSERT INTO feedback_admin_notifications (feedback_id, to_admin, from_admin, type, content) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(feedback_id)
+    .bind(to_admin)
+    .bind(from_admin)
+    .bind(ntype)
+    .bind(content)
+    .execute(pool)
+    .await;
+}
+
 fn admin_feedback_img_dir() -> std::path::PathBuf {
     std::path::Path::new("uploads").join("feedback")
 }
@@ -97,7 +143,7 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
-        "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.resolve_note, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
+        "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
                 f.log_meta,
                 COALESCE(CHAR_LENGTH(f.error_logs), 0) AS error_logs_chars,
                 COALESCE(CHAR_LENGTH(f.all_logs), 0) AS all_logs_chars,
@@ -279,15 +325,28 @@ pub async fn update_feedback_limit(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
 
 /// 认领反馈：将 pending 状态的反馈归属到当前管理员并置为 processing。
 /// 仅待处理状态可认领，且只能由发起请求的管理员本人认领。
+/// 处理中且当前认领人不是自己时，可"转认领"到自己名下，并通知原认领人。
 pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
     if id <= 0 {
         return err(400, "参数错误");
     }
+    // 先查当前状态与认领人，判断是否转认
+    let cur = sqlx::query_as::<_, (String, String, String)>(
+        "SELECT status, COALESCE(assignee, ''), COALESCE(title, '') FROM user_feedback WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await;
+    let (is_transfer, old_assignee, title) = match cur {
+        Ok(Some((st, asg, t))) => (st == "processing" && !asg.is_empty() && asg != ctx.username, asg, t),
+        Ok(None) => return err(404, "反馈不存在"),
+        Err(_) => return err(500, "服务器错误"),
+    };
     // 认领：pending 状态可直接认领；processing 且当前认领人不是自己时，可"转认领"到自己名下
     let upd = sqlx::query(
-        "UPDATE user_feedback SET status = 'processing', assignee = ?, replied_by = ?, replied_at = NOW(), claimed_at = NOW(), updated_at = NOW()
+        "UPDATE user_feedback SET status = 'processing', assignee = ?, replied_by = ?, replied_at = NOW(), claimed_at = NOW(), collaborators = '', completed_by = '', updated_at = NOW()
          WHERE id = ? AND (status = 'pending' OR (status = 'processing' AND assignee != ?))",
     )
     .bind(&ctx.username)
@@ -301,6 +360,18 @@ pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
             if r.rows_affected() == 0 {
                 return err(409, "该反馈不存在、已被认领或当前不可认领，请刷新后重试");
             }
+            // 转认时通知原认领人
+            if is_transfer && !old_assignee.is_empty() {
+                push_admin_notification(
+                    pool,
+                    id,
+                    &old_assignee,
+                    &ctx.username,
+                    "transfer",
+                    &format!("{} 已将您认领的反馈「{}」转认到自己名下", ctx.username, title),
+                )
+                .await;
+            }
             log_operation(pool, ctx, "认领反馈", &format!("id={}", id), &format!("assignee={}", ctx.username)).await;
             ok("认领成功，已置为处理中", json!({ "id": id, "assignee": ctx.username, "status": "processing" }))
         }
@@ -308,31 +379,102 @@ pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     }
 }
 
-/// 放弃认领反馈：仅当前认领人可放弃，回归未认领（pending）状态，
-/// 清空认领人、认领时间，其他管理员可重新认领。
+/// 放弃认领反馈：仅放弃当前管理员自己的账号。
+/// - 唯一认领人放弃：回归未认领（pending）状态，清空认领人、认领时间。
+/// - 认领人放弃但仍有协作者：认领权移交给第一位协作者。
+/// - 协作者放弃：仅将自己从协作者列表移除。
 pub async fn abandon_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
     if id <= 0 {
         return err(400, "参数错误");
     }
-    let upd = sqlx::query(
-        "UPDATE user_feedback SET status = 'pending', assignee = '', replied_by = '', replied_at = NULL, claimed_at = NULL, updated_at = NOW()
-         WHERE id = ? AND status = 'processing' AND assignee = ?",
+    let cur = sqlx::query_as::<_, (String, String, String, String)>(
+        "SELECT status, COALESCE(assignee, ''), COALESCE(collaborators, ''), COALESCE(completed_by, '') FROM user_feedback WHERE id = ?",
     )
     .bind(id)
-    .bind(&ctx.username)
-    .execute(pool)
+    .fetch_optional(pool)
     .await;
-    match upd {
-        Ok(r) => {
-            if r.rows_affected() == 0 {
-                return err(409, "该反馈不存在或您不是当前认领人，请刷新后重试");
+    let (status_val, assignee, collab_json, completed_json) = match cur {
+        Ok(Some(v)) => v,
+        Ok(None) => return err(404, "反馈不存在"),
+        Err(_) => return err(500, "服务器错误"),
+    };
+    if status_val != "processing" {
+        return err(409, "该反馈不是处理中状态，无法放弃");
+    }
+    let mut collabs = parse_collaborators(Some(&collab_json));
+    let completed = parse_completed_by(Some(&completed_json));
+    let is_assignee = assignee == ctx.username;
+    let is_collab = collabs.iter().any(|c| c == &ctx.username);
+    if !is_assignee && !is_collab {
+        return err(403, "您未参与该反馈，无法放弃");
+    }
+    // 从已完成列表中移除自己
+    let completed_filtered: Vec<Value> = completed
+        .into_iter()
+        .filter(|v| v.get("admin").and_then(|a| a.as_str()).unwrap_or("") != ctx.username)
+        .collect();
+    let new_completed_json = json!(completed_filtered).to_string();
+    if is_assignee {
+        if collabs.is_empty() {
+            // 唯一认领人放弃，回归未认领
+            let upd = sqlx::query(
+                "UPDATE user_feedback SET status = 'pending', assignee = '', replied_by = '', replied_at = NULL, claimed_at = NULL, collaborators = '', completed_by = '', updated_at = NOW() WHERE id = ? AND status = 'processing'",
+            )
+            .bind(id)
+            .execute(pool)
+            .await;
+            match upd {
+                Ok(r) => {
+                    if r.rows_affected() == 0 {
+                        return err(409, "该反馈不存在或状态已变化，请刷新后重试");
+                    }
+                    log_operation(pool, ctx, "放弃认领反馈", &format!("id={}", id), "回归未认领状态").await;
+                    ok("已放弃认领，回归未认领状态", json!({ "id": id, "status": "pending" }))
+                }
+                Err(_) => err(500, "服务器错误"),
             }
-            log_operation(pool, ctx, "放弃认领反馈", &format!("id={}", id), "回归未认领状态").await;
-            ok("已放弃认领，回归未认领状态", json!({ "id": id, "status": "pending" }))
+        } else {
+            // 认领人放弃但仍有协作者：认领权移交给第一位协作者
+            let new_assignee = collabs.remove(0);
+            let new_collab_json = json!(collabs).to_string();
+            let upd = sqlx::query(
+                "UPDATE user_feedback SET assignee = ?, collaborators = ?, completed_by = ?, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+            )
+            .bind(&new_assignee)
+            .bind(&new_collab_json)
+            .bind(&new_completed_json)
+            .bind(id)
+            .execute(pool)
+            .await;
+            match upd {
+                Ok(_) => {
+                    log_operation(pool, ctx, "放弃认领反馈", &format!("id={}", id), &format!("认领权移交={}", new_assignee)).await;
+                    ok("已放弃认领，认领权已移交给其他协作者", json!({ "id": id, "status": "processing" }))
+                }
+                Err(_) => err(500, "服务器错误"),
+            }
         }
-        Err(_) => err(500, "服务器错误"),
+    } else {
+        // 协作者放弃：仅移除自己
+        collabs.retain(|c| c != &ctx.username);
+        let new_collab_json = json!(collabs).to_string();
+        let upd = sqlx::query(
+            "UPDATE user_feedback SET collaborators = ?, completed_by = ?, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+        )
+        .bind(&new_collab_json)
+        .bind(&new_completed_json)
+        .bind(id)
+        .execute(pool)
+        .await;
+        match upd {
+            Ok(_) => {
+                log_operation(pool, ctx, "退出协同", &format!("id={}", id), &format!("退出人={}", ctx.username)).await;
+                ok("已退出协同，仅放弃自己的账号", json!({ "id": id, "status": "processing" }))
+            }
+            Err(_) => err(500, "服务器错误"),
+        }
     }
 }
 
@@ -388,6 +530,327 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
             ok("已标记为已完成", json!({ "id": id, "status": "resolved" }))
         }
         Err(_) => err(500, "服务器错误"),
+    }
+}
+
+/// 发起协同：当前管理员请求加入某已认领反馈的协同处理。
+/// 需先由认领人（assignee）弹窗同意，同意后才正式加入协作者列表。
+pub async fn add_collaborator(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let cur = sqlx::query_as::<_, (String, String, String, String)>(
+        "SELECT status, COALESCE(assignee, ''), COALESCE(collaborators, ''), COALESCE(title, '') FROM user_feedback WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await;
+    let (status_val, assignee, collab_json, title) = match cur {
+        Ok(Some(v)) => v,
+        Ok(None) => return err(404, "反馈不存在"),
+        Err(_) => return err(500, "服务器错误"),
+    };
+    if status_val != "processing" {
+        return err(409, "仅处理中的反馈可发起协同");
+    }
+    if assignee.is_empty() {
+        return err(409, "该反馈尚未被认领，无法协同");
+    }
+    if assignee == ctx.username {
+        return err(409, "您已是该反馈的认领人，无需协同");
+    }
+    let collabs = parse_collaborators(Some(&collab_json));
+    if collabs.iter().any(|c| c == &ctx.username) {
+        return err(409, "您已参与该反馈的协同");
+    }
+    let pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM feedback_collab_requests WHERE feedback_id = ? AND requester = ? AND status = 'pending'",
+    )
+    .bind(id)
+    .bind(&ctx.username)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    if pending > 0 {
+        return err(409, "您的协同请求正在等待认领人确认");
+    }
+    let ins = sqlx::query(
+        "INSERT INTO feedback_collab_requests (feedback_id, feedback_title, requester, assignee) VALUES (?, ?, ?, ?)",
+    )
+    .bind(id)
+    .bind(&title)
+    .bind(&ctx.username)
+    .bind(&assignee)
+    .execute(pool)
+    .await;
+    match ins {
+        Ok(_) => {
+            log_operation(pool, ctx, "发起协同请求", &format!("id={}", id), &format!("请求协同人={}", ctx.username)).await;
+            ok("协同请求已发送，等待认领人确认", json!({ "requested": true }))
+        }
+        Err(_) => err(500, "服务器错误"),
+    }
+}
+
+/// 轮询待处理的协同请求（当前管理员作为认领人收到的请求）
+pub async fn poll_collab_requests(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let rows = sqlx::query(
+        "SELECT id, feedback_id, feedback_title, requester, created_at FROM feedback_collab_requests WHERE assignee = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 50",
+    )
+    .bind(&ctx.username)
+    .fetch_all(pool)
+    .await;
+    match rows {
+        Ok(rows) => {
+            let list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            ok("ok", json!({ "list": list }))
+        }
+        Err(_) => err(500, "数据库错误"),
+    }
+}
+
+/// 处理协同请求：认领人同意/拒绝。同意后 requester 加入协作者列表。
+pub async fn respond_collab_request(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let request_id = int_of(&data, "request_id");
+    let approve = int_of(&data, "approve") != 0;
+    if request_id <= 0 {
+        return err(400, "参数错误");
+    }
+    let cur = sqlx::query_as::<_, (i64, String, String, String, String)>(
+        "SELECT feedback_id, requester, assignee, status, COALESCE(feedback_title, '') FROM feedback_collab_requests WHERE id = ?",
+    )
+    .bind(request_id)
+    .fetch_optional(pool)
+    .await;
+    let (feedback_id, requester, assignee, req_status, title) = match cur {
+        Ok(Some(v)) => v,
+        Ok(None) => return err(404, "请求不存在"),
+        Err(_) => return err(500, "服务器错误"),
+    };
+    if assignee != ctx.username {
+        return err(403, "仅认领人可处理该请求");
+    }
+    if req_status != "pending" {
+        return err(409, "该请求已处理");
+    }
+    if approve {
+        let cur2 = sqlx::query_as::<_, (String, String)>(
+            "SELECT COALESCE(collaborators, ''), COALESCE(assignee, '') FROM user_feedback WHERE id = ?",
+        )
+        .bind(feedback_id)
+        .fetch_optional(pool)
+        .await;
+        match cur2 {
+            Ok(Some((collab_json, fb_assignee))) => {
+                if fb_assignee != ctx.username {
+                    return err(409, "该反馈的认领人已变更，请刷新后重试");
+                }
+                let mut collabs = parse_collaborators(Some(&collab_json));
+                if !collabs.iter().any(|c| c == &requester) {
+                    collabs.push(requester.clone());
+                }
+                let new_json = json!(collabs).to_string();
+                let upd = sqlx::query("UPDATE user_feedback SET collaborators = ?, updated_at = NOW() WHERE id = ?")
+                    .bind(&new_json)
+                    .bind(feedback_id)
+                    .execute(pool)
+                    .await;
+                if upd.is_err() {
+                    return err(500, "服务器错误");
+                }
+                push_admin_notification(
+                    pool,
+                    feedback_id,
+                    &requester,
+                    &ctx.username,
+                    "collab_approved",
+                    &format!("{} 已同意您协同处理反馈「{}」", ctx.username, title),
+                )
+                .await;
+            }
+            Ok(None) => return err(404, "反馈不存在"),
+            Err(_) => return err(500, "服务器错误"),
+        }
+    } else {
+        push_admin_notification(
+            pool,
+            feedback_id,
+            &requester,
+            &ctx.username,
+            "collab_rejected",
+            &format!("{} 拒绝了您协同处理反馈「{}」的请求", ctx.username, title),
+        )
+        .await;
+    }
+    let upd = sqlx::query("UPDATE feedback_collab_requests SET status = ?, responded_at = NOW() WHERE id = ?")
+        .bind(if approve { "approved" } else { "rejected" })
+        .bind(request_id)
+        .execute(pool)
+        .await;
+    match upd {
+        Ok(_) => {
+            log_operation(
+                pool,
+                ctx,
+                if approve { "同意协同请求" } else { "拒绝协同请求" },
+                &format!("request_id={}", request_id),
+                &format!("requester={}", requester),
+            )
+            .await;
+            ok(if approve { "已同意协同" } else { "已拒绝协同" }, json!({ "approved": approve }))
+        }
+        Err(_) => err(500, "服务器错误"),
+    }
+}
+
+/// 轮询当前管理员未读通知（转认告知 / 协同结果 / 协同完成）
+pub async fn poll_admin_notifications(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let rows = sqlx::query(
+        "SELECT id, feedback_id, from_admin, type, content, created_at FROM feedback_admin_notifications WHERE to_admin = ? AND read_at IS NULL ORDER BY created_at DESC LIMIT 50",
+    )
+    .bind(&ctx.username)
+    .fetch_all(pool)
+    .await;
+    match rows {
+        Ok(rows) => {
+            let list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            ok("ok", json!({ "list": list }))
+        }
+        Err(_) => err(500, "数据库错误"),
+    }
+}
+
+/// 标记通知为已读
+pub async fn mark_notifications_read(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ids: Vec<i64> = data
+        .get("ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_i64()).collect())
+        .unwrap_or_default();
+    if ids.is_empty() {
+        return ok("ok", json!({ "updated": 0 }));
+    }
+    let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
+    let sql = format!(
+        "UPDATE feedback_admin_notifications SET read_at = NOW() WHERE to_admin = ? AND id IN ({}) AND read_at IS NULL",
+        placeholders.join(",")
+    );
+    let mut query = sqlx::query(&sql).bind(&ctx.username);
+    for id in &ids {
+        query = query.bind(id);
+    }
+    match query.execute(pool).await {
+        Ok(r) => ok("ok", json!({ "updated": r.rows_affected() })),
+        Err(_) => err(500, "服务器错误"),
+    }
+}
+
+/// 协同完成确认：当前参与人点击"完成"，记录其完成状态与说明。
+/// 当所有参与人（认领人 + 协作者）都确认完成后，反馈才真正置为已解决，
+/// 并给所有仍在参与的账号 +1 统计（统计由 feedback_admin_stats 动态计算）。
+pub async fn collaborator_complete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    let note = str_of(&data, "note").trim().to_string();
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    if note.is_empty() {
+        return err(400, "完成说明不能为空");
+    }
+    if note.chars().count() > 1000 {
+        return err(400, "完成说明不能超过 1000 字");
+    }
+    let cur = sqlx::query_as::<_, (String, String, String, String, String)>(
+        "SELECT status, COALESCE(assignee, ''), COALESCE(collaborators, ''), COALESCE(completed_by, ''), COALESCE(title, '') FROM user_feedback WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await;
+    let (status_val, assignee, collab_json, completed_json, title) = match cur {
+        Ok(Some(v)) => v,
+        Ok(None) => return err(404, "反馈不存在"),
+        Err(_) => return err(500, "服务器错误"),
+    };
+    if status_val != "processing" {
+        return err(409, "该反馈不是处理中状态，无法完成，请刷新后重试");
+    }
+    let collabs = parse_collaborators(Some(&collab_json));
+    let mut completed = parse_completed_by(Some(&completed_json));
+    let is_assignee = assignee == ctx.username;
+    let is_collab = collabs.iter().any(|c| c == &ctx.username);
+    if !is_assignee && !is_collab {
+        return err(403, "您未参与该反馈，无法完成");
+    }
+    if completed.iter().any(|v| v.get("admin").and_then(|a| a.as_str()).unwrap_or("") == ctx.username) {
+        return err(409, "您已完成确认，请等待其他参与人");
+    }
+    completed.push(json!({ "admin": ctx.username, "note": note }));
+    let all_participants = participants(&assignee, &collabs);
+    let total = all_participants.len().max(1);
+    let done = completed.len();
+    let all_done = done >= total;
+    if all_done {
+        let resolve_note = completed
+            .iter()
+            .filter_map(|v| v.get("note").and_then(|n| n.as_str()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let new_completed_json = json!(completed).to_string();
+        let upd = sqlx::query(
+            "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), completed_by = ?, notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+        )
+        .bind(&resolve_note)
+        .bind(&ctx.username)
+        .bind(&new_completed_json)
+        .bind(id)
+        .execute(pool)
+        .await;
+        match upd {
+            Ok(r) => {
+                if r.rows_affected() == 0 {
+                    return err(409, "该反馈不是处理中状态，无法完成，请刷新后重试");
+                }
+                // 通知其他参与人协同已完成
+                for p in &all_participants {
+                    if p == &ctx.username {
+                        continue;
+                    }
+                    push_admin_notification(
+                        pool,
+                        id,
+                        p,
+                        &ctx.username,
+                        "collab_completed",
+                        &format!("协同反馈「{}」已由全体参与人共同完成", title),
+                    )
+                    .await;
+                }
+                log_operation(pool, ctx, "协同完成反馈", &format!("id={}", id), &format!("参与人={:?}", all_participants)).await;
+                ok("协同反馈已全部完成", json!({ "id": id, "status": "resolved", "completed": done, "total": total, "resolved": true }))
+            }
+            Err(_) => err(500, "服务器错误"),
+        }
+    } else {
+        let new_completed_json = json!(completed).to_string();
+        let upd = sqlx::query(
+            "UPDATE user_feedback SET completed_by = ?, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+        )
+        .bind(&new_completed_json)
+        .bind(id)
+        .execute(pool)
+        .await;
+        match upd {
+            Ok(_) => {
+                log_operation(pool, ctx, "确认协同完成", &format!("id={}", id), &format!("完成进度 {}/{}", done, total)).await;
+                ok("已确认完成，等待其他参与人", json!({ "id": id, "status": "processing", "completed": done, "total": total, "resolved": false }))
+            }
+            Err(_) => err(500, "服务器错误"),
+        }
     }
 }
 
@@ -494,39 +957,96 @@ async fn notify_external_emails(pool: &MySqlPool, ctx: &AdminCtx, feedback_type:
 }
 
 /// 各管理账号处理反馈量统计
-/// 统计每个管理员（认领人 assignee）处理了多少反馈，及其处理结果分布。
+/// 统计每个管理员（认领人 assignee + 协作者）处理了多少反馈，及其处理结果分布。
+/// 协同反馈完成时，所有仍在参与的账号都会 +1。
 pub async fn feedback_admin_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let rows = sqlx::query(
-        "SELECT COALESCE(NULLIF(assignee, ''), '未认领') AS admin_name,
-                COUNT(*) AS total,
-                CAST(SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) AS SIGNED) AS processing,
-                CAST(SUM(CASE WHEN status = 'resolved' THEN 1 ELSE 0 END) AS SIGNED) AS resolved,
-                CAST(SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS SIGNED) AS rejected,
-                CAST(SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS SIGNED) AS pending
-         FROM user_feedback
-         WHERE deleted_at IS NULL
-         GROUP BY admin_name
-         ORDER BY total DESC",
+        "SELECT COALESCE(assignee, '') AS assignee, COALESCE(collaborators, '') AS collaborators, status FROM user_feedback WHERE deleted_at IS NULL",
     )
-        .fetch_all(pool)
-        .await;
-    let list: Vec<Value> = match rows {
-        Ok(rows) => rows
-            .iter()
-            .map(|r| {
-                json!({
-                    "admin_name": r.get::<String, _>("admin_name"),
-                    "total": r.get::<i64, _>("total"),
-                    "processing": r.get::<i64, _>("processing"),
-                    "resolved": r.get::<i64, _>("resolved"),
-                    "rejected": r.get::<i64, _>("rejected"),
-                    "pending": r.get::<i64, _>("pending"),
-                })
-            })
-            .collect(),
+    .fetch_all(pool)
+    .await;
+    let mut map: std::collections::BTreeMap<String, [i64; 5]> = std::collections::BTreeMap::new();
+    let mut grand_total: i64 = 0;
+    match rows {
+        Ok(rows) => {
+            for r in rows {
+                let assignee: String = r.get("assignee");
+                let collab_json: String = r.get("collaborators");
+                let status: String = r.get("status");
+                let collabs = parse_collaborators(Some(&collab_json));
+                let mut names: Vec<String> = Vec::new();
+                if !assignee.is_empty() {
+                    names.push(assignee);
+                }
+                for c in collabs {
+                    if !names.contains(&c) {
+                        names.push(c);
+                    }
+                }
+                if names.is_empty() {
+                    continue;
+                }
+                grand_total += 1;
+                for name in names {
+                    let entry = map.entry(name).or_insert([0; 5]);
+                    entry[0] += 1;
+                    match status.as_str() {
+                        "processing" => entry[1] += 1,
+                        "resolved" => entry[2] += 1,
+                        "rejected" => entry[3] += 1,
+                        "pending" => entry[4] += 1,
+                        _ => {}
+                    }
+                }
+            }
+        }
         Err(_) => return err(500, "数据库错误"),
-    };
-    let grand_total: i64 = list.iter().map(|v| v.get("total").and_then(|t| t.as_i64()).unwrap_or(0)).sum();
+    }
+    let mut list: Vec<Value> = map
+        .iter()
+        .map(|(name, arr)| {
+            json!({
+                "admin_name": name,
+                "total": arr[0],
+                "processing": arr[1],
+                "resolved": arr[2],
+                "rejected": arr[3],
+                "pending": arr[4],
+            })
+        })
+        .collect();
+    list.sort_by(|a, b| {
+        b.get("total")
+            .and_then(|t| t.as_i64())
+            .unwrap_or(0)
+            .cmp(&a.get("total").and_then(|t| t.as_i64()).unwrap_or(0))
+    });
+    // 未认领统计
+    let unclaimed_total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL AND assignee = '' AND (collaborators IS NULL OR collaborators = '' OR collaborators = '[]')",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    let unclaimed_pending: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL AND status = 'pending' AND assignee = ''",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    if unclaimed_total > 0 {
+        list.insert(
+            0,
+            json!({
+                "admin_name": "未认领",
+                "total": unclaimed_total,
+                "processing": 0,
+                "resolved": 0,
+                "rejected": 0,
+                "pending": unclaimed_pending,
+            }),
+        );
+    }
     log_operation(pool, ctx, "查看反馈处理统计", "", "").await;
     ok("ok", json!({ "list": list, "grand_total": grand_total }))
 }

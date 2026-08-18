@@ -14,7 +14,7 @@
     <div v-else class="mobile-list">
       <div v-for="e in list" :key="e.id" class="mobile-item">
         <div class="mobile-item-title">{{ e.error_message || e.message || '错误日志' }}</div>
-        <div class="mobile-item-sub">{{ e.device_model || '-' }} · {{ e.platform || '-' }} · {{ e.error_time || e.created_at || '-' }}</div>
+        <div class="mobile-item-sub">{{ e.device_model || '-' }} · {{ e.platform || '-' }} · {{ fmtDateTime(e.error_time || e.created_at) || '-' }}</div>
         <pre v-if="e.error_stack" class="mobile-code">{{ e.error_stack }}</pre>
         <transition name="expand">
           <pre v-if="detailId === e.id" class="mobile-code">{{ detailText }}</pre>
@@ -32,6 +32,7 @@ import { onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
 import { mobileConfirm } from '@/utils/mobileDialog'
+import { fmtDateTime } from '@/utils/time'
 const loading = ref(false), list = ref<any[]>([])
 const page = ref(1), totalPages = ref(1)
 const stats = ref<any>({})

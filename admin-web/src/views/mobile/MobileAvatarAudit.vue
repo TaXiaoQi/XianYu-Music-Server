@@ -5,7 +5,7 @@
       <div class="audit-header-info">
         <h2 class="audit-title">
           头像/改名审核
-          <span v-if="totalPending > 0" class="pending-badge">{{ totalPending }} 项待审核</span>
+          <span v-if="stats.pending > 0" class="pending-badge">{{ stats.pending }} 项待审核</span>
         </h2>
         <p class="audit-desc">审核用户上传的头像和改名申请，通过后立即生效。</p>
       </div>
@@ -18,28 +18,25 @@
 
     <!-- 统计卡片 -->
     <div class="stat-grid">
-      <div class="stat-chip pending">
-        <span class="stat-num">{{ avatarStats.pending }}</span>
+      <div class="stat-chip pending" :class="{ active: tab === 'pending' }" @click="switchTab('pending')">
+        <span class="stat-num">{{ stats.pending }}</span>
         <span class="stat-label">待审核</span>
       </div>
-      <div class="stat-chip approved">
-        <span class="stat-num">{{ avatarStats.approved }}</span>
+      <div class="stat-chip approved" :class="{ active: tab === 'approved' }" @click="switchTab('approved')">
+        <span class="stat-num">{{ stats.approved }}</span>
         <span class="stat-label">已通过</span>
       </div>
-      <div class="stat-chip rejected">
-        <span class="stat-num">{{ avatarStats.rejected }}</span>
+      <div class="stat-chip rejected" :class="{ active: tab === 'rejected' }" @click="switchTab('rejected')">
+        <span class="stat-num">{{ stats.rejected }}</span>
         <span class="stat-label">已拒绝</span>
-      </div>
-      <div class="stat-chip nickname">
-        <span class="stat-num">{{ nicknameList.length }}</span>
-        <span class="stat-label">待审核改名</span>
       </div>
     </div>
 
     <!-- tabs -->
     <div class="mobile-tabs">
-      <button class="mobile-btn" :class="{ primary: tab === 'avatar' }" @click="tab = 'avatar'">头像 {{ avatarList.length }}</button>
-      <button class="mobile-btn" :class="{ primary: tab === 'nickname' }" @click="tab = 'nickname'">改名 {{ nicknameList.length }}</button>
+      <button class="mobile-btn" :class="{ primary: tab === 'pending' }" @click="switchTab('pending')">待审核 {{ stats.pending }}</button>
+      <button class="mobile-btn" :class="{ primary: tab === 'approved' }" @click="switchTab('approved')">已通过 {{ stats.approved }}</button>
+      <button class="mobile-btn" :class="{ primary: tab === 'rejected' }" @click="switchTab('rejected')">已拒绝 {{ stats.rejected }}</button>
     </div>
 
     <!-- 加载中 -->
@@ -47,34 +44,23 @@
 
     <!-- 空状态 -->
     <div v-else-if="currentList.length === 0" class="mobile-empty">
-      {{ tab === 'avatar' ? '暂无待审核头像' : '暂无待审核改名申请' }}
+      {{ emptyText }}
     </div>
 
-    <!-- 改名审核 -->
-    <div v-else-if="tab === 'nickname'" class="mobile-list">
-      <div v-for="item in nicknameList" :key="item.id" class="mobile-item">
-        <div class="nick-title">
-          <span class="nick-id">{{ item.ciyuanxi_id || '未知' }}</span>
-          <span class="nick-time">{{ item.created_at || '-' }}</span>
+    <!-- 记录列表 -->
+    <div v-else class="mobile-list">
+      <div v-for="item in currentList" :key="item.type + '-' + item.id" class="mobile-item audit-item">
+        <!-- 类型 + 用户信息 -->
+        <div class="mobile-item-head">
+          <span class="audit-type-badge" :class="'t-' + item.type">{{ item.type === 'avatar' ? '头像' : '改名' }}</span>
+          <span class="mobile-item-title">{{ item.username || item.ciyuanxi_id || '未知用户' }}</span>
         </div>
-        <div class="nick-change">
-          <span class="nick-old">{{ item.old_name || '未知' }}</span>
-          <span class="nick-arrow">→</span>
-          <span class="nick-new">{{ item.new_name }}</span>
-        </div>
-        <div class="mobile-actions">
-          <button class="mobile-btn primary" @click="approveNickname(item)">通过</button>
-          <button class="mobile-btn danger" @click="rejectNickname(item)">拒绝</button>
-        </div>
-      </div>
-    </div>
+        <div class="mobile-item-sub">弦予号：{{ item.ciyuanxi_id || '-' }} · {{ fmtDateTime(item.created_at) || '-' }}</div>
 
-    <!-- 头像审核 -->
-    <div v-else class="mobile-list avatar-list">
-      <div v-for="item in avatarList" :key="item.id" class="mobile-item avatar-item">
-        <div class="avatar-compare">
+        <!-- 头像对比 -->
+        <div v-if="item.type === 'avatar'" class="avatar-compare">
           <div class="av-box">
-            <img v-if="item.avatar_data" :src="item.avatar_data" :alt="item.username" class="av-img" @error="onImgError" />
+            <img v-if="item.avatar_data" :src="item.avatar_data" :alt="'新头像'" class="av-img" @error="onImgError" />
             <div v-else class="av-fallback">
               <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
@@ -89,13 +75,22 @@
             <span class="av-label label-old">当前</span>
           </div>
         </div>
-        <div class="av-info">
-          <div class="mobile-item-title">{{ item.username || '未知用户' }}</div>
-          <div class="mobile-item-sub">弦予号：{{ item.ciyuanxi_id || '-' }} · {{ item.created_at || '-' }}</div>
+
+        <!-- 改名对比 -->
+        <div v-else class="nick-change">
+          <span class="nick-old">{{ item.old_name || '未知' }}</span>
+          <span class="nick-arrow">→</span>
+          <span class="nick-new">{{ item.new_name }}</span>
         </div>
-        <div class="mobile-actions">
-          <button class="mobile-btn primary" @click="approveAvatar(item)">通过</button>
-          <button class="mobile-btn danger" @click="rejectAvatar(item)">拒绝</button>
+
+        <!-- 操作 / 状态 -->
+        <div v-if="item.status === 'pending'" class="mobile-actions">
+          <button class="mobile-btn primary" @click="handleApprove(item)">通过</button>
+          <button class="mobile-btn danger" @click="handleReject(item)">拒绝</button>
+        </div>
+        <div v-else class="history-status">
+          <span class="mobile-badge" :class="item.status === 'approved' ? 'green' : 'red'">{{ item.status === 'approved' ? '已通过' : '已拒绝' }}</span>
+          <span class="history-meta">审核人：{{ item.reviewed_by || '-' }}<template v-if="item.reviewed_at"> · {{ fmtDateTime(item.reviewed_at) }}</template></span>
         </div>
       </div>
     </div>
@@ -105,72 +100,82 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { mobileConfirm } from '@/utils/mobileDialog'
+import { fmtDateTime } from '@/utils/time'
 import './MobilePage.css'
 
-const tab = ref<'avatar' | 'nickname'>('avatar')
+type TabKey = 'pending' | 'approved' | 'rejected'
+
+const tab = ref<TabKey>('pending')
 const loading = ref(true)
-const avatarList = ref<any[]>([])
-const nicknameList = ref<any[]>([])
-const avatarStats = reactive({ pending: 0, approved: 0, rejected: 0 })
+const records = reactive<Record<TabKey, any[]>>({ pending: [], approved: [], rejected: [] })
+const loadedTabs = reactive<Record<TabKey, boolean>>({ pending: false, approved: false, rejected: false })
+const stats = reactive({ pending: 0, approved: 0, rejected: 0 })
 
-const currentList = computed(() => (tab.value === 'avatar' ? avatarList.value : nicknameList.value))
-const totalPending = computed(() => avatarStats.pending + nicknameList.value.length)
+const currentList = computed(() => records[tab.value])
+const emptyText = computed(() => {
+  if (tab.value === 'pending') return '暂无待审核记录'
+  if (tab.value === 'approved') return '暂无已通过记录'
+  return '暂无已拒绝记录'
+})
 
-async function loadAvatars() {
-  const res = await adminApi<any>('list_avatar_pending')
-  if (res.code === 200 && res.data) {
-    avatarList.value = res.data.list || []
-    const s = res.data.stats
-    avatarStats.pending = s?.pending ?? 0
-    avatarStats.approved = s?.approved ?? 0
-    avatarStats.rejected = s?.rejected ?? 0
-  } else avatarList.value = []
-}
-async function loadNicknames() {
-  const res = await adminApi<any>('list_nickname_pending')
-  nicknameList.value = res.code === 200 && Array.isArray(res.data) ? res.data : []
-}
-async function loadAll(silent = false) {
+async function loadTab(t: TabKey, silent = false) {
   if (!silent) loading.value = true
-  await Promise.all([loadAvatars(), loadNicknames()])
+  const res = await adminApi<any>('list_audit_records', { status: t })
+  if (res.code === 200 && res.data) {
+    records[t] = res.data.list || []
+    loadedTabs[t] = true
+    const s = res.data.stats
+    if (s) {
+      stats.pending = s.pending ?? 0
+      stats.approved = s.approved ?? 0
+      stats.rejected = s.rejected ?? 0
+    }
+  } else records[t] = []
   if (!silent) loading.value = false
 }
 
-async function approveAvatar(i: any) {
-  const ok = await mobileConfirm('确认通过该头像审核？通过后将更新为用户的新头像。', { title: '通过审核', confirmText: '确认通过' })
+function switchTab(t: TabKey) {
+  if (tab.value === t) return
+  tab.value = t
+  if (!loadedTabs[t]) loadTab(t)
+}
+
+async function loadAll(silent = false) {
+  if (!silent) loading.value = true
+  await loadTab('pending', true)
+  if (loadedTabs.approved) await loadTab('approved', true)
+  if (loadedTabs.rejected) await loadTab('rejected', true)
+  if (!silent) loading.value = false
+}
+
+async function handleApprove(i: any) {
+  const isAvatar = i.type === 'avatar'
+  const label = isAvatar ? '头像' : '改名'
+  const ok = await mobileConfirm(`确认通过该${label}审核？${isAvatar ? '通过后将更新为用户的新头像。' : '通过后用户名将更新。'}`, { title: '通过审核', confirmText: '确认通过' })
   if (!ok) return
-  const res = await adminApi('approve_avatar', { id: i.id })
+  const res = await adminApi(isAvatar ? 'approve_avatar' : 'approve_nickname', { id: i.id })
   if (res.code === 200) {
     showToast('审核通过', 'success')
-    avatarList.value = avatarList.value.filter(a => a.id !== i.id)
-    avatarStats.pending = Math.max(0, avatarStats.pending - 1)
-    avatarStats.approved += 1
+    records.pending = records.pending.filter(r => !(r.type === i.type && r.id === i.id))
+    stats.pending = Math.max(0, stats.pending - 1)
+    stats.approved += 1
+    loadedTabs.approved = false
   } else showToast(res.msg || '操作失败')
 }
-async function rejectAvatar(i: any) {
-  const ok = await mobileConfirm('确认拒绝该头像审核？', { title: '拒绝审核', confirmText: '确认拒绝', danger: true })
+
+async function handleReject(i: any) {
+  const isAvatar = i.type === 'avatar'
+  const label = isAvatar ? '头像' : '改名'
+  const ok = await mobileConfirm(`确认拒绝该${label}审核？`, { title: '拒绝审核', confirmText: '确认拒绝', danger: true })
   if (!ok) return
-  const res = await adminApi('reject_avatar', { id: i.id })
+  const res = await adminApi(isAvatar ? 'reject_avatar' : 'reject_nickname', { id: i.id })
   if (res.code === 200) {
     showToast('已拒绝', 'success')
-    avatarList.value = avatarList.value.filter(a => a.id !== i.id)
-    avatarStats.pending = Math.max(0, avatarStats.pending - 1)
-    avatarStats.rejected += 1
+    records.pending = records.pending.filter(r => !(r.type === i.type && r.id === i.id))
+    stats.pending = Math.max(0, stats.pending - 1)
+    stats.rejected += 1
+    loadedTabs.rejected = false
   } else showToast(res.msg || '操作失败')
-}
-async function approveNickname(i: any) {
-  const ok = await mobileConfirm('确认通过该改名申请？通过后用户名将更新。', { title: '通过改名', confirmText: '确认通过' })
-  if (!ok) return
-  const res = await adminApi('approve_nickname', { id: i.id })
-  if (res.code === 200) { showToast('审核通过', 'success'); nicknameList.value = nicknameList.value.filter(n => n.id !== i.id); }
-  else showToast(res.msg || '操作失败')
-}
-async function rejectNickname(i: any) {
-  const ok = await mobileConfirm('确认拒绝该改名申请？', { title: '拒绝改名', confirmText: '确认拒绝', danger: true })
-  if (!ok) return
-  const res = await adminApi('reject_nickname', { id: i.id })
-  if (res.code === 200) { showToast('已拒绝', 'success'); nicknameList.value = nicknameList.value.filter(n => n.id !== i.id); }
-  else showToast(res.msg || '操作失败')
 }
 
 function onImgError(e: Event) {
@@ -242,7 +247,7 @@ onUnmounted(() => stopPolling())
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 8px;
 }
 .stat-chip {
@@ -253,44 +258,33 @@ onUnmounted(() => stopPolling())
   border-radius: 14px;
   background: var(--card);
   border: 1px solid var(--border);
+  cursor: pointer;
+  transition: all 0.2s;
 }
+.stat-chip.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .stat-num { font-size: 20px; font-weight: 850; line-height: 1.1; }
 .stat-label { font-size: 11px; color: var(--text-muted); }
 .stat-chip.pending .stat-num { color: #f59e0b; }
 .stat-chip.approved .stat-num { color: #16a34a; }
 .stat-chip.rejected .stat-num { color: #dc2626; }
-.stat-chip.nickname .stat-num { color: #2563eb; }
 
-.nick-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 6px;
+/* 记录卡片 */
+.audit-item { display: flex; flex-direction: column; gap: 6px; }
+.audit-type-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 6px;
 }
-.nick-id { font-size: 13px; font-weight: 700; color: var(--text); }
-.nick-time { font-size: 11px; color: var(--text-muted); }
-.nick-change {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: var(--control-bg);
-  border: 1px solid var(--border);
-  margin-bottom: 10px;
-}
-.nick-old { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text-muted); text-decoration: line-through; word-break: break-word; }
-.nick-arrow { flex: 0 0 auto; color: #EC4141; font-weight: 900; }
-.nick-new { flex: 1; min-width: 0; font-size: 13px; font-weight: 800; color: var(--text); word-break: break-word; }
+.audit-type-badge.t-avatar { background: #eff6ff; color: #2563eb; }
+.audit-type-badge.t-nickname { background: #f5f3ff; color: #7c3aed; }
 
-.avatar-list { display: flex; flex-direction: column; gap: 12px; }
-.avatar-item { align-items: center; }
 .avatar-compare {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-bottom: 12px;
+  margin: 8px 0;
 }
 .av-box { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .av-img {
@@ -314,5 +308,31 @@ onUnmounted(() => stopPolling())
 .av-label { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 8px; }
 .label-new { background: #eff6ff; color: #2563eb; }
 .label-old { background: var(--control-bg); color: var(--text-muted); }
-.av-info { text-align: center; margin-bottom: 12px; }
+
+.nick-change {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: var(--control-bg);
+  border: 1px solid var(--border);
+  margin: 8px 0;
+}
+.nick-old { flex: 1; min-width: 0; font-size: 13px; font-weight: 700; color: var(--text-muted); text-decoration: line-through; word-break: break-word; }
+.nick-arrow { flex: 0 0 auto; color: #EC4141; font-weight: 900; }
+.nick-new { flex: 1; min-width: 0; font-size: 13px; font-weight: 800; color: var(--text); word-break: break-word; }
+
+.history-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.history-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
 </style>

@@ -4,6 +4,22 @@ use sqlx::MySqlPool;
 use std::time::Duration;
 
 const SETTING_KEY: &str = "audit_external_config";
+const BANNED_WORDS_KEY: &str = "banned_words_config";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BannedWordsConfig {
+    pub enabled: bool,
+    pub words: Vec<String>,
+}
+
+impl Default for BannedWordsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            words: Vec::new(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditExternalConfig {
@@ -115,6 +131,64 @@ pub async fn save_config(pool: &MySqlPool, cfg: &AuditExternalConfig) -> Result<
     Ok(())
 }
 
+pub async fn ensure_banned_words_setting(pool: &MySqlPool) {
+    let value = serde_json::to_string(&BannedWordsConfig::default()).unwrap_or_else(|_| "{}".to_string());
+    let _ = sqlx::query(
+        "INSERT IGNORE INTO server_settings (setting_key, setting_value, description) VALUES (?, ?, ?)",
+    )
+    .bind(BANNED_WORDS_KEY)
+    .bind(value)
+    .bind("内置违禁词库配置：命中违禁词的文本直接拒绝")
+    .execute(pool)
+    .await;
+}
+
+pub async fn load_banned_words(pool: &MySqlPool) -> BannedWordsConfig {
+    ensure_banned_words_setting(pool).await;
+    let raw = sqlx::query_scalar::<_, Option<String>>(
+        "SELECT setting_value FROM server_settings WHERE setting_key = ? LIMIT 1",
+    )
+    .bind(BANNED_WORDS_KEY)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .flatten();
+
+    raw.and_then(|s| serde_json::from_str::<BannedWordsConfig>(&s).ok())
+        .unwrap_or_default()
+}
+
+pub async fn save_banned_words(pool: &MySqlPool, cfg: &BannedWordsConfig) -> Result<(), sqlx::Error> {
+    ensure_banned_words_setting(pool).await;
+    let value = serde_json::to_string(cfg).unwrap_or_else(|_| "{}".to_string());
+    sqlx::query(
+        "UPDATE server_settings SET setting_value = ? WHERE setting_key = ?",
+    )
+    .bind(value)
+    .bind(BANNED_WORDS_KEY)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// 内置违禁词检查：命中返回 Reject，否则返回 None
+fn check_banned_words(cfg: &BannedWordsConfig, text: &str) -> Option<AuditResult> {
+    if !cfg.enabled {
+        return None;
+    }
+    for w in &cfg.words {
+        let word = w.trim();
+        if word.is_empty() {
+            continue;
+        }
+        if text.contains(word) {
+            return Some(AuditResult::reject(format!("内容包含违禁词「{}」", word), "banned_words"));
+        }
+    }
+    None
+}
+
 fn module_enabled(cfg: &AuditExternalConfig, scene: &str) -> bool {
     match scene {
         "nickname" => cfg.nickname_enabled,
@@ -185,6 +259,11 @@ async fn call_external(cfg: &AuditExternalConfig, payload: Value) -> AuditResult
 }
 
 pub async fn audit_text(pool: &MySqlPool, scene: &str, text: &str, meta: Value) -> AuditResult {
+    // 内置违禁词优先检查，命中直接拒绝
+    let bw = load_banned_words(pool).await;
+    if let Some(r) = check_banned_words(&bw, text) {
+        return r;
+    }
     let cfg = load_config(pool).await;
     if !cfg.enabled || !module_enabled(&cfg, scene) {
         return AuditResult::manual("外部审核未启用");

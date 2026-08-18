@@ -119,7 +119,7 @@
                   <td class="col-target">{{ row.target || '-' }}</td>
                   <td class="col-detail" :title="row.detail || ''">{{ truncate(row.detail, 40) }}</td>
                   <td class="col-ip">{{ row.ip || '-' }}</td>
-                  <td class="col-time">{{ row.created_at }}</td>
+                  <td class="col-time">{{ fmtDateTime(row.created_at) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -156,7 +156,7 @@
                       {{ row.status == 1 ? '成功' : '失败' }}
                     </span>
                   </td>
-                  <td class="col-time">{{ row.created_at }}</td>
+                  <td class="col-time">{{ fmtDateTime(row.created_at) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -184,6 +184,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
+import { fmtDateTime } from '@/utils/time'
 
 interface OperationLog {
   id: number

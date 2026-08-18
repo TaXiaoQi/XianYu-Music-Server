@@ -104,7 +104,7 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(t, idx) in tables" :key="t.name" class="row-anim" :style="{ animationDelay: `${idx * 40}ms` }">
+              <tr v-for="(t, idx) in pagedTables" :key="t.name" class="row-anim" :style="{ animationDelay: `${idx * 40}ms` }">
                 <td>
                   <span
                     class="table-name"
@@ -129,6 +129,19 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- 表分页 -->
+        <div v-if="!loadingTables && tables.length > 0" class="pagination">
+          <button :disabled="tablePage <= 1" @click="goTableListPage(tablePage - 1)">上一页</button>
+          <button
+            v-for="p in tablePageNumbers"
+            :key="p"
+            :class="{ active: p === tablePage }"
+            @click="goTableListPage(p)"
+          >{{ p }}</button>
+          <button :disabled="tablePage >= tableTotalPages" @click="goTableListPage(tablePage + 1)">下一页</button>
+          <span>共 {{ tables.length }} 条</span>
         </div>
       </div>
     </Transition>
@@ -157,12 +170,12 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(b, idx) in backups" :key="b.name" class="row-anim" :style="{ animationDelay: `${idx * 40}ms` }">
+              <tr v-for="(b, idx) in pagedBackups" :key="b.name" class="row-anim" :style="{ animationDelay: `${idx * 40}ms` }">
                 <td>
                   <span class="backup-name" :title="b.name">{{ b.name }}</span>
                 </td>
                 <td>{{ b.size }}</td>
-                <td class="nowrap-time">{{ b.created_at || '-' }}</td>
+                <td class="nowrap-time">{{ fmtDateTime(b.created_at) || '-' }}</td>
                 <td>
                   <div class="row-actions">
                     <button class="btn btn-sm" :disabled="isBusy(b.name, 'view')" @click="openBackupViewer(b)">查看</button>
@@ -174,6 +187,19 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- 备份分页 -->
+        <div v-if="!loadingBackups && backups.length > 0" class="pagination">
+          <button :disabled="backupPage <= 1" @click="goBackupPage(backupPage - 1)">上一页</button>
+          <button
+            v-for="p in backupPageNumbers"
+            :key="p"
+            :class="{ active: p === backupPage }"
+            @click="goBackupPage(p)"
+          >{{ p }}</button>
+          <button :disabled="backupPage >= backupTotalPages" @click="goBackupPage(backupPage + 1)">下一页</button>
+          <span>共 {{ backups.length }} 条</span>
         </div>
       </div>
     </Transition>
@@ -195,7 +221,7 @@
             </div>
             <template v-else-if="tableData">
               <div class="table-meta">
-                共 {{ tableData.total }} 行 · 第 {{ tableData.page }}/{{ tableTotalPages }} 页 · 每页 {{ tableData.pageSize }} 行
+                共 {{ tableData.total }} 行 · 第 {{ tableData.page }}/{{ viewerTotalPages }} 页 · 每页 {{ tableData.pageSize }} 行
               </div>
               <div v-if="tableData.rows.length" class="table-scroll">
                 <table class="data-table compact">
@@ -217,15 +243,15 @@
           </div>
           <div class="modal-foot">
             <div class="pagination" v-if="tableData && tableData.total > 0">
-              <button :disabled="tableLoading || (tableData?.page ?? 1) <= 1" @click="goTablePage((tableData?.page ?? 1) - 1)">上一页</button>
+              <button :disabled="tableLoading || (tableData?.page ?? 1) <= 1" @click="goViewerPage((tableData?.page ?? 1) - 1)">上一页</button>
               <button
-                v-for="p in tablePageNumbers"
+                v-for="p in viewerPageNumbers"
                 :key="p"
                 :class="{ active: p === (tableData?.page ?? 1) }"
                 :disabled="tableLoading"
-                @click="goTablePage(p)"
+                @click="goViewerPage(p)"
               >{{ p }}</button>
-              <button :disabled="tableLoading || (tableData?.page ?? 1) >= tableTotalPages" @click="goTablePage((tableData?.page ?? 1) + 1)">下一页</button>
+              <button :disabled="tableLoading || (tableData?.page ?? 1) >= viewerTotalPages" @click="goViewerPage((tableData?.page ?? 1) + 1)">下一页</button>
               <span>共 {{ tableData?.total ?? 0 }} 条</span>
             </div>
             <button class="btn-cancel" @click="closeTableModal">关闭</button>
@@ -349,6 +375,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast, getToken } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
+import { fmtDateTime } from '@/utils/time'
 
 // ===== 类型定义 =====
 interface TableInfo {
@@ -402,6 +429,49 @@ const backingUp = ref(false)
 const existingCount = computed(() => tables.value.filter(t => t.exists).length)
 const missingCount = computed(() => tables.value.filter(t => !t.exists).length)
 
+// ===== 分页（每页 20 条） =====
+const PAGE_SIZE = 20
+const tablePage = ref(1)
+const backupPage = ref(1)
+
+const pagedTables = computed(() => {
+  const start = (tablePage.value - 1) * PAGE_SIZE
+  return tables.value.slice(start, start + PAGE_SIZE)
+})
+const tableTotalPages = computed(() => Math.max(1, Math.ceil(tables.value.length / PAGE_SIZE)))
+const tablePageNumbers = computed(() => calcPageNumbers(tablePage.value, tableTotalPages.value))
+
+const pagedBackups = computed(() => {
+  const start = (backupPage.value - 1) * PAGE_SIZE
+  return backups.value.slice(start, start + PAGE_SIZE)
+})
+const backupTotalPages = computed(() => Math.max(1, Math.ceil(backups.value.length / PAGE_SIZE)))
+const backupPageNumbers = computed(() => calcPageNumbers(backupPage.value, backupTotalPages.value))
+
+function calcPageNumbers(cur: number, total: number): number[] {
+  const max = 7
+  const pages: number[] = []
+  if (total <= max) {
+    for (let i = 1; i <= total; i++) pages.push(i)
+  } else {
+    let start = Math.max(1, cur - 3)
+    let end = Math.min(total, start + max - 1)
+    if (end - start < max - 1) start = Math.max(1, end - max + 1)
+    for (let i = start; i <= end; i++) pages.push(i)
+  }
+  return pages
+}
+
+function goTableListPage(p: number) {
+  if (p < 1 || p > tableTotalPages.value || p === tablePage.value) return
+  tablePage.value = p
+}
+
+function goBackupPage(p: number) {
+  if (p < 1 || p > backupTotalPages.value || p === backupPage.value) return
+  backupPage.value = p
+}
+
 // ===== 加载数据 =====
 async function loadTables() {
   loadingTables.value = true
@@ -412,6 +482,7 @@ async function loadTables() {
     tables.value = []
     showToast(res.msg || '表列表加载失败')
   }
+  if (tablePage.value > tableTotalPages.value) tablePage.value = tableTotalPages.value
   loadingTables.value = false
 }
 
@@ -424,6 +495,7 @@ async function loadBackups() {
     backups.value = []
     showToast(res.msg || '备份列表加载失败')
   }
+  if (backupPage.value > backupTotalPages.value) backupPage.value = backupTotalPages.value
   loadingBackups.value = false
 }
 
@@ -582,15 +654,15 @@ const showTableModal = ref(false)
 const tableLoading = ref(false)
 const tableData = ref<TableData | null>(null)
 
-const tableTotalPages = computed(() => {
+const viewerTotalPages = computed(() => {
   if (!tableData.value) return 1
   return Math.max(1, Math.ceil(tableData.value.total / tableData.value.pageSize))
 })
 
-const tablePageNumbers = computed(() => {
+const viewerPageNumbers = computed(() => {
   const max = 7
   const pages: number[] = []
-  const total = tableTotalPages.value
+  const total = viewerTotalPages.value
   const cur = tableData.value?.page ?? 1
   if (total <= max) {
     for (let i = 1; i <= total; i++) pages.push(i)
@@ -621,9 +693,9 @@ async function fetchTable(name: string, page: number) {
   }
 }
 
-function goTablePage(p: number) {
+function goViewerPage(p: number) {
   if (!tableData.value) return
-  if (p < 1 || p > tableTotalPages.value || p === tableData.value.page) return
+  if (p < 1 || p > viewerTotalPages.value || p === tableData.value.page) return
   fetchTable(tableData.value.table, p)
 }
 

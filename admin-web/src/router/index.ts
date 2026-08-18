@@ -115,7 +115,7 @@ const routes: RouteRecordRaw[] = [
         path: 'turnstile-config',
         name: 'MobileTurnstileConfig',
         component: () => import('@/views/mobile/MobileTurnstileConfig.vue'),
-        meta: { title: '人机验证设置', mobile: true },
+        meta: { title: '审核设置', mobile: true },
       },
       {
         path: 'config-file',
@@ -266,7 +266,7 @@ const routes: RouteRecordRaw[] = [
         path: 'turnstile-config',
         name: 'TurnstileConfig',
         component: () => import('@/views/TurnstileConfig.vue'),
-        meta: { title: '人机验证设置' },
+        meta: { title: '审核设置' },
       },
       {
         path: 'config-file',

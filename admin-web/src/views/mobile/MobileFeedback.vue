@@ -159,6 +159,10 @@
               <div v-if="f.assignee" class="assignee-row">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 <span>{{ f.status === 'rejected' ? '拒绝人' : '认领人' }}：{{ f.assignee }}</span>
+                <span v-if="f.collaborators && f.collaborators !== '[]'" class="collab-badge">{{ getCollabCount(f) }} 人协同</span>
+              </div>
+              <div v-if="f.status === 'processing' && f.completed_by && f.completed_by !== '[]'" class="collab-progress">
+                <span class="progress-text">{{ getCompletedDisplay(f) }}</span>
               </div>
               <div v-if="f.status === 'resolved' && f.resolve_note" class="resolve-note">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -192,15 +196,19 @@
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
               日志
             </button>
-            <button v-if="f.status === 'pending' || (f.status === 'processing' && !isMineFeedback(f))" class="act-btn act-claim" @click="claim(f)">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-              认领
+            <button v-if="f.status === 'processing' && !isParticipant(f)" class="act-btn act-collab" @click="requestCollaborate(f)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              协同
             </button>
-            <button v-if="f.status === 'processing' && isMineFeedback(f)" class="act-btn act-abandon" @click="abandon(f)">
+            <button v-if="f.status === 'pending' || (f.status === 'processing' && !isParticipant(f))" class="act-btn act-claim" :class="{ 'act-transfer': f.status === 'processing' && !isParticipant(f) }" @click="claim(f)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+              {{ f.status === 'processing' && !isParticipant(f) ? '转认' : '认领' }}
+            </button>
+            <button v-if="f.status === 'processing' && isParticipant(f)" class="act-btn act-abandon" @click="abandon(f)">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
               放弃
             </button>
-            <button v-if="f.status === 'processing' && isMineFeedback(f)" class="act-btn act-resolve" @click="openResolve(f)">
+            <button v-if="f.status === 'processing' && isParticipant(f)" class="act-btn act-resolve" @click="openResolve(f)">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               完成
             </button>
@@ -391,15 +399,47 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { adminApi, showToast, getAdminUser } from '@/api/client'
-import { mobileConfirm, mobileActionMenu, removeBackdropBlur } from '@/utils/mobileDialog'
+import { mobileConfirm, mobileActionMenu, mobileInfo, removeBackdropBlur } from '@/utils/mobileDialog'
+import { fmtTime } from '@/utils/time'
 import './MobilePage.css'
 
 // 当前登录管理员用户名（用于判断反馈是否由本人认领）
 const currentAdminName = getAdminUser()?.username || ''
 function isMineFeedback(f: any): boolean {
   return !!f.assignee && f.assignee === currentAdminName
+}
+
+// ===== 协同功能辅助 =====
+function parseJsonArray(v: string | null | undefined): any[] {
+  if (!v) return []
+  try {
+    const arr = JSON.parse(v)
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+function collaboratorsOf(f: any): string[] {
+  return parseJsonArray(f.collaborators).filter((c): c is string => typeof c === 'string')
+}
+function completedOf(f: any): Array<{ admin: string; note?: string }> {
+  return parseJsonArray(f.completed_by).filter((c): c is { admin: string; note?: string } => !!c && typeof c.admin === 'string')
+}
+function isCollaborator(f: any): boolean {
+  return collaboratorsOf(f).includes(currentAdminName)
+}
+function isParticipant(f: any): boolean {
+  return isMineFeedback(f) || isCollaborator(f)
+}
+function getCollabCount(f: any): number {
+  return collaboratorsOf(f).length
+}
+function getCompletedDisplay(f: any): string {
+  const done = completedOf(f).length
+  const total = 1 + collaboratorsOf(f).length
+  return `完成 ${done}/${total}`
 }
 
 const loading = ref(false)
@@ -498,15 +538,6 @@ async function openLogModal(item: any) {
 }
 function closeLog() { if (!logLoading.value) { logVisible.value = false; logTarget.value = null } }
 
-// ===== 时间戳 =====
-function fmtTime(v: any): string {
-  if (!v) return ''
-  const m = String(v).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T ]+(\d{1,2}):(\d{1,2})/)
-  if (!m) return String(v)
-  const [, y, mo, d, h, mi] = m.map(Number)
-  return `${y}年${mo}月${d}日 ${h}时${String(mi).padStart(2, '0')}分`
-}
-
 async function loadList() {
   loading.value = true
   const res = await adminApi<any>('list_feedback', { status_filter: status.value === '' ? '' : status.value, sort: sortMode.value })
@@ -538,29 +569,74 @@ async function claim(f: any) {
   if (!ok) return
   const res = await adminApi('claim_feedback', { id: f.id })
   if (res.code === 200) {
-    const old = f.status
-    f.status = 'processing'
-    f.assignee = res.data?.assignee || ''
-    if (old !== 'processing') {
-      if (stats.value[old as keyof typeof stats.value] !== undefined) (stats.value as any)[old]--
-      stats.value.processing++
-    }
     showToast(isTransfer ? '已转认领到自己名下' : '认领成功，已置为处理中', 'success')
+    await loadList()
   } else { showToast(res.msg || '认领失败') }
+}
+
+// ===== 发起协同 =====
+async function requestCollaborate(f: any) {
+  const ok = await mobileConfirm(`确认申请协同处理该反馈？需认领人 ${f.assignee} 弹窗同意后方可加入。`, { title: '申请协同', confirmText: '申请' })
+  if (!ok) return
+  const res = await adminApi('add_collaborator', { id: f.id })
+  if (res.code === 200) {
+    showToast('协同请求已发送，等待认领人确认', 'success')
+  } else { showToast(res.msg || '操作失败') }
+}
+
+// ===== 处理协同请求（认领人同意/拒绝） =====
+async function respondCollabRequest(request: any, approve: boolean) {
+  const res = await adminApi('respond_collab_request', { request_id: request.id, approve: approve ? 1 : 0 })
+  if (res.code === 200) {
+    showToast(approve ? `已同意 ${request.requester} 协同处理` : `已拒绝 ${request.requester} 的协同请求`, 'success')
+    await loadList()
+  } else { showToast(res.msg || '操作失败') }
+}
+
+// ===== 轮询协同请求与通知（转认告知 / 协同结果 / 协同完成） =====
+let alertPollTimer: ReturnType<typeof setInterval> | null = null
+let alertProcessing = false
+async function pollFeedbackAlerts() {
+  if (alertProcessing) return
+  alertProcessing = true
+  try {
+    // 1. 处理待确认的协同请求（我是认领人）
+    const reqRes = await adminApi<any>('poll_collab_requests')
+    if (reqRes.code === 200 && reqRes.data?.list?.length) {
+      for (const req of reqRes.data.list) {
+        const approve = await mobileConfirm(`${req.requester} 请求协同处理反馈「${req.feedback_title || '无标题'}」，是否同意？`, {
+          title: '协同请求',
+          confirmText: '同意',
+          cancelText: '拒绝',
+        })
+        await respondCollabRequest(req, approve)
+      }
+    }
+    // 2. 展示未读通知（转认告知 / 协同结果 / 协同完成）
+    const notifRes = await adminApi<any>('poll_admin_notifications')
+    if (notifRes.code === 200 && notifRes.data?.list?.length) {
+      const list = notifRes.data.list
+      for (const n of list) {
+        await mobileInfo(n.content, { title: '反馈通知' })
+      }
+      await adminApi('mark_notifications_read', { ids: list.map((n: any) => n.id) })
+      await loadList()
+    }
+  } catch {
+    // 轮询失败静默处理
+  } finally {
+    alertProcessing = false
+  }
 }
 
 // ===== 放弃认领 =====
 async function abandon(f: any) {
-  const ok = await mobileConfirm('确认放弃认领该反馈？放弃后回归未认领状态，其他管理员可重新认领。', { title: '放弃认领', confirmText: '放弃', danger: true })
+  const ok = await mobileConfirm('确认放弃认领该反馈？仅放弃自己的账号，其他参与人不受影响。', { title: '放弃认领', confirmText: '放弃', danger: true })
   if (!ok) return
   const res = await adminApi('abandon_feedback', { id: f.id })
   if (res.code === 200) {
-    const old = f.status
-    f.status = 'pending'
-    f.assignee = ''
-    if (stats.value[old as keyof typeof stats.value] !== undefined) (stats.value as any)[old]--
-    stats.value.pending++
-    showToast('已放弃认领，回归未认领状态', 'success')
+    showToast(res.msg || '已放弃', 'success')
+    await loadList()
   } else { showToast(res.msg || '操作失败') }
 }
 
@@ -588,13 +664,18 @@ function closeResolve() { if (!resolveSaving.value) { resolveVisible.value = fal
 async function confirmResolve() {
   if (!resolveTarget.value || !resolveNote.value.trim()) return
   resolveSaving.value = true
-  const res = await adminApi('resolve_feedback', { id: resolveTarget.value.id, note: resolveNote.value.trim() })
+  const f = resolveTarget.value
+  const hasCollab = collaboratorsOf(f).length > 0
+  const res = await adminApi(hasCollab ? 'collaborator_complete' : 'resolve_feedback', { id: f.id, note: resolveNote.value.trim() })
   resolveSaving.value = false
   if (res.code === 200) {
-    resolveTarget.value.status = 'resolved'
-    resolveTarget.value.resolve_note = resolveNote.value.trim()
+    if (res.data?.resolved) {
+      showToast('协同反馈已全部完成', 'success')
+    } else {
+      showToast(`已确认完成（${res.data?.completed}/${res.data?.total}），等待其他参与人`, 'success')
+    }
     closeResolve()
-    showToast('已标记为已完成', 'success')
+    await loadList()
   } else { showToast(res.msg || '操作失败') }
 }
 
@@ -748,7 +829,8 @@ function openViewer(imgs: string[], i: number) { viewerList.value = imgs; viewer
 function viewerPrev() { viewerIndex.value = (viewerIndex.value - 1 + viewerList.value.length) % viewerList.value.length }
 function viewerNext() { viewerIndex.value = (viewerIndex.value + 1) % viewerList.value.length }
 
-onMounted(() => { loadLimit(); loadList() })
+onMounted(() => { loadLimit(); loadList(); alertPollTimer = setInterval(pollFeedbackAlerts, 8000) })
+onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPollTimer = null } })
 </script>
 
 <style scoped>
@@ -997,6 +1079,22 @@ onMounted(() => { loadLimit(); loadList() })
   border: 1px solid var(--border);
 }
 .assignee-row { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); }
+.collab-badge {
+  font-size: 10px; font-weight: 800;
+  padding: 1px 7px; border-radius: 999px;
+  background: rgba(59, 130, 246, 0.10); color: #3b82f6;
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
+.collab-progress {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 800;
+  color: #3b82f6; margin-top: 2px;
+}
+.progress-text {
+  padding: 1px 8px; border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+}
 .resolve-note { display: flex; align-items: flex-start; gap: 4px; font-size: 11px; color: #16a34a; width: 100%; }
 .resolve-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .resolve-label { font-weight: 800; }
@@ -1040,6 +1138,8 @@ onMounted(() => { loadLimit(); loadList() })
 }
 .act-btn:active { transform: scale(0.95); }
 .act-claim { color: #3b82f6; border-color: rgba(59, 130, 246, 0.3); }
+.act-collab { color: #2563eb; border-color: rgba(37, 99, 235, 0.35); background: rgba(37, 99, 235, 0.08); }
+.act-transfer { color: #8b5cf6; border-color: rgba(139, 92, 246, 0.35); background: rgba(139, 92, 246, 0.08); }
 .act-abandon { color: #d97706; border-color: rgba(217, 119, 6, 0.3); }
 .act-resolve { color: #16a34a; border-color: rgba(34, 197, 94, 0.3); }
 .act-reject { color: #EC4141; border-color: rgba(236, 65, 65, 0.3); }

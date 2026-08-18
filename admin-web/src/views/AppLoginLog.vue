@@ -159,7 +159,7 @@
             <span v-if="row.extra" class="extra-text" :title="row.extra">{{ truncate(row.extra, 30) }}</span>
             <span v-else class="extra-none">-</span>
           </div>
-          <div class="col col-time">{{ row.created_at }}</div>
+          <div class="col col-time">{{ fmtDateTime(row.created_at) }}</div>
         </div>
       </TransitionGroup>
 
@@ -183,6 +183,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi } from '@/api/client'
+import { fmtDateTime } from '@/utils/time'
 
 interface LoginLog {
   id: number

@@ -16,7 +16,7 @@
       <div v-for="log in list" :key="log.id" class="mobile-item">
         <div class="mobile-item-head"><div class="mobile-item-title">{{ log.username || log.user_id || 'APP 登录' }}</div><span class="mobile-badge" :class="log.status === 'success' || log.success ? 'green' : 'red'">{{ log.status || (log.success ? 'success' : 'failed') }}</span></div>
         <div class="mobile-item-sub">{{ log.device_model || log.device_id || '-' }}</div>
-        <div class="mobile-item-sub">{{ log.ip || '-' }} · {{ log.created_at || log.login_time || '-' }}</div>
+        <div class="mobile-item-sub">{{ log.ip || '-' }} · {{ fmtDateTime(log.created_at || log.login_time || '-') }}</div>
       </div>
     </div>
   </div>
@@ -24,6 +24,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { adminApi } from '@/api/client'
+import { fmtDateTime } from '@/utils/time'
 import './MobilePage.css'
 const keyword = ref(''), statusFilter = ref(''), loading = ref(false), list = ref<any[]>([])
 const page = ref(1), totalPages = ref(1)

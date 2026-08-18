@@ -17,7 +17,7 @@
       <div v-for="log in list" :key="log.id" class="mobile-item">
         <div class="mobile-item-title">{{ log.action || log.username || log.login_name || '日志记录' }}</div>
         <div class="mobile-item-sub">{{ log.detail || log.ip || '-' }}</div>
-        <div class="mobile-item-sub">{{ log.created_at || log.login_time || '-' }}</div>
+        <div class="mobile-item-sub">{{ fmtDateTime(log.created_at || log.login_time) || '-' }}</div>
       </div>
     </div>
   </div>
@@ -25,6 +25,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { adminApi } from '@/api/client'
+import { fmtDateTime } from '@/utils/time'
 import './MobilePage.css'
 const tab = ref<'op'|'login'>('op'), keyword = ref(''), statusFilter = ref(''), loading = ref(false), list = ref<any[]>([])
 const page = ref(1), totalPages = ref(1)

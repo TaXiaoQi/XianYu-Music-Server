@@ -77,7 +77,7 @@
               <td><span class="badge badge-error">{{ row.error_type || '-' }}</span></td>
               <td class="ellipsis" :title="row.error_message">{{ row.error_message || '-' }}</td>
               <td>{{ row.page || '-' }}</td>
-              <td class="nowrap-time">{{ row.error_time }}</td>
+              <td class="nowrap-time">{{ fmtDateTime(row.error_time) }}</td>
               <td class="nowrap">
                 <button class="btn btn-primary btn-sm" @click="viewDetail(row.id)">详情</button>
                 <button class="btn btn-danger btn-sm" @click="deleteRow(row.id)">删除</button>
@@ -114,7 +114,7 @@
           <div v-else-if="detailData">
             <div class="detail-grid">
               <div class="detail-field"><span class="detail-label">记录ID</span><div>{{ detailData.id }}</div></div>
-              <div class="detail-field"><span class="detail-label">崩溃时间</span><div>{{ detailData.error_time }}</div></div>
+              <div class="detail-field"><span class="detail-label">崩溃时间</span><div>{{ fmtDateTime(detailData.error_time) }}</div></div>
               <div class="detail-field"><span class="detail-label">设备型号</span><div>{{ detailData.device_model || '-' }}</div></div>
               <div class="detail-field"><span class="detail-label">手机品牌</span><div>{{ detailData.device_brand || '-' }}</div></div>
               <div class="detail-field"><span class="detail-label">出错平台</span><div>{{ detailData.platform || '-' }}</div></div>
@@ -149,6 +149,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
+import { fmtDateTime } from '@/utils/time'
 
 interface ErrorLog {
   id: number

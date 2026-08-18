@@ -13,24 +13,18 @@
     </div>
 
     <!-- 统计 -->
-    <div class="stats-grid">
-      <div class="stat-chip">
-        <div class="stat-icon stat-icon-total">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-        </div>
-        <div class="stat-body"><span class="stat-num">{{ list.length }}</span><span class="stat-label">全部</span></div>
+    <div class="mobile-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+      <div class="mobile-stat" style="padding: 12px 10px;">
+        <span style="font-size: 11px;">全部</span>
+        <strong style="font-size: 20px; margin-top: 5px;">{{ list.length }}</strong>
       </div>
-      <div class="stat-chip">
-        <div class="stat-icon stat-icon-active">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-        </div>
-        <div class="stat-body"><span class="stat-num">{{ enabledCount }}</span><span class="stat-label">已启用</span></div>
+      <div class="mobile-stat" style="padding: 12px 10px;">
+        <span style="font-size: 11px;">已启用</span>
+        <strong style="font-size: 20px; margin-top: 5px;">{{ enabledCount }}</strong>
       </div>
-      <div class="stat-chip">
-        <div class="stat-icon stat-icon-disabled">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-        </div>
-        <div class="stat-body"><span class="stat-num">{{ disabledCount }}</span><span class="stat-label">已禁用</span></div>
+      <div class="mobile-stat" style="padding: 12px 10px;">
+        <span style="font-size: 11px;">已禁用</span>
+        <strong style="font-size: 20px; margin-top: 5px;">{{ disabledCount }}</strong>
       </div>
     </div>
 
@@ -71,7 +65,7 @@
           <div class="ann-footer">
             <span class="ann-date">
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-              {{ item.created_at || item.date || '-' }}
+              {{ fmtDateTime(item.created_at || item.date) || '-' }}
             </span>
             <div class="ann-actions">
               <button class="mobile-btn" @click="openEditModal(item)">编辑</button>
@@ -142,6 +136,7 @@ import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
+import { fmtDateTime } from '@/utils/time'
 
 interface Announcement {
   id: string
@@ -296,37 +291,7 @@ onMounted(loadList)
   padding: 9px 16px;
 }
 
-/* 统计 */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-.stat-chip {
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--card);
-  padding: 12px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  box-shadow: var(--shadow-soft);
-}
-.stat-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-.stat-icon-total { background: #eff6ff; color: #3b82f6; }
-.stat-icon-active { background: #f0fdf4; color: #16a34a; }
-.stat-icon-disabled { background: #fef2f2; color: #ef4444; }
-.stat-body { display: flex; flex-direction: column; min-width: 0; }
-.stat-label { font-size: 10px; color: var(--text-muted); }
-.stat-num { font-size: 18px; font-weight: 850; line-height: 1.2; color: var(--text); }
+/* 统计（复用共享 .mobile-grid/.mobile-stat，内联3列） */
 
 /* 空状态 */
 .empty-title { font-size: 14px; font-weight: 700; color: var(--text-light); margin-bottom: 4px; }

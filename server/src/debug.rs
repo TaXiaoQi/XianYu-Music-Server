@@ -958,6 +958,17 @@ pub fn handle_admin_api(action: &str) -> Response {
             "reason": "本地调试模式未调用外部审核服务",
             "provider": "debug"
         })),
+        "get_banned_words_config" => admin::ok("ok", json!({
+            "enabled": false,
+            "words": [],
+            "count": 0
+        })),
+        "save_banned_words_config" => admin::ok("本地调试模式：违禁词库已模拟保存", json!({ "debug": true })),
+        "test_banned_words" => admin::ok("测试完成", json!({
+            "decision": "pass",
+            "reason": "本地调试模式未检查违禁词",
+            "provider": "debug"
+        })),
         "admin_logout" => admin::ok("已退出", Value::Null),
         _ => admin::ok("本地调试模式：操作已模拟完成", json!({
             "action": action,

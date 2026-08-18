@@ -444,6 +444,8 @@ pub async fn comm_get_status(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         g.as_ref().map(|c| (c.url.clone(), c.connected_at.clone()))
     };
     // 读取配置（await）
+    let cfg_enabled = read_setting(pool, "commtool_enabled").await == "1";
+    let cfg_port = read_setting(pool, "commtool_port").await.parse::<u16>().unwrap_or(8090);
     let cfg_url = read_setting(pool, "ws_client_url").await;
     let cfg_auto = read_setting(pool, "ws_client_auto_reconnect").await == "1";
     let cfg_reconnect = read_setting(pool, "ws_client_reconnect_interval").await;
@@ -453,6 +455,8 @@ pub async fn comm_get_status(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         json!({
             "server_running": running,
             "server_port": port,
+            "server_enabled": cfg_enabled,
+            "server_port_config": cfg_port,
             "ws_server_count": ws_count,
             "sse_count": sse_count,
             "token_enabled": token_enabled,
@@ -468,6 +472,17 @@ pub async fn comm_get_status(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             }),
         }),
     )
+}
+
+/// 保存通信工具服务配置（启用状态 + 监听端口）
+pub async fn comm_service_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let enabled = data.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let port = int_of(&data, "port").clamp(1024, 65535) as u16;
+    upsert_setting(pool, "commtool_enabled", if enabled { "1" } else { "0" }, "通信工具服务开关").await;
+    upsert_setting(pool, "commtool_port", &port.to_string(), "通信工具服务端口").await;
+    super::log_operation(pool, ctx, "更新通信工具服务配置", &format!("{}:{}", if enabled { "启用" } else { "禁用" }, port), "").await;
+    ok("已保存", Value::Null)
 }
 
 /// 获取 HTTP 服务器收到的请求日志
@@ -1159,4 +1174,116 @@ pub async fn comm_auth_save_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     upsert_setting(pool, "commtool_token", &token, "通信工具连接鉴权令牌（空=不鉴权）").await;
     super::log_operation(pool, ctx, "更新连接鉴权配置", "", if token.is_empty() { "关闭鉴权" } else { "设置鉴权令牌" }).await;
     ok("已保存", Value::Null)
+}
+
+// ===================== 外部客户端管理 =====================
+
+/// 获取已添加的外部客户端列表
+pub async fn comm_client_list(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let rows = sqlx::query("SELECT id, name, type, url, events, enabled, created_at FROM comm_clients ORDER BY id DESC")
+        .fetch_all(pool)
+        .await;
+    match rows {
+        Ok(rows) => {
+            let arr: Vec<Value> = rows
+                .iter()
+                .map(|r| {
+                    json!({
+                        "id": r.try_get::<i64, _>("id").unwrap_or(0),
+                        "name": r.try_get::<String, _>("name").unwrap_or_default(),
+                        "type": r.try_get::<String, _>("type").unwrap_or_default(),
+                        "url": r.try_get::<String, _>("url").unwrap_or_default(),
+                        "events": r.try_get::<String, _>("events").unwrap_or_default(),
+                        "enabled": r.try_get::<i8, _>("enabled").unwrap_or(0) == 1,
+                        "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+                    })
+                })
+                .collect();
+            ok("", json!(arr))
+        }
+        Err(e) => err(500, &format!("数据库错误: {}", e)),
+    }
+}
+
+/// 添加外部客户端
+pub async fn comm_client_add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let name = str_of(&data, "name").trim().to_string();
+    let url = str_of(&data, "url").trim().to_string();
+    let client_type = str_of(&data, "type").trim().to_lowercase();
+    let events = str_of(&data, "events").trim().to_string();
+
+    if name.is_empty() || url.is_empty() {
+        return err(400, "名称和连接地址不能为空");
+    }
+    if !["ws", "http", "sse"].contains(&client_type.as_str()) {
+        return err(400, "类型仅支持 ws / http / sse");
+    }
+
+    let res = sqlx::query("INSERT INTO comm_clients (name, type, url, events, enabled) VALUES (?, ?, ?, ?, 1)")
+        .bind(&name)
+        .bind(&client_type)
+        .bind(&url)
+        .bind(&events)
+        .execute(pool)
+        .await;
+    match res {
+        Ok(_) => {
+            super::log_operation(pool, ctx, "添加通信客户端", &name, &format!("类型:{} 地址:{}", client_type, url)).await;
+            // WS 类型客户端：同步为当前 WS 客户端配置并尝试连接
+            if client_type == "ws" {
+                upsert_setting(pool, "ws_client_url", &url, "WS客户端连接地址").await;
+                upsert_setting(pool, "ws_client_auto_reconnect", "1", "WS客户端自动重连开关").await;
+                let connected = comm_state().ws_client.lock().unwrap().is_some();
+                if !connected {
+                    let heartbeat: u64 = read_setting(pool, "ws_client_heartbeat_interval").await.parse().unwrap_or(30);
+                    let _ = ws_client_connect_impl(url.clone(), heartbeat).await;
+                }
+            }
+            ok("添加成功", Value::Null)
+        }
+        Err(e) => err(500, &format!("数据库错误: {}", e)),
+    }
+}
+
+/// 删除外部客户端
+pub async fn comm_client_delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let res = sqlx::query("DELETE FROM comm_clients WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await;
+    match res {
+        Ok(_) => {
+            super::log_operation(pool, ctx, "删除通信客户端", &format!("#{}", id), "").await;
+            ok("已删除", Value::Null)
+        }
+        Err(e) => err(500, &format!("数据库错误: {}", e)),
+    }
+}
+
+/// 启用/停用外部客户端
+pub async fn comm_client_toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    let enabled = data.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let res = sqlx::query("UPDATE comm_clients SET enabled = ? WHERE id = ?")
+        .bind(if enabled { 1 } else { 0 })
+        .bind(id)
+        .execute(pool)
+        .await;
+    match res {
+        Ok(_) => {
+            super::log_operation(pool, ctx, if enabled { "启用通信客户端" } else { "停用通信客户端" }, &format!("#{}", id), "").await;
+            ok("已更新", Value::Null)
+        }
+        Err(e) => err(500, &format!("数据库错误: {}", e)),
+    }
 }

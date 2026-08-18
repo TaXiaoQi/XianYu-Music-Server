@@ -73,23 +73,23 @@
     <!-- 统计卡片 -->
     <Transition name="fade-up" appear>
       <div class="stats-row">
-        <div class="stat-chip" :class="{ active: activeFilter === 'all' }" @click="activeFilter = 'all'">
+        <div class="stat-chip" :class="{ active: activeFilter === 'all' }" @click="setFilter('all')">
           <div class="stat-icon stat-icon-total"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></div>
           <div class="stat-body"><span class="stat-num">{{ stats.total }}</span><span class="stat-label">全部</span></div>
         </div>
-        <div class="stat-chip" :class="{ active: activeFilter === 'pending' }" @click="activeFilter = 'pending'">
+        <div class="stat-chip" :class="{ active: activeFilter === 'pending' }" @click="setFilter('pending')">
           <div class="stat-icon stat-icon-pending"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
           <div class="stat-body"><span class="stat-num">{{ stats.pending }}</span><span class="stat-label">待处理</span></div>
         </div>
-        <div class="stat-chip" :class="{ active: activeFilter === 'processing' }" @click="activeFilter = 'processing'">
+        <div class="stat-chip" :class="{ active: activeFilter === 'processing' }" @click="setFilter('processing')">
           <div class="stat-icon stat-icon-processing"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4"/><path d="M12 18v4"/><path d="M4.93 4.93l2.83 2.83"/><path d="M16.24 16.24l2.83 2.83"/><circle cx="12" cy="12" r="4"/></svg></div>
           <div class="stat-body"><span class="stat-num">{{ stats.processing }}</span><span class="stat-label">处理中</span></div>
         </div>
-        <div class="stat-chip" :class="{ active: activeFilter === 'resolved' }" @click="activeFilter = 'resolved'">
+        <div class="stat-chip" :class="{ active: activeFilter === 'resolved' }" @click="setFilter('resolved')">
           <div class="stat-icon stat-icon-resolved"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></div>
           <div class="stat-body"><span class="stat-num">{{ stats.resolved }}</span><span class="stat-label">已解决</span></div>
         </div>
-        <div class="stat-chip" :class="{ active: activeFilter === 'rejected' }" @click="activeFilter = 'rejected'">
+        <div class="stat-chip" :class="{ active: activeFilter === 'rejected' }" @click="setFilter('rejected')">
           <div class="stat-icon stat-icon-rejected"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg></div>
           <div class="stat-body"><span class="stat-num">{{ stats.rejected }}</span><span class="stat-label">已拒绝</span></div>
         </div>
@@ -99,10 +99,10 @@
     <!-- 工具条：类型筛选 + 排序 + 批量操作 -->
     <div class="toolbar">
       <div class="toolbar-group">
-        <button class="tool-btn" :class="{ active: typeFilter === 'all' }" @click="typeFilter = 'all'">全部类型</button>
-        <button class="tool-btn" :class="{ active: typeFilter === 'problem' }" @click="typeFilter = 'problem'">问题反馈</button>
-        <button class="tool-btn" :class="{ active: typeFilter === 'suggestion' }" @click="typeFilter = 'suggestion'">功能建议</button>
-        <button class="tool-btn" :class="{ active: typeFilter === 'appeal' }" @click="typeFilter = 'appeal'">
+        <button class="tool-btn" :class="{ active: typeFilter === 'all' }" @click="setTypeFilter('all')">全部类型</button>
+        <button class="tool-btn" :class="{ active: typeFilter === 'problem' }" @click="setTypeFilter('problem')">问题反馈</button>
+        <button class="tool-btn" :class="{ active: typeFilter === 'suggestion' }" @click="setTypeFilter('suggestion')">功能建议</button>
+        <button class="tool-btn" :class="{ active: typeFilter === 'appeal' }" @click="setTypeFilter('appeal')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align: -2px; margin-right: 3px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           封禁申诉
         </button>
@@ -216,6 +216,10 @@
                   <div v-if="item.assignee" class="assignee-row">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                     <span>{{ item.status === 'rejected' ? '拒绝人' : '认领人' }}：{{ item.assignee }}</span>
+                    <span v-if="item.collaborators && item.collaborators !== '[]'" class="collab-badge">{{ getCollabCount(item) }} 人协同</span>
+                  </div>
+                  <div v-if="item.status === 'processing' && item.completed_by && item.completed_by !== '[]'" class="collab-progress">
+                    <span class="progress-text">{{ getCompletedDisplay(item) }}</span>
                   </div>
                   <div v-if="item.status === 'resolved' && item.resolve_note" class="resolve-note">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -249,15 +253,19 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
                   日志
                 </button>
-                <button v-if="item.status === 'pending' || (item.status === 'processing' && !isMineFeedback(item))" class="act-btn act-claim" @click="claimFeedback(item.id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                  认领
+                <button v-if="item.status === 'processing' && !isParticipant(item)" class="act-btn act-collab" @click="requestCollaborate(item)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                  协同
                 </button>
-                <button v-if="item.status === 'processing' && isMineFeedback(item)" class="act-btn act-abandon" @click="abandonFeedback(item.id)">
+                <button v-if="item.status === 'pending' || (item.status === 'processing' && !isParticipant(item))" class="act-btn act-claim" :class="{ 'act-transfer': item.status === 'processing' && !isParticipant(item) }" @click="claimFeedback(item.id)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  {{ item.status === 'processing' && !isParticipant(item) ? '转认' : '认领' }}
+                </button>
+                <button v-if="item.status === 'processing' && isParticipant(item)" class="act-btn act-abandon" @click="abandonFeedback(item.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                   放弃
                 </button>
-                <button v-if="item.status === 'processing' && isMineFeedback(item)" class="act-btn act-resolve" @click="openResolveModal(item)">
+                <button v-if="item.status === 'processing' && isParticipant(item)" class="act-btn act-resolve" @click="openResolveModal(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   完成
                 </button>
@@ -605,8 +613,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { adminApi, showToast, getAdminUser } from '@/api/client'
-import { webConfirm } from '@/utils/webDialog'
+import { webConfirm, webInfo } from '@/utils/webDialog'
 import { webActionMenu } from '@/utils/webDialog'
+import { fmtTime } from '@/utils/time'
 
 // 当前登录管理员用户名（用于判断反馈是否由本人认领）
 const currentAdminName = getAdminUser()?.username || ''
@@ -689,14 +698,47 @@ async function openSortMenu() {
   }
 }
 
-// ===== 时间戳格式化 =====
-// 按数据库字面时间显示（兼容服务器/客户端），如 2026年12月12日 21时25分
-function fmtTime(v: any): string {
-  if (!v) return ''
-  const m = String(v).match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})[T ]+(\d{1,2}):(\d{1,2})/)
-  if (!m) return String(v)
-  const [, y, mo, d, h, mi] = m.map(Number)
-  return `${y}年${mo}月${d}日 ${h}时${String(mi).padStart(2, '0')}分`
+// 状态/类型切换仅触发列表重新加载，不重载整个页面，避免卡死
+function setFilter(s: string) {
+  if (activeFilter.value === s) return
+  activeFilter.value = s
+  loadList()
+}
+function setTypeFilter(t: string) {
+  if (typeFilter.value === t) return
+  typeFilter.value = t
+  loadList()
+}
+
+// ===== 协同功能辅助 =====
+function parseJsonArray(v: string | null | undefined): any[] {
+  if (!v) return []
+  try {
+    const arr = JSON.parse(v)
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+function collaboratorsOf(item: Feedback): string[] {
+  return parseJsonArray(item.collaborators).filter((c): c is string => typeof c === 'string')
+}
+function completedOf(item: Feedback): Array<{ admin: string; note?: string }> {
+  return parseJsonArray(item.completed_by).filter((c): c is { admin: string; note?: string } => !!c && typeof c.admin === 'string')
+}
+function isCollaborator(item: Feedback): boolean {
+  return collaboratorsOf(item).includes(currentAdminName)
+}
+function isParticipant(item: Feedback): boolean {
+  return isMineFeedback(item) || isCollaborator(item)
+}
+function getCollabCount(item: Feedback): number {
+  return collaboratorsOf(item).length
+}
+function getCompletedDisplay(item: Feedback): string {
+  const done = completedOf(item).length
+  const total = 1 + collaboratorsOf(item).length
+  return `完成 ${done}/${total}`
 }
 
 // ===== 图片处理 =====
@@ -910,29 +952,78 @@ async function claimFeedback(id: number) {
   const res = await adminApi('claim_feedback', { id })
   if (res.code === 200) {
     showToast(isTransfer ? '已转认领到自己名下' : '认领成功，已置为处理中', 'success')
-    // 本地更新，不刷新页面
-    const item2 = feedbackList.value.find(f => f.id === id)
-    if (item2) {
-      const oldStatus = item2.status
-      item2.status = 'processing'
-      item2.assignee = res.data?.assignee || ''
-      if (oldStatus !== 'processing') {
-        if (stats.value[oldStatus as keyof FbStats] !== undefined) {
-          stats.value[oldStatus as keyof FbStats]--
-        }
-        if (stats.value.processing !== undefined) {
-          stats.value.processing++
-        }
-      }
-    }
+    // 仅刷新列表数据，不重载页面
+    await loadList()
   } else {
     showToast(res.msg || '认领失败')
   }
 }
 
+// ===== 发起协同 =====
+async function requestCollaborate(item: Feedback) {
+  const ok = await webConfirm(`确认申请协同处理该反馈？需认领人 ${item.assignee} 弹窗同意后方可加入。`, {
+    title: '申请协同',
+    confirmText: '申请',
+  })
+  if (!ok) return
+  const res = await adminApi('add_collaborator', { id: item.id })
+  if (res.code === 200) {
+    showToast('协同请求已发送，等待认领人确认', 'success')
+  } else {
+    showToast(res.msg || '操作失败')
+  }
+}
+
+// ===== 处理协同请求（认领人同意/拒绝） =====
+async function respondCollabRequest(request: any, approve: boolean) {
+  const res = await adminApi('respond_collab_request', { request_id: request.id, approve: approve ? 1 : 0 })
+  if (res.code === 200) {
+    showToast(approve ? `已同意 ${request.requester} 协同处理` : `已拒绝 ${request.requester} 的协同请求`, 'success')
+    await loadList()
+  } else {
+    showToast(res.msg || '操作失败')
+  }
+}
+
+// ===== 轮询协同请求与通知（转认告知 / 协同结果） =====
+let alertPollTimer: ReturnType<typeof setInterval> | null = null
+let alertProcessing = false
+async function pollFeedbackAlerts() {
+  if (alertProcessing) return
+  alertProcessing = true
+  try {
+    // 1. 处理待确认的协同请求（我是认领人）
+    const reqRes = await adminApi<any>('poll_collab_requests')
+    if (reqRes.code === 200 && reqRes.data?.list?.length) {
+      for (const req of reqRes.data.list) {
+        const approve = await webConfirm(`${req.requester} 请求协同处理反馈「${req.feedback_title || '无标题'}」，是否同意？`, {
+          title: '协同请求',
+          confirmText: '同意',
+          cancelText: '拒绝',
+        })
+        await respondCollabRequest(req, approve)
+      }
+    }
+    // 2. 展示未读通知（转认告知 / 协同结果 / 协同完成）
+    const notifRes = await adminApi<any>('poll_admin_notifications')
+    if (notifRes.code === 200 && notifRes.data?.list?.length) {
+      const list = notifRes.data.list
+      for (const n of list) {
+        await webInfo(n.content, { title: '反馈通知' })
+      }
+      await adminApi('mark_notifications_read', { ids: list.map((n: any) => n.id) })
+      await loadList()
+    }
+  } catch {
+    // 轮询失败静默处理
+  } finally {
+    alertProcessing = false
+  }
+}
+
 // ===== 放弃认领 =====
 async function abandonFeedback(id: number) {
-  const ok = await webConfirm('确认放弃认领该反馈？放弃后回归未认领状态，其他管理员可重新认领。', {
+  const ok = await webConfirm('确认放弃认领该反馈？仅放弃自己的账号，其他参与人不受影响。', {
     title: '放弃认领',
     confirmText: '放弃',
     danger: true,
@@ -940,20 +1031,9 @@ async function abandonFeedback(id: number) {
   if (!ok) return
   const res = await adminApi('abandon_feedback', { id })
   if (res.code === 200) {
-    showToast('已放弃认领，回归未认领状态', 'success')
-    // 本地更新，不刷新页面
-    const item2 = feedbackList.value.find(f => f.id === id)
-    if (item2) {
-      const oldStatus = item2.status
-      item2.status = 'pending'
-      item2.assignee = ''
-      if (stats.value[oldStatus as keyof FbStats] !== undefined) {
-        stats.value[oldStatus as keyof FbStats]--
-      }
-      if (stats.value.pending !== undefined) {
-        stats.value.pending++
-      }
-    }
+    showToast(res.msg || '已放弃', 'success')
+    // 仅刷新列表数据，不重载页面
+    await loadList()
   } else {
     showToast(res.msg || '操作失败')
   }
@@ -982,13 +1062,19 @@ function closeResolveModal() {
 async function confirmResolve() {
   if (!resolveTarget.value || !resolveNote.value.trim()) return
   resolveSaving.value = true
-  const res = await adminApi('resolve_feedback', {
-    id: resolveTarget.value.id,
+  const item = resolveTarget.value
+  const hasCollab = collaboratorsOf(item).length > 0
+  const res = await adminApi(hasCollab ? 'collaborator_complete' : 'resolve_feedback', {
+    id: item.id,
     note: resolveNote.value.trim(),
   })
   resolveSaving.value = false
   if (res.code === 200) {
-    showToast('已标记为已完成', 'success')
+    if (res.data?.resolved) {
+      showToast('协同反馈已全部完成', 'success')
+    } else {
+      showToast(`已确认完成（${res.data?.completed}/${res.data?.total}），等待其他参与人`, 'success')
+    }
     closeResolveModal()
     await loadList()
   } else {
@@ -1282,10 +1368,16 @@ onMounted(() => {
   loadFeedbackLimit()
   loadList()
   window.addEventListener('keydown', onViewerKeydown)
+  // 启动协同请求与通知轮询（转认告知 / 协同请求 / 协同完成）
+  alertPollTimer = setInterval(pollFeedbackAlerts, 8000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onViewerKeydown)
+  if (alertPollTimer) {
+    clearInterval(alertPollTimer)
+    alertPollTimer = null
+  }
 })
 </script>
 
@@ -1758,10 +1850,14 @@ onUnmounted(() => {
 .act-reject:hover { background: #fee2e2; }
 .act-claim { background: #eff6ff; color: #3b82f6; }
 .act-claim:hover { background: #dbeafe; }
+.act-collab { background: #eff6ff; color: #2563eb; border: 1px solid rgba(37, 99, 235, 0.35); }
+.act-collab:hover { background: #dbeafe; }
+.act-transfer { background: #f5f0ff; color: #8b5cf6; }
+.act-transfer:hover { background: #ede9fe; }
 .act-abandon { background: #fffbeb; color: #d97706; }
 .act-abandon:hover { background: #fef3c7; }
 
-/* ===== 认领人 / 完成说明 ===== */
+/* ===== 认领人 / 协同 / 完成说明 ===== */
 .assignee-row {
   display: inline-flex;
   align-items: center;
@@ -1773,6 +1869,30 @@ onUnmounted(() => {
   color: #3b82f6;
   font-size: 12px;
   font-weight: 600;
+}
+.collab-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.10);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.3);
+}
+.collab-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+}
+.progress-text {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+  border: 1px solid rgba(37, 99, 235, 0.3);
 }
 .resolve-note {
   display: flex;

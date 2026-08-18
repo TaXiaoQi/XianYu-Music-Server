@@ -33,18 +33,18 @@
     </transition>
 
     <!-- 统计 -->
-    <div class="mobile-grid">
-      <div class="mobile-stat">
-        <span>设备总数</span>
-        <strong>{{ stats.total }}</strong>
+    <div class="mobile-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+      <div class="mobile-stat" style="padding: 12px 8px;">
+        <span style="font-size: 11px;">设备总数</span>
+        <strong style="font-size: 20px; margin-top: 5px;">{{ stats.total }}</strong>
       </div>
-      <div class="mobile-stat">
-        <span>正常</span>
-        <strong>{{ stats.active }}</strong>
+      <div class="mobile-stat" style="padding: 12px 8px;">
+        <span style="font-size: 11px;">正常</span>
+        <strong style="font-size: 20px; margin-top: 5px;">{{ stats.active }}</strong>
       </div>
-      <div class="mobile-stat">
-        <span>已封禁</span>
-        <strong>{{ stats.banned }}</strong>
+      <div class="mobile-stat" style="padding: 12px 8px;">
+        <span style="font-size: 11px;">已封禁</span>
+        <strong style="font-size: 20px; margin-top: 5px;">{{ stats.banned }}</strong>
       </div>
     </div>
 
@@ -76,7 +76,7 @@
               <template v-else>账号：未关联</template>
               <span v-if="(d.account_count || 0) > 1" class="mobile-badge" style="margin-left:6px">{{ d.account_count }}个账号</span>
             </div>
-            <div class="mobile-item-sub muted-time">最后活跃 {{ d.created_at || '-' }}</div>
+            <div class="mobile-item-sub muted-time">最后活跃 {{ fmtDateTime(d.created_at) || '-' }}</div>
           </div>
         </div>
         <div v-if="!isBatchMode" class="mobile-item-foot">
@@ -111,7 +111,7 @@
                     <div class="detail-item"><span class="detail-label">系统</span><span class="detail-value">{{ detailData.device_info.os_version || '-' }}</span></div>
                     <div class="detail-item"><span class="detail-label">应用版本</span><span class="detail-value">{{ detailData.device_info.app_version || '-' }}</span></div>
                     <div class="detail-item"><span class="detail-label">IP</span><span class="detail-value mono">{{ detailData.device_info.ip || '-' }}</span></div>
-                    <div class="detail-item"><span class="detail-label">最后活跃</span><span class="detail-value">{{ detailData.device_info.created_at || '-' }}</span></div>
+                    <div class="detail-item"><span class="detail-label">最后活跃</span><span class="detail-value">{{ fmtDateTime(detailData.device_info.created_at) || '-' }}</span></div>
                   </template>
                   <div class="detail-item">
                     <span class="detail-label">封禁状态</span>
@@ -122,7 +122,7 @@
                 <div v-if="detailData.is_banned && detailData.ban_info" class="ban-detail-box">
                   <div>封禁原因：{{ detailData.ban_info.reason || '-' }}</div>
                   <div>操作人：{{ detailData.ban_info.banned_by || '-' }}</div>
-                  <div>封禁时间：{{ detailData.ban_info.created_at || '-' }}</div>
+                  <div>封禁时间：{{ fmtDateTime(detailData.ban_info.created_at) || '-' }}</div>
                 </div>
               </div>
 
@@ -166,7 +166,7 @@
             <template v-else>
               <div class="popup-meta">
                 <span>插件数量：{{ pluginsData.plugin_count || 0 }}</span>
-                <span v-if="pluginsData.uploaded_at">上传时间：{{ pluginsData.uploaded_at }}</span>
+                <span v-if="pluginsData.uploaded_at">上传时间：{{ fmtDateTime(pluginsData.uploaded_at) }}</span>
                 <span v-if="pluginsData.ciyuanxi_id">弦予号：{{ pluginsData.ciyuanxi_id }}</span>
                 <span v-if="pluginsData.message" class="mobile-muted">{{ pluginsData.message }}</span>
               </div>
@@ -201,6 +201,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { mobileConfirm, mobilePrompt, mobileActionMenu, removeBackdropBlur } from '@/utils/mobileDialog'
+import { fmtDateTime } from '@/utils/time'
 import './MobilePage.css'
 
 interface Device {

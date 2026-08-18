@@ -183,6 +183,41 @@ export function mobilePrompt(message: string, defaultValue = '', options: Mobile
   })
 }
 
+/**
+ * 信息弹窗（仅一个确认按钮，用于展示通知/提示）
+ * @returns Promise<void>
+ */
+export function mobileInfo(message: string, options: { title?: string; confirmText?: string } = {}): Promise<void> {
+  const { title = '提示', confirmText = '知道了' } = options
+
+  return new Promise((resolve) => {
+    const overlay = createOverlay()
+    const dialog = createDialog()
+
+    dialog.innerHTML = `
+      <div class="mobile-dialog-title">${escapeHtml(title)}</div>
+      <div class="mobile-dialog-body">${escapeHtml(message)}</div>
+      <div class="mobile-dialog-actions">
+        <button class="mobile-dialog-btn confirm" type="button">${escapeHtml(confirmText)}</button>
+      </div>
+    `
+
+    const confirmBtn = dialog.querySelector('.confirm') as HTMLButtonElement
+    const done = () => {
+      closeDialog(overlay)
+      resolve()
+    }
+
+    confirmBtn.onclick = done
+    overlay.onclick = (e) => {
+      if (e.target === overlay) done()
+    }
+
+    animateIn(overlay, dialog)
+    setTimeout(() => confirmBtn.focus(), 100)
+  })
+}
+
 export interface MobileAction {
   key: string
   label: string

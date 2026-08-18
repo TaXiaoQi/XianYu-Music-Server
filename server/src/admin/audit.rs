@@ -4,7 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use super::{err, log_operation, ok, AdminCtx};
-use crate::audit_policy::{self, AuditExternalConfig};
+use crate::audit_policy::{self, AuditExternalConfig, BannedWordsConfig};
 use crate::handlers::helpers::{bool_of, int_of, parse_body, str_of};
 
 /// 确保头像审核表存在
@@ -66,6 +66,70 @@ pub async fn test_audit_external_config(body: &str, _ctx: &AdminCtx, pool: &MySq
         "reason": result.reason,
         "provider": result.provider,
     }))
+}
+
+pub async fn get_banned_words_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let cfg = audit_policy::load_banned_words(pool).await;
+    let count = cfg.words.iter().filter(|w| !w.trim().is_empty()).count();
+    ok("ok", json!({
+        "enabled": cfg.enabled,
+        "words": cfg.words,
+        "count": count,
+    }))
+}
+
+pub async fn save_banned_words_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let enabled = bool_of(&data, "enabled");
+    let mut words: Vec<String> = data
+        .get("words")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.trim().to_string()))
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    // 去重（保留首次出现顺序）
+    let mut seen = std::collections::HashSet::new();
+    words.retain(|w| seen.insert(w.clone()));
+    // 限制词条数量，防止配置过大
+    if words.len() > 5000 {
+        words.truncate(5000);
+    }
+    let cfg = BannedWordsConfig { enabled, words };
+    if let Err(e) = audit_policy::save_banned_words(pool, &cfg).await {
+        return err(500, &format!("保存违禁词库失败: {}", e));
+    }
+    log_operation(pool, ctx, "保存内置违禁词库", &format!("启用:{} 词数:{}", enabled, cfg.words.len()), "").await;
+    ok("违禁词库已保存", json!({
+        "enabled": cfg.enabled,
+        "words": cfg.words,
+        "count": cfg.words.len(),
+    }))
+}
+
+pub async fn test_banned_words(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let text = str_of(&data, "text");
+    let cfg = audit_policy::load_banned_words(pool).await;
+    let hit = cfg
+        .words
+        .iter()
+        .find(|w| !w.trim().is_empty() && text.contains(w.trim()));
+    match hit {
+        Some(w) => ok("测试完成", json!({
+            "decision": "reject",
+            "reason": format!("命中违禁词「{}」", w.trim()),
+            "provider": "banned_words",
+        })),
+        None => ok("测试完成", json!({
+            "decision": "pass",
+            "reason": "未命中违禁词",
+            "provider": "banned_words",
+        })),
+    }
 }
 
 /// 待审核头像列表 + 统计
@@ -147,6 +211,98 @@ pub async fn list_nickname_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
         }
         Err(_) => err(500, "数据库错误"),
     }
+}
+
+/// 统一审核记录列表（按状态，头像 + 改名）
+pub async fn list_audit_records(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let status = str_of(&data, "status").trim().to_string();
+    let status = if status.is_empty() { "pending".to_string() } else { status };
+    if !["pending", "approved", "rejected"].contains(&status.as_str()) {
+        return err(400, "无效的状态");
+    }
+    ensure_avatar_table(pool).await;
+
+    let avatar_rows = sqlx::query(
+        "SELECT p.id, p.ciyuanxi_id, p.avatar_data, p.status, p.created_at, p.reviewed_at, p.reviewed_by, \
+         u.nickname AS username, u.avatar_url AS current_avatar \
+         FROM user_avatar_pending p \
+         LEFT JOIN app_users u ON u.ciyuanxi_id = p.ciyuanxi_id \
+         WHERE p.status = ? \
+         ORDER BY p.created_at DESC",
+    )
+    .bind(&status)
+    .fetch_all(pool)
+    .await;
+
+    let nickname_rows = sqlx::query(
+        "SELECT n.id, n.ciyuanxi_id, n.nickname AS new_name, n.status, n.created_at, n.reviewed_at, n.reviewed_by, \
+         u.nickname AS old_name \
+         FROM user_nickname_pending n \
+         LEFT JOIN app_users u ON u.ciyuanxi_id = n.ciyuanxi_id \
+         WHERE n.status = ? \
+         ORDER BY n.created_at DESC",
+    )
+    .bind(&status)
+    .fetch_all(pool)
+    .await;
+
+    let mut list: Vec<Value> = Vec::new();
+    if let Ok(rows) = avatar_rows {
+        for r in rows.iter() {
+            list.push(json!({
+                "type": "avatar",
+                "id": r.try_get::<i64, _>("id").unwrap_or(0),
+                "ciyuanxi_id": r.try_get::<String, _>("ciyuanxi_id").unwrap_or_default(),
+                "username": r.try_get::<String, _>("username").unwrap_or_default(),
+                "avatar_data": r.try_get::<String, _>("avatar_data").unwrap_or_default(),
+                "current_avatar": r.try_get::<String, _>("current_avatar").unwrap_or_default(),
+                "status": r.try_get::<String, _>("status").unwrap_or_default(),
+                "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+                "reviewed_at": r.try_get::<String, _>("reviewed_at").unwrap_or_default(),
+                "reviewed_by": r.try_get::<String, _>("reviewed_by").unwrap_or_default(),
+            }));
+        }
+    }
+    if let Ok(rows) = nickname_rows {
+        for r in rows.iter() {
+            list.push(json!({
+                "type": "nickname",
+                "id": r.try_get::<i64, _>("id").unwrap_or(0),
+                "ciyuanxi_id": r.try_get::<String, _>("ciyuanxi_id").unwrap_or_default(),
+                "old_name": r.try_get::<String, _>("old_name").unwrap_or_default(),
+                "new_name": r.try_get::<String, _>("new_name").unwrap_or_default(),
+                "status": r.try_get::<String, _>("status").unwrap_or_default(),
+                "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
+                "reviewed_at": r.try_get::<String, _>("reviewed_at").unwrap_or_default(),
+                "reviewed_by": r.try_get::<String, _>("reviewed_by").unwrap_or_default(),
+            }));
+        }
+    }
+
+    // 统计（头像 + 改名合并）
+    let stats_row = sqlx::query(
+        "SELECT \
+         (SELECT COUNT(*) FROM user_avatar_pending WHERE status='pending') + (SELECT COUNT(*) FROM user_nickname_pending WHERE status='pending') AS pending, \
+         (SELECT COUNT(*) FROM user_avatar_pending WHERE status='approved') + (SELECT COUNT(*) FROM user_nickname_pending WHERE status='approved') AS approved, \
+         (SELECT COUNT(*) FROM user_avatar_pending WHERE status='rejected') + (SELECT COUNT(*) FROM user_nickname_pending WHERE status='rejected') AS rejected",
+    )
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    let stats = if let Some(ref r) = stats_row {
+        json!({
+            "pending": r.try_get::<i64, _>("pending").unwrap_or(0),
+            "approved": r.try_get::<i64, _>("approved").unwrap_or(0),
+            "rejected": r.try_get::<i64, _>("rejected").unwrap_or(0),
+        })
+    } else {
+        json!({ "pending": 0, "approved": 0, "rejected": 0 })
+    };
+
+    ok("ok", json!({ "list": list, "stats": stats }))
 }
 
 /// 审核通过头像

@@ -170,6 +170,45 @@ export function webPrompt(message: string, defaultValue = '', options: WebPrompt
   })
 }
 
+/**
+ * 信息弹窗（仅一个确认按钮，用于展示通知/提示）
+ * @returns Promise<void>
+ */
+export function webInfo(message: string, options: { title?: string; confirmText?: string } = {}): Promise<void> {
+  const { title = '提示', confirmText = '知道了' } = options
+
+  return new Promise((resolve) => {
+    const overlay = createOverlay()
+    const dialog = createDialog()
+
+    dialog.innerHTML = `
+      <div class="web-dialog-title">${escapeHtml(title)}</div>
+      <div class="web-dialog-body">${escapeHtml(message)}</div>
+      <div class="web-dialog-actions">
+        <button class="web-dialog-btn confirm primary" type="button">${escapeHtml(confirmText)}</button>
+      </div>
+    `
+
+    const confirmBtn = dialog.querySelector('.confirm') as HTMLButtonElement
+    const done = () => {
+      closeDialog(overlay)
+      resolve()
+    }
+
+    confirmBtn.onclick = done
+    document.addEventListener('keydown', onKey)
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' || e.key === 'Enter') {
+        document.removeEventListener('keydown', onKey)
+        done()
+      }
+    }
+
+    animateIn(overlay, dialog)
+    setTimeout(() => confirmBtn.focus(), 100)
+  })
+}
+
 export interface WebAction {
   key: string
   label: string

@@ -100,7 +100,7 @@
                 </div>
               </td>
               <td>{{ formatDuration(u.listen_duration) }}</td>
-              <td>{{ u.created_at }}</td>
+              <td>{{ fmtDateTime(u.created_at) }}</td>
               <td>
                 <div class="row-actions">
                   <button class="btn btn-sm btn-primary" @click="openRowMenu(u)">
@@ -261,7 +261,7 @@
         <div v-else>
           <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;">
             <span>插件数量: {{ pluginsData.plugin_count || 0 }}</span>
-            <span v-if="pluginsData.uploaded_at">上传时间: {{ pluginsData.uploaded_at }}</span>
+            <span v-if="pluginsData.uploaded_at">上传时间: {{ fmtDateTime(pluginsData.uploaded_at) }}</span>
             <span v-if="pluginsData.ciyuanxi_id">弦予号: {{ pluginsData.ciyuanxi_id }}</span>
           </div>
           <div v-if="pluginsData.plugins && pluginsData.plugins.length > 0" class="table-wrapper">
@@ -355,7 +355,7 @@
                   <tr v-for="(log, i) in deviceData.login_logs" :key="'l'+i">
                     <td style="font-size:11px;">{{ log.device_id }}</td>
                     <td>{{ log.ip }}</td>
-                    <td>{{ log.created_at }}</td>
+                    <td>{{ fmtDateTime(log.created_at) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -372,7 +372,7 @@
                     <td style="font-size:11px;">{{ log.device_id }}</td>
                     <td>{{ log.ip }}</td>
                     <td>{{ log.app_version }}</td>
-                    <td>{{ log.created_at }}</td>
+                    <td>{{ fmtDateTime(log.created_at) }}</td>
                   </tr>
                 </tbody>
               </table>
@@ -415,7 +415,7 @@
                 <td style="font-size:11px;word-break:break-all;">{{ d.device_id }}</td>
                 <td>{{ d.reason || '-' }}</td>
                 <td>{{ d.banned_by }}</td>
-                <td>{{ d.created_at }}</td>
+                <td>{{ fmtDateTime(d.created_at) }}</td>
                 <td>
                   <button class="btn btn-sm btn-success" @click="unbanDeviceById(d.id, d.device_id)">解封</button>
                 </td>
@@ -437,6 +437,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm, webPrompt, webActionMenu } from '@/utils/webDialog'
+import { fmtDateTime } from '@/utils/time'
 
 // ===== 类型定义 =====
 interface User {
