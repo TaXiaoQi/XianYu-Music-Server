@@ -19,8 +19,8 @@
             <span class="menu-arrow" :style="{ transform: openMenu === 'content' ? 'rotate(90deg)' : '' }">&#9654;</span>
           </div>
           <ul class="submenu" :class="{ open: openMenu === 'content' }">
-            <li><router-link to="/version">版本管理</router-link></li>
             <li><router-link to="/announcements">公告管理</router-link></li>
+            <li><router-link to="/version">版本管理</router-link></li>
             <li><router-link to="/wallpapers">壁纸管理</router-link></li>
             <li><router-link to="/avatar-audit">头像/改名审核</router-link></li>
             <li><router-link to="/user-agreement">用户协议</router-link></li>
@@ -37,11 +37,11 @@
             <span class="menu-arrow" :style="{ transform: openMenu === 'system' ? 'rotate(90deg)' : '' }">&#9654;</span>
           </div>
           <ul class="submenu" :class="{ open: openMenu === 'system' }">
-            <li><router-link to="/admin-account">后台账号管理</router-link></li>
+            <li><router-link to="/admin-account">后台账号</router-link></li>
             <li><router-link to="/external-notification">外部通知</router-link></li>
             <li><router-link to="/email-config">邮箱机设置</router-link></li>
             <li><router-link to="/turnstile-config">审核设置</router-link></li>
-            <li><router-link to="/config-file">配置文件管理</router-link></li>
+            <li><router-link to="/config-file">配置文件</router-link></li>
             <li><router-link to="/site-config">Logo 配置</router-link></li>
           </ul>
         </li>
@@ -57,7 +57,7 @@
             <li><router-link to="/api-test">接口测试</router-link></li>
             <li><router-link to="/logs">后台日志</router-link></li>
             <li><router-link to="/error-log">报错日志</router-link></li>
-            <li><router-link to="/app-login-log">APP登录日志</router-link></li>
+            <li><router-link to="/app-login-log">登录日志</router-link></li>
           </ul>
         </li>
       </ul>

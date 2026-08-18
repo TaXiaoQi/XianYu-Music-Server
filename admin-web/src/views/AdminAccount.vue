@@ -4,7 +4,7 @@
     <Transition name="fade-down" appear>
       <div class="page-header">
         <div class="header-info">
-          <h2 class="page-title">后台账号管理</h2>
+          <h2 class="page-title">后台账号</h2>
           <p class="page-desc">管理系统后台管理员账户，支持新增、禁用、删除管理员，上传头像，以及修改登录用户名与密码。</p>
         </div>
       </div>

@@ -1,7 +1,7 @@
 <template>
   <div class="mobile-page">
     <section class="mobile-card mobile-form">
-      <h3 class="mobile-card-title">配置文件管理</h3>
+      <h3 class="mobile-card-title">配置文件</h3>
       <p class="mobile-muted">管理服务端 config.json。数据库连接、监听地址和密钥类配置保存后需要重启服务端才会完全生效。</p>
       <div class="mobile-actions">
         <button class="mobile-btn" :disabled="loading || saving" @click="load">刷新</button>

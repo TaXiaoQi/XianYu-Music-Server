@@ -143,6 +143,35 @@ fn safe_file_ext(file_name: &str) -> String {
     if ext.is_empty() { "bin".to_string() } else { ext }
 }
 
+/// 修改版本信息（不重新上传安装包）
+pub async fn update_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    let app_name = str_of(&data, "app_name").trim().to_string();
+    let version_code = str_of(&data, "version_code").trim().to_string();
+    let update_content = str_of(&data, "update_content").trim().to_string();
+    if id <= 0 || app_name.is_empty() || version_code.is_empty() {
+        return err(400, "参数错误");
+    }
+    let upd = sqlx::query(
+        "UPDATE app_versions SET app_name = ?, version_code = ?, update_content = ? WHERE id = ?",
+    )
+    .bind(&app_name)
+    .bind(&version_code)
+    .bind(&update_content)
+    .bind(id)
+    .execute(pool)
+    .await;
+    match upd {
+        Ok(r) if r.rows_affected() > 0 => {
+            log_operation(pool, ctx, "修改版本", &app_name, &format!("版本号:{}", version_code)).await;
+            ok("修改成功", Value::Null)
+        }
+        Ok(_) => err(404, "版本不存在"),
+        Err(e) => err(500, &format!("数据库错误: {}", e)),
+    }
+}
+
 /// 修改版本状态
 pub async fn change_version_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);

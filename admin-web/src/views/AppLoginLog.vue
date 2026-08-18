@@ -4,7 +4,7 @@
     <Transition name="fade-down" appear>
       <div class="page-header">
         <div class="header-info">
-          <h2 class="page-title">APP 登录日志</h2>
+          <h2 class="page-title">登录日志</h2>
           <p class="page-desc">记录管理员通过 APP 端登录的操作日志，包括设备信息、IP 地址和登录状态。</p>
         </div>
         <button class="btn-refresh" @click="loadList" :disabled="loading">
@@ -109,7 +109,7 @@
           <div class="empty-icon">
             <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
           </div>
-          <p class="empty-title">{{ hasFilter ? '未找到匹配条件的记录' : '暂无 APP 登录日志' }}</p>
+          <p class="empty-title">{{ hasFilter ? '未找到匹配条件的记录' : '暂无登录日志' }}</p>
           <p v-if="hasFilter" class="empty-sub">尝试更换关键词或清除筛选条件</p>
         </div>
       </Transition>

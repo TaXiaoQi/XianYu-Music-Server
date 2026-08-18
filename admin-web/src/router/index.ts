@@ -121,7 +121,7 @@ const routes: RouteRecordRaw[] = [
         path: 'config-file',
         name: 'MobileConfigFile',
         component: () => import('@/views/mobile/MobileConfigFile.vue'),
-        meta: { title: '配置文件管理', mobile: true },
+        meta: { title: '配置文件', mobile: true },
       },
       {
         path: 'user-agreement',
@@ -133,7 +133,7 @@ const routes: RouteRecordRaw[] = [
         path: 'admin-account',
         name: 'MobileAdminAccount',
         component: () => import('@/views/mobile/MobileAdminAccount.vue'),
-        meta: { title: '后台账号管理', mobile: true },
+        meta: { title: '后台账号', mobile: true },
       },
       {
         path: 'external-notification',
@@ -169,7 +169,7 @@ const routes: RouteRecordRaw[] = [
         path: 'app-login-log',
         name: 'MobileAppLoginLog',
         component: () => import('@/views/mobile/MobileAppLoginLog.vue'),
-        meta: { title: 'APP登录日志', mobile: true },
+        meta: { title: '登录日志', mobile: true },
       },
       {
         path: 'device-banned',
@@ -218,7 +218,7 @@ const routes: RouteRecordRaw[] = [
         path: 'app-login-log',
         name: 'AppLoginLog',
         component: () => import('@/views/AppLoginLog.vue'),
-        meta: { title: 'APP登录日志' },
+        meta: { title: '登录日志' },
       },
       {
         path: 'version',
@@ -272,7 +272,7 @@ const routes: RouteRecordRaw[] = [
         path: 'config-file',
         name: 'ConfigFile',
         component: () => import('@/views/ConfigFile.vue'),
-        meta: { title: '配置文件管理' },
+        meta: { title: '配置文件' },
       },
       {
         path: 'user-agreement',
@@ -290,7 +290,7 @@ const routes: RouteRecordRaw[] = [
         path: 'admin-account',
         name: 'AdminAccount',
         component: () => import('@/views/AdminAccount.vue'),
-        meta: { title: '后台账号管理' },
+        meta: { title: '后台账号' },
       },
       {
         path: 'external-notification',

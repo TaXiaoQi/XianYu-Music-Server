@@ -1,15 +1,15 @@
 <template>
-  <div class="version-wrap">
+  <div class="version-page">
     <!-- 页面头部 -->
     <Transition name="fade-down" appear>
       <div class="page-header">
         <div class="header-info">
           <h2 class="page-title">版本管理</h2>
           <p class="page-desc">
-            管理桌面端与移动端应用的版本发布。桌面端启动时自动比对版本号，低于配置版本将弹窗提示更新；APP 版本用于移动端下载更新。
+            管理桌面端在线更新配置与安卓 APP 版本。新增或编辑版本后，卡片列表实时刷新。启用的版本将对客户端生效。
           </p>
         </div>
-        <button class="btn-add" @click="showAddModal">
+        <button class="btn-add" @click="openAddModal">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
@@ -18,154 +18,12 @@
       </div>
     </Transition>
 
-    <!-- 桌面端下载渠道弹窗 -->
-    <Transition name="modal">
-    <div v-if="desktopChannelModalVisible" class="modal-overlay channel-overlay">
-      <div class="modal">
-        <div class="modal-header">
-          <span class="modal-title">选择下载渠道</span>
-          <button class="modal-close" @click="closeDesktopChannelModal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="channel-options">
-            <button
-              type="button"
-              class="channel-option"
-              :class="{ active: desktopChannelMode === 'upload' }"
-              @click="desktopChannelMode = 'upload'"
-            >
-              <strong>上传安装包</strong>
-              <span>安装包保存到本服务端，并自动生成下发链接。</span>
-            </button>
-            <button
-              type="button"
-              class="channel-option"
-              :class="{ active: desktopChannelMode === 'link' }"
-              @click="desktopChannelMode = 'link'"
-            >
-              <strong>填写下载链接</strong>
-              <span>适合安装包已放在其它文件服务器或网盘直链。</span>
-            </button>
-          </div>
-
-          <div v-if="desktopChannelMode === 'upload'" class="form-group">
-            <label class="required">安装包</label>
-            <div
-              class="package-dropzone"
-              :class="{ dragging: desktopPackageDragging, selected: !!desktopPackageDraft.fileName }"
-              @click="triggerDesktopFileInput"
-              @dragover.prevent="desktopPackageDragging = true"
-              @dragleave.prevent="desktopPackageDragging = false"
-              @drop.prevent="onDesktopPackageDrop"
-            >
-              <input
-                ref="desktopFileInputRef"
-                type="file"
-                accept=".exe,.msi,.zip,.7z,.rar,.dmg,.pkg,.apk"
-                class="file-hidden"
-                @change="onDesktopFileChange"
-              />
-              <div class="dropzone-icon">⬆</div>
-              <strong>{{ desktopPackageDraft.fileName ? '已选择安装包' : '点击或拖拽安装包到此处' }}</strong>
-              <span>支持 EXE / MSI / ZIP / 7Z / RAR / DMG / PKG / APK</span>
-            </div>
-            <div v-if="desktopPackageDraft.fileName" class="file-info desktop-file-info">
-              已选择：{{ desktopPackageDraft.fileName }}（{{ formatFileSize(desktopPackageDraft.fileSize) }}）
-            </div>
-            <div class="hint">保存配置后，服务端会自动上传并生成下载链接。</div>
-          </div>
-
-          <div v-else class="form-group">
-            <label class="required">下载链接</label>
-            <input v-model="desktopChannelLinkDraft" type="text" placeholder="https://..." />
-          </div>
-        </div>
-        <div class="modal-actions">
-          <button class="btn" @click="closeDesktopChannelModal">取消</button>
-          <button class="btn btn-primary" @click="confirmDesktopChannel">确定</button>
-        </div>
-      </div>
-    </div>
-    </Transition>
-
-    <!-- 桌面端在线更新配置卡片 -->
+    <!-- 统计栏 -->
     <Transition name="fade-up" appear>
-    <div class="card desktop-card">
-      <div class="card-header">
-        <h3 class="section-title">桌面端在线更新</h3>
-        <span v-if="desktop.updated_at" class="last-saved">上次保存：{{ fmtDateTime(desktop.updated_at) }}</span>
-      </div>
-      <p class="section-desc">桌面端启动时自动比对版本号，低于此版本将弹窗提示更新。</p>
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="required">版本号</label>
-          <input v-model="desktop.version" type="text" placeholder="如 1.2.0" />
-        </div>
-        <div class="form-group form-group-full">
-          <label :class="{ required: desktopEnabled === 1 }">下载渠道</label>
-          <button type="button" class="channel-card" @click="openDesktopChannelModal">
-            <div>
-              <strong>{{ desktopChannelLabel }}</strong>
-              <p>{{ desktopChannelDesc }}</p>
-            </div>
-            <span>选择渠道</span>
-          </button>
-        </div>
-        <div class="form-group form-group-full">
-          <label>更新内容</label>
-          <button type="button" class="content-editor" @click="openContentEdit('desktop-update')">
-            <span>{{ desktop.updateContent ? desktop.updateContent : '点击填写更新内容' }}</span>
-            <span class="expand-hint">展开编辑</span>
-          </button>
-        </div>
-        <div class="form-group">
-          <label>启用状态</label>
-          <select v-model="desktopEnabled">
-            <option :value="0">禁用</option>
-            <option :value="1">启用</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-actions">
-        <button class="btn btn-primary" :disabled="desktopSaving" @click="saveDesktop">
-          {{ desktopSaving ? '保存中...' : '保存配置' }}
-        </button>
-      </div>
-    </div>
-    </Transition>
-
-    <!-- 更新内容编辑弹窗 -->
-    <Transition name="modal">
-    <div v-if="contentEditVisible" class="modal-overlay">
-      <div class="modal">
-        <div class="modal-header">
-          <span class="modal-title">编辑更新内容</span>
-          <button class="modal-close" @click="closeContentEdit">&times;</button>
-        </div>
-        <div class="modal-body">
-          <textarea v-model="contentDraft" class="content-edit-area" placeholder="请输入本次更新内容"></textarea>
-        </div>
-        <div class="modal-actions">
-          <button class="btn" @click="closeContentEdit">取消</button>
-          <button class="btn btn-primary" @click="confirmContentEdit">确定</button>
-        </div>
-      </div>
-    </div>
-    </Transition>
-
-    <!-- APP 版本管理 -->
-    <Transition name="fade-up" appear>
-    <div class="card">
-      <div class="card-header">
-        <h3 class="section-title">APP 版本管理</h3>
-        <span class="section-desc">上传安卓安装包并配置版本信息，移动端可在此下载更新。</span>
-      </div>
-
-      <!-- 统计栏 -->
       <div class="stats-row">
         <div class="stat-chip stat-total">
-          <span class="stat-num">{{ versions.length }}</span>
-          <span class="stat-label">全部</span>
+          <span class="stat-num">{{ total }}</span>
+          <span class="stat-label">全部版本</span>
         </div>
         <div class="stat-chip stat-on">
           <span class="stat-num">{{ enabledCount }}</span>
@@ -175,76 +33,127 @@
           <span class="stat-num">{{ disabledCount }}</span>
           <span class="stat-label">已禁用</span>
         </div>
+        <div class="stat-chip stat-desktop" v-if="desktop.enabled">
+          <span class="stat-num">1</span>
+          <span class="stat-label">桌面端已启用</span>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 桌面端在线更新卡片 -->
+    <Transition name="fade-up" appear>
+      <div class="desktop-section">
+        <div class="section-label">
+          <span class="section-dot dot-desktop"></span>
+          <h3>桌面端在线更新</h3>
+          <span class="section-hint">桌面端启动时自动比对版本号，低于此版本将弹窗提示更新</span>
+        </div>
+
+        <div v-if="desktopLoading" class="state-box"><div class="spinner"></div><span>加载中...</span></div>
+
+        <div v-else-if="!desktop.version && !desktop.downloadUrl" class="desktop-empty">
+          <p>暂未配置桌面端更新版本</p>
+          <button class="btn-add-small" @click="openDesktopModal">+ 新增配置</button>
+        </div>
+
+        <div v-else class="desktop-card" :class="{ disabled: !desktop.enabled }">
+          <div class="type-bar bar-desktop"></div>
+          <div class="card-body">
+            <div class="card-top">
+              <span class="type-badge badge-desktop">桌面端</span>
+              <label class="toggle-switch" :title="desktop.enabled ? '点击禁用' : '点击启用'">
+                <input type="checkbox" :checked="desktop.enabled" @change="toggleDesktop($event)" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <h3 class="card-title">v{{ desktop.version || '-' }}</h3>
+            <p class="card-content">{{ desktop.updateContent || '无更新说明' }}</p>
+            <div v-if="desktop.downloadUrl" class="card-link">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              <a :href="desktop.downloadUrl" target="_blank">{{ desktop.downloadUrl }}</a>
+            </div>
+            <div class="card-footer">
+              <span class="card-date">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                {{ desktop.updated_at || '-' }}
+              </span>
+              <div class="card-actions">
+                <button class="icon-btn" title="编辑" @click="openDesktopModal">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="icon-btn icon-btn-danger" title="删除" @click="deleteDesktop">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- APP 版本卡片列表 -->
+    <div class="app-section">
+      <div class="section-label">
+        <span class="section-dot dot-app"></span>
+        <h3>APP 版本管理</h3>
       </div>
 
-      <!-- 加载中 -->
       <div v-if="loading" class="state-box">
         <div class="spinner"></div>
         <span>加载中...</span>
       </div>
-
-      <!-- 加载失败 -->
       <div v-else-if="loadError" class="state-box state-error">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
         <span>{{ loadError }}</span>
       </div>
-
-      <!-- 空状态 -->
       <Transition name="fade-up" appear v-else-if="versions.length === 0">
         <div class="state-box state-empty">
           <div class="empty-icon">
             <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-              <polyline points="7 10 12 15 17 10"/>
-              <line x1="12" y1="15" x2="12" y2="3"/>
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
             </svg>
           </div>
-          <p class="empty-title">暂无版本数据</p>
-          <p class="empty-sub">点击右上角「新增版本」上传第一个安装包</p>
+          <p class="empty-title">暂无 APP 版本</p>
+          <p class="empty-sub">点击右上角「新增版本」上传第一个 APK</p>
         </div>
       </Transition>
 
-      <!-- 版本卡片列表 -->
       <div v-else class="card-grid">
         <TransitionGroup name="card">
           <div
             v-for="(v, idx) in versions"
             :key="v.id"
-            class="version-card"
-            :class="[`status-${v.status}`, { disabled: v.status === 'disabled' }]"
+            class="ann-card"
+            :class="[{ disabled: v.status === 'disabled' }]"
             :style="{ animationDelay: `${idx * 60}ms` }"
           >
-            <!-- 状态指示条 -->
-            <div class="type-bar"></div>
-
-            <!-- 卡片内容 -->
+            <div class="type-bar" :class="statusBarClass(v.status)"></div>
             <div class="card-body">
               <div class="card-top">
-                <span class="type-badge" :class="statusClass(v.status)">
-                  {{ statusLabel(v.status) }}
+                <span class="type-badge" :class="statusBadgeClass(v.status)">{{ statusLabel(v.status) }}</span>
+                <label class="toggle-switch" :title="v.status === 'disabled' ? '点击启用' : '点击禁用'">
+                  <input type="checkbox" :checked="v.status !== 'disabled'" @change="toggleVersion(v, ($event.target as HTMLInputElement).checked)" />
+                  <span class="toggle-slider"></span>
+                </label>
+              </div>
+              <h3 class="card-title">{{ v.app_name || '-' }} <span class="ver-code">{{ v.version_code || '-' }}</span></h3>
+              <p class="card-content">{{ v.update_content || '无更新说明' }}</p>
+              <div v-if="v.download_url" class="card-link">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                <a :href="v.download_url" target="_blank">下载安装包</a>
+              </div>
+              <div class="card-footer">
+                <span class="card-date">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  {{ v.created_at || '-' }}
                 </span>
                 <div class="card-actions">
-                  <a v-if="v.download_url" :href="v.download_url" target="_blank" rel="noopener" class="icon-btn" title="下载安装包">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  </a>
+                  <button class="icon-btn" title="编辑" @click="openEditModal(v)">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  </button>
                   <button class="icon-btn icon-btn-danger" title="删除" @click="deleteVersion(v.id)">
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                   </button>
                 </div>
-              </div>
-
-              <h3 class="card-title">{{ v.app_name }}</h3>
-              <p class="card-version">版本号：{{ v.version_code }}</p>
-              <p class="card-content">{{ v.update_content || '暂无更新内容' }}</p>
-
-              <div class="card-footer">
-                <span class="card-date">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                  {{ fmtDateTime(v.created_at) }}
-                </span>
-                <select class="status-select" :value="v.status" @change="changeStatus(v.id, ($event.target as HTMLSelectElement).value)">
-                  <option v-for="s in statusOptions" :key="s.value" :value="s.value">{{ s.label }}</option>
-                </select>
               </div>
             </div>
           </div>
@@ -263,14 +172,109 @@
         <button :disabled="page >= totalPages" @click="goPage(page + 1)">下一页</button>
       </div>
     </div>
+
+    <!-- 桌面端配置弹窗 -->
+    <Transition name="modal">
+      <div v-if="desktopModalVisible" class="modal-backdrop">
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>{{ desktop.version ? '编辑桌面端配置' : '新增桌面端配置' }}</h3>
+            <button class="modal-close" @click="closeDesktopModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-form">
+            <div class="field">
+              <label class="required">版本号</label>
+              <input v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
+            </div>
+            <div class="field">
+              <label>下载渠道</label>
+              <button type="button" class="channel-card" @click="openDesktopChannelModal">
+                <div>
+                  <strong>{{ desktopChannelLabel }}</strong>
+                  <p>{{ desktopChannelDesc }}</p>
+                </div>
+                <span>选择渠道</span>
+              </button>
+            </div>
+            <div class="field">
+              <label>更新内容</label>
+              <textarea v-model="desktopDraft.updateContent" rows="9" placeholder="本次更新内容"></textarea>
+            </div>
+            <div class="field">
+              <label>启用状态</label>
+              <div class="type-picker">
+                <button class="type-option pick-enable" :class="{ active: desktopDraftEnabled }" @click="desktopDraftEnabled = true">
+                  <span class="pick-dot"></span>启用
+                </button>
+                <button class="type-option pick-disable" :class="{ active: !desktopDraftEnabled }" @click="desktopDraftEnabled = false">
+                  <span class="pick-dot"></span>禁用
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeDesktopModal">取消</button>
+            <button class="btn-save" :disabled="desktopSaving" @click="saveDesktop">
+              <span v-if="desktopSaving" class="btn-spinner"></span>
+              {{ desktopSaving ? '保存中...' : '保存配置' }}
+            </button>
+          </div>
+        </div>
+      </div>
     </Transition>
 
-    <!-- 新增版本弹窗 -->
+    <!-- 桌面端下载渠道弹窗 -->
+    <Transition name="modal">
+      <div v-if="desktopChannelModalVisible" class="modal-backdrop channel-backdrop">
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>选择下载渠道</h3>
+            <button class="modal-close" @click="closeDesktopChannelModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-form">
+            <div class="channel-options">
+              <button type="button" class="channel-option" :class="{ active: desktopChannelMode === 'upload' }" @click="desktopChannelMode = 'upload'">
+                <strong>上传安装包</strong>
+                <span>安装包保存到本服务端，并自动生成下发链接。</span>
+              </button>
+              <button type="button" class="channel-option" :class="{ active: desktopChannelMode === 'link' }" @click="desktopChannelMode = 'link'">
+                <strong>填写下载链接</strong>
+                <span>适合安装包已放在其它文件服务器或网盘直链。</span>
+              </button>
+            </div>
+            <div v-if="desktopChannelMode === 'upload'" class="field">
+              <label class="required">安装包</label>
+              <div class="package-dropzone" :class="{ dragging: desktopPackageDragging, selected: !!desktopPackageDraft.fileName }" @click="triggerDesktopFileInput" @dragover.prevent="desktopPackageDragging = true" @dragleave.prevent="desktopPackageDragging = false" @drop.prevent="onDesktopPackageDrop">
+                <input ref="desktopFileInputRef" type="file" accept=".exe,.msi,.zip,.7z,.rar,.dmg,.pkg,.apk" class="file-hidden" @change="onDesktopFileChange" />
+                <div class="dropzone-icon">⬆</div>
+                <strong>{{ desktopPackageDraft.fileName ? '已选择安装包' : '点击或拖拽安装包到此处' }}</strong>
+                <span>支持 EXE / MSI / ZIP / 7Z / RAR / DMG / PKG / APK</span>
+              </div>
+              <div v-if="desktopPackageDraft.fileName" class="file-info">已选择：{{ desktopPackageDraft.fileName }}（{{ formatFileSize(desktopPackageDraft.fileSize) }}）</div>
+            </div>
+            <div v-else class="field">
+              <label class="required">下载链接</label>
+              <input v-model="desktopChannelLinkDraft" type="text" placeholder="https://..." />
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeDesktopChannelModal">取消</button>
+            <button class="btn-save" @click="confirmDesktopChannel">确定</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 新增/编辑 APP 版本弹窗 -->
     <Transition name="modal">
       <div v-if="addModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
-            <h3>新增版本</h3>
+            <h3>{{ editingId ? '编辑版本' : '新增 APP 版本' }}</h3>
             <button class="modal-close" @click="closeAddModal">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -286,37 +290,33 @@
             </div>
             <div class="field">
               <label>更新内容</label>
-              <button type="button" class="content-editor" @click="openContentEdit('add-update')">
-                <span>{{ addForm.updateContent ? addForm.updateContent : '点击填写更新内容' }}</span>
-                <span class="expand-hint">展开编辑</span>
-              </button>
+              <textarea v-model="addForm.updateContent" rows="9" placeholder="本次更新内容"></textarea>
             </div>
-            <div class="field">
+            <div v-if="!editingId" class="field">
               <label class="required">安装包</label>
-              <div class="package-dropzone" @click="triggerApkInput">
+              <div class="package-dropzone" :class="{ dragging: addPackageDragging, selected: !!addForm.fileName }" @click="triggerApkFileInput" @dragover.prevent="addPackageDragging = true" @dragleave.prevent="addPackageDragging = false" @drop.prevent="onApkPackageDrop">
                 <input ref="apkFileInputRef" type="file" accept=".apk" class="file-hidden" @change="onFileChange" />
                 <div class="dropzone-icon">⬆</div>
-                <strong>{{ addForm.fileName ? '已选择安装包' : '点击选择 APK 安装包' }}</strong>
-                <span v-if="addForm.fileName">已选择：{{ addForm.fileName }}（{{ formatFileSize(addForm.fileSize) }}）</span>
-                <span v-else>仅支持 APK 文件</span>
+                <strong>{{ addForm.fileName ? '已选择安装包' : '点击或拖拽 APK 到此处' }}</strong>
+                <span>仅支持 APK 格式</span>
               </div>
+              <div v-if="addForm.fileName" class="file-info">已选择：{{ addForm.fileName }}（{{ formatFileSize(addForm.fileSize) }}）</div>
             </div>
             <div v-if="uploading" class="upload-progress">
-              <div class="progress-bar-track"><div class="progress-bar-fill" :style="{ width: (uploadProgress || 0) + '%' }"></div></div>
+              <div class="progress-bar-track"><div class="progress-bar-fill" :style="{ width: uploadProgress + '%' }"></div></div>
               <span class="progress-text">{{ uploadProgress }}%</span>
             </div>
           </div>
           <div class="modal-foot">
             <button class="btn-cancel" @click="closeAddModal">取消</button>
-            <button class="btn-save" :disabled="uploading" @click="doAddVersion">
+            <button class="btn-save" :disabled="uploading" @click="saveVersion">
               <span v-if="uploading" class="btn-spinner"></span>
-              {{ uploading ? '上传中...' : '上传安装包' }}
+              {{ uploading ? '保存中...' : (editingId ? '保存修改' : '上传安装包') }}
             </button>
           </div>
         </div>
       </div>
     </Transition>
-
   </div>
 </template>
 
@@ -338,14 +338,6 @@ interface AppVersion {
   [key: string]: any
 }
 
-interface DesktopVersion {
-  version: string
-  downloadUrl: string
-  updateContent: string
-  enabled: boolean
-  updated_at: string
-}
-
 const statusOptions = [
   { value: 'normal', label: '正常' },
   { value: 'update', label: '更新' },
@@ -355,34 +347,42 @@ const statusOptions = [
   { value: 'group_update', label: '进群更新' },
 ]
 
-const enabledCount = computed(() => versions.value.filter(v => v.status !== 'disabled').length)
-const disabledCount = computed(() => versions.value.filter(v => v.status === 'disabled').length)
-
-const statusMap: Record<string, { label: string; class: string }> = {
-  normal: { label: '正常', class: 'badge-success' },
-  update: { label: '更新', class: 'badge-info' },
-  force_update: { label: '强制更新', class: 'badge-warning' },
-  disabled: { label: '禁用', class: 'badge-error' },
-  crash: { label: '闪退', class: 'badge-error' },
-  group_update: { label: '进群更新', class: 'badge-warning' },
+const statusMap: Record<string, { label: string; bar: string; badge: string }> = {
+  normal: { label: '正常', bar: 'bar-normal', badge: 'badge-normal' },
+  update: { label: '更新', bar: 'bar-update', badge: 'badge-update' },
+  force_update: { label: '强制更新', bar: 'bar-force', badge: 'badge-force' },
+  disabled: { label: '禁用', bar: 'bar-disabled', badge: 'badge-disabled' },
+  crash: { label: '闪退', bar: 'bar-crash', badge: 'badge-crash' },
+  group_update: { label: '进群更新', bar: 'bar-group', badge: 'badge-group' },
 }
 
 function statusLabel(status: string): string {
   return statusMap[status]?.label || '未知'
 }
-function statusClass(status: string): string {
-  return statusMap[status]?.class || 'badge-error'
+function statusBarClass(status: string): string {
+  return statusMap[status]?.bar || 'bar-normal'
+}
+function statusBadgeClass(status: string): string {
+  return statusMap[status]?.badge || 'badge-normal'
 }
 
 // ===== 桌面端配置 =====
-const desktop = ref<DesktopVersion>({
-  version: '',
-  downloadUrl: '',
-  updateContent: '',
-  enabled: false,
-  updated_at: '',
-})
-const desktopEnabled = ref(0)
+const desktop = ref<any>({ version: '', downloadUrl: '', updateContent: '', enabled: false, updated_at: '' })
+const desktopLoading = ref(true)
+
+async function loadDesktop() {
+  desktopLoading.value = true
+  const res = await adminApi<any>('get_desktop_version')
+  if (res.code === 200 && res.data) {
+    desktop.value = res.data
+  }
+  desktopLoading.value = false
+}
+
+// 桌面端弹窗
+const desktopModalVisible = ref(false)
+const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string }>({ version: '', updateContent: '', downloadUrl: '' })
+const desktopDraftEnabled = ref(false)
 const desktopSaving = ref(false)
 const desktopChannelModalVisible = ref(false)
 const desktopChannelMode = ref<'link' | 'upload'>('link')
@@ -390,62 +390,58 @@ const desktopChannelLinkDraft = ref('')
 const desktopFileInputRef = ref<HTMLInputElement | null>(null)
 const desktopPackageFile = ref<File | null>(null)
 const desktopPackageFileDraft = ref<File | null>(null)
+const desktopPackageDraft = ref({ fileName: '', fileSize: 0, fileBase64: '' })
 const desktopPackageDragging = ref(false)
-const desktopPackage = ref({
-  fileName: '',
-  fileSize: 0,
-  fileBase64: '',
-})
-const desktopPackageDraft = ref({
-  fileName: '',
-  fileSize: 0,
-  fileBase64: '',
-})
 
 const desktopChannelLabel = computed(() => {
-  if (desktopPackage.value.fileName) return '上传安装包'
-  if (desktop.value.downloadUrl) {
-    return desktop.value.downloadUrl.startsWith('/uploads/packages/') ? '服务器安装包' : '下载链接'
+  if (desktopPackageFile.value?.name) return '上传安装包'
+  if (desktopDraft.value.downloadUrl || desktop.value.downloadUrl) {
+    const url = desktopDraft.value.downloadUrl || desktop.value.downloadUrl
+    return url.startsWith('/uploads/packages/') ? '服务器安装包' : '下载链接'
   }
   return '未选择下载渠道'
 })
 
 const desktopChannelDesc = computed(() => {
-  if (desktopPackage.value.fileName) {
-    return `已选择：${desktopPackage.value.fileName}（${formatFileSize(desktopPackage.value.fileSize)}）`
-  }
-  if (desktop.value.downloadUrl) return desktop.value.downloadUrl
-  return desktopEnabled.value === 1 ? '启用更新时，需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
+  if (desktopPackageFile.value?.name) return `已选择：${desktopPackageFile.value.name}（${formatFileSize(desktopPackageFile.value.size)}）`
+  const url = desktopDraft.value.downloadUrl || desktop.value.downloadUrl
+  if (url) return url
+  return desktopDraftEnabled.value ? '启用更新时，需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
 })
 
-async function loadDesktop() {
-  const res = await adminApi<DesktopVersion>('get_desktop_version')
-  if (res.code === 200 && res.data) {
-    desktop.value = res.data
-    desktopEnabled.value = res.data.enabled ? 1 : 0
+function openDesktopModal() {
+  desktopDraft.value = {
+    version: desktop.value.version || '',
+    updateContent: desktop.value.updateContent || '',
+    downloadUrl: desktop.value.downloadUrl || '',
   }
+  desktopDraftEnabled.value = desktop.value.enabled || false
+  desktopPackageFile.value = null
+  desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
+  desktopModalVisible.value = true
+}
+
+function closeDesktopModal() {
+  if (desktopSaving.value) return
+  desktopModalVisible.value = false
 }
 
 async function saveDesktop() {
-  if (!desktop.value.version.trim()) {
+  if (!desktopDraft.value.version.trim()) {
     showToast('请填写版本号')
     return
   }
-  if (desktopEnabled.value === 1 && !desktop.value.downloadUrl.trim() && !desktopPackage.value.fileName) {
+  const hasPackage = !!desktopPackageFile.value
+  const hasUrl = !!(desktopDraft.value as any).downloadUrl?.trim() || !!desktop.value.downloadUrl?.trim()
+  if (desktopDraftEnabled.value && !hasPackage && !hasUrl) {
     showToast('启用更新时，请填写下载链接或选择安装包')
     return
   }
   desktopSaving.value = true
   let fileData = ''
-  if (desktopPackage.value.fileName) {
-    const file = desktopPackageFile.value
-    if (!file) {
-      desktopSaving.value = false
-      showToast('请选择安装包')
-      return
-    }
+  if (desktopPackageFile.value) {
     try {
-      fileData = await readFileAsBase64(file)
+      fileData = await readFileAsBase64(desktopPackageFile.value)
     } catch {
       desktopSaving.value = false
       showToast('安装包读取失败')
@@ -453,31 +449,68 @@ async function saveDesktop() {
     }
   }
   const res = await adminApi('save_desktop_version', {
-    version: desktop.value.version.trim(),
-    download_url: desktop.value.downloadUrl.trim(),
-    update_content: desktop.value.updateContent.trim(),
-    enabled: desktopEnabled.value,
-    file_name: desktopPackage.value.fileName,
+    version: desktopDraft.value.version.trim(),
+    download_url: desktopDraft.value.downloadUrl?.trim() || desktop.value.downloadUrl?.trim() || '',
+    update_content: desktopDraft.value.updateContent.trim(),
+    enabled: desktopDraftEnabled.value ? 1 : 0,
+    file_name: desktopPackageFile.value?.name || '',
     file_data: fileData,
   })
   desktopSaving.value = false
   if (res.code === 200) {
     showToast('保存成功', 'success')
-    desktopPackage.value = { fileName: '', fileSize: 0, fileBase64: '' }
-    desktopPackageFile.value = null
-    desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
-    desktopPackageFileDraft.value = null
+    desktopModalVisible.value = false
     loadDesktop()
   } else {
     showToast(res.msg || '保存失败')
   }
 }
 
+async function toggleDesktop(e: Event) {
+  const enabled = (e.target as HTMLInputElement).checked
+  const res = await adminApi('save_desktop_version', {
+    version: desktop.value.version,
+    download_url: desktop.value.downloadUrl,
+    update_content: desktop.value.updateContent,
+    enabled: enabled ? 1 : 0,
+    file_name: '',
+    file_data: '',
+  })
+  if (res.code === 200) {
+    showToast(enabled ? '已启用' : '已禁用', 'success')
+    loadDesktop()
+  } else {
+    showToast(res.msg || '操作失败')
+    loadDesktop()
+  }
+}
+
+async function deleteDesktop() {
+  const ok = await webConfirm('确认删除桌面端更新配置？', { title: '删除配置', confirmText: '确认删除' })
+  if (!ok) return
+  const res = await adminApi('save_desktop_version', {
+    version: '',
+    download_url: '',
+    update_content: '',
+    enabled: 0,
+    file_name: '',
+    file_data: '',
+  })
+  if (res.code === 200) {
+    showToast('删除成功', 'success')
+    loadDesktop()
+  } else {
+    showToast(res.msg || '删除失败')
+  }
+}
+
 function openDesktopChannelModal() {
-  desktopChannelMode.value = desktop.value.downloadUrl && !desktopPackage.value.fileName ? 'link' : 'upload'
-  desktopChannelLinkDraft.value = desktop.value.downloadUrl
-  desktopPackageDraft.value = { ...desktopPackage.value }
+  desktopChannelMode.value = desktopDraft.value.downloadUrl && !desktopPackageFile.value ? 'link' : 'upload'
+  desktopChannelLinkDraft.value = desktopDraft.value.downloadUrl || ''
   desktopPackageFileDraft.value = desktopPackageFile.value
+  desktopPackageDraft.value = desktopPackageFile.value
+    ? { fileName: desktopPackageFile.value.name, fileSize: desktopPackageFile.value.size, fileBase64: '' }
+    : { fileName: '', fileSize: 0, fileBase64: '' }
   desktopChannelModalVisible.value = true
 }
 
@@ -488,24 +521,16 @@ function closeDesktopChannelModal() {
 function confirmDesktopChannel() {
   if (desktopChannelMode.value === 'link') {
     const url = desktopChannelLinkDraft.value.trim()
-    if (!url) {
-      showToast('请输入下载链接')
-      return
-    }
-    desktop.value.downloadUrl = url
-    desktopPackage.value = { fileName: '', fileSize: 0, fileBase64: '' }
+    if (!url) { showToast('请输入下载链接'); return }
+    desktopDraft.value.downloadUrl = url
     desktopPackageFile.value = null
-    desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
     desktopPackageFileDraft.value = null
+    desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
     if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
   } else {
-    if (!desktopPackageDraft.value.fileName) {
-      showToast('请选择安装包')
-      return
-    }
-    desktopPackage.value = { ...desktopPackageDraft.value }
+    if (!desktopPackageFileDraft.value) { showToast('请选择安装包'); return }
     desktopPackageFile.value = desktopPackageFileDraft.value
-    desktop.value.downloadUrl = ''
+    desktopDraft.value.downloadUrl = ''
     desktopChannelLinkDraft.value = ''
   }
   desktopChannelModalVisible.value = false
@@ -541,31 +566,8 @@ function setDesktopPackageFile(file: File) {
     return
   }
   desktopPackageFileDraft.value = file
-  desktopPackageDraft.value = {
-    fileName: file.name,
-    fileSize: file.size,
-    fileBase64: '',
-  }
+  desktopPackageDraft.value = { fileName: file.name, fileSize: file.size, fileBase64: '' }
   desktopChannelLinkDraft.value = ''
-}
-
-// ===== 更新内容展开编辑 =====
-const contentEditVisible = ref(false)
-const contentDraft = ref('')
-const contentEditField = ref<'desktop-update' | 'add-update' | null>(null)
-
-function openContentEdit(field: 'desktop-update' | 'add-update') {
-  contentEditField.value = field
-  contentDraft.value = field === 'desktop-update' ? desktop.value.updateContent : addForm.value.updateContent
-  contentEditVisible.value = true
-}
-
-function closeContentEdit() { contentEditVisible.value = false }
-
-function confirmContentEdit() {
-  if (contentEditField.value === 'desktop-update') desktop.value.updateContent = contentDraft.value
-  else if (contentEditField.value === 'add-update') addForm.value.updateContent = contentDraft.value
-  contentEditVisible.value = false
 }
 
 // ===== APP 版本列表 =====
@@ -576,6 +578,9 @@ const page = ref(1)
 const pageSize = 15
 const total = ref(0)
 const totalPages = ref(0)
+
+const enabledCount = computed(() => versions.value.filter(v => v.status !== 'disabled').length)
+const disabledCount = computed(() => versions.value.filter(v => v.status === 'disabled').length)
 
 const pageNumbers = computed(() => {
   const max = 7
@@ -615,18 +620,20 @@ function goPage(p: number) {
   loadList()
 }
 
-async function changeStatus(id: number, status: string) {
-  const res = await adminApi('change_version_status', { id, status })
+async function toggleVersion(v: AppVersion, enabled: boolean) {
+  const newStatus = enabled ? 'normal' : 'disabled'
+  const res = await adminApi('change_version_status', { id: v.id, status: newStatus })
   if (res.code === 200) {
-    showToast('操作成功', 'success')
-    loadList()
+    showToast(enabled ? '已启用' : '已禁用', 'success')
+    v.status = newStatus
   } else {
     showToast(res.msg || '操作失败')
+    loadList()
   }
 }
 
 async function deleteVersion(id: number) {
-  const ok = await webConfirm('确认删除该版本？', { title: '删除版本', confirmText: '确认删除' })
+  const ok = await webConfirm('确认删除该版本？此操作不可恢复。', { title: '删除版本', confirmText: '确认删除' })
   if (!ok) return
   const res = await adminApi('delete_version', { id })
   if (res.code === 200) {
@@ -637,11 +644,13 @@ async function deleteVersion(id: number) {
   }
 }
 
-// ===== 新增版本 =====
+// ===== 新增/编辑弹窗 =====
 const addModalVisible = ref(false)
+const editingId = ref(0)
 const uploading = ref(false)
-const uploadProgress = ref<number | null>(null)
+const uploadProgress = ref(0)
 const apkFileInputRef = ref<HTMLInputElement | null>(null)
+const addPackageDragging = ref(false)
 const addForm = ref({
   appName: '弦予·音乐',
   versionCode: '',
@@ -651,16 +660,24 @@ const addForm = ref({
   fileBase64: '',
 })
 
-function showAddModal() {
+function openAddModal() {
+  editingId.value = 0
+  addForm.value = { appName: '弦予·音乐', versionCode: '', updateContent: '', fileName: '', fileSize: 0, fileBase64: '' }
+  uploadProgress.value = 0
+  addModalVisible.value = true
+}
+
+function openEditModal(v: AppVersion) {
+  editingId.value = v.id
   addForm.value = {
-    appName: '弦予·音乐',
-    versionCode: '',
-    updateContent: '',
+    appName: v.app_name || '',
+    versionCode: v.version_code || '',
+    updateContent: v.update_content || '',
     fileName: '',
     fileSize: 0,
     fileBase64: '',
   }
-  uploadProgress.value = null
+  uploadProgress.value = 0
   addModalVisible.value = true
 }
 
@@ -669,20 +686,27 @@ function closeAddModal() {
   addModalVisible.value = false
 }
 
-function triggerApkInput() { apkFileInputRef.value?.click() }
+function triggerApkFileInput() {
+  apkFileInputRef.value?.click()
+}
 
 function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement
-  if (!input.files || input.files.length === 0) {
-    addForm.value.fileName = ''
-    addForm.value.fileSize = 0
-    return
-  }
-  const file = input.files[0]
+  if (!input.files || input.files.length === 0) return
+  setApkFile(input.files[0])
+}
+
+function onApkPackageDrop(e: DragEvent) {
+  addPackageDragging.value = false
+  const file = e.dataTransfer?.files?.[0]
+  if (!file) return
+  setApkFile(file)
+}
+
+function setApkFile(file: File) {
   const ext = file.name.split('.').pop()?.toLowerCase()
   if (ext !== 'apk') {
     showToast('只允许上传 APK 文件')
-    input.value = ''
     return
   }
   addForm.value.fileName = file.name
@@ -690,6 +714,7 @@ function onFileChange(e: Event) {
 }
 
 function formatFileSize(bytes: number): string {
+  if (!bytes) return '-'
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
@@ -698,22 +723,37 @@ function formatFileSize(bytes: number): string {
 function readFileAsBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result as string
-      // 去掉 data:...;base64, 前缀
-      const base64 = result.split(',')[1] || ''
-      resolve(base64)
-    }
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
     reader.onerror = () => reject(new Error('文件读取失败'))
     reader.readAsDataURL(file)
   })
 }
 
-async function doAddVersion() {
+async function saveVersion() {
   if (!addForm.value.appName.trim() || !addForm.value.versionCode.trim()) {
     showToast('请填写软件名称和版本号')
     return
   }
+
+  if (editingId.value) {
+    uploading.value = true
+    const res = await adminApi('update_version', {
+      id: editingId.value,
+      app_name: addForm.value.appName.trim(),
+      version_code: addForm.value.versionCode.trim(),
+      update_content: addForm.value.updateContent.trim(),
+    })
+    uploading.value = false
+    if (res.code === 200) {
+      showToast('修改成功', 'success')
+      closeAddModal()
+      loadList()
+    } else {
+      showToast(res.msg || '修改失败')
+    }
+    return
+  }
+
   const fileInput = apkFileInputRef.value
   if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
     showToast('请选择安装包')
@@ -721,17 +761,14 @@ async function doAddVersion() {
   }
 
   uploading.value = true
-  uploadProgress.value = 0
-
-  // 模拟读取进度
   uploadProgress.value = 10
   const file = fileInput.files[0]
   let base64 = ''
   try {
     base64 = await readFileAsBase64(file)
-  } catch (e) {
+  } catch {
     uploading.value = false
-    uploadProgress.value = null
+    uploadProgress.value = 0
     showToast('文件读取失败')
     return
   }
@@ -744,11 +781,6 @@ async function doAddVersion() {
     file_data: base64,
   })
   uploadProgress.value = 100
-
-  setTimeout(() => {
-    uploadProgress.value = null
-  }, 500)
-
   uploading.value = false
 
   if (res.code === 200) {
@@ -767,8 +799,8 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.version-wrap {
-  max-width: 1320px;
+.version-page {
+  max-width: 1200px;
   margin: 0 auto;
 }
 
@@ -791,8 +823,10 @@ onMounted(() => {
   color: var(--text-muted);
   line-height: 1.6;
   margin: 0;
-  max-width: 640px;
+  max-width: 580px;
 }
+
+/* 新增按钮 */
 .btn-add {
   display: inline-flex;
   align-items: center;
@@ -815,11 +849,29 @@ onMounted(() => {
 }
 .btn-add:active { transform: scale(0.96); }
 
+.btn-add-small {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1.5px dashed var(--accent);
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-add-small:hover {
+  background: var(--accent-soft);
+}
+
 /* ===== 统计栏 ===== */
 .stats-row {
   display: flex;
   gap: 12px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
 }
 .stat-chip {
   display: inline-flex;
@@ -837,6 +889,36 @@ onMounted(() => {
 .stat-total .stat-num { color: var(--text); }
 .stat-on .stat-num { color: #10b981; }
 .stat-off .stat-num { color: #9ca3af; }
+.stat-desktop .stat-num { color: #3b82f6; }
+
+/* ===== 区块标签 ===== */
+.desktop-section, .app-section {
+  margin-bottom: 28px;
+}
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.section-label h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text);
+}
+.section-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.section-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot-desktop { background: #3b82f6; }
+.dot-app { background: #10b981; }
 
 /* ===== 加载/错误/空状态 ===== */
 .state-box {
@@ -875,13 +957,45 @@ onMounted(() => {
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* ===== 版本卡片网格 ===== */
+/* ===== 桌面端空状态 ===== */
+.desktop-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 40px 20px;
+  border: 1.5px dashed var(--border);
+  border-radius: 14px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* ===== 桌面端卡片 ===== */
+.desktop-card {
+  display: flex;
+  background: var(--white);
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.2s;
+  max-width: 480px;
+}
+.desktop-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+  border-color: transparent;
+}
+.desktop-card.disabled { opacity: 0.6; }
+.desktop-card.disabled:hover { opacity: 0.85; }
+
+/* ===== 卡片网格 ===== */
 .card-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
   gap: 16px;
 }
-.version-card {
+
+.ann-card {
   display: flex;
   background: var(--white);
   border-radius: 14px;
@@ -890,30 +1004,31 @@ onMounted(() => {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s ease, border-color 0.2s;
   animation: cardEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
-.version-card:hover {
+.ann-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
   border-color: transparent;
 }
-.version-card.disabled { opacity: 0.6; }
-.version-card.disabled:hover { opacity: 0.85; }
+.ann-card.disabled { opacity: 0.6; }
+.ann-card.disabled:hover { opacity: 0.85; }
 
 @keyframes cardEnter {
   from { opacity: 0; transform: translateY(20px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 状态指示条 */
+/* 类型指示条 */
 .type-bar {
   width: 4px;
   flex-shrink: 0;
 }
-.status-normal .type-bar { background: #10b981; }
-.status-update .type-bar { background: #3b82f6; }
-.status-force_update .type-bar { background: #f59e0b; }
-.status-disabled .type-bar { background: #9ca3af; }
-.status-crash .type-bar { background: #ef4444; }
-.status-group_update .type-bar { background: #8b5cf6; }
+.bar-desktop { background: #3b82f6; }
+.bar-normal { background: #10b981; }
+.bar-update { background: #3b82f6; }
+.bar-force { background: #f59e0b; }
+.bar-disabled { background: #9ca3af; }
+.bar-crash { background: #ef4444; }
+.bar-group { background: #8b5cf6; }
 
 /* 卡片内容 */
 .card-body {
@@ -929,6 +1044,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
 }
+
+/* 类型徽章 */
 .type-badge {
   display: inline-block;
   padding: 3px 10px;
@@ -937,12 +1054,47 @@ onMounted(() => {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.badge-success { background: #ecfdf5; color: #10b981; }
-.badge-info { background: #eff6ff; color: #3b82f6; }
-.badge-warning { background: #fffbeb; color: #f59e0b; }
-.badge-error { background: #fef2f2; color: #ef4444; }
-.badge-purple { background: #f5f3ff; color: #8b5cf6; }
+.badge-desktop { background: #eff6ff; color: #3b82f6; }
+.badge-normal { background: #ecfdf5; color: #10b981; }
+.badge-update { background: #eff6ff; color: #3b82f6; }
+.badge-force { background: #fffbeb; color: #f59e0b; }
+.badge-disabled { background: #f3f4f6; color: #6b7280; }
+.badge-crash { background: #fef2f2; color: #ef4444; }
+.badge-group { background: #f5f3ff; color: #8b5cf6; }
 
+/* Toggle 开关 */
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 38px;
+  height: 22px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute;
+  inset: 0;
+  background: #d1d5db;
+  border-radius: 22px;
+  transition: background 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.toggle-slider::before {
+  content: '';
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  left: 3px;
+  top: 3px;
+  background: var(--white);
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.toggle-switch input:checked + .toggle-slider { background: #10b981; }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
+
+/* 标题和正文 */
 .card-title {
   font-size: 15px;
   font-weight: 700;
@@ -950,11 +1102,14 @@ onMounted(() => {
   color: var(--text);
   line-height: 1.4;
 }
-.card-version {
-  font-size: 13px;
-  font-weight: 600;
+.ver-code {
+  font-size: 12px;
+  font-weight: 700;
   color: var(--accent);
-  margin: 0;
+  background: var(--accent-soft);
+  padding: 2px 8px;
+  border-radius: 999px;
+  margin-left: 4px;
 }
 .card-content {
   font-size: 13px;
@@ -966,6 +1121,27 @@ onMounted(() => {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* 链接 */
+.card-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.card-link a {
+  color: #6366f1;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+  transition: color 0.15s;
+}
+.card-link a:hover { color: #4f46e5; text-decoration: underline; }
+
+/* 底部 */
 .card-footer {
   display: flex;
   justify-content: space-between;
@@ -1006,19 +1182,35 @@ onMounted(() => {
   background: #fef2f2;
   color: #ef4444;
 }
-.status-select {
-  padding: 4px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border);
-  font-size: 12px;
-  background: var(--white);
-  outline: none;
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-.status-select:focus { border-color: var(--accent); }
 
-/* ===== 弹窗（公告管理页同款） ===== */
+/* ===== 分页 ===== */
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  margin-top: 16px;
+}
+.pagination button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  background: var(--white);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.pagination button:hover:not(.active):not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.pagination button.active {
+  background: var(--accent);
+  color: var(--white);
+  border-color: var(--accent);
+}
+.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ===== 弹窗 ===== */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -1031,11 +1223,12 @@ onMounted(() => {
   justify-content: center;
   padding: 20px;
 }
+.modal-backdrop.channel-backdrop { z-index: 10010; }
 .modal-dialog {
   background: var(--white);
   border-radius: 18px;
   width: 100%;
-  max-width: 520px;
+  max-width: 560px;
   max-height: 90vh;
   overflow: hidden;
   display: flex;
@@ -1067,6 +1260,7 @@ onMounted(() => {
   transition: all 0.2s;
 }
 .modal-close:hover { background: #f5f5f5; color: var(--text); }
+
 .modal-form {
   padding: 0 24px;
   overflow-y: auto;
@@ -1085,7 +1279,8 @@ onMounted(() => {
   font-weight: 600;
   color: var(--text-light);
 }
-.field input {
+.field input,
+.field textarea {
   padding: 10px 14px;
   border: 1.5px solid var(--border);
   border-radius: 10px;
@@ -1093,12 +1288,174 @@ onMounted(() => {
   outline: none;
   background: #fafafa;
   font-family: inherit;
+  resize: vertical;
   transition: border-color 0.2s, background 0.2s;
 }
-.field input:focus {
+.field input:focus,
+.field textarea:focus {
   border-color: var(--accent);
   background: var(--white);
 }
+
+/* 渠道卡片 */
+.channel-card {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--control-bg, #fafafa);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+}
+.channel-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+.channel-card strong { display: block; font-size: 14px; margin-bottom: 4px; }
+.channel-card p { margin: 0; font-size: 12px; color: var(--text-muted); word-break: break-all; }
+.channel-card > span { flex-shrink: 0; font-size: 12px; color: var(--accent); font-weight: 700; }
+
+/* 类型选择器 */
+.type-picker {
+  display: flex;
+  gap: 8px;
+}
+.type-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1.5px solid var(--border);
+  background: #fafafa;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.type-option:hover { border-color: var(--text-muted); }
+.type-option.active {
+  border-color: transparent;
+  font-weight: 600;
+}
+.pick-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #d1d5db;
+  transition: background 0.2s;
+}
+.pick-enable.active { background: #ecfdf5; color: #10b981; }
+.pick-enable.active .pick-dot { background: #10b981; }
+.pick-disable.active { background: #f9fafb; color: #6b7280; }
+.pick-disable.active .pick-dot { background: #6b7280; }
+
+/* 渠道选项 */
+.channel-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.channel-option {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: #fafafa;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+.channel-option:hover,
+.channel-option.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.channel-option:hover { transform: translateY(-1px); }
+.channel-option strong { font-size: 14px; }
+.channel-option span { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+
+/* 拖拽上传区 */
+.package-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 150px;
+  padding: 20px;
+  border: 1.5px dashed var(--border);
+  border-radius: 14px;
+  background: #fafafa;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s;
+}
+.package-dropzone:hover,
+.package-dropzone.dragging {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  transform: translateY(-1px);
+}
+.package-dropzone.selected {
+  border-style: solid;
+  border-color: var(--accent);
+}
+.dropzone-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 20px;
+  font-weight: 800;
+}
+.package-dropzone strong { font-size: 14px; color: var(--text); }
+.package-dropzone span { font-size: 12px; color: var(--text-muted); }
+.file-hidden { display: none; }
+.file-info { font-size: 12px; color: var(--text-muted); }
+
+/* 上传进度 */
+.upload-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.progress-bar-track {
+  flex: 1;
+  height: 8px;
+  background: #e0e0e8;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.progress-bar-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+.progress-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* 弹窗底部 */
 .modal-foot {
   display: flex;
   justify-content: flex-end;
@@ -1145,6 +1502,7 @@ onMounted(() => {
 /* ===== Transition 动画 ===== */
 .fade-down-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
+
 .fade-up-enter-active { transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-up-enter-from { opacity: 0; transform: translateY(16px); }
 
@@ -1154,9 +1512,13 @@ onMounted(() => {
 .modal-enter-from,
 .modal-leave-to { opacity: 0; }
 .modal-enter-from .modal-dialog,
-.modal-leave-to .modal-dialog { transform: scale(0.92) translateY(20px); }
+.modal-leave-to .modal-dialog {
+  transform: scale(0.92) translateY(20px);
+}
 .modal-enter-active .modal-dialog,
-.modal-leave-active .modal-dialog { transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+.modal-leave-active .modal-dialog {
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
 
 /* 卡片列表过渡 */
 .card-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
@@ -1170,481 +1532,6 @@ onMounted(() => {
   .page-desc { max-width: 100%; }
   .card-grid { grid-template-columns: 1fr; }
   .stats-row { flex-wrap: wrap; }
+  .channel-options { grid-template-columns: 1fr; }
 }
-
-/* 桌面端配置卡片 */
-.desktop-card {
-  margin-bottom: 16px;
-}
-.section-title {
-  font-size: 16px;
-  font-weight: 700;
-  margin: 0 0 8px 0;
-}
-.section-desc {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin: 0 0 16px 0;
-  line-height: 1.6;
-}
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px 24px;
-}
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.form-group-full {
-  grid-column: 1 / -1;
-}
-.form-group label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-light);
-}
-.form-group input,
-.form-group textarea,
-.form-group select {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 14px;
-  outline: none;
-  background: var(--white);
-  font-family: inherit;
-  resize: vertical;
-}
-.form-group input:focus,
-.form-group textarea:focus,
-.form-group select:focus {
-  border-color: var(--accent);
-}
-.channel-card {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 16px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--control-bg);
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
-}
-.channel-card:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-soft);
-  transform: translateY(-1px);
-}
-.channel-card strong {
-  display: block;
-  font-size: 14px;
-  margin-bottom: 4px;
-}
-.channel-card p {
-  margin: 0;
-  font-size: 12px;
-  color: var(--text-muted);
-  word-break: break-all;
-}
-.channel-card > span {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 700;
-}
-.form-actions {
-  margin-top: 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.last-saved {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.content-editor {
-  width: 100%;
-  min-height: 72px;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--white);
-  cursor: pointer;
-  text-align: left;
-  color: var(--text);
-  transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
-}
-.content-editor:hover {
-  border-color: var(--accent);
-  box-shadow: var(--shadow-soft);
-  transform: translateY(-1px);
-}
-.content-editor > span:first-child {
-  font-size: 14px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  flex: 1;
-}
-.expand-hint {
-  flex-shrink: 0;
-  font-size: 12px;
-  color: var(--accent);
-  font-weight: 600;
-}
-.content-edit-area {
-  width: 100%;
-  min-height: 260px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 14px;
-  font-family: inherit;
-  outline: none;
-  background: var(--white);
-  color: var(--text);
-  resize: vertical;
-  line-height: 1.6;
-  box-sizing: border-box;
-}
-.content-edit-area:focus { border-color: var(--accent); }
-
-/* 卡片头部 */
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
-.card-header .section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin: 0;
-  line-height: 1.5;
-  text-align: right;
-}
-.plus-icon {
-  display: none;
-}
-
-/* 表格（已迁移至卡片，保留原样式作兼容） */
-.ellipsis {
-  max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.nowrap { white-space: nowrap; }
-.nowrap-time { white-space: nowrap; font-size: 12px; }
-.download-link {
-  color: var(--purple);
-  text-decoration: none;
-  font-size: 12px;
-}
-.download-link:hover { text-decoration: underline; }
-.status-select {
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  font-size: 12px;
-  background: var(--white);
-  margin-right: 4px;
-  outline: none;
-  cursor: pointer;
-}
-.status-select:focus { border-color: var(--accent); }
-
-/* 分页 */
-.pagination {
-  display: flex;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 16px;
-}
-.pagination button {
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  background: var(--white);
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.15s;
-}
-.pagination button:hover:not(.active):not(:disabled) {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-.pagination button.active {
-  background: var(--accent);
-  color: var(--white);
-  border-color: var(--accent);
-}
-.pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
-
-/* 弹窗 */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 9999;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-}
-.modal-overlay.channel-overlay {
-  z-index: 10010;
-}
-.modal {
-  background: var(--white);
-  border-radius: 12px;
-  width: 90%;
-  max-width: 620px;
-  max-height: 85vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #eee;
-}
-.modal-title { font-weight: 700; font-size: 16px; }
-.modal-close {
-  background: none;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  color: #999;
-  line-height: 1;
-}
-.modal-close:hover { color: #333; }
-.modal-body {
-  padding: 20px;
-  overflow-y: auto;
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.modal-body .form-group label {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-light);
-}
-.modal-body .form-group input,
-.modal-body .form-group textarea {
-  padding: 8px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  font-size: 14px;
-  outline: none;
-  background: var(--white);
-  font-family: inherit;
-  resize: vertical;
-}
-/* 弹窗内分区 */
-.modal-section-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text);
-  margin: 0 0 4px 0;
-}
-.section-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  flex-shrink: 0;
-}
-.modal-section-desc {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-  margin: 0 0 12px 0;
-}
-.modal-divider {
-  height: 1px;
-  background: var(--border);
-  margin: 4px 0;
-}
-.modal-section .form-actions {
-  margin-top: 10px;
-}
-.modal-body .form-group input:focus,
-.modal-body .form-group textarea:focus {
-  border-color: var(--accent);
-}
-.channel-options {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-}
-.channel-option {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 14px;
-  border: 1.5px solid var(--border);
-  border-radius: 10px;
-  background: var(--control-bg);
-  color: var(--text);
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.2s, background 0.2s, transform 0.2s;
-}
-.channel-option:hover,
-.channel-option.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-.channel-option:hover {
-  transform: translateY(-1px);
-}
-.channel-option strong {
-  font-size: 14px;
-}
-.channel-option span {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-.package-dropzone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 150px;
-  padding: 20px;
-  border: 1.5px dashed var(--border);
-  border-radius: 14px;
-  background: var(--control-bg);
-  cursor: pointer;
-  text-align: center;
-  transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s;
-}
-.package-dropzone:hover,
-.package-dropzone.dragging {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: var(--shadow-soft);
-  transform: translateY(-1px);
-}
-.package-dropzone.selected {
-  border-style: solid;
-  border-color: var(--accent);
-}
-.dropzone-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 20px;
-  font-weight: 800;
-}
-.package-dropzone strong {
-  font-size: 14px;
-  color: var(--text);
-}
-.package-dropzone span {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.file-hidden {
-  display: none;
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 20px;
-  border-top: 1px solid #eee;
-}
-
-/* 上传进度 */
-.upload-progress {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.progress-bar-track {
-  flex: 1;
-  height: 8px;
-  background: #e0e0e8;
-  border-radius: 4px;
-  overflow: hidden;
-}
-.progress-bar-fill {
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.3s;
-}
-.progress-text {
-  font-size: 12px;
-  color: var(--text-muted);
-  min-width: 36px;
-  text-align: right;
-}
-.file-info {
-  font-size: 12px;
-  color: var(--text-muted);
-}
-.hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  line-height: 1.5;
-}
-
-@media (max-width: 768px) {
-  .form-grid { grid-template-columns: 1fr; }
-  .channel-card {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .channel-options {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* 弹窗淡进淡出 */
-.modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
-.modal-enter-from, .modal-leave-to { opacity: 0; }
-.modal-enter-active .modal, .modal-leave-active .modal {
-  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.modal-enter-from .modal, .modal-leave-to .modal {
-  transform: scale(0.92) translateY(20px);
-}
-
-/* ===== 页面进入动效 ===== */
-.fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-.fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
-
-.fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-.fade-up-enter-from { opacity: 0; transform: translateY(12px); }
 </style>

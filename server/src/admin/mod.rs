@@ -294,6 +294,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         // version / wallpaper / announcement
         "list_versions" => version::list_versions(body, &ctx, pool).await,
         "add_version" => version::add_version(body, &ctx, pool).await,
+        "update_version" => version::update_version(body, &ctx, pool).await,
         "change_version_status" => version::change_version_status(body, &ctx, pool).await,
         "delete_version" => version::delete_version(body, &ctx, pool).await,
         "get_desktop_version" => version::get_desktop_version(body, &ctx, pool).await,

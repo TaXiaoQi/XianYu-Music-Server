@@ -28,11 +28,11 @@ const groups = [
   {
     title: '系统管理',
     items: [
-      { to: '/m/admin-account', label: '后台账号管理', desc: '管理管理员账号与登录' },
+      { to: '/m/admin-account', label: '后台账号', desc: '管理管理员账号与登录' },
       { to: '/m/external-notification', label: '外部通知', desc: '管理后台状态通知邮箱' },
       { to: '/m/email-config', label: '邮箱机设置', desc: '配置邮箱 API 或 SMTP' },
       { to: '/m/turnstile-config', label: '审核设置', desc: '人机验证与内容审核' },
-      { to: '/m/config-file', label: '配置文件管理', desc: '维护服务端 config.json' },
+      { to: '/m/config-file', label: '配置文件', desc: '维护服务端 config.json' },
       { to: '/m/site-config', label: 'Logo 配置', desc: '上传站点 Logo 即时生效' },
     ],
   },
@@ -40,7 +40,7 @@ const groups = [
     title: '日志与工具',
     items: [
       { to: '/m/error-log', label: '报错日志', desc: '查看 APP 崩溃和错误' },
-      { to: '/m/app-login-log', label: 'APP 登录日志', desc: '查看客户端登录记录' },
+      { to: '/m/app-login-log', label: '登录日志', desc: '查看客户端登录记录' },
       { to: '/m/logs', label: '后台日志', desc: '查看后台操作记录' },
       { to: '/m/api-test', label: '接口测试', desc: '调试服务端接口' },
     ],

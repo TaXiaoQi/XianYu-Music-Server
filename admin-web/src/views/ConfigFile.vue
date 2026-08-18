@@ -4,7 +4,7 @@
     <Transition name="fade-down" appear>
       <div class="page-header">
       <div>
-        <h2 class="page-title">配置文件管理</h2>
+        <h2 class="page-title">配置文件</h2>
         <p class="page-desc">
           管理服务端 config.json 中的基础配置。数据库连接、监听地址和密钥类配置保存后需要重启服务端才会完全生效。
         </p>
