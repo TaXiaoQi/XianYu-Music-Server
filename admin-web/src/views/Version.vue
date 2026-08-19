@@ -18,6 +18,39 @@
       </div>
     </Transition>
 
+    <!-- 统计卡片 -->
+    <Transition name="fade-up" appear>
+      <div class="stats-row">
+        <div class="stat-chip stat-total">
+          <div class="stat-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          </div>
+          <div class="stat-body">
+            <span class="stat-num">{{ hasConfig ? 1 : 0 }}</span>
+            <span class="stat-label">全部</span>
+          </div>
+        </div>
+        <div class="stat-chip stat-on">
+          <div class="stat-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="stat-body">
+            <span class="stat-num">{{ desktop.enabled ? 1 : 0 }}</span>
+            <span class="stat-label">已启用</span>
+          </div>
+        </div>
+        <div class="stat-chip stat-off">
+          <div class="stat-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div>
+          <div class="stat-body">
+            <span class="stat-num">{{ hasConfig && !desktop.enabled ? 1 : 0 }}</span>
+            <span class="stat-label">已禁用</span>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 桌面端在线更新卡片 -->
     <Transition name="fade-up" appear>
       <div class="desktop-section">
@@ -176,6 +209,7 @@ import { webConfirm } from '@/utils/webDialog'
 // ===== 桌面端配置 =====
 const desktop = ref<any>({ version: '', downloadUrl: '', updateContent: '', enabled: false, updated_at: '' })
 const desktopLoading = ref(true)
+const hasConfig = computed(() => !!(desktop.value.version || desktop.value.downloadUrl))
 
 async function loadDesktop() {
   desktopLoading.value = true
@@ -402,6 +436,45 @@ onMounted(() => {
 .version-page {
   max-width: 1200px;
   margin: 0 auto;
+}
+
+/* 统计卡片 */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.stat-chip {
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  transition: all 0.2s;
+}
+.stat-chip:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06); }
+.stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.stat-total .stat-icon { background: #f0f0f0; color: #1a1a1a; }
+.stat-on .stat-icon { background: #f0fdf4; color: #16a34a; }
+.stat-off .stat-icon { background: #fef2f2; color: #dc2626; }
+.stat-body { display: flex; flex-direction: column; }
+.stat-num { font-size: 26px; font-weight: 800; line-height: 1.1; color: var(--text); }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+@media (max-width: 768px) {
+  .stats-row { grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .stat-chip { padding: 14px; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .stat-num { font-size: 22px; }
 }
 
 /* ===== 页面头部 ===== */

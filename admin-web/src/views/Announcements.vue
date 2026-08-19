@@ -22,16 +22,31 @@
     <Transition name="fade-up" appear>
       <div class="stats-row">
         <div class="stat-chip stat-total">
-          <span class="stat-num">{{ announcements.length }}</span>
-          <span class="stat-label">全部</span>
+          <div class="stat-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          </div>
+          <div class="stat-body">
+            <span class="stat-num">{{ announcements.length }}</span>
+            <span class="stat-label">全部</span>
+          </div>
         </div>
         <div class="stat-chip stat-on">
-          <span class="stat-num">{{ enabledCount }}</span>
-          <span class="stat-label">已启用</span>
+          <div class="stat-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="stat-body">
+            <span class="stat-num">{{ enabledCount }}</span>
+            <span class="stat-label">已启用</span>
+          </div>
         </div>
         <div class="stat-chip stat-off">
-          <span class="stat-num">{{ disabledCount }}</span>
-          <span class="stat-label">已禁用</span>
+          <div class="stat-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </div>
+          <div class="stat-body">
+            <span class="stat-num">{{ disabledCount }}</span>
+            <span class="stat-label">已禁用</span>
+          </div>
         </div>
       </div>
     </Transition>
@@ -379,26 +394,42 @@ onMounted(() => {
 
 /* ===== 统计栏 ===== */
 .stats-row {
-  display: flex;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
   margin-bottom: 24px;
 }
 .stat-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: 10px;
   background: var(--white);
   border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
   transition: all 0.2s;
 }
-.stat-chip:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-.stat-num { font-size: 18px; font-weight: 800; }
-.stat-label { font-size: 12px; color: var(--text-muted); }
-.stat-total .stat-num { color: var(--text); }
-.stat-on .stat-num { color: #10b981; }
-.stat-off .stat-num { color: #9ca3af; }
+.stat-chip:hover { transform: translateY(-3px); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06); }
+.stat-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.stat-total .stat-icon { background: #f0f0f0; color: #1a1a1a; }
+.stat-on .stat-icon { background: #f0fdf4; color: #16a34a; }
+.stat-off .stat-icon { background: #fef2f2; color: #dc2626; }
+.stat-body { display: flex; flex-direction: column; }
+.stat-num { font-size: 26px; font-weight: 800; line-height: 1.1; color: var(--text); }
+.stat-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+@media (max-width: 768px) {
+  .stats-row { grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .stat-chip { padding: 14px; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .stat-num { font-size: 22px; }
+}
 
 /* ===== 加载/错误/空状态 ===== */
 .state-box {
@@ -839,7 +870,6 @@ onMounted(() => {
   .page-header { flex-direction: column; }
   .page-desc { max-width: 100%; }
   .card-grid { grid-template-columns: 1fr; }
-  .stats-row { flex-wrap: wrap; }
   .field-row { flex-direction: column; }
 }
 </style>

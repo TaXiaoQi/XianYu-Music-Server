@@ -267,6 +267,44 @@ fn settings_snapshot(ciyuanxi_id: &str) -> Option<Value> {
     read_snapshot(ciyuanxi_id, "settings.json").ok()
 }
 
+/// 上传当前用户收藏歌曲列表（文件快照：data/sync/{id}/favorites.json）
+pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let favorites = data.get("favorites").cloned().unwrap_or_else(|| json!([]));
+    if !favorites.is_array() {
+        return ctx.err(400, "favorites 格式错误");
+    }
+    let count = favorites.as_array().map(|a| a.len() as i64).unwrap_or(0);
+    let save = json!({
+        "version": 1,
+        "uploaded_at": now_str(),
+        "timestamp": now_ts(),
+        "stats": { "song_count": count },
+        "favorites": favorites
+    });
+    if !write_snapshot(&ciyuanxi_id, "favorites.json", &save) {
+        return ctx.err(500, "文件写入失败");
+    }
+    ctx.ok("上传成功", json!({ "song_count": count }))
+}
+
+/// 下载指定用户的收藏歌曲列表（排行榜"查看"用户详情用）
+pub async fn favorites_sync_download(body: &str, ctx: ReqCtx) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    match read_snapshot(&ciyuanxi_id, "favorites.json") {
+        Ok(v) => ctx.ok("获取成功", v),
+        Err(_) => ctx.ok("暂无同步数据", json!({ "favorites": [] })),
+    }
+}
+
 pub async fn settings_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();

@@ -22,6 +22,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "error" => reporting::error(body, ctx, pool).await,
         "report_user_behavior" => reporting::report_user_behavior(body, ctx, pool).await,
         "search" => reporting::search(body, ctx, pool).await,
+        "get_hot_search" => reporting::get_hot_search(body, ctx, pool).await,
         "open" => reporting::app_open(body, ctx, pool).await,
         "check" => reporting::check(ctx, pool).await,
         "install" => reporting::install(ctx, pool).await,
@@ -89,6 +90,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "plugin_sync_download" => sync::plugin_sync_download(body, ctx).await,
         "settings_sync_upload" => sync::settings_sync_upload(body, ctx).await,
         "settings_sync_download" => sync::settings_sync_download(body, ctx).await,
+        "favorites_sync_upload" => sync::favorites_sync_upload(body, ctx).await,
+        "favorites_sync_download" => sync::favorites_sync_download(body, ctx).await,
         // upload
         "upload_avatar" => upload::upload_avatar(body, ctx, pool).await,
         // email auth (邮箱注册登录测试)

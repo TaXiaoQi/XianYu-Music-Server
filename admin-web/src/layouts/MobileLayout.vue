@@ -1,5 +1,7 @@
 <template>
   <div class="mobile-layout">
+    <!-- 固定背景层：渐变恒定铺满视口，随页面内容变长而拉伸，统一所有移动页背景(等于仪表台背景) -->
+    <div class="mobile-bg" aria-hidden="true"></div>
     <header class="mobile-topbar">
       <div>
         <div class="mobile-kicker">弦予音乐</div>
@@ -171,11 +173,17 @@ async function handleLogout() {
 </script>
 
 <style scoped>
-.mobile-layout {
-  min-height: 100vh;
+.mobile-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background:
     radial-gradient(circle at 20% 0%, rgba(236, 65, 65, 0.10), transparent 32%),
     var(--page-bg);
+}
+.mobile-layout {
+  min-height: 100vh;
   color: var(--text);
   padding-bottom: calc(74px + env(safe-area-inset-bottom));
 }
@@ -274,6 +282,16 @@ async function handleLogout() {
 }
 .mobile-main {
   padding: 14px;
+  padding-bottom: calc(92px + env(safe-area-inset-bottom));
+  /* 背景由固定视口层 .mobile-bg 提供，此处不再持有拉伸背景：
+     所有移动页(含仪表台)统一可见同一恒定渐变，页面滚动/切换不会因
+     元素高度变化导致渐变重排或背景闪烁 */
+  min-height: 100dvh;
+  scrollbar-gutter: stable;
+  color-scheme: light;
+}
+html[data-theme='dark'] .mobile-main {
+  color-scheme: dark;
 }
 .mobile-main :deep(.card),
 .mobile-main :deep(.section-card),

@@ -14,17 +14,32 @@
 
     <!-- 统计 -->
     <div class="mobile-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
-      <div class="mobile-stat" style="padding: 12px 10px;">
-        <span style="font-size: 11px;">全部</span>
-        <strong style="font-size: 20px; margin-top: 5px;">{{ list.length }}</strong>
+      <div class="mobile-stat">
+        <div class="stat-icon-row">
+          <span class="stat-icon stat-icon-total">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          </span>
+          <strong>{{ list.length }}</strong>
+        </div>
+        <span class="stat-label">全部</span>
       </div>
-      <div class="mobile-stat" style="padding: 12px 10px;">
-        <span style="font-size: 11px;">已启用</span>
-        <strong style="font-size: 20px; margin-top: 5px;">{{ enabledCount }}</strong>
+      <div class="mobile-stat">
+        <div class="stat-icon-row">
+          <span class="stat-icon stat-icon-on">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </span>
+          <strong>{{ enabledCount }}</strong>
+        </div>
+        <span class="stat-label">已启用</span>
       </div>
-      <div class="mobile-stat" style="padding: 12px 10px;">
-        <span style="font-size: 11px;">已禁用</span>
-        <strong style="font-size: 20px; margin-top: 5px;">{{ disabledCount }}</strong>
+      <div class="mobile-stat">
+        <div class="stat-icon-row">
+          <span class="stat-icon stat-icon-off">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          </span>
+          <strong>{{ disabledCount }}</strong>
+        </div>
+        <span class="stat-label">已禁用</span>
       </div>
     </div>
 

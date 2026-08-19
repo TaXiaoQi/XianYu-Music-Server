@@ -11,6 +11,10 @@
           <p class="page-desc">查看用户提交的反馈与建议，将问题标记为已解决或已拒绝。也可从后台直接创建新事项。</p>
         </div>
         <div class="header-actions">
+          <button class="btn-limit" @click="openLimitModal">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+            提交上限
+          </button>
           <button class="btn-stats" @click="openStats">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
             处理统计
@@ -28,34 +32,12 @@
     <!-- 提交限制配置 -->
     <Transition name="fade-up" appear>
       <div class="limit-panel">
-        <div class="limit-info">
-          <div class="limit-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-              <path d="M12 8v4"/>
-              <path d="M12 16h.01"/>
-            </svg>
-          </div>
-          <div>
-            <h3>每日反馈提交上限</h3>
-            <p>当前每个用户每天最多可提交 {{ feedbackDailyLimit === 0 ? '不限' : `${feedbackDailyLimit} 条` }}反馈，修改后立即生效。</p>
-          </div>
-        </div>
         <div class="limit-actions">
-          <input
-            v-model.number="feedbackLimitInput"
-            class="limit-input"
-            type="number"
-            min="0"
-            max="10000"
-            step="1"
-            :disabled="limitLoading || limitSaving"
-            @keyup.enter="saveFeedbackLimit"
-          />
-          <button class="btn-save-limit" :disabled="limitLoading || limitSaving" @click="saveFeedbackLimit">
-            <span v-if="limitSaving" class="btn-spinner dark"></span>
-            {{ limitSaving ? '保存中...' : '保存上限' }}
-          </button>
+          <div class="fb-search">
+            <input v-model="searchKeyword" class="fb-search-input" type="text" placeholder="搜索内容、昵称..." @keyup.enter="applySearch" />
+          </div>
+          <button class="fb-search-send" @click="applySearch">搜索</button>
+          <button v-if="searchKeyword" class="fb-search-clear" @click="clearSearch">清除</button>
           <button class="btn-recycle" @click="openRecycleBin">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
             回收站
@@ -579,6 +561,40 @@
       </div>
     </Transition>
 
+    <!-- 提交上限设置弹窗 -->
+    <Transition name="modal">
+      <div v-if="limitModalVisible" class="modal-backdrop">
+        <div class="modal-dialog limit-dialog">
+          <div class="modal-head">
+            <h3>每日反馈提交上限</h3>
+            <button class="modal-close" @click="closeLimitModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="limit-dialog-desc">设置每个用户每天最多可提交的反馈条数，0 表示不限，修改后立即生效。</p>
+            <input
+              v-model.number="feedbackLimitInput"
+              class="limit-input limit-dialog-input"
+              type="number"
+              min="0"
+              max="10000"
+              step="1"
+              :disabled="limitSaving"
+              @keyup.enter="saveFeedbackLimit"
+            />
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeLimitModal">取消</button>
+            <button class="btn-save-limit" :disabled="limitSaving" @click="saveFeedbackLimit">
+              <span v-if="limitSaving" class="btn-spinner dark"></span>
+              {{ limitSaving ? '保存中...' : '保存' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 图片查看器 -->
     <Transition name="modal">
       <div v-if="imageViewerVisible" class="viewer-backdrop">
@@ -661,8 +677,29 @@ const activeFilter = ref('all')
 const stats = ref<FbStats>({ total: 0, pending: 0, processing: 0, resolved: 0, rejected: 0 })
 const limitLoading = ref(false)
 const limitSaving = ref(false)
+const limitModalVisible = ref(false)
 const feedbackDailyLimit = ref(20)
 const feedbackLimitInput = ref(20)
+const searchKeyword = ref('')
+/** 手动搜索：仅点击"搜索"或回车时才应用，避免输入过程中列表实时刷新 */
+const appliedKeyword = ref('')
+
+function applySearch() {
+  appliedKeyword.value = searchKeyword.value.trim()
+}
+function clearSearch() {
+  searchKeyword.value = ''
+  appliedKeyword.value = ''
+}
+
+function openLimitModal() {
+  feedbackLimitInput.value = feedbackDailyLimit.value
+  limitModalVisible.value = true
+}
+function closeLimitModal() {
+  if (limitSaving.value) return
+  limitModalVisible.value = false
+}
 
 const statusMap: Record<string, string> = {
   pending: '待处理',
@@ -1143,6 +1180,14 @@ const filteredList = computed(() => {
   } else if (typeFilter.value !== 'all') {
     arr = arr.filter(f => f.feedback_type === typeFilter.value && f.category !== 'appeal')
   }
+  const kw = appliedKeyword.value.trim().toLowerCase()
+  if (kw) {
+    arr = arr.filter(f =>
+      (f.content || '').toLowerCase().includes(kw) ||
+      (f.nickname || '').toLowerCase().includes(kw) ||
+      (f.title || '').toLowerCase().includes(kw)
+    )
+  }
   return arr
 })
 
@@ -1191,6 +1236,7 @@ async function saveFeedbackLimit() {
   if (res.code === 200) {
     feedbackDailyLimit.value = Number(res.data?.feedback_daily_limit ?? limit)
     feedbackLimitInput.value = feedbackDailyLimit.value
+    limitModalVisible.value = false
     showToast('反馈提交上限已保存', 'success')
   } else {
     showToast(res.msg || '保存失败')
@@ -1457,6 +1503,23 @@ onUnmounted(() => {
 }
 .btn-stats:hover { border-color: var(--accent); transform: translateY(-1px); }
 .btn-stats:active { transform: scale(0.96); }
+.btn-limit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #4f46e5;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-limit:hover { border-color: #4f46e5; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15); }
+.btn-limit:active { transform: scale(0.96); }
 .btn-create {
   display: inline-flex;
   align-items: center;
@@ -1636,7 +1699,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-shrink: 0;
+  flex: 1;
+  flex-wrap: wrap;
 }
 .limit-input {
   width: 110px;
@@ -1658,6 +1722,70 @@ onUnmounted(() => {
   opacity: 0.6;
   cursor: not-allowed;
 }
+.fb-search {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 240px;
+}
+.fb-search-input {
+  flex: 1;
+  min-width: 180px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--white);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.fb-search-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.08);
+}
+.fb-search-input::placeholder { color: var(--text-muted); }
+.fb-search-send {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(225, 29, 72, 0.22);
+  transition: all 0.2s;
+}
+.fb-search-send:hover { opacity: 0.92; transform: translateY(-1px); }
+.fb-search-send:active { transform: scale(0.96); }
+.fb-search-clear {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--white);
+  color: var(--text-light);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+.fb-search-clear:hover { border-color: var(--accent); color: var(--text); }
+.limit-dialog { width: 400px; }
+.limit-dialog-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin: 0 0 14px 0;
+  line-height: 1.6;
+}
+.limit-dialog-input { width: 100%; }
 .btn-save-limit {
   height: 38px;
   display: inline-flex;

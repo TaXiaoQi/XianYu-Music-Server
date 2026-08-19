@@ -10,6 +10,10 @@
         <div class="mobile-head-desc">查看用户提交的反馈与建议，将问题标记为已解决或已拒绝。</div>
       </div>
       <div class="mobile-head-actions">
+        <button class="mobile-btn" @click="openLimitModal">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          上限
+        </button>
         <button class="mobile-btn" @click="openStats">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V10"/><path d="M12 20V4"/><path d="M6 20v-6"/></svg>
           统计
@@ -23,18 +27,9 @@
 
     <!-- 提交限制配置 -->
     <section class="mobile-card limit-panel">
-      <div class="limit-info">
-        <div class="limit-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
-        </div>
-        <div class="limit-text">
-          <h3>每日反馈提交上限</h3>
-          <p>每个用户每天最多可提交 {{ limitInput === 0 ? '不限' : `${limitInput} 条` }}，修改后立即生效。</p>
-        </div>
-      </div>
       <div class="limit-actions">
-        <input v-model.number="limitInput" class="mobile-input" type="number" min="0" max="10000" step="1" :disabled="limitSaving" @keyup.enter="saveLimit" />
-        <button class="mobile-btn primary" :disabled="limitSaving" @click="saveLimit">{{ limitSaving ? '保存中...' : '保存上限' }}</button>
+        <input v-model="searchKeyword" class="mobile-input fb-search-input" type="text" placeholder="搜索内容、昵称..." @keyup.enter="applySearch" />
+        <button class="fb-search-send" @click="applySearch">搜索</button>
         <button class="mobile-btn" @click="openRecycleBin">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
           回收站
@@ -385,6 +380,23 @@
     </div>
     </Transition>
 
+    <!-- 提交上限设置弹窗 -->
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
+    <div v-if="limitVisible" class="mobile-dialog-overlay" @click.self="closeLimit">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:320px;">
+        <div class="mobile-dialog-title">每日反馈提交上限</div>
+        <div class="mfb-limit-body">
+          <p class="mfb-limit-desc">设置每个用户每天最多可提交的反馈条数，0 表示不限，修改后立即生效。</p>
+          <input v-model.number="limitInput" class="mobile-input" type="number" min="0" max="10000" step="1" :disabled="limitSaving" @keyup.enter="saveLimit" />
+        </div>
+        <div class="mobile-dialog-actions">
+          <button class="mobile-dialog-btn cancel" @click="closeLimit">取消</button>
+          <button class="mobile-dialog-btn confirm" :disabled="limitSaving" @click="saveLimit">{{ limitSaving ? '保存中...' : '保存' }}</button>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
     <!-- 图片查看器 -->
     <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="viewerVisible" class="mobile-dialog-overlay mfb-viewer" @click.self="viewerVisible = false">
@@ -449,6 +461,26 @@ const sortMode = ref('post_time_desc')
 const list = ref<any[]>([])
 const limitInput = ref(20)
 const limitSaving = ref(false)
+const limitVisible = ref(false)
+const searchKeyword = ref('')
+/** 手动搜索：仅点击"搜索"或回车时才应用，避免输入过程中列表实时刷新 */
+const appliedKeyword = ref('')
+
+function applySearch() {
+  appliedKeyword.value = searchKeyword.value.trim()
+}
+function clearSearch() {
+  searchKeyword.value = ''
+  appliedKeyword.value = ''
+}
+
+function openLimitModal() {
+  limitVisible.value = true
+}
+function closeLimit() {
+  if (limitSaving.value) return
+  limitVisible.value = false
+}
 
 const sortOptions = [
   { key: 'post_time_desc', label: '最新提交' },
@@ -475,6 +507,14 @@ const filteredList = computed(() => {
   if (status.value !== '') arr = arr.filter(f => f.status === status.value)
   if (type.value === 'appeal') arr = arr.filter(f => f.category === 'appeal')
   else if (type.value !== '') arr = arr.filter(f => f.feedback_type === type.value && f.category !== 'appeal')
+  const kw = appliedKeyword.value.trim().toLowerCase()
+  if (kw) {
+    arr = arr.filter(f =>
+      (f.content || '').toLowerCase().includes(kw) ||
+      (f.nickname || '').toLowerCase().includes(kw) ||
+      (f.title || '').toLowerCase().includes(kw)
+    )
+  }
   return arr
 })
 
@@ -559,7 +599,10 @@ async function saveLimit() {
   limitSaving.value = true
   const res = await adminApi('update_feedback_limit', { feedback_daily_limit: v })
   limitSaving.value = false
-  if (res.code === 200) showToast('限制已保存', 'success'); else showToast(res.msg || '保存失败')
+  if (res.code === 200) {
+    limitVisible.value = false
+    showToast('限制已保存', 'success')
+  } else showToast(res.msg || '保存失败')
 }
 
 // ===== 认领 =====
@@ -862,8 +905,8 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .mobile-head-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 
 /* 限制面板 */
-.limit-panel { display: flex; flex-direction: column; gap: 12px; }
-.limit-info { display: flex; align-items: center; gap: 12px; }
+.limit-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.limit-info { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
 .limit-icon {
   width: 40px; height: 40px; flex-shrink: 0;
   border-radius: 12px;
@@ -872,8 +915,32 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 }
 .limit-text h3 { margin: 0; font-size: 14px; font-weight: 850; }
 .limit-text p { margin: 3px 0 0; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
-.limit-actions { display: flex; gap: 8px; align-items: center; }
-.limit-actions .mobile-input { flex: 1; min-width: 0; }
+.limit-actions { display: flex; gap: 8px; align-items: center; flex: 1; min-width: 0; }
+.fb-search-input { flex: 1; min-width: 0; }
+.fb-search-send {
+  flex-shrink: 0;
+  height: 34px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #f43f5e 0%, #e11d48 100%);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 3px 10px rgba(225, 29, 72, 0.22);
+  transition: all 0.2s;
+}
+.fb-search-send:hover { opacity: 0.92; }
+.fb-search-send:active { transform: scale(0.96); }
+.mfb-limit-body { padding: 4px 2px 2px; }
+.mfb-limit-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 12px 0;
+}
 
 /* 统计卡片 */
 .stats-row {

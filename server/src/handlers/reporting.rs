@@ -1,6 +1,7 @@
 use axum::response::Response;
 use serde_json::json;
 use sqlx::MySqlPool;
+use sqlx::Row;
 
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 use crate::response::ReqCtx;
@@ -148,6 +149,47 @@ pub async fn search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
     record_source_call(pool, &data, &ctx, "search", "未知音源").await;
     ctx.ok_empty("ok")
+}
+
+/// get_hot_search 大家都在搜（Top 10 热搜关键词）
+///
+/// 聚合所有用户累计的搜索数据（source_call_log action='search'），
+/// 按搜索次数倒序返回前 N 条，供客户端搜索弹窗「热搜」页展示。
+pub async fn get_hot_search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let limit = data
+        .get("limit")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(10)
+        .clamp(1, 50);
+
+    let result = sqlx::query(
+        "SELECT song_name, COUNT(*) AS count \
+         FROM source_call_log \
+         WHERE action = 'search' AND song_name <> '' \
+         GROUP BY song_name \
+         ORDER BY count DESC, MAX(call_time) DESC \
+         LIMIT ?",
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await;
+
+    match result {
+        Ok(rows) => {
+            let list: Vec<_> = rows
+                .iter()
+                .map(|row| {
+                    json!({
+                        "keyword": row.try_get::<String, _>("song_name").unwrap_or_default(),
+                        "count": row.try_get::<i64, _>("count").unwrap_or(0),
+                    })
+                })
+                .collect();
+            ctx.json(200, "ok", Some(json!({ "list": list })))
+        }
+        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+    }
 }
 
 /// report_user_behavior 播放行为上报

@@ -76,17 +76,48 @@
   border: 1px solid var(--border);
   border-radius: 18px;
   background: var(--card);
-  padding: 14px;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
 }
-.mobile-stat span {
+.mobile-stat .stat-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.mobile-stat .stat-icon-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mobile-stat .stat-icon-row strong {
+  font-size: 22px;
+  font-weight: 850;
+  line-height: 1;
+}
+.mobile-stat .stat-label {
   display: block;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
-.mobile-stat strong {
-  display: block;
-  margin-top: 7px;
-  font-size: 24px;
+.mobile-stat .stat-icon-total { background: #f0f0f0; color: #1a1a1a; }
+.mobile-stat .stat-icon-on { background: #f0fdf4; color: #16a34a; }
+.mobile-stat .stat-icon-off { background: #fef2f2; color: #dc2626; }
+.mobile-stat .stat-icon-normal { background: #eff6ff; color: #3b82f6; }
+.mobile-stat .stat-icon-banned { background: #fef2f2; color: #dc2626; }
+.mobile-stat > span:not(.stat-icon):not(.stat-label) {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.mobile-stat > strong {
+  font-size: 22px;
+  font-weight: 850;
   line-height: 1;
 }
 .mobile-actions {
