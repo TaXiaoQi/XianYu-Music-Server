@@ -299,6 +299,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "delete_version" => version::delete_version(body, &ctx, pool).await,
         "get_desktop_version" => version::get_desktop_version(body, &ctx, pool).await,
         "save_desktop_version" => version::save_desktop_version(body, &ctx, pool).await,
+        "delete_desktop_version" => version::delete_desktop_version(body, &ctx, pool).await,
         "add_wallpaper" => wallpaper::add_wallpaper(body, &ctx, pool).await,
         "list_wallpapers" => wallpaper::list_wallpapers(body, &ctx, pool).await,
         "delete_wallpaper" => wallpaper::delete_wallpaper(body, &ctx, pool).await,

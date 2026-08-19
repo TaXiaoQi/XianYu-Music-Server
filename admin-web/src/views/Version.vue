@@ -26,7 +26,7 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </div>
           <div class="stat-body">
-            <span class="stat-num">{{ hasConfig ? 1 : 0 }}</span>
+            <span class="stat-num">{{ desktopList.length }}</span>
             <span class="stat-label">全部</span>
           </div>
         </div>
@@ -35,7 +35,7 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           </div>
           <div class="stat-body">
-            <span class="stat-num">{{ desktop.enabled ? 1 : 0 }}</span>
+            <span class="stat-num">{{ enabledCount }}</span>
             <span class="stat-label">已启用</span>
           </div>
         </div>
@@ -44,7 +44,7 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
           </div>
           <div class="stat-body">
-            <span class="stat-num">{{ hasConfig && !desktop.enabled ? 1 : 0 }}</span>
+            <span class="stat-num">{{ disabledCount }}</span>
             <span class="stat-label">已禁用</span>
           </div>
         </div>
@@ -62,42 +62,52 @@
 
         <div v-if="desktopLoading" class="state-box"><div class="spinner"></div><span>加载中...</span></div>
 
-        <div v-else-if="!desktop.version && !desktop.downloadUrl" class="desktop-empty">
+        <div v-else-if="desktopList.length === 0" class="desktop-empty">
           <p>暂未配置桌面端更新版本</p>
-          <button class="btn-add-small" @click="openDesktopModal">+ 新增配置</button>
+          <button class="btn-add-small" @click="openDesktopModal()">+ 新增配置</button>
         </div>
 
-        <div v-else class="desktop-card" :class="{ disabled: !desktop.enabled }">
-          <div class="type-bar bar-desktop"></div>
-          <div class="card-body">
-            <div class="card-top">
-              <span class="type-badge badge-desktop">桌面端</span>
-              <label class="toggle-switch" :title="desktop.enabled ? '点击禁用' : '点击启用'">
-                <input type="checkbox" :checked="desktop.enabled" @change="toggleDesktop($event)" />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <h3 class="card-title">v{{ desktop.version || '-' }}</h3>
-            <p class="card-content">{{ desktop.updateContent || '无更新说明' }}</p>
-            <div v-if="desktop.downloadUrl" class="card-link">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-              <a :href="desktop.downloadUrl" target="_blank">{{ desktop.downloadUrl }}</a>
-            </div>
-            <div class="card-footer">
-              <span class="card-date">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                {{ desktop.updated_at || '-' }}
-              </span>
-              <div class="card-actions">
-                <button class="icon-btn" title="编辑" @click="openDesktopModal">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                </button>
-                <button class="icon-btn icon-btn-danger" title="删除" @click="deleteDesktop">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                </button>
+        <div v-else class="card-grid">
+          <TransitionGroup name="card">
+            <div
+              v-for="(item, idx) in desktopList"
+              :key="item.version"
+              class="ann-card"
+              :class="{ disabled: !item.enabled }"
+              :style="{ animationDelay: `${idx * 60}ms` }"
+            >
+              <div class="type-bar bar-desktop"></div>
+              <div class="card-body">
+                <div class="card-top">
+                  <span class="type-badge badge-desktop">桌面端</span>
+                  <label class="toggle-switch" :title="item.enabled ? '点击禁用' : '点击启用'">
+                    <input type="checkbox" :checked="item.enabled" @change="toggleDesktop($event, item)" />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <h3 class="card-title">v{{ item.version || '-' }}</h3>
+                <p class="card-content">{{ item.updateContent || '无更新说明' }}</p>
+                <div v-if="item.downloadUrl" class="card-link">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                  <a :href="item.downloadUrl" target="_blank">{{ item.downloadUrl }}</a>
+                </div>
+                <div class="card-footer">
+                  <span class="card-date">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    {{ item.updated_at || '-' }}
+                  </span>
+                  <div class="card-actions">
+                    <button class="icon-btn" title="编辑" @click="openDesktopModal(item)">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    </button>
+                    <button class="icon-btn icon-btn-danger" title="删除" @click="deleteDesktop(item)">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </TransitionGroup>
         </div>
       </div>
     </Transition>
@@ -107,7 +117,7 @@
       <div v-if="desktopModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
-            <h3>{{ desktop.version ? '编辑桌面端配置' : '新增桌面端配置' }}</h3>
+            <h3>{{ desktopEditingVersion ? '编辑桌面端配置' : '新增桌面端配置' }}</h3>
             <button class="modal-close" @click="closeDesktopModal">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -207,15 +217,16 @@ import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 
 // ===== 桌面端配置 =====
-const desktop = ref<any>({ version: '', downloadUrl: '', updateContent: '', enabled: false, updated_at: '' })
+const desktopList = ref<any[]>([])
 const desktopLoading = ref(true)
-const hasConfig = computed(() => !!(desktop.value.version || desktop.value.downloadUrl))
+const enabledCount = computed(() => desktopList.value.filter(v => v.enabled).length)
+const disabledCount = computed(() => desktopList.value.length - enabledCount.value)
 
 async function loadDesktop() {
   desktopLoading.value = true
   const res = await adminApi<any>('get_desktop_version')
   if (res.code === 200 && res.data) {
-    desktop.value = res.data
+    desktopList.value = Array.isArray(res.data.list) ? res.data.list : []
   }
   desktopLoading.value = false
 }
@@ -224,6 +235,7 @@ async function loadDesktop() {
 const desktopModalVisible = ref(false)
 const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string }>({ version: '', updateContent: '', downloadUrl: '' })
 const desktopDraftEnabled = ref(false)
+const desktopEditingVersion = ref('')
 const desktopSaving = ref(false)
 const desktopChannelModalVisible = ref(false)
 const desktopChannelMode = ref<'link' | 'upload'>('link')
@@ -236,29 +248,36 @@ const desktopPackageDragging = ref(false)
 
 const desktopChannelLabel = computed(() => {
   if (desktopPackageFile.value?.name) return '上传安装包'
-  if (desktopDraft.value.downloadUrl || desktop.value.downloadUrl) {
-    const url = desktopDraft.value.downloadUrl || desktop.value.downloadUrl
-    return url.startsWith('/uploads/packages/') ? '服务器安装包' : '下载链接'
-  }
+  const url = desktopDraft.value.downloadUrl
+  if (url) return url.startsWith('/uploads/packages/') ? '服务器安装包' : '下载链接'
   return '未选择下载渠道'
 })
 
 const desktopChannelDesc = computed(() => {
   if (desktopPackageFile.value?.name) return `已选择：${desktopPackageFile.value.name}（${formatFileSize(desktopPackageFile.value.size)}）`
-  const url = desktopDraft.value.downloadUrl || desktop.value.downloadUrl
+  const url = desktopDraft.value.downloadUrl
   if (url) return url
   return desktopDraftEnabled.value ? '启用更新时，需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
 })
 
-function openDesktopModal() {
-  desktopDraft.value = {
-    version: desktop.value.version || '',
-    updateContent: desktop.value.updateContent || '',
-    downloadUrl: desktop.value.downloadUrl || '',
+function openDesktopModal(item?: any) {
+  if (item) {
+    desktopEditingVersion.value = item.version || ''
+    desktopDraft.value = {
+      version: item.version || '',
+      updateContent: item.updateContent || '',
+      downloadUrl: item.downloadUrl || '',
+    }
+    desktopDraftEnabled.value = !!item.enabled
+  } else {
+    desktopEditingVersion.value = ''
+    desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+    desktopDraftEnabled.value = false
   }
-  desktopDraftEnabled.value = desktop.value.enabled || false
   desktopPackageFile.value = null
+  desktopPackageFileDraft.value = null
   desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
+  if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
   desktopModalVisible.value = true
 }
 
@@ -273,7 +292,7 @@ async function saveDesktop() {
     return
   }
   const hasPackage = !!desktopPackageFile.value
-  const hasUrl = !!(desktopDraft.value as any).downloadUrl?.trim() || !!desktop.value.downloadUrl?.trim()
+  const hasUrl = !!desktopDraft.value.downloadUrl?.trim()
   if (desktopDraftEnabled.value && !hasPackage && !hasUrl) {
     showToast('启用更新时，请填写下载链接或选择安装包')
     return
@@ -289,9 +308,10 @@ async function saveDesktop() {
       return
     }
   }
+  const version = desktopDraft.value.version.trim()
   const res = await adminApi('save_desktop_version', {
-    version: desktopDraft.value.version.trim(),
-    download_url: desktopDraft.value.downloadUrl?.trim() || desktop.value.downloadUrl?.trim() || '',
+    version,
+    download_url: desktopDraft.value.downloadUrl?.trim() || '',
     update_content: desktopDraft.value.updateContent.trim(),
     enabled: desktopDraftEnabled.value ? 1 : 0,
     file_name: desktopPackageFile.value?.name || '',
@@ -299,44 +319,49 @@ async function saveDesktop() {
   })
   desktopSaving.value = false
   if (res.code === 200) {
-    showToast('保存成功', 'success')
-    desktopModalVisible.value = false
+    const replaced = !!desktopEditingVersion.value && desktopEditingVersion.value === version
     loadDesktop()
+    if (replaced) {
+      showToast('修改成功', 'success')
+      desktopModalVisible.value = false
+    } else {
+      // 新增成功：保持弹窗打开并清空表单，方便继续新增多个版本
+      showToast('保存成功，可继续新增版本', 'success')
+      desktopEditingVersion.value = ''
+      desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+      desktopDraftEnabled.value = false
+      desktopPackageFile.value = null
+      desktopPackageFileDraft.value = null
+      desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
+      if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
+    }
   } else {
     showToast(res.msg || '保存失败')
   }
 }
 
-async function toggleDesktop(e: Event) {
+async function toggleDesktop(e: Event, item: any) {
   const enabled = (e.target as HTMLInputElement).checked
   const res = await adminApi('save_desktop_version', {
-    version: desktop.value.version,
-    download_url: desktop.value.downloadUrl,
-    update_content: desktop.value.updateContent,
+    version: item.version,
+    download_url: item.downloadUrl || '',
+    update_content: item.updateContent || '',
     enabled: enabled ? 1 : 0,
     file_name: '',
     file_data: '',
   })
   if (res.code === 200) {
     showToast(enabled ? '已启用' : '已禁用', 'success')
-    loadDesktop()
   } else {
     showToast(res.msg || '操作失败')
-    loadDesktop()
   }
+  loadDesktop()
 }
 
-async function deleteDesktop() {
-  const ok = await webConfirm('确认删除桌面端更新配置？', { title: '删除配置', confirmText: '确认删除' })
+async function deleteDesktop(item: any) {
+  const ok = await webConfirm(`确认删除 v${item.version} 的桌面端更新配置？`, { title: '删除配置', confirmText: '确认删除' })
   if (!ok) return
-  const res = await adminApi('save_desktop_version', {
-    version: '',
-    download_url: '',
-    update_content: '',
-    enabled: 0,
-    file_name: '',
-    file_data: '',
-  })
+  const res = await adminApi('delete_desktop_version', { version: item.version })
   if (res.code === 200) {
     showToast('删除成功', 'success')
     loadDesktop()
@@ -538,31 +563,6 @@ onMounted(() => {
 .btn-add-small:hover {
   background: var(--accent-soft);
 }
-
-/* ===== 统计栏 ===== */
-.stats-row {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
-  flex-wrap: wrap;
-}
-.stat-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
-  border-radius: 10px;
-  background: var(--card-solid);
-  border: 1px solid var(--border);
-  transition: all 0.2s;
-}
-.stat-chip:hover { transform: translateY(-1px); box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-.stat-num { font-size: 18px; font-weight: 800; }
-.stat-label { font-size: 12px; color: var(--text-muted); }
-.stat-total .stat-num { color: var(--text); }
-.stat-on .stat-num { color: #10b981; }
-.stat-off .stat-num { color: #9ca3af; }
-.stat-desktop .stat-num { color: #3b82f6; }
 
 /* ===== 区块标签 ===== */
 .desktop-section, .app-section {

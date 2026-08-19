@@ -124,7 +124,10 @@
               <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             </div>
             <div class="user-info">
-              <span class="user-name">{{ f.nickname || '匿名用户' }}</span>
+              <div class="user-name-row">
+                <span class="user-name">{{ f.nickname || '匿名用户' }}</span>
+                <span v-if="f.platform && platformLabel(f.platform)" class="platform-badge" :class="`platform-${f.platform}`">{{ platformLabel(f.platform) }}</span>
+              </div>
               <span class="user-id">{{ f.ciyuanxi_id || '后台创建' }}</span>
             </div>
           </div>
@@ -226,6 +229,22 @@
           <span>{{ resolveTarget.nickname || '匿名用户' }} · {{ resolveTarget.ciyuanxi_id || '-' }}</span>
         </div>
         <textarea v-model="resolveNote" class="mobile-dialog-input" rows="4" placeholder="请填写完成说明（必填）" style="min-height:90px;resize:vertical;"></textarea>
+        <div class="mfb-resolve-images">
+          <span class="mfb-resolve-opt">完成图片（选填）</span>
+          <div class="mfb-dropzone mfb-resolve-dropzone" :class="{ dragging: resolveDragging, has: resolveImages.length > 0 }" @dragover.prevent="resolveDragging = true" @dragleave.prevent="resolveDragging = false" @drop.prevent="onResolveDrop" @click="resolveImageInput?.click()">
+            <input ref="resolveImageInput" type="file" accept="image/*" multiple hidden @change="onResolveFileChange" />
+            <div class="mfb-dropzone-text">
+              <strong>{{ resolveImages.length > 0 ? `${resolveImages.length} 张图片已选择` : '点击选择完成图片' }}</strong>
+              <span>选填，将随完成说明一起展示给提交反馈的用户</span>
+            </div>
+          </div>
+          <div v-if="resolveImages.length > 0" class="mfb-preview">
+            <div v-for="(img, i) in resolveImages" :key="i" class="mfb-preview-item">
+              <img :src="img" class="mfb-preview-img" @click.stop="openViewer(resolveImages, i)" />
+              <button class="mfb-preview-remove" @click.stop="resolveImages.splice(i, 1)">×</button>
+            </div>
+          </div>
+        </div>
         <div class="mobile-dialog-actions">
           <button class="mobile-dialog-btn cancel" @click="closeResolve">取消</button>
           <button class="mobile-dialog-btn confirm" :disabled="!resolveNote.trim()" @click="confirmResolve">{{ resolveSaving ? '提交中...' : '确认完成' }}</button>
@@ -279,6 +298,13 @@
         <div class="mobile-dialog-title">新建事项</div>
         <div class="mfb-create-body">
           <div class="mfb-type-row">
+            <span class="mfb-type-label">平台版本<em>*</em></span>
+            <button class="mfb-type-btn" :class="{ active: createPlatform === 'desktop' }" @click="createPlatform = 'desktop'">桌面版</button>
+            <button class="mfb-type-btn" :class="{ active: createPlatform === 'mobile' }" @click="createPlatform = 'mobile'">移动版</button>
+            <button class="mfb-type-btn" :class="{ active: createPlatform === 'watch' }" @click="createPlatform = 'watch'">腕上版</button>
+          </div>
+          <div class="mfb-type-row" style="margin-top:8px;">
+            <span class="mfb-type-label">事项类型<em>*</em></span>
             <button class="mfb-type-btn" :class="{ active: createType === 'problem' }" @click="createType = 'problem'">问题反馈</button>
             <button class="mfb-type-btn" :class="{ active: createType === 'suggestion' }" @click="createType = 'suggestion'">功能建议</button>
           </div>
@@ -296,18 +322,11 @@
               <button class="mfb-preview-remove" @click.stop="createImages.splice(i, 1)">×</button>
             </div>
           </div>
-          <label class="mfb-notify">
-            <input v-model="createNotify" type="checkbox" />
-            <span class="mfb-notify-box" :class="{ checked: createNotify }">✓</span>
-            <span class="mfb-notify-text">
-              <strong>外部同步通知</strong>
-              <span>发布后主动向「外部通知」配置中启用的邮箱发送邮件提醒</span>
-            </span>
-          </label>
+          <div class="mfb-create-gap"></div>
         </div>
         <div class="mobile-dialog-actions">
           <button class="mobile-dialog-btn cancel" @click="closeCreate">取消</button>
-          <button class="mobile-dialog-btn confirm" :disabled="createSaving || !createContent.trim()" @click="submitCreate">{{ createSaving ? '发布中...' : '发布' }}</button>
+          <button class="mobile-dialog-btn confirm" :disabled="createSaving || !createContent.trim() || !createType || !createPlatform" @click="submitCreate">{{ createSaving ? '发布中...' : '发布' }}</button>
         </div>
       </div>
     </div>
@@ -702,14 +721,49 @@ const resolveVisible = ref(false)
 const resolveTarget = ref<any>(null)
 const resolveNote = ref('')
 const resolveSaving = ref(false)
-function openResolve(f: any) { resolveTarget.value = f; resolveNote.value = ''; resolveSaving.value = false; resolveVisible.value = true }
+const resolveImages = ref<string[]>([])
+const resolveDragging = ref(false)
+const resolveImageInput = ref<HTMLInputElement | null>(null)
+function openResolve(f: any) {
+  resolveTarget.value = f
+  resolveNote.value = ''
+  resolveImages.value = []
+  resolveDragging.value = false
+  resolveSaving.value = false
+  resolveVisible.value = true
+}
 function closeResolve() { if (!resolveSaving.value) { resolveVisible.value = false; resolveTarget.value = null } }
+function onResolveFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (input.files) handleResolveFiles(Array.from(input.files))
+  input.value = ''
+}
+function onResolveDrop(e: DragEvent) {
+  e.preventDefault(); resolveDragging.value = false
+  const files = e.dataTransfer?.files
+  if (files) handleResolveFiles(Array.from(files))
+}
+function handleResolveFiles(files: File[]) {
+  const remaining = 6 - resolveImages.value.length
+  if (remaining <= 0) return showToast('最多上传 6 张图片')
+  for (const file of files.slice(0, remaining)) {
+    if (!file.type.startsWith('image/')) continue
+    if (file.size > 8 * 1024 * 1024) { showToast(`图片 ${file.name} 超过 8MB，已跳过`); continue }
+    const reader = new FileReader()
+    reader.onload = () => resolveImages.value.push(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+}
 async function confirmResolve() {
   if (!resolveTarget.value || !resolveNote.value.trim()) return
   resolveSaving.value = true
   const f = resolveTarget.value
   const hasCollab = collaboratorsOf(f).length > 0
-  const res = await adminApi(hasCollab ? 'collaborator_complete' : 'resolve_feedback', { id: f.id, note: resolveNote.value.trim() })
+  const res = await adminApi(hasCollab ? 'collaborator_complete' : 'resolve_feedback', {
+    id: f.id,
+    note: resolveNote.value.trim(),
+    images: resolveImages.value,
+  })
   resolveSaving.value = false
   if (res.code === 200) {
     if (res.data?.resolved) {
@@ -800,16 +854,27 @@ async function restoreItem(id: number) {
 
 // ===== 新建事项 =====
 const createVisible = ref(false)
-const createType = ref<'problem' | 'suggestion'>('problem')
+const createType = ref<'problem' | 'suggestion' | ''>('')
+const createPlatform = ref<'desktop' | 'mobile' | 'watch' | ''>('')
 const createContent = ref('')
 const createImages = ref<string[]>([])
-const createNotify = ref(false)
 const createDragging = ref(false)
 const createSaving = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+
+// 平台版本标签文案
+const platformMap: Record<string, string> = {
+  desktop: '桌面版',
+  mobile: '移动版',
+  watch: '腕上版',
+}
+function platformLabel(p: string): string {
+  return platformMap[p] || ''
+}
 function openCreate() {
-  createType.value = 'problem'; createContent.value = ''
-  createImages.value = []; createNotify.value = false; createDragging.value = false; createSaving.value = false
+  createType.value = ''; createPlatform.value = ''
+  createContent.value = ''
+  createImages.value = []; createDragging.value = false; createSaving.value = false
   createVisible.value = true
 }
 function closeCreate() { if (!createSaving.value) createVisible.value = false }
@@ -835,14 +900,16 @@ function handleFiles(files: File[]) {
   }
 }
 async function submitCreate() {
+  if (!createType.value) return showToast('请选择事项类型')
+  if (!createPlatform.value) return showToast('请选择平台版本')
   if (!createContent.value.trim()) return showToast('请填写内容')
   createSaving.value = true
   const res = await adminApi('create_feedback', {
     feedback_type: createType.value,
+    platform: createPlatform.value,
     title: createType.value === 'suggestion' ? '功能建议' : '问题反馈',
     content: createContent.value.trim(),
     images: createImages.value,
-    notify_external: createNotify.value ? 1 : 0,
   })
   createSaving.value = false
   if (res.code === 200) { showToast('创建成功', 'success'); closeCreate(); loadList() } else { showToast(res.msg || '创建失败') }
@@ -1102,6 +1169,20 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .user-info { display: flex; flex-direction: column; min-width: 0; }
 .user-name { font-size: 13px; font-weight: 850; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .user-id { font-size: 11px; color: var(--text-muted); }
+.user-name-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.platform-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.platform-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.platform-mobile { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.platform-watch { background: rgba(20, 184, 166, 0.12); color: #14b8a6; }
 .mfb-head-right { display: flex; align-items: center; gap: 5px; flex: 0 0 auto; }
 .type-badge {
   font-size: 10px; font-weight: 850;
@@ -1260,7 +1341,15 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   margin: 0;
   box-sizing: border-box;
 }
-.mfb-type-row { display: flex; gap: 8px; }
+.mfb-type-row { display: flex; gap: 8px; align-items: center; }
+.mfb-type-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.mfb-type-label em { color: #EC4141; font-style: normal; margin-left: 1px; }
+.mfb-create-gap { height: 4px; }
 .mfb-type-btn {
   flex: 1;
   border: 1px solid var(--border);
@@ -1290,18 +1379,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   background: #dc2626; color: #fff; font-size: 14px; line-height: 1;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
-.mfb-notify { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--control-bg); cursor: pointer; }
-.mfb-notify input { display: none; }
-.mfb-notify-box {
-  width: 20px; height: 20px; border-radius: 6px;
-  border: 1.5px solid var(--border); background: var(--card); color: transparent;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 13px; font-weight: 900; flex-shrink: 0; margin-top: 1px;
-}
-.mfb-notify-box.checked { background: #EC4141; border-color: #EC4141; color: #fff; }
-.mfb-notify-text { display: flex; flex-direction: column; gap: 2px; }
-.mfb-notify-text strong { font-size: 13px; color: var(--text); }
-.mfb-notify-text span { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
 
 /* 统计弹窗 */
 .mfb-stats-body { padding: 10px 20px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }

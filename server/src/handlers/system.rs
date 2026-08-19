@@ -204,7 +204,54 @@ pub async fn get_version_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     }
 }
 
+fn latest_enabled_desktop_version() -> Option<serde_json::Value> {
+    let path = std::path::Path::new("api").join("version.json");
+    let content = std::fs::read_to_string(path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let arr = value.as_array()?;
+    let mut best: Option<serde_json::Value> = None;
+    for item in arr {
+        let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !enabled {
+            continue;
+        }
+        let item_ver = item.get("version").and_then(|v| v.as_str()).unwrap_or("");
+        match &best {
+            Some(cur) => {
+                let cur_ver = cur.get("version").and_then(|v| v.as_str()).unwrap_or("");
+                if compare_version_code(item_ver, cur_ver) > 0 {
+                    best = Some(item.clone());
+                }
+            }
+            None => best = Some(item.clone()),
+        }
+    }
+    best
+}
+
 pub async fn get_latest_version(ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    // 优先读取桌面端更新配置（version.json），取已启用且版本号最大的一条
+    if let Some(item) = latest_enabled_desktop_version() {
+        let version = item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let updated_at = item.get("updated_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        return ctx.json(
+            200,
+            "ok",
+            Some(json!({
+                "id": 0,
+                "app_name": "弦予音乐桌面端",
+                "version": version,
+                "content": content,
+                "download_url": url,
+                "file_size": 0,
+                "status": "normal",
+                "updated_at": updated_at
+            })),
+        );
+    }
+    // 兜底：version.json 无已启用版本时，回退到历史 app_versions 数据
     let row = sqlx::query("SELECT * FROM app_versions WHERE status != 'disabled' ORDER BY id DESC LIMIT 1")
         .fetch_optional(pool)
         .await

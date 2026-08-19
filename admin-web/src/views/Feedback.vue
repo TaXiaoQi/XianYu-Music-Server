@@ -34,9 +34,9 @@
       <div class="limit-panel">
         <div class="limit-actions">
           <div class="fb-search">
-            <input v-model="searchKeyword" class="fb-search-input" type="text" placeholder="搜索内容、昵称..." @keyup.enter="applySearch" />
+            <input v-model="searchKeyword" class="fb-search-input" type="text" placeholder="搜索内容、昵称..." @keyup.enter="handleSearch" />
           </div>
-          <button class="fb-search-send" @click="applySearch">搜索</button>
+          <button class="fb-search-send" @click="handleSearch">搜索</button>
           <button v-if="searchKeyword" class="fb-search-clear" @click="clearSearch">清除</button>
           <button class="btn-recycle" @click="openRecycleBin">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
@@ -162,7 +162,10 @@
                   <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </div>
                 <div class="user-info">
-                  <span class="user-name">{{ item.nickname || '匿名用户' }}</span>
+                  <div class="user-name-row">
+                    <span class="user-name">{{ item.nickname || '匿名用户' }}</span>
+                    <span v-if="item.platform && platformLabel(item.platform)" class="platform-badge" :class="`platform-${item.platform}`">{{ platformLabel(item.platform) }}</span>
+                  </div>
                   <span class="user-id">{{ item.ciyuanxi_id || '后台创建' }}</span>
                 </div>
               </div>
@@ -201,6 +204,10 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ item.resolve_note }}</span></div>
                   </div>
+                  <div v-if="item.status === 'resolved' && resolveItemImages(item).length > 0" class="resolve-imgs" @click.stop="openImageViewer(resolveItemImages(item), 0)">
+                    <img v-for="(img, i) in resolveItemImages(item)" :key="i" :src="img" class="resolve-thumb" alt="完成图片" />
+                    <span v-if="resolveItemImages(item).length > 1" class="resolve-count-badge">{{ resolveItemImages(item).length }}</span>
+                  </div>
                 </div>
               </div>
               <!-- 图片缩略图（堆叠，仅显示第一张，点击查看详情） -->
@@ -233,9 +240,9 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                   协同
                 </button>
-                <button v-if="item.status === 'pending' || (item.status === 'processing' && !isParticipant(item))" class="act-btn act-claim" :class="{ 'act-transfer': item.status === 'processing' && !isParticipant(item) }" @click="claimFeedback(item.id)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-                  {{ item.status === 'processing' && !isParticipant(item) ? '转认' : '认领' }}
+                <button v-if="item.status === 'pending'" class="act-btn act-reject" @click="openRejectModal(item)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  拒绝
                 </button>
                 <button v-if="item.status === 'processing' && isParticipant(item)" class="act-btn act-abandon" @click="abandonFeedback(item.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
@@ -245,9 +252,9 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   完成
                 </button>
-                <button v-if="item.status === 'pending'" class="act-btn act-reject" @click="openRejectModal(item)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  拒绝
+                <button v-if="item.status === 'pending' || (item.status === 'processing' && !isParticipant(item))" class="act-btn act-claim" :class="{ 'act-transfer': item.status === 'processing' && !isParticipant(item) }" @click="claimFeedback(item.id)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  {{ item.status === 'processing' && !isParticipant(item) ? '转认' : '认领' }}
                 </button>
               </div>
             </div>
@@ -282,6 +289,34 @@
               ></textarea>
               <span class="resolve-count">{{ resolveNote.length }}/1000</span>
             </label>
+            <div class="create-field">
+              <span class="create-field-label">完成图片 <span class="optional">（可选，最多 6 张，将展示给提交反馈的用户）</span></span>
+              <div
+                class="create-dropzone"
+                :class="{ dragging: resolveDragging, has: resolveImages.length > 0 }"
+                @dragover.prevent="onResolveDragOver"
+                @dragleave.prevent="onResolveDragLeave"
+                @drop.prevent="onResolveDrop"
+                @click="resolveFileInput?.click()"
+              >
+                <input ref="resolveFileInput" type="file" accept="image/*" multiple hidden @change="onResolveFileChange" />
+                <div class="dropzone-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                </div>
+                <div class="dropzone-text">
+                  <strong>点击或拖拽图片到此处</strong>
+                  <span>完成图片为选填，将随完成说明一起展示给提交反馈的用户</span>
+                </div>
+              </div>
+              <div v-if="resolveImages.length > 0" class="create-preview">
+                <div v-for="(img, i) in resolveImages" :key="i" class="preview-item">
+                  <img :src="img" class="preview-img" @click.stop="openImageViewer(resolveImages, i)" />
+                  <button class="preview-remove" @click.stop="removeResolveImage(i)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="modal-foot">
             <button class="btn-cancel" :disabled="resolveSaving" @click="closeResolveModal">取消</button>
@@ -388,6 +423,22 @@
           </div>
           <div class="modal-body">
             <div class="create-type-row">
+              <span class="create-type-label">平台版本 <em>*</em></span>
+              <button class="create-type-btn" :class="{ active: createPlatform === 'desktop' }" @click="createPlatform = 'desktop'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                桌面版
+              </button>
+              <button class="create-type-btn" :class="{ active: createPlatform === 'mobile' }" @click="createPlatform = 'mobile'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="7" y="3" width="10" height="18" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+                移动版
+              </button>
+              <button class="create-type-btn" :class="{ active: createPlatform === 'watch' }" @click="createPlatform = 'watch'">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="6"/><path d="M12 10v2l1.5 1.5"/><path d="M9 3h6l1 5H8l1-5z"/><path d="M9 21h6l-1-5H8l1 5z"/></svg>
+                腕上版
+              </button>
+            </div>
+            <div class="create-type-row">
+              <span class="create-type-label">事项类型 <em>*</em></span>
               <button class="create-type-btn" :class="{ active: createType === 'problem' }" @click="createType = 'problem'">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 问题反馈
@@ -430,20 +481,10 @@
                 </div>
               </div>
             </div>
-            <label class="create-notify">
-              <input v-model="createNotifyExternal" type="checkbox" class="notify-check" />
-              <span class="notify-box">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              </span>
-              <span class="notify-text">
-                <strong>外部同步通知</strong>
-                <span>发布后主动向「外部通知」配置中启用的邮箱发送邮件提醒</span>
-              </span>
-            </label>
           </div>
           <div class="modal-foot">
             <button class="btn-cancel" :disabled="createSaving" @click="closeCreateModal">取消</button>
-            <button class="btn-confirm btn-create-submit" :disabled="createSaving || !createContent.trim()" @click="submitCreate">
+            <button class="btn-confirm btn-create-submit" :disabled="createSaving || !createContent.trim() || !createType || !createPlatform" @click="submitCreate">
               {{ createSaving ? '发布中...' : '发布' }}
             </button>
           </div>
@@ -681,15 +722,16 @@ const limitModalVisible = ref(false)
 const feedbackDailyLimit = ref(20)
 const feedbackLimitInput = ref(20)
 const searchKeyword = ref('')
-/** 手动搜索：仅点击"搜索"或回车时才应用，避免输入过程中列表实时刷新 */
 const appliedKeyword = ref('')
-
-function applySearch() {
-  appliedKeyword.value = searchKeyword.value.trim()
+/** 手动搜索：输入不实时匹配，点击「搜索」或回车时才应用关键字并刷新反馈条 */
+function handleSearch() {
+  appliedKeyword.value = searchKeyword.value.trim().toLowerCase()
+  loadList()
 }
 function clearSearch() {
   searchKeyword.value = ''
   appliedKeyword.value = ''
+  loadList()
 }
 
 function openLimitModal() {
@@ -710,6 +752,16 @@ const statusMap: Record<string, string> = {
 
 function statusLabel(s: string): string {
   return statusMap[s] || s
+}
+
+// 平台版本标签文案
+const platformMap: Record<string, string> = {
+  desktop: '桌面版',
+  mobile: '移动版',
+  watch: '腕上版',
+}
+function platformLabel(p: string): string {
+  return platformMap[p] || ''
 }
 
 // ===== 类型筛选 + 排序 =====
@@ -800,6 +852,18 @@ function itemImages(item: Feedback): string[] {
     return []
   }
 }
+// 反馈完成时管理员附带图片（resolve_images 列，JSON 数组）
+function resolveItemImages(item: Feedback): string[] {
+  if (!item.resolve_images) return []
+  try {
+    const arr = JSON.parse(item.resolve_images)
+    return Array.isArray(arr)
+      ? arr.filter((u: string) => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))).map(normalizeImgUrl)
+      : []
+  } catch {
+    return []
+  }
+}
 // 堆叠样式：仅第一张完整显示，其余向右下偏移并置于底层，视觉上"只显示一张，其余叠压其后"
 function stackThumbStyle(i: number, total: number): Record<string, string> {
   if (total <= 1) return {}
@@ -874,7 +938,9 @@ function closeStats() {
 
 // ===== 新建事项弹窗 =====
 const createModalVisible = ref(false)
-const createType = ref<'problem' | 'suggestion'>('problem')
+// 类型与平台均无默认值，需创建者自行选择
+const createType = ref<'problem' | 'suggestion' | ''>('')
+const createPlatform = ref<'desktop' | 'mobile' | 'watch' | ''>('')
 // 标题默认取所选类型，无需手动填写
 const createTitle = computed(() => {
   if (createType.value === 'suggestion') return '功能建议'
@@ -883,15 +949,14 @@ const createTitle = computed(() => {
 const createContent = ref('')
 const createImages = ref<string[]>([])
 const createDragging = ref(false)
-const createNotifyExternal = ref(false)
 const createSaving = ref(false)
 const createFileInput = ref<HTMLInputElement | null>(null)
 
 function openCreateModal() {
-  createType.value = 'problem'
+  createType.value = ''
+  createPlatform.value = ''
   createContent.value = ''
   createImages.value = []
-  createNotifyExternal.value = false
   createSaving.value = false
   createDragging.value = false
   createModalVisible.value = true
@@ -947,6 +1012,8 @@ function removeCreateImage(index: number) {
 }
 async function submitCreate() {
   if (createSaving.value) return
+  if (!createType.value) { showToast('请选择事项类型'); return }
+  if (!createPlatform.value) { showToast('请选择平台版本'); return }
   if (!createContent.value.trim()) {
     showToast('请填写内容')
     return
@@ -954,10 +1021,10 @@ async function submitCreate() {
   createSaving.value = true
   const res = await adminApi('create_feedback', {
     feedback_type: createType.value,
+    platform: createPlatform.value,
     title: createTitle.value.trim(),
     content: createContent.value.trim(),
     images: createImages.value,
-    notify_external: createNotifyExternal.value ? 1 : 0,
   })
   createSaving.value = false
   if (res.code === 200) {
@@ -1074,11 +1141,16 @@ async function abandonFeedback(id: number) {
 const resolveModalVisible = ref(false)
 const resolveTarget = ref<Feedback | null>(null)
 const resolveNote = ref('')
+const resolveImages = ref<string[]>([])
+const resolveDragging = ref(false)
+const resolveFileInput = ref<HTMLInputElement | null>(null)
 const resolveSaving = ref(false)
 
 function openResolveModal(item: Feedback) {
   resolveTarget.value = item
   resolveNote.value = ''
+  resolveImages.value = []
+  resolveDragging.value = false
   resolveSaving.value = false
   resolveModalVisible.value = true
 }
@@ -1088,6 +1160,53 @@ function closeResolveModal() {
   resolveModalVisible.value = false
   resolveTarget.value = null
   resolveNote.value = ''
+  resolveImages.value = []
+}
+
+function onResolveDragOver(e: DragEvent) {
+  e.preventDefault()
+  resolveDragging.value = true
+}
+function onResolveDragLeave() {
+  resolveDragging.value = false
+}
+function onResolveDrop(e: DragEvent) {
+  e.preventDefault()
+  resolveDragging.value = false
+  const files = e.dataTransfer?.files
+  if (files && files.length > 0) {
+    handleResolveFiles(Array.from(files))
+  }
+}
+function onResolveFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  if (!input.files) return
+  handleResolveFiles(Array.from(input.files))
+  input.value = ''
+}
+function handleResolveFiles(files: File[]) {
+  const remaining = 6 - resolveImages.value.length
+  if (remaining <= 0) {
+    showToast('最多上传 6 张图片')
+    return
+  }
+  const accepted = files.slice(0, remaining)
+  for (const file of accepted) {
+    if (!file.type.startsWith('image/')) continue
+    if (file.size > 8 * 1024 * 1024) {
+      showToast(`图片 ${file.name} 超过 8MB，已跳过`)
+      continue
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      resolveImages.value.push(reader.result as string)
+    }
+    reader.onerror = () => showToast(`图片 ${file.name} 读取失败`)
+    reader.readAsDataURL(file)
+  }
+}
+function removeResolveImage(index: number) {
+  resolveImages.value.splice(index, 1)
 }
 
 async function confirmResolve() {
@@ -1098,6 +1217,7 @@ async function confirmResolve() {
   const res = await adminApi(hasCollab ? 'collaborator_complete' : 'resolve_feedback', {
     id: item.id,
     note: resolveNote.value.trim(),
+    images: resolveImages.value,
   })
   resolveSaving.value = false
   if (res.code === 200) {
@@ -1180,7 +1300,7 @@ const filteredList = computed(() => {
   } else if (typeFilter.value !== 'all') {
     arr = arr.filter(f => f.feedback_type === typeFilter.value && f.category !== 'appeal')
   }
-  const kw = appliedKeyword.value.trim().toLowerCase()
+  const kw = appliedKeyword.value
   if (kw) {
     arr = arr.filter(f =>
       (f.content || '').toLowerCase().includes(kw) ||
@@ -1880,8 +2000,22 @@ onUnmounted(() => {
 }
 .user-avatar.avatar-img { object-fit: cover; cursor: zoom-in; }
 .user-info { display: flex; flex-direction: column; gap: 1px; }
+.user-name-row { display: flex; align-items: center; gap: 6px; }
 .user-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .user-id { font-size: 11px; color: var(--text-muted); }
+.platform-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.platform-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.platform-mobile { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.platform-watch { background: rgba(20, 184, 166, 0.12); color: #14b8a6; }
 
 .status-badge {
   display: inline-flex;
@@ -2031,6 +2165,35 @@ onUnmounted(() => {
 .resolve-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .resolve-label { font-weight: 700; }
 .resolve-text span:last-child { color: #16a34a; white-space: pre-wrap; word-break: break-word; }
+/* 完成图片缩略图 */
+.resolve-imgs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+  cursor: zoom-in;
+}
+.resolve-thumb {
+  width: 64px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+  background: var(--track);
+}
+.resolve-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.16);
+  color: #16a34a;
+  font-size: 11px;
+  font-weight: 700;
+}
 
 /* ===== 完成说明弹窗 ===== */
 .resolve-dialog { max-width: 520px; }
@@ -2263,7 +2426,14 @@ onUnmounted(() => {
   flex-direction: column;
 }
 .create-dialog .modal-body { overflow-y: auto; }
-.create-type-row { display: flex; gap: 8px; margin-bottom: 16px; }
+.create-type-row { display: flex; gap: 8px; margin-bottom: 16px; align-items: center; }
+.create-type-label {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.create-type-label em { color: #dc2626; font-style: normal; margin-left: 1px; }
 .create-type-btn {
   flex: 1;
   display: inline-flex;

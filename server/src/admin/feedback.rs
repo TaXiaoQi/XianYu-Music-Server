@@ -108,6 +108,46 @@ fn admin_feedback_img_url(ctx: &AdminCtx, url: String) -> String {
     format!("{}{}", base.trim_end_matches('/'), url)
 }
 
+/// 解析完成弹窗传入的图片数组（base64 data URL 或已保存的 URL），压缩保存并返回 JSON 数组字符串。
+/// 与 create_feedback 的图片处理保持一致。
+fn save_admin_resolve_images(data: &Value, ctx: &AdminCtx) -> String {
+    let arr = data.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default();
+    if arr.is_empty() {
+        return json!(Vec::<String>::new()).to_string();
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let mut urls: Vec<String> = Vec::new();
+    for (i, img_val) in arr.iter().enumerate() {
+        if urls.len() >= MAX_ADMIN_FEEDBACK_IMAGES {
+            break;
+        }
+        let data_url = img_val.as_str().unwrap_or("").to_string();
+        if data_url.is_empty() {
+            continue;
+        }
+        // 已是 http/https 或相对路径的已保存图片，直接保留
+        if data_url.starts_with("http://") || data_url.starts_with("https://") || data_url.starts_with('/') {
+            urls.push(data_url);
+            continue;
+        }
+        if data_url.len() > MAX_ADMIN_FEEDBACK_IMAGE_BYTES {
+            continue;
+        }
+        let bytes = match admin_data_url_to_bytes(&data_url) {
+            Some(b) if b.len() <= MAX_ADMIN_FEEDBACK_IMAGE_BYTES => b,
+            _ => continue,
+        };
+        let name = format!("resolve_{}_{}.jpg", ts, i);
+        if let Some(url) = compress_and_save_admin_feedback_image(&bytes, &name, 1600, 82) {
+            urls.push(admin_feedback_img_url(ctx, url));
+        }
+    }
+    json!(urls).to_string()
+}
+
 async fn read_feedback_daily_limit(pool: &MySqlPool) -> i64 {
     sqlx::query_scalar::<_, Option<String>>(
         "SELECT setting_value FROM server_settings WHERE setting_key = 'feedback_daily_limit' LIMIT 1",
@@ -143,7 +183,7 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
-        "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
+        "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.platform, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.resolve_images, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
                 f.log_meta,
                 COALESCE(CHAR_LENGTH(f.error_logs), 0) AS error_logs_chars,
                 COALESCE(CHAR_LENGTH(f.all_logs), 0) AS all_logs_chars,
@@ -493,6 +533,8 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     if note.chars().count() > 1000 {
         return err(400, "完成说明不能超过 1000 字");
     }
+    // 完成时附带的可选图片（base64 data URL 数组）
+    let resolve_images_json = save_admin_resolve_images(&data, ctx);
     // 仅认领人可完成该反馈
     let cur = sqlx::query_as::<_, (String, String)>(
         "SELECT status, COALESCE(assignee, '') FROM user_feedback WHERE id = ?",
@@ -513,9 +555,10 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         Err(_) => return err(500, "服务器错误"),
     }
     let upd = sqlx::query(
-        "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, assignee = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+        "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, resolve_images = ?, assignee = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
     )
     .bind(&note)
+    .bind(&resolve_images_json)
     .bind(&ctx.username)
     .bind(&ctx.username)
     .bind(id)
@@ -800,11 +843,13 @@ pub async fn collaborator_complete(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
             .filter_map(|v| v.get("note").and_then(|n| n.as_str()))
             .collect::<Vec<_>>()
             .join("\n");
+        let resolve_images_json = save_admin_resolve_images(&data, ctx);
         let new_completed_json = json!(completed).to_string();
         let upd = sqlx::query(
-            "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), completed_by = ?, notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
+            "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, resolve_images = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), completed_by = ?, notified_at = NULL, updated_at = NOW() WHERE id = ? AND status = 'processing'",
         )
         .bind(&resolve_note)
+        .bind(&resolve_images_json)
         .bind(&ctx.username)
         .bind(&new_completed_json)
         .bind(id)
@@ -855,22 +900,33 @@ pub async fn collaborator_complete(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
 }
 
 /// 后台新增反馈/建议事项（由管理员发起，非用户提交）
-/// 入参：feedback_type（problem/suggestion）、title、content、images（base64 data URL 数组）、notify_external（是否外部同步通知）
-/// 支持问题反馈与功能建议两种类型。勾选外部同步通知后，发布时会向所有启用中的通知邮箱发送提醒邮件。
+    /// 入参：feedback_type（problem/suggestion）、platform（desktop/mobile/watch）、title、content、images（base64 data URL 数组）
+    /// 支持问题反馈与功能建议两种类型，类型与平台均为必填，由管理员自行选择，无默认值。
 pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let mut feedback_type = str_of(&data, "feedback_type").trim().to_string();
     if feedback_type.is_empty() {
-        feedback_type = "problem".to_string();
+        return err(400, "请选择反馈类型");
     }
     if feedback_type != "problem" && feedback_type != "suggestion" && feedback_type != "appeal" {
         return err(400, "反馈类型不正确");
+    }
+    // 平台版本必填：desktop（桌面版）/ mobile（移动版）/ watch（腕上版，预留）
+    let mut platform = str_of(&data, "platform").trim().to_string();
+    if platform.is_empty() {
+        return err(400, "请选择平台版本");
+    }
+    if platform != "desktop" && platform != "mobile" && platform != "watch" {
+        return err(400, "平台版本不正确");
+    }
+    if feedback_type == "appeal" {
+        // 封禁申诉场景不带平台版本，全部归属桌面版
+        platform = "desktop".to_string();
     }
     // 封禁申诉类型使用 category='appeal'，其余使用 category='feedback'
     let category = if feedback_type == "appeal" { "appeal" } else { "feedback" };
     let title = str_of(&data, "title").trim().to_string();
     let content = str_of(&data, "content").trim().to_string();
-    let notify_external = int_of(&data, "notify_external") != 0;
     if title.is_empty() {
         return err(400, "标题不能为空");
     }
@@ -912,12 +968,13 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     let images_json = json!(image_urls).to_string();
     // 后台创建：昵称显示为发起的管理员，ciyuanxi_id 留空标识为后台创建
     let result = sqlx::query(
-        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, status, category, ip) VALUES ('', ?, ?, ?, ?, ?, 'pending', ?, ?)",
+        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, platform, images, status, category, ip) VALUES ('', ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
     )
         .bind(&ctx.username)
         .bind(&title)
         .bind(&content)
         .bind(&feedback_type)
+        .bind(&platform)
         .bind(&images_json)
         .bind(&category)
         .bind(&ctx.ip)
@@ -928,32 +985,7 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
         Err(_) => return err(500, "服务器错误"),
     };
     log_operation(pool, ctx, "后台新增反馈", &format!("id={}", new_id), &format!("类型:{}", feedback_type)).await;
-    // 外部同步通知：向所有启用中的通知邮箱发送提醒
-    if notify_external {
-        let sent = notify_external_emails(pool, ctx, &feedback_type, &title, &content).await;
-        return ok(
-            "创建成功",
-            json!({ "id": new_id, "notify_sent": sent, "notify_total": sent.len() }),
-        );
-    }
     ok("创建成功", json!({ "id": new_id }))
-}
-
-/// 向所有启用中的通知邮箱统一发送邮件提醒，返回成功发送的邮箱列表
-async fn notify_external_emails(pool: &MySqlPool, ctx: &AdminCtx, feedback_type: &str, title: &str, content: &str) -> Vec<String> {
-    let type_label = if feedback_type == "suggestion" { "功能建议" } else { "问题反馈" };
-    let subject = format!("【弦予后台】新增{}：{}", type_label, title);
-    let context = if content.len() > 200 {
-        format!(
-            "后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}…",
-            type_label,
-            title,
-            content.chars().take(200).collect::<String>()
-        )
-    } else {
-        format!("后台新增了一条{}事项，请及时查看处理。\n\n标题：{}\n内容：{}", type_label, title, content)
-    };
-    crate::admin::email::notify_external_emails_for_module(pool, &ctx.config, &ctx.ip, "feedback", &subject, &context, "", &ctx.base_url).await
 }
 
 /// 各管理账号处理反馈量统计
@@ -1090,7 +1122,7 @@ pub async fn batch_delete_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
 
 /// 回收站列表：展示已软删除的记录（14天内可恢复）
 pub async fn list_recycle_bin(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    let list_sql = "SELECT id, ciyuanxi_id, nickname, title, content, status, category, feedback_type,
+    let list_sql = "SELECT id, ciyuanxi_id, nickname, title, content, status, category, feedback_type, platform,
                            assignee, deleted_at, deleted_by, created_at,
                            COALESCE(TIMESTAMPDIFF(HOUR, deleted_at, NOW()), 0) AS hours_since_deleted
                     FROM user_feedback

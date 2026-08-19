@@ -321,7 +321,7 @@ pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySql
         return ctx.err(400, "请先登录");
     }
     let rows = sqlx::query(
-        "SELECT id, title, content, status, assignee, replied_by, resolve_note, reject_reason, replied_at, updated_at
+        "SELECT id, title, content, status, assignee, replied_by, resolve_note, reject_reason, resolve_images, replied_at, updated_at
          FROM user_feedback
          WHERE ciyuanxi_id = ? AND status IN ('resolved','rejected') AND assignee <> ''
            AND ((status = 'resolved' AND resolve_note IS NOT NULL AND resolve_note <> '')
@@ -375,6 +375,9 @@ fn row_to_json(row: &sqlx::mysql::MySqlRow) -> Value {
         "status": row.try_get::<String, _>("status").unwrap_or_default(),
         "resolve_note": row.get::<Option<String>, _>("resolve_note").unwrap_or_default(),
         "reject_reason": row.get::<Option<String>, _>("reject_reason").unwrap_or_default(),
+        "resolve_images": row.get::<Option<String>, _>("resolve_images")
+            .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+            .unwrap_or_default(),
         "replied_at": row.try_get::<String, _>("replied_at").unwrap_or_default(),
         "updated_at": row.try_get::<String, _>("updated_at").unwrap_or_default(),
     })
@@ -391,7 +394,7 @@ pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         return ctx.err(400, "请先登录");
     }
     let rows = sqlx::query(
-        "SELECT id, title, content, feedback_type, images, status, category, assignee, replied_by, resolve_note, reject_reason, error_logs, all_logs, created_at, replied_at, updated_at
+        "SELECT id, title, content, feedback_type, images, resolve_images, status, category, assignee, replied_by, resolve_note, reject_reason, error_logs, all_logs, created_at, replied_at, updated_at
          FROM user_feedback
          WHERE ciyuanxi_id = ? AND category = 'feedback' AND deleted_at IS NULL
          ORDER BY created_at DESC
@@ -422,6 +425,9 @@ pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
                         "repliedBy": r.get::<Option<String>, _>("replied_by").unwrap_or_default(),
                         "resolveNote": r.get::<Option<String>, _>("resolve_note").unwrap_or_default(),
                         "rejectReason": r.get::<Option<String>, _>("reject_reason").unwrap_or_default(),
+                        "resolveImages": r.get::<Option<String>, _>("resolve_images")
+                            .and_then(|s| serde_json::from_str::<Vec<String>>(&s).ok())
+                            .unwrap_or_default(),
                         "hasErrorLogs": r.get::<Option<String>, _>("error_logs").map(|v| !v.is_empty()).unwrap_or(false),
                         "hasAllLogs": r.get::<Option<String>, _>("all_logs").map(|v| !v.is_empty()).unwrap_or(false),
                         "createdAt": r.try_get::<String, _>("created_at").unwrap_or_default(),

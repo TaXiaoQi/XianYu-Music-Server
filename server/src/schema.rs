@@ -119,12 +119,16 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     // 反馈类型：problem（问题反馈）/ suggestion（功能建议），images 保存图片 URL 的 JSON 数组
     ensure_column(pool, "user_feedback", "feedback_type", "VARCHAR(16) NOT NULL DEFAULT 'problem'").await;
     ensure_column(pool, "user_feedback", "images", "TEXT").await;
+    // 平台版本：desktop（桌面版）/ mobile（移动版）/ watch（腕上版，预留），后台创建时由管理员选择
+    ensure_column(pool, "user_feedback", "platform", "VARCHAR(32) NOT NULL DEFAULT ''").await;
     // 回收站：软删除时间与删除人，14天后自动过期
     ensure_column(pool, "user_feedback", "deleted_at", "DATETIME DEFAULT NULL").await;
     ensure_column(pool, "user_feedback", "deleted_by", "VARCHAR(64) NOT NULL DEFAULT ''").await;
     // 协同功能：collaborators 存储所有协作者列表（JSON 数组），completed_by 存储已完成者列表
     ensure_column(pool, "user_feedback", "collaborators", "TEXT").await;
     ensure_column(pool, "user_feedback", "completed_by", "TEXT").await;
+    // 完成反馈时附带的图片（管理员在完成弹窗上传），存图片 URL 的 JSON 数组
+    ensure_column(pool, "user_feedback", "resolve_images", "TEXT").await;
 }
 
 /// 账号系统重构迁移：将 app_users.username 列改名为 nickname。
