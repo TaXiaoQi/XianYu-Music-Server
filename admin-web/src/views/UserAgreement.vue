@@ -208,7 +208,7 @@ onMounted(loadConfig)
   color: var(--text-muted);
 }
 .config-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 24px;
@@ -239,7 +239,7 @@ onMounted(loadConfig)
 .field input:focus,
 .field textarea:focus {
   border-color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
 }
 .content-field textarea {
   min-height: 360px;

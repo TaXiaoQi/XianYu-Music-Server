@@ -324,7 +324,7 @@ function clearMain() {
 .page-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin: 0; max-width: 560px; }
 
 /* ===== 卡片 ===== */
-.card { background: var(--white); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
+.card { background: var(--card-solid); border: 1px solid var(--border); border-radius: 14px; padding: 20px; margin-bottom: 16px; }
 .card-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; flex-wrap: wrap; gap: 12px; }
 .card-head-left { display: flex; flex-direction: column; gap: 2px; }
 .card-title { font-size: 16px; font-weight: 700; margin: 0; }
@@ -335,7 +335,7 @@ function clearMain() {
 .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 10px; border: none; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.25s; white-space: nowrap; }
 .btn-primary { background: var(--accent); color: #fff; }
 .btn-primary:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15); }
-.btn-outline { background: var(--white); border: 1px solid var(--border); color: var(--text-light); }
+.btn-outline { background: var(--card-solid); border: 1px solid var(--border); color: var(--text-light); }
 .btn-outline:hover:not(:disabled) { border-color: #ccc; color: var(--text); transform: translateY(-1px); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
@@ -349,7 +349,7 @@ function clearMain() {
 .summary-label { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 .summary-success { background: #f0fdf4; }
 .summary-success .summary-num { color: #16a34a; }
-.summary-failed { background: #fef2f2; }
+.summary-failed { background: rgba(236, 65, 65, 0.12); }
 .summary-failed .summary-num { color: #dc2626; }
 .summary-time { background: #f5f3ff; }
 .summary-time .summary-num { color: #7c3aed; }
@@ -357,14 +357,14 @@ function clearMain() {
 /* ===== 表格 ===== */
 .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; }
 .data-table { width: 100%; border-collapse: collapse; min-width: 720px; }
-.data-table th { padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; color: var(--text-muted); background: #fafafa; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.data-table td { padding: 10px 12px; font-size: 13px; color: var(--text); border-bottom: 1px solid #f5f5f5; vertical-align: middle; }
+.data-table th { padding: 10px 12px; text-align: left; font-size: 12px; font-weight: 600; color: var(--text-muted); background: var(--table-head-bg); border-bottom: 1px solid var(--border); white-space: nowrap; }
+.data-table td { padding: 10px 12px; font-size: 13px; color: var(--text); border-bottom: 1px solid var(--border); vertical-align: middle; }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tbody tr { transition: background 0.15s; }
-.data-table tbody tr:hover { background: #fafafa; }
-.data-table tbody tr.row-testing { background: #fbfbfe; }
-.data-table tbody tr.row-failed { background: #fffdfd; }
-.data-table tbody tr.row-failed:hover { background: #fff8f8; }
+.data-table tbody tr:hover { background: var(--table-row-hover); }
+.data-table tbody tr.row-testing { background: var(--control-bg); }
+.data-table tbody tr.row-failed { background: rgba(236, 65, 65, 0.05); }
+.data-table tbody tr.row-failed:hover { background: rgba(236, 65, 65, 0.08); }
 
 /* 表格行逐条加载动画（与数据库管理页一致） */
 .data-table tbody tr.row-anim {
@@ -387,7 +387,7 @@ function clearMain() {
 /* ===== 徽章 ===== */
 .badge { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 .badge-success { background: #f0fdf4; color: #16a34a; }
-.badge-error { background: #fef2f2; color: #dc2626; }
+.badge-error { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .badge-pending { background: #f5f5f5; color: var(--text-muted); }
 
 .testing-tag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600; color: #7c3aed; }

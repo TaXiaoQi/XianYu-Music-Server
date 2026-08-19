@@ -516,7 +516,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 .wp-header-info { min-width: 0; flex: 1; }
 .wp-title { font-size: 18px; font-weight: 850; margin: 0 0 4px; color: var(--text); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.pending-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; background: #fffbeb; color: #f59e0b; }
+.pending-badge { font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 20px; background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .wp-desc { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0; }
 .wp-add-btn {
   display: inline-flex;

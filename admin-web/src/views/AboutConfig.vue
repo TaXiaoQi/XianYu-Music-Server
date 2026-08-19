@@ -217,7 +217,7 @@ onMounted(loadConfig)
   color: var(--text-muted);
 }
 .config-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 24px;
@@ -253,13 +253,13 @@ onMounted(loadConfig)
   border-radius: 10px;
   padding: 10px 12px;
   outline: none;
-  background: #fafafa;
+  background: var(--control-bg);
   font-size: 14px;
   transition: border-color 0.2s, background 0.2s;
 }
 .field input:focus {
   border-color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
 }
 .switch-row {
   display: flex;

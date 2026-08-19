@@ -275,7 +275,7 @@ onMounted(load)
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--white);
+  background: var(--card-solid);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: transform 0.25s;
 }

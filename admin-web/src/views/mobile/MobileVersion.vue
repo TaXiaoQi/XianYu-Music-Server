@@ -478,9 +478,9 @@ onMounted(() => {
 .badge-desktop { background: #eff6ff; color: #3b82f6; }
 .badge-normal { background: #ecfdf5; color: #10b981; }
 .badge-update { background: #eff6ff; color: #3b82f6; }
-.badge-force { background: #fffbeb; color: #f59e0b; }
+.badge-force { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .badge-disabled { background: #f3f4f6; color: #6b7280; }
-.badge-crash { background: #fef2f2; color: #ef4444; }
+.badge-crash { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .badge-group { background: #f5f3ff; color: #8b5cf6; }
 
 /* Toggle */
@@ -492,7 +492,7 @@ onMounted(() => {
 }
 .ver-toggle-slider::before {
   content: ''; position: absolute; width: 16px; height: 16px; left: 3px; top: 3px;
-  background: var(--white); border-radius: 50%;
+  background: var(--card-solid); border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -524,7 +524,7 @@ onMounted(() => {
   transition: all 0.18s;
 }
 .ver-icon-btn:active { background: #f5f5f5; color: var(--text); }
-.ver-icon-danger:active { background: #fef2f2; color: #ef4444; }
+.ver-icon-danger:active { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 
 /* 表单 */
 .ver-form { display: flex; flex-direction: column; gap: 12px; }

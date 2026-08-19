@@ -338,7 +338,7 @@ onMounted(() => {
   align-items: center;
 }
 .stat-tag {
-  background: #f0f0f5;
+  background: var(--track);
   padding: 3px 10px;
   border-radius: 12px;
   font-size: 12px;
@@ -346,14 +346,14 @@ onMounted(() => {
   cursor: pointer;
   transition: background 0.15s;
 }
-.stat-tag:hover { background: #e4e4ee; }
+.stat-tag:hover { background: var(--table-row-hover); }
 .stat-tag b { font-weight: 700; }
 .stat-tag-total {
-  background: #fff0f0;
+  background: rgba(236, 65, 65, 0.10);
   color: #e74c3c;
   cursor: default;
 }
-.stat-tag-total:hover { background: #fff0f0; }
+.stat-tag-total:hover { background: rgba(236, 65, 65, 0.10); }
 .clear-btn {
   margin-left: auto;
   font-size: 12px;
@@ -375,7 +375,7 @@ onMounted(() => {
   border-radius: 6px;
   font-size: 13px;
   outline: none;
-  background: var(--white);
+  background: var(--card-solid);
 }
 .filters select:focus,
 .filters input:focus { border-color: var(--accent); }
@@ -408,7 +408,7 @@ onMounted(() => {
 .pagination button {
   padding: 6px 12px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
@@ -437,7 +437,7 @@ onMounted(() => {
   padding: 16px;
 }
 .modal {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 10px;
   border: 1px solid var(--border);
   overflow: hidden;
@@ -503,7 +503,7 @@ onMounted(() => {
 }
 .detail-section-label.clickable { cursor: pointer; }
 .error-message-box {
-  background: #fff5f5;
+  background: rgba(236, 65, 65, 0.10);
   padding: 10px 14px;
   border-radius: 6px;
   font-size: 13px;
@@ -517,10 +517,10 @@ onMounted(() => {
   max-height: 400px;
   overflow-x: auto;
   overflow-y: auto;
-  background: #fffafa;
+  background: rgba(236, 65, 65, 0.06);
   padding: 14px;
   border-radius: 6px;
-  border: 1px solid #ffe0e0;
+  border: 1px solid rgba(236, 65, 65, 0.18);
   line-height: 1.6;
   font-family: monospace;
 }
@@ -529,7 +529,7 @@ onMounted(() => {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 8px;
-  background: #f8f8fa;
+  background: var(--control-bg);
   padding: 10px;
   border-radius: 6px;
   max-height: 200px;

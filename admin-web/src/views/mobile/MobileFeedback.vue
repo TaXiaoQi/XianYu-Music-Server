@@ -967,9 +967,9 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   border-radius: 9px;
   display: flex; align-items: center; justify-content: center;
 }
-.stat-icon-total { background: rgba(59, 130, 246, 0.10); color: #3b82f6; }
+.stat-icon-total { background: var(--track); color: var(--text-light); }
 .stat-icon-pending { background: rgba(245, 158, 11, 0.12); color: #f59e0b; }
-.stat-icon-processing { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.stat-icon-processing { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 .stat-icon-resolved { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
 .stat-icon-rejected { background: rgba(236, 65, 65, 0.10); color: #EC4141; }
 .stat-num { font-size: 16px; font-weight: 850; line-height: 1; }
@@ -1108,9 +1108,9 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   padding: 2px 7px; border-radius: 999px;
   white-space: nowrap;
 }
-.type-problem { background: #fef2f2; color: #dc2626; }
-.type-suggestion { background: #eef2ff; color: #4f46e5; }
-.type-appeal { background: #fffbeb; color: #d97706; }
+.type-problem { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
+.type-suggestion { background: rgba(79, 70, 229, 0.12); color: #4f46e5; }
+.type-appeal { background: rgba(245, 158, 11, 0.14); color: #d97706; }
 .status-badge {
   display: inline-flex; align-items: center; gap: 3px;
   font-size: 10px; font-weight: 850;

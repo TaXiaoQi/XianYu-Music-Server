@@ -306,7 +306,7 @@ button, input, textarea, select { font-family: inherit; }
 .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); box-shadow: 0 10px 22px rgba(236,65,65,0.22); }
 .btn-sm { padding: 6px 12px; font-size: 12px; border-radius: 10px; }
 .btn-danger { background: var(--control-bg); color: #dc2626; border-color: var(--border); }
-.btn-danger:hover { background: #fff5f5; border-color: #f0b8b8; }
+.btn-danger:hover { background: rgba(236, 65, 65, 0.10); border-color: rgba(236, 65, 65, 0.30); }
 .btn-success { background: var(--control-bg); color: #16a34a; border-color: var(--border); }
 .btn-success:hover { background: #f0faf3; border-color: #b8e0c8; }
 
@@ -352,10 +352,10 @@ th { background: var(--table-head-bg); font-weight: 700; color: var(--text-light
 tbody tr { transition: background 0.18s, transform 0.18s; }
 tbody tr:hover { background: var(--table-row-hover); }
 .badge { display: inline-block; padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-.badge-success { background: #f0faf3; color: #1a7a3a; }
-.badge-error { background: #fff5f5; color: #c00; }
-.badge-info { background: #f0f5ff; color: #1a4a8a; }
-.badge-warning { background: #fffdf0; color: #b8860b; }
+.badge-success { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
+.badge-error { background: rgba(236, 65, 65, 0.10); color: #c00; }
+.badge-info { background: rgba(59, 130, 246, 0.14); color: #2563eb; }
+.badge-warning { background: rgba(245, 158, 11, 0.14); color: #d97706; }
 
 /* ---------- Toast ---------- */
 .toast {

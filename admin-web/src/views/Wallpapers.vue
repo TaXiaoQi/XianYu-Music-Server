@@ -669,7 +669,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 20px;
-  background: #fffbeb;
+  background: rgba(245, 158, 11, 0.14);
   color: #f59e0b;
 }
 .page-desc {
@@ -708,7 +708,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: var(--white);
+  background: var(--card-solid);
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
 }
 .limit-title {
@@ -758,7 +758,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 14px;
-  background: var(--white);
+  background: var(--card-solid);
   box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
 }
 .account-limit-head {
@@ -785,7 +785,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-light);
   font-size: 12px;
   font-weight: 600;
@@ -861,7 +861,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   padding: 8px 16px;
   border-radius: 20px;
   border: 1.5px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   font-size: 13px;
   font-weight: 500;
   color: var(--text-light);
@@ -921,7 +921,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 
 .wp-card {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 14px;
   border: 1px solid var(--border);
   overflow: hidden;
@@ -990,7 +990,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   backdrop-filter: blur(4px);
   transition: background 0.2s;
 }
-.overlay-btn:hover { background: var(--white); }
+.overlay-btn:hover { background: var(--card-solid); }
 
 /* 状态标签 */
 .status-tag {
@@ -1094,12 +1094,12 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 .act-btn:active { transform: scale(0.95); }
 .act-approve { background: #ecfdf5; color: #10b981; }
 .act-approve:hover { background: #d1fae5; }
-.act-reject { background: #fef2f2; color: #ef4444; }
+.act-reject { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .act-reject:hover { background: #fee2e2; }
-.act-disable { background: #fffbeb; color: #f59e0b; }
+.act-disable { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .act-disable:hover { background: #fef3c7; }
 .act-delete { background: #f5f5f5; color: #888; }
-.act-delete:hover { background: #fef2f2; color: #ef4444; }
+.act-delete:hover { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 
 /* ===== 弹窗 ===== */
 .modal-backdrop {
@@ -1115,7 +1115,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   padding: 20px;
 }
 .modal-dialog {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 18px;
   width: 100%;
   max-width: 480px;
@@ -1172,7 +1172,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 .field input:focus, .field textarea:focus {
   border-color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
 }
 
 /* 上传区域 */
@@ -1190,7 +1190,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   background: #fafafa;
 }
 .upload-zone:hover { border-color: var(--text-muted); background: #f5f5f5; }
-.upload-zone.dragging { border-color: var(--accent); background: #f0f0f0; }
+.upload-zone.dragging { border-color: var(--accent); background: var(--track); }
 .upload-zone.has-preview { border-style: solid; border-color: var(--border); }
 .upload-preview {
   max-width: 100%;
@@ -1244,7 +1244,7 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   padding: 10px 20px;
   border-radius: 10px;
   border: 1.5px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   font-size: 14px;
   font-weight: 500;
   color: var(--text-light);

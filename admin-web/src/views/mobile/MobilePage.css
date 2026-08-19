@@ -106,11 +106,11 @@
   color: var(--text-muted);
   font-size: 11px;
 }
-.mobile-stat .stat-icon-total { background: #f0f0f0; color: #1a1a1a; }
-.mobile-stat .stat-icon-on { background: #f0fdf4; color: #16a34a; }
-.mobile-stat .stat-icon-off { background: #fef2f2; color: #dc2626; }
-.mobile-stat .stat-icon-normal { background: #eff6ff; color: #3b82f6; }
-.mobile-stat .stat-icon-banned { background: #fef2f2; color: #dc2626; }
+.mobile-stat .stat-icon-total { background: var(--track); color: var(--text-light); }
+.mobile-stat .stat-icon-on { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.mobile-stat .stat-icon-off { background: rgba(236, 65, 65, 0.10); color: #dc2626; }
+.mobile-stat .stat-icon-normal { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.mobile-stat .stat-icon-banned { background: rgba(236, 65, 65, 0.10); color: #dc2626; }
 .mobile-stat > span:not(.stat-icon):not(.stat-label) {
   color: var(--text-muted);
   font-size: 11px;

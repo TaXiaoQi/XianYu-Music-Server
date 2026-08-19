@@ -495,7 +495,7 @@ onMounted(() => {
   color: var(--text-muted);
 }
 .config-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 24px;
@@ -594,7 +594,7 @@ onMounted(() => {
 .field input:focus,
 .field select:focus {
   border-color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb, 99, 102, 241), 0.08);
 }
 .field input:disabled,
@@ -644,7 +644,7 @@ onMounted(() => {
   padding: 18px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.04);
 }
 .policy-head {

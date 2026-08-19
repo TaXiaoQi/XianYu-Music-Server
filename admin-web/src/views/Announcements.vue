@@ -400,7 +400,7 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 .stat-chip {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 20px;
@@ -419,9 +419,9 @@ onMounted(() => {
   justify-content: center;
   flex-shrink: 0;
 }
-.stat-total .stat-icon { background: #f0f0f0; color: #1a1a1a; }
+.stat-total .stat-icon { background: var(--track); color: var(--text-light); }
 .stat-on .stat-icon { background: #f0fdf4; color: #16a34a; }
-.stat-off .stat-icon { background: #fef2f2; color: #dc2626; }
+.stat-off .stat-icon { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .stat-body { display: flex; flex-direction: column; }
 .stat-num { font-size: 26px; font-weight: 800; line-height: 1.1; color: var(--text); }
 .stat-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
@@ -477,7 +477,7 @@ onMounted(() => {
 
 .ann-card {
   display: flex;
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 14px;
   border: 1px solid var(--border);
   overflow: hidden;
@@ -539,7 +539,7 @@ onMounted(() => {
   letter-spacing: 0.02em;
 }
 .badge-info { background: #eff6ff; color: #3b82f6; }
-.badge-warning { background: #fffbeb; color: #f59e0b; }
+.badge-warning { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .badge-update { background: #ecfdf5; color: #10b981; }
 
 /* Toggle 开关 */
@@ -566,7 +566,7 @@ onMounted(() => {
   height: 16px;
   left: 3px;
   top: 3px;
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -650,7 +650,7 @@ onMounted(() => {
   color: var(--text);
 }
 .icon-btn-danger:hover {
-  background: #fef2f2;
+  background: rgba(236, 65, 65, 0.12);
   color: #ef4444;
 }
 
@@ -668,7 +668,7 @@ onMounted(() => {
   padding: 20px;
 }
 .modal-dialog {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 18px;
   width: 100%;
   max-width: 520px;
@@ -742,7 +742,7 @@ onMounted(() => {
 .field input:focus,
 .field textarea:focus {
   border-color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
 }
 .field-row {
   display: flex;
@@ -783,7 +783,7 @@ onMounted(() => {
 }
 .pick-info.active { background: #eff6ff; color: #3b82f6; }
 .pick-info.active .pick-dot { background: #3b82f6; }
-.pick-warning.active { background: #fffbeb; color: #f59e0b; }
+.pick-warning.active { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .pick-warning.active .pick-dot { background: #f59e0b; }
 .pick-update.active { background: #ecfdf5; color: #10b981; }
 .pick-update.active .pick-dot { background: #10b981; }
@@ -804,7 +804,7 @@ onMounted(() => {
   padding: 10px 20px;
   border-radius: 10px;
   border: 1.5px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   font-size: 14px;
   font-weight: 500;
   color: var(--text-light);

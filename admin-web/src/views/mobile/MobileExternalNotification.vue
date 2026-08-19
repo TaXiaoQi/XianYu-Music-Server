@@ -1433,13 +1433,13 @@ onMounted(() => {
   background: #eff6ff;
   color: #3b82f6;
 }
-.mi-orange { background: #fffbeb; color: #f59e0b; }
+.mi-orange { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .mi-blue { background: #eff6ff; color: #3b82f6; }
 .mi-green { background: #f0fdf4; color: #16a34a; }
 .mi-purple { background: #faf5ff; color: #a855f7; }
 .mi-pink { background: #fdf2f8; color: #ec4899; }
 .mi-cyan { background: #ecfeff; color: #06b6d4; }
-.mi-red { background: #fef2f2; color: #ef4444; }
+.mi-red { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .module-text { min-width: 0; flex: 1; }
 .module-name { font-size: 15px; font-weight: 750; margin: 0; color: var(--text); }
 .module-desc { font-size: 11px; color: var(--text-muted); line-height: 1.5; margin: 2px 0 0; }
@@ -1467,8 +1467,8 @@ onMounted(() => {
 }
 .mi-wallpaper { background: #f0fdf4; color: #16a34a; }
 .mi-avatar { background: #eff6ff; color: #3b82f6; }
-.mi-nickname { background: #fffbeb; color: #f59e0b; }
-.mi-feedback { background: #fef2f2; color: #ef4444; }
+.mi-nickname { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.mi-feedback { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .module-item-text {
   display: flex;
   flex-direction: column;
@@ -1496,7 +1496,7 @@ onMounted(() => {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--white);
+  background: var(--card-solid);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: transform 0.25s;
 }
@@ -1602,7 +1602,7 @@ onMounted(() => {
 }
 .stat-icon-total { background: #eff6ff; color: #3b82f6; }
 .stat-icon-active { background: #f0fdf4; color: #16a34a; }
-.stat-icon-disabled { background: #fef2f2; color: #ef4444; }
+.stat-icon-disabled { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .stat-body { display: flex; flex-direction: column; min-width: 0; }
 .stat-label { font-size: 10px; color: var(--text-muted); }
 .stat-num { font-size: 18px; font-weight: 850; line-height: 1.2; color: var(--text); }

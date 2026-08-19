@@ -331,19 +331,33 @@ async fn spa_fallback(State(state): State<AppState>, req: Request<Body>) -> Resp
     match tokio::fs::read(&file_path).await {
         Ok(bytes) => {
             let ctype = mime_of(&file_path);
-            (
-                StatusCode::OK,
-                [(axum::http::header::CONTENT_TYPE, ctype)],
-                bytes,
-            )
-                .into_response()
+            let is_html = ctype.starts_with("text/html");
+            let mut hm = axum::http::HeaderMap::new();
+            hm.insert(
+                axum::http::header::CONTENT_TYPE,
+                axum::http::HeaderValue::from_str(ctype).expect("valid content-type"),
+            );
+            hm.insert(
+                axum::http::header::CACHE_CONTROL,
+                axum::http::HeaderValue::from_static(if is_html {
+                    // index.html / SPA 路由始终 no-cache，发版后浏览器即时拿到新 chunk 引用
+                    "no-cache"
+                } else {
+                    // 带内容 hash 的静态资源可永久缓存
+                    "public, max-age=31536000, immutable"
+                }),
+            );
+            (StatusCode::OK, hm, bytes).into_response()
         }
         Err(_) => {
             // 资源不存在时仍回退 index.html（200），保证 SPA 可用
             match tokio::fs::read(&index_file).await {
                 Ok(bytes) => (
                     StatusCode::OK,
-                    [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                    [
+                        (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                        (axum::http::header::CACHE_CONTROL, "no-cache"),
+                    ],
                     bytes,
                 )
                     .into_response(),

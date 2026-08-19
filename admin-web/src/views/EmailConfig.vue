@@ -477,7 +477,7 @@ onMounted(loadConfig)
   color: var(--text-muted);
 }
 .config-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 24px;
@@ -525,7 +525,7 @@ onMounted(loadConfig)
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--white);
+  background: var(--card-solid);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: transform 0.25s;
 }
@@ -571,7 +571,7 @@ onMounted(loadConfig)
 }
 .field input:focus {
   border-color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
 }
 .hint {
   margin: 22px 0 0;
@@ -723,7 +723,7 @@ onMounted(loadConfig)
 }
 .test-input:focus {
   border-color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
 }
 .btn-test {
   display: inline-flex;

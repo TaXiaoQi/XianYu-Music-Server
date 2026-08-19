@@ -1719,7 +1719,7 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 .stat-chip {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px 16px;
@@ -1744,7 +1744,7 @@ onMounted(() => {
 }
 .stat-icon-total { background: #eff6ff; color: #3b82f6; }
 .stat-icon-active { background: #f0fdf4; color: #16a34a; }
-.stat-icon-disabled { background: #fef2f2; color: #ef4444; }
+.stat-icon-disabled { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .stat-body {
   display: flex;
   flex-direction: column;
@@ -1850,8 +1850,8 @@ onMounted(() => {
 }
 .mi-wallpaper { background: #f0fdf4; color: #16a34a; }
 .mi-avatar { background: #eff6ff; color: #3b82f6; }
-.mi-nickname { background: #fffbeb; color: #f59e0b; }
-.mi-feedback { background: #fef2f2; color: #ef4444; }
+.mi-nickname { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.mi-feedback { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .module-item-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .module-item-name { font-size: 13px; font-weight: 600; color: var(--text); }
 .module-item-desc { font-size: 11px; color: var(--text-muted); }
@@ -1883,7 +1883,7 @@ onMounted(() => {
 
 /* ===== 通知设置 ===== */
 .settings-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px;
@@ -1969,7 +1969,7 @@ onMounted(() => {
   display: flex;
   align-items: flex-start;
   gap: 14px;
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 16px;
@@ -2083,7 +2083,7 @@ onMounted(() => {
   white-space: nowrap;
 }
 .btn-action:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
-.btn-action.btn-danger:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; }
+.btn-action.btn-danger:hover { border-color: #ef4444; color: #ef4444; background: rgba(236, 65, 65, 0.12); }
 
 /* ===== 弹窗 ===== */
 .modal-backdrop {
@@ -2445,7 +2445,7 @@ onMounted(() => {
   font-size: 14px;
   font-family: inherit;
   outline: none;
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   transition: border-color 0.2s;
   box-sizing: border-box;
@@ -2512,7 +2512,7 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 10px;
   transition: all 0.2s;
@@ -2570,7 +2570,7 @@ onMounted(() => {
 .client-card {
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--white);
+  background: var(--card-solid);
   overflow: hidden;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -2733,7 +2733,7 @@ onMounted(() => {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--white);
+  background: var(--card-solid);
   font-size: 12px;
 }
 .log-item-head {
@@ -2752,8 +2752,8 @@ onMounted(() => {
 }
 .log-method.GET { background: #eff6ff; color: #3b82f6; }
 .log-method.POST { background: #f0fdf4; color: #16a34a; }
-.log-method.PUT { background: #fffbeb; color: #f59e0b; }
-.log-method.DELETE { background: #fef2f2; color: #ef4444; }
+.log-method.PUT { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.log-method.DELETE { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .log-method.PATCH { background: #f5f3ff; color: #8b5cf6; }
 .log-path {
   font-weight: 600;
@@ -2798,7 +2798,7 @@ onMounted(() => {
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--white);
+  background: var(--card-solid);
 }
 .client-info {
   display: flex;
@@ -2895,16 +2895,16 @@ onMounted(() => {
   border-radius: 8px;
 }
 .btn-add.btn-small { padding: 7px 12px; font-size: 12px; border-radius: 8px; }
-.btn-ghost.btn-danger:hover { border-color: #ef4444; color: #ef4444; background: #fef2f2; }
+.btn-ghost.btn-danger:hover { border-color: #ef4444; color: #ef4444; background: rgba(236, 65, 65, 0.12); }
 
 /* ==================== 图标配色 ==================== */
-.mi-orange { background: #fffbeb; color: #f59e0b; }
+.mi-orange { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .mi-blue { background: #eff6ff; color: #3b82f6; }
 .mi-green { background: #f0fdf4; color: #16a34a; }
 .mi-purple { background: #f5f3ff; color: #8b5cf6; }
 .mi-pink { background: #fdf2f8; color: #ec4899; }
 .mi-cyan { background: #ecfeff; color: #06b6d4; }
-.mi-red { background: #fef2f2; color: #ef4444; }
+.mi-red { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .mi-server { background: #eff6ff; color: #3b82f6; }
 
 /* ==================== 鉴权面板 ==================== */

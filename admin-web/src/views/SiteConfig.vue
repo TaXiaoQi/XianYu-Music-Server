@@ -194,7 +194,7 @@ onMounted(async () => {
   color: var(--text-muted);
 }
 .config-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 24px;
@@ -217,7 +217,7 @@ onMounted(async () => {
   height: 120px;
   border-radius: 16px;
   border: 1px solid var(--border);
-  background: #fafafa;
+  background: var(--control-bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -248,7 +248,7 @@ onMounted(async () => {
   height: 40px;
   border-radius: 9px;
   border: 1px solid var(--border);
-  background: #fafafa;
+  background: var(--control-bg);
 }
 .favicon-img {
   width: 24px;
@@ -273,7 +273,7 @@ onMounted(async () => {
 }
 .btn-pick {
   border: 1.5px solid var(--border);
-  background: #fafafa;
+  background: var(--control-bg);
   color: var(--text);
   border-radius: 10px;
   padding: 9px 18px;
@@ -285,7 +285,7 @@ onMounted(async () => {
 .btn-pick:hover {
   border-color: var(--accent);
   color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
 }
 .file-name {
   font-size: 13px;
@@ -299,7 +299,7 @@ onMounted(async () => {
   padding: 12px;
   border: 1px dashed var(--border);
   border-radius: 12px;
-  background: #fafafa;
+  background: var(--control-bg);
 }
 .preview-new-img {
   width: 48px;

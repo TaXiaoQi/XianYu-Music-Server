@@ -205,7 +205,7 @@ onUnmounted(() => stopPolling())
   font-weight: 700;
   padding: 3px 9px;
   border-radius: 20px;
-  background: #fffbeb;
+  background: rgba(245, 158, 11, 0.14);
   color: #f59e0b;
   animation: badgePulse 2s ease-in-out infinite;
 }

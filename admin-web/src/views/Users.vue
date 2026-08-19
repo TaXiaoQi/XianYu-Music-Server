@@ -234,7 +234,7 @@
           <label>当前听歌时长</label>
           <input :value="resetForm.duration" type="text" disabled />
         </div>
-        <div style="background:#fffdf0;border:1px solid #e0d090;color:#b8860b;padding:10px 14px;border-radius:6px;font-size:12px;">
+        <div style="background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.30);color:#f59e0b;padding:10px 14px;border-radius:6px;font-size:12px;">
           重置后听歌时长与新歌数将清零，此操作不可恢复。
         </div>
         <div class="modal-actions">
@@ -1119,7 +1119,7 @@ onMounted(() => {
   font-size: 13px;
   outline: none;
   min-width: 180px;
-  background: var(--white);
+  background: var(--card-solid);
 }
 .search-box input:focus { border-color: var(--accent); }
 
@@ -1243,7 +1243,7 @@ onMounted(() => {
   height: 16px;
   border: 1.5px solid var(--border);
   border-radius: 5px;
-  background: var(--white);
+  background: var(--card-solid);
   cursor: pointer;
   transition: all 0.15s;
   vertical-align: -2px;
@@ -1347,7 +1347,7 @@ onMounted(() => {
 .pagination button {
   padding: 6px 12px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
@@ -1384,7 +1384,7 @@ onMounted(() => {
   padding: 16px;
 }
 .modal {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 8px;
   padding: 28px;
   width: 500px;
@@ -1416,7 +1416,7 @@ onMounted(() => {
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
-  background: var(--white);
+  background: var(--card-solid);
 }
 .form-group input:focus { border-color: var(--accent); }
 .form-group input:disabled { background: #fafafa; color: var(--text-muted); }
@@ -1428,7 +1428,7 @@ onMounted(() => {
   font-size: 14px;
   outline: none;
   transition: border-color 0.15s;
-  background: var(--white);
+  background: var(--card-solid);
   resize: vertical;
   font-family: inherit;
   line-height: 1.5;

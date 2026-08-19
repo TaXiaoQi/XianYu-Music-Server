@@ -311,8 +311,11 @@ const icons = {
   overflow-y: auto;
   padding: 18px 20px 0;
   border-radius: 22px;
-  background: var(--card-solid, var(--card));
+  border: 1px solid var(--border);
+  background: var(--card-solid, #ffffff);
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   z-index: 99999;
 }
 .notify-panel-head {
@@ -498,7 +501,7 @@ const icons = {
   gap: 8px;
   padding: 4px 10px;
   border-radius: 20px;
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   font-size: 13px;
   font-weight: 600;

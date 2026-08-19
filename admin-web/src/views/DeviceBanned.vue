@@ -611,7 +611,7 @@ onMounted(loadDevices)
   font-size: 13px;
   outline: none;
   min-width: 180px;
-  background: var(--white);
+  background: var(--card-solid);
 }
 .search-box input:focus { border-color: var(--accent); }
 
@@ -643,7 +643,7 @@ onMounted(loadDevices)
   height: 16px;
   border: 1.5px solid var(--border);
   border-radius: 5px;
-  background: var(--white);
+  background: var(--card-solid);
   cursor: pointer;
   transition: all 0.15s;
   vertical-align: -2px;
@@ -657,7 +657,7 @@ onMounted(loadDevices)
 
 /* 手动封禁面板 */
 .ban-panel {
-  background: linear-gradient(135deg, #fff 0%, #fef2f2 100%);
+  background: linear-gradient(135deg, var(--control-bg) 0%, rgba(236, 65, 65, 0.10) 100%);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px 16px;
@@ -672,7 +672,7 @@ onMounted(loadDevices)
   font-size: 13px;
   min-width: 180px;
   outline: none;
-  background: var(--white);
+  background: var(--card-solid);
   transition: border-color 0.2s;
 }
 .ban-input:focus { border-color: #dc2626; }
@@ -715,7 +715,7 @@ onMounted(loadDevices)
   align-items: center;
   gap: 12px;
   padding: 14px 18px;
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
@@ -729,14 +729,14 @@ onMounted(loadDevices)
 }
 .stat-icon-total { background: #eff6ff; color: #3b82f6; }
 .stat-icon-active { background: #f0fdf4; color: #16a34a; }
-.stat-icon-banned { background: #fef2f2; color: #dc2626; }
+.stat-icon-banned { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .stat-body { display: flex; flex-direction: column; }
 .stat-num { font-size: 22px; font-weight: 800; line-height: 1.2; }
 .stat-label { font-size: 12px; color: var(--text-muted); }
 
 /* 卡片 */
 .card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
@@ -797,17 +797,17 @@ tbody tr:hover td { background: #fafbfc; }
 /* 徽章 */
 .badge { display: inline-flex; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 .badge-success { background: #f0fdf4; color: #16a34a; }
-.badge-error { background: #fef2f2; color: #dc2626; }
+.badge-error { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .badge-info { background: #eff6ff; color: #3b82f6; }
 
 /* 按钮 */
-.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--white); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-solid); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
 .btn-primary:hover:not(:disabled) { background: #000; border-color: #000; color: #fff; }
 .btn-dark { background: var(--accent); color: #fff; border-color: var(--accent); }
 .btn-dark:hover:not(:disabled) { background: #000; border-color: #000; }
-.btn-danger { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+.btn-danger { background: rgba(236, 65, 65, 0.12); color: #dc2626; border-color: rgba(236, 65, 65, 0.25); }
 .btn-danger:hover:not(:disabled) { background: #dc2626; color: #fff; border-color: #dc2626; }
 .btn-success { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
 .btn-success:hover:not(:disabled) { background: #16a34a; color: #fff; border-color: #16a34a; }
@@ -839,7 +839,7 @@ tbody tr:hover td { background: #fafbfc; }
   padding: 0 0 16px;
 }
 .pagination button {
-  padding: 6px 12px; border: 1px solid var(--border); background: var(--white);
+  padding: 6px 12px; border: 1px solid var(--border); background: var(--card-solid);
   border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.15s;
 }
 .pagination button:hover:not(.active):not(:disabled) { border-color: var(--accent); color: var(--accent); }
@@ -859,7 +859,7 @@ tbody tr:hover td { background: #fafbfc; }
   padding: 16px;
 }
 .modal {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 8px;
   padding: 28px;
   width: 500px;
@@ -909,7 +909,7 @@ tbody tr:hover td { background: #fafbfc; }
 .ban-detail-box {
   margin-top: 12px;
   padding: 10px 14px;
-  background: #fef2f2;
+  background: rgba(236, 65, 65, 0.12);
   border: 1px solid #fecaca;
   border-radius: 8px;
   display: flex;

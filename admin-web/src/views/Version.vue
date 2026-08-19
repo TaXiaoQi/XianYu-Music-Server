@@ -446,7 +446,7 @@ onMounted(() => {
   margin-bottom: 20px;
 }
 .stat-chip {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 16px;
   padding: 20px;
@@ -465,9 +465,9 @@ onMounted(() => {
   justify-content: center;
   flex-shrink: 0;
 }
-.stat-total .stat-icon { background: #f0f0f0; color: #1a1a1a; }
-.stat-on .stat-icon { background: #f0fdf4; color: #16a34a; }
-.stat-off .stat-icon { background: #fef2f2; color: #dc2626; }
+.stat-total .stat-icon { background: var(--track); color: var(--text-light); }
+.stat-on .stat-icon { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
+.stat-off .stat-icon { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .stat-body { display: flex; flex-direction: column; }
 .stat-num { font-size: 26px; font-weight: 800; line-height: 1.1; color: var(--text); }
 .stat-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
@@ -552,7 +552,7 @@ onMounted(() => {
   gap: 8px;
   padding: 10px 18px;
   border-radius: 10px;
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   transition: all 0.2s;
 }
@@ -646,7 +646,7 @@ onMounted(() => {
 /* ===== 桌面端卡片 ===== */
 .desktop-card {
   display: flex;
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 14px;
   border: 1px solid var(--border);
   overflow: hidden;
@@ -670,7 +670,7 @@ onMounted(() => {
 
 .ann-card {
   display: flex;
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 14px;
   border: 1px solid var(--border);
   overflow: hidden;
@@ -727,13 +727,13 @@ onMounted(() => {
   font-weight: 600;
   letter-spacing: 0.02em;
 }
-.badge-desktop { background: #eff6ff; color: #3b82f6; }
-.badge-normal { background: #ecfdf5; color: #10b981; }
-.badge-update { background: #eff6ff; color: #3b82f6; }
-.badge-force { background: #fffbeb; color: #f59e0b; }
-.badge-disabled { background: #f3f4f6; color: #6b7280; }
-.badge-crash { background: #fef2f2; color: #ef4444; }
-.badge-group { background: #f5f3ff; color: #8b5cf6; }
+.badge-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.badge-normal { background: rgba(34, 197, 94, 0.14); color: #10b981; }
+.badge-update { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.badge-force { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.badge-disabled { background: var(--track); color: var(--text-muted); }
+.badge-crash { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
+.badge-group { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 
 /* Toggle 开关 */
 .toggle-switch {
@@ -748,7 +748,7 @@ onMounted(() => {
 .toggle-slider {
   position: absolute;
   inset: 0;
-  background: #d1d5db;
+  background: var(--track);
   border-radius: 22px;
   transition: background 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -759,7 +759,7 @@ onMounted(() => {
   height: 16px;
   left: 3px;
   top: 3px;
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 50%;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
@@ -848,11 +848,11 @@ onMounted(() => {
   transition: all 0.2s;
 }
 .icon-btn:hover {
-  background: #f5f5f5;
+  background: var(--track);
   color: var(--text);
 }
 .icon-btn-danger:hover {
-  background: #fef2f2;
+  background: rgba(236, 65, 65, 0.12);
   color: #ef4444;
 }
 
@@ -866,7 +866,7 @@ onMounted(() => {
 .pagination button {
   padding: 6px 12px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 4px;
   cursor: pointer;
   font-size: 12px;
@@ -898,7 +898,7 @@ onMounted(() => {
 }
 .modal-backdrop.channel-backdrop { z-index: 10010; }
 .modal-dialog {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 18px;
   width: 100%;
   max-width: 560px;
@@ -932,7 +932,7 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s;
 }
-.modal-close:hover { background: #f5f5f5; color: var(--text); }
+.modal-close:hover { background: var(--track); color: var(--text); }
 
 .modal-form {
   padding: 0 24px;
@@ -959,7 +959,7 @@ onMounted(() => {
   border-radius: 10px;
   font-size: 14px;
   outline: none;
-  background: #fafafa;
+  background: var(--control-bg);
   font-family: inherit;
   resize: vertical;
   transition: border-color 0.2s, background 0.2s;
@@ -967,7 +967,7 @@ onMounted(() => {
 .field input:focus,
 .field textarea:focus {
   border-color: var(--accent);
-  background: var(--white);
+  background: var(--card-solid);
 }
 
 /* 渠道卡片 */
@@ -980,7 +980,7 @@ onMounted(() => {
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--control-bg, #fafafa);
+  background: var(--control-bg);
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -1007,7 +1007,7 @@ onMounted(() => {
   padding: 8px 14px;
   border-radius: 10px;
   border: 1.5px solid var(--border);
-  background: #fafafa;
+  background: var(--control-bg);
   font-size: 13px;
   font-weight: 500;
   color: var(--text-light);
@@ -1023,12 +1023,12 @@ onMounted(() => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #d1d5db;
+  background: var(--track);
   transition: background 0.2s;
 }
-.pick-enable.active { background: #ecfdf5; color: #10b981; }
+.pick-enable.active { background: rgba(34, 197, 94, 0.14); color: #10b981; }
 .pick-enable.active .pick-dot { background: #10b981; }
-.pick-disable.active { background: #f9fafb; color: #6b7280; }
+.pick-disable.active { background: var(--control-bg); color: #6b7280; }
 .pick-disable.active .pick-dot { background: #6b7280; }
 
 /* 渠道选项 */
@@ -1044,7 +1044,7 @@ onMounted(() => {
   padding: 14px;
   border: 1.5px solid var(--border);
   border-radius: 10px;
-  background: #fafafa;
+  background: var(--control-bg);
   color: var(--text);
   cursor: pointer;
   text-align: left;
@@ -1070,7 +1070,7 @@ onMounted(() => {
   padding: 20px;
   border: 1.5px dashed var(--border);
   border-radius: 14px;
-  background: #fafafa;
+  background: var(--control-bg);
   cursor: pointer;
   text-align: center;
   transition: border-color 0.2s, background 0.2s, transform 0.2s, box-shadow 0.2s;
@@ -1112,7 +1112,7 @@ onMounted(() => {
 .progress-bar-track {
   flex: 1;
   height: 8px;
-  background: #e0e0e8;
+  background: var(--track);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -1140,14 +1140,14 @@ onMounted(() => {
   padding: 10px 20px;
   border-radius: 10px;
   border: 1.5px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   font-size: 14px;
   font-weight: 500;
   color: var(--text-light);
   cursor: pointer;
   transition: all 0.2s;
 }
-.btn-cancel:hover { background: #f5f5f5; }
+.btn-cancel:hover { background: var(--track); }
 .btn-save {
   display: inline-flex;
   align-items: center;

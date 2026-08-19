@@ -867,7 +867,7 @@ onMounted(() => {
   font-weight: 600;
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   border: 1px solid var(--border);
 }
@@ -904,22 +904,20 @@ onMounted(() => {
   50% { opacity: 0.35; }
 }
 .btn-warning {
-  background: #fff;
+  background: var(--card-solid);
   color: #d97706;
-  border-color: #e5e5e5;
+  border-color: var(--border);
 }
 .btn-warning:hover {
-  background: #fffbeb;
-  border-color: #fcd34d;
+  background: rgba(245, 158, 11, 0.14);
 }
 .btn-danger {
-  background: #fff;
+  background: var(--card-solid);
   color: #dc2626;
-  border-color: #e5e5e5;
+  border-color: var(--border);
 }
 .btn-danger:hover {
-  background: #fef2f2;
-  border-color: #fca5a5;
+  background: rgba(236, 65, 65, 0.12);
 }
 .btn:hover {
   transform: translateY(-1px);
@@ -944,7 +942,7 @@ onMounted(() => {
   padding: 10px 16px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
@@ -966,7 +964,7 @@ onMounted(() => {
   margin-bottom: 18px;
 }
 .stat-chip {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px 16px;
@@ -985,17 +983,17 @@ onMounted(() => {
   justify-content: center;
   flex-shrink: 0;
 }
-.stat-icon-total { background: #f0f0f0; color: #1a1a1a; }
-.stat-icon-exist { background: #f0fdf4; color: #16a34a; }
-.stat-icon-miss { background: #fef2f2; color: #dc2626; }
-.stat-icon-backup { background: #eff6ff; color: #3b82f6; }
+.stat-icon-total { background: var(--track); color: var(--text-light); }
+.stat-icon-exist { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
+.stat-icon-miss { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
+.stat-icon-backup { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 .stat-body { display: flex; flex-direction: column; }
 .stat-num { font-size: 22px; font-weight: 800; line-height: 1.1; color: var(--text); }
 .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
 
 /* ===== 区块卡片 ===== */
 .section-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px 20px;
@@ -1026,7 +1024,7 @@ onMounted(() => {
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 12px;
   overflow: hidden;
   border: 1px solid var(--border);
@@ -1037,7 +1035,7 @@ onMounted(() => {
   font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
-  background: #fafafa;
+  background: var(--control-bg);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -1048,7 +1046,7 @@ onMounted(() => {
   border-bottom: 1px solid #f5f5f5;
 }
 .data-table tr:last-child td { border-bottom: none; }
-.data-table tr:hover td { background: #fafbfc; }
+.data-table tr:hover td { background: var(--table-row-hover); }
 .data-table.compact th,
 .data-table.compact td {
   padding: 8px 12px;
@@ -1090,8 +1088,8 @@ onMounted(() => {
   font-size: 11px;
   font-weight: 600;
 }
-.badge-success { background: #f0fdf4; color: #16a34a; }
-.badge-error { background: #fef2f2; color: #dc2626; }
+.badge-success { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
+.badge-error { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 
 /* 行操作 */
 .row-actions {
@@ -1149,7 +1147,7 @@ onMounted(() => {
   padding: 20px;
 }
 .modal-dialog {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 16px;
   width: 100%;
   max-width: 800px;
@@ -1181,7 +1179,7 @@ onMounted(() => {
   width: 32px;
   height: 32px;
   border: none;
-  background: #f5f5f5;
+  background: var(--track);
   border-radius: 8px;
   cursor: pointer;
   display: flex;
@@ -1191,7 +1189,7 @@ onMounted(() => {
   transition: all 0.2s;
   flex-shrink: 0;
 }
-.modal-close:hover { background: #e5e5e5; color: var(--text); }
+.modal-close:hover { background: var(--table-row-hover); color: var(--text); }
 .modal-body {
   padding: 20px;
   overflow-y: auto;
@@ -1211,14 +1209,14 @@ onMounted(() => {
   padding: 9px 18px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-light);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
 }
-.btn-cancel:hover { background: #f5f5f5; }
+.btn-cancel:hover { background: var(--track); }
 
 /* SQL 内容 */
 .sql-pre {
@@ -1257,7 +1255,7 @@ onMounted(() => {
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   font-size: 13px;
   min-width: 160px;
@@ -1273,7 +1271,7 @@ onMounted(() => {
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   font-size: 13px;
 }
@@ -1316,7 +1314,7 @@ onMounted(() => {
 .form-desc {
   margin-top: 14px;
   padding: 12px 14px;
-  background: #fafafa;
+  background: var(--control-bg);
   border-radius: 10px;
   border: 1px solid var(--border);
 }
@@ -1341,7 +1339,7 @@ onMounted(() => {
 .toggle-slider {
   position: absolute;
   inset: 0;
-  background: #d1d5db;
+  background: var(--track);
   border-radius: 24px;
   transition: background 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -1370,7 +1368,7 @@ onMounted(() => {
 .pagination button {
   padding: 6px 12px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 8px;
   cursor: pointer;
   font-size: 12px;

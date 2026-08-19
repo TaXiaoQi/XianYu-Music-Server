@@ -1449,7 +1449,7 @@ onUnmounted(() => {
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 20px;
-  background: #fffbeb;
+  background: rgba(245, 158, 11, 0.14);
   color: #f59e0b;
   animation: badgePulse 2s ease-in-out infinite;
 }
@@ -1471,7 +1471,7 @@ onUnmounted(() => {
   padding: 10px 18px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
@@ -1493,7 +1493,7 @@ onUnmounted(() => {
   padding: 10px 18px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
@@ -1509,8 +1509,8 @@ onUnmounted(() => {
   gap: 6px;
   padding: 10px 18px;
   border-radius: 10px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
+  border: 1px solid rgba(79, 70, 229, 0.30);
+  background: rgba(79, 70, 229, 0.10);
   color: #4f46e5;
   font-size: 14px;
   font-weight: 600;
@@ -1518,7 +1518,7 @@ onUnmounted(() => {
   white-space: nowrap;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.btn-limit:hover { border-color: #4f46e5; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15); }
+.btn-limit:hover { border-color: #6366f1; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15); }
 .btn-limit:active { transform: scale(0.96); }
 .btn-create {
   display: inline-flex;
@@ -1553,7 +1553,7 @@ onUnmounted(() => {
   padding: 7px 14px;
   border-radius: 9px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-light);
   font-size: 12px;
   font-weight: 600;
@@ -1573,7 +1573,7 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
-  background: var(--white);
+  background: var(--card-solid);
   cursor: pointer;
   white-space: nowrap;
   transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.16s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1597,8 +1597,8 @@ onUnmounted(() => {
   font-weight: 700;
   white-space: nowrap;
 }
-.type-suggestion { background: #eef2ff; color: #4f46e5; }
-.type-problem { background: #fef2f2; color: #dc2626; }
+.type-suggestion { background: rgba(79, 70, 229, 0.12); color: #4f46e5; }
+.type-problem { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .card-top-right { display: flex; align-items: center; gap: 8px; }
 
 /* ===== 图片缩略图（堆叠，仅显示第一张） ===== */
@@ -1659,7 +1659,7 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+  background: var(--card);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 16px 18px;
@@ -1676,7 +1676,7 @@ onUnmounted(() => {
   width: 42px;
   height: 42px;
   border-radius: 12px;
-  background: #eef2ff;
+  background: rgba(79, 70, 229, 0.12);
   color: #4f46e5;
   display: flex;
   align-items: center;
@@ -1737,7 +1737,7 @@ onUnmounted(() => {
   border-radius: 8px;
   font-size: 13px;
   color: var(--text);
-  background: var(--white);
+  background: var(--card-solid);
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -1769,7 +1769,7 @@ onUnmounted(() => {
   padding: 0 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-light);
   font-size: 12px;
   font-weight: 600;
@@ -1814,7 +1814,7 @@ onUnmounted(() => {
   margin-bottom: 20px;
 }
 .stat-chip {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px 16px;
@@ -1832,11 +1832,11 @@ onUnmounted(() => {
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.stat-icon-total { background: #f0f0f0; color: #1a1a1a; }
-.stat-icon-pending { background: #fffbeb; color: #f59e0b; }
-.stat-icon-processing { background: #eff6ff; color: #3b82f6; }
-.stat-icon-resolved { background: #f0fdf4; color: #16a34a; }
-.stat-icon-rejected { background: #fef2f2; color: #dc2626; }
+.stat-icon-total { background: var(--track); color: var(--text-light); }
+.stat-icon-pending { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.stat-icon-processing { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.stat-icon-resolved { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
+.stat-icon-rejected { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .stat-body { display: flex; flex-direction: column; }
 .stat-num { font-size: 22px; font-weight: 800; line-height: 1.1; color: var(--text); }
 .stat-label { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
@@ -1845,7 +1845,7 @@ onUnmounted(() => {
 .fb-list { display: flex; flex-direction: column; gap: 14px; }
 .fb-card {
   position: relative;
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px 20px;
@@ -1873,9 +1873,9 @@ onUnmounted(() => {
 .user-avatar {
   width: 36px; height: 36px;
   border-radius: 50%;
-  background: #f0f0f0;
+  background: var(--track);
   display: flex; align-items: center; justify-content: center;
-  color: #999;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 .user-avatar.avatar-img { object-fit: cover; cursor: zoom-in; }
@@ -1892,10 +1892,10 @@ onUnmounted(() => {
   font-size: 12px;
   font-weight: 600;
 }
-.badge-pending { background: #fffbeb; color: #f59e0b; }
-.badge-processing { background: #eff6ff; color: #3b82f6; }
-.badge-resolved { background: #f0fdf4; color: #16a34a; }
-.badge-rejected { background: #fef2f2; color: #dc2626; }
+.badge-pending { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.badge-processing { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.badge-resolved { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
+.badge-rejected { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 
 .card-body { margin-bottom: 12px; }
 .fb-content {
@@ -1927,8 +1927,8 @@ onUnmounted(() => {
   align-items: center;
   padding: 3px 8px;
   border-radius: 999px;
-  background: #f4f4f5;
-  color: #52525b;
+  background: var(--track);
+  color: var(--text-light);
   font-size: 11px;
   font-weight: 600;
 }
@@ -1964,20 +1964,20 @@ onUnmounted(() => {
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .act-btn:active { transform: scale(0.95); }
-.act-log { background: #f4f4f5; color: #52525b; }
-.act-log:hover { background: #e4e4e7; }
-.act-resolve { background: #f0fdf4; color: #16a34a; }
-.act-resolve:hover { background: #dcfce7; }
-.act-reject { background: #fef2f2; color: #dc2626; }
-.act-reject:hover { background: #fee2e2; }
-.act-claim { background: #eff6ff; color: #3b82f6; }
-.act-claim:hover { background: #dbeafe; }
-.act-collab { background: #eff6ff; color: #2563eb; border: 1px solid rgba(37, 99, 235, 0.35); }
-.act-collab:hover { background: #dbeafe; }
-.act-transfer { background: #f5f0ff; color: #8b5cf6; }
-.act-transfer:hover { background: #ede9fe; }
-.act-abandon { background: #fffbeb; color: #d97706; }
-.act-abandon:hover { background: #fef3c7; }
+.act-log { background: var(--track); color: var(--text-light); }
+.act-log:hover { background: var(--table-row-hover); }
+.act-resolve { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
+.act-resolve:hover { background: rgba(34, 197, 94, 0.22); }
+.act-reject { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
+.act-reject:hover { background: rgba(236, 65, 65, 0.20); }
+.act-claim { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.act-claim:hover { background: rgba(59, 130, 246, 0.20); }
+.act-collab { background: rgba(59, 130, 246, 0.12); color: #2563eb; border: 1px solid rgba(37, 99, 235, 0.35); }
+.act-collab:hover { background: rgba(59, 130, 246, 0.20); }
+.act-transfer { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.act-transfer:hover { background: rgba(139, 92, 246, 0.20); }
+.act-abandon { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+.act-abandon:hover { background: rgba(245, 158, 11, 0.22); }
 
 /* ===== 认领人 / 协同 / 完成说明 ===== */
 .assignee-row {
@@ -1987,7 +1987,7 @@ onUnmounted(() => {
   margin-top: 10px;
   padding: 4px 10px;
   border-radius: 8px;
-  background: #eff6ff;
+  background: rgba(59, 130, 246, 0.10);
   color: #3b82f6;
   font-size: 12px;
   font-weight: 600;
@@ -2023,14 +2023,14 @@ onUnmounted(() => {
   margin-top: 10px;
   padding: 10px 12px;
   border-radius: 10px;
-  background: #f0fdf4;
+  background: rgba(34, 197, 94, 0.14);
   color: #16a34a;
   font-size: 12px;
 }
 .resolve-note svg { flex-shrink: 0; margin-top: 1px; }
 .resolve-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .resolve-label { font-weight: 700; }
-.resolve-text span:last-child { color: #15803d; white-space: pre-wrap; word-break: break-word; }
+.resolve-text span:last-child { color: #16a34a; white-space: pre-wrap; word-break: break-word; }
 
 /* ===== 完成说明弹窗 ===== */
 .resolve-dialog { max-width: 520px; }
@@ -2039,7 +2039,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px;
-  background: #f8f9fc;
+  background: var(--track);
   border-radius: 10px;
   margin-bottom: 16px;
 }
@@ -2066,7 +2066,7 @@ onUnmounted(() => {
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
   box-sizing: border-box;
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
 }
 .resolve-textarea:focus {
@@ -2108,7 +2108,7 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 .modal-dialog {
-  background: var(--white);
+  background: var(--card-solid);
   border-radius: 16px;
   width: 100%;
   max-width: 480px;
@@ -2130,21 +2130,21 @@ onUnmounted(() => {
 .modal-close {
   width: 32px; height: 32px;
   border: none;
-  background: #f5f5f5;
+  background: var(--track);
   border-radius: 8px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
   color: var(--text-muted);
   transition: all 0.2s;
 }
-.modal-close:hover { background: #e5e5e5; color: var(--text); }
+.modal-close:hover { background: var(--table-row-hover); color: var(--text); }
 .modal-body { padding: 20px; }
 .log-target-info {
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 12px 14px;
-  background: #f8f9fc;
+  background: var(--track);
   border-radius: 10px;
   margin-bottom: 16px;
 }
@@ -2179,7 +2179,7 @@ onUnmounted(() => {
 }
 .log-tab {
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-light);
   border-radius: 8px;
   padding: 7px 12px;
@@ -2219,14 +2219,14 @@ onUnmounted(() => {
   padding: 9px 18px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-light);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
 }
-.btn-cancel:hover { background: #f5f5f5; }
+.btn-cancel:hover { background: var(--track); }
 .btn-save {
   padding: 9px 20px;
   border-radius: 10px;
@@ -2273,7 +2273,7 @@ onUnmounted(() => {
   padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-light);
   font-size: 13px;
   font-weight: 700;
@@ -2301,7 +2301,7 @@ onUnmounted(() => {
   padding: 0 12px;
   font-size: 13px;
   color: var(--text);
-  background: var(--white);
+  background: var(--card-solid);
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
 }
@@ -2315,7 +2315,7 @@ onUnmounted(() => {
   font-size: 13px;
   font-family: inherit;
   color: var(--text);
-  background: var(--white);
+  background: var(--card-solid);
   resize: vertical;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -2336,20 +2336,20 @@ onUnmounted(() => {
   padding: 22px 16px;
   border: 1.5px dashed var(--border);
   border-radius: 12px;
-  background: var(--white);
+  background: var(--card-solid);
   cursor: pointer;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .create-dropzone:hover, .create-dropzone.dragging {
   border-color: var(--accent);
-  background: rgba(26, 26, 26, 0.03);
+  background: rgba(255, 255, 255, 0.04);
 }
 .create-dropzone.dragging { border-width: 2px; }
-.create-dropzone.has { border-style: solid; border-color: #16a34a; background: #f0fdf4; }
+.create-dropzone.has { border-style: solid; border-color: #16a34a; background: rgba(34, 197, 94, 0.14); }
 .dropzone-icon {
   width: 42px; height: 42px;
   border-radius: 12px;
-  background: #eef2ff;
+  background: rgba(79, 70, 229, 0.12);
   color: #4f46e5;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
@@ -2386,7 +2386,7 @@ onUnmounted(() => {
   gap: 10px;
   padding: 12px 14px;
   border-radius: 12px;
-  background: #f8f9fc;
+  background: var(--track);
   border: 1px solid var(--border);
   cursor: pointer;
 }
@@ -2395,7 +2395,7 @@ onUnmounted(() => {
   width: 20px; height: 20px;
   border-radius: 6px;
   border: 1.5px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   display: flex; align-items: center; justify-content: center;
   color: transparent;
   flex-shrink: 0;
@@ -2418,7 +2418,7 @@ onUnmounted(() => {
   padding: 18px;
   margin-bottom: 16px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #ffffff 0%, #f0f4ff 100%);
+  background: var(--card);
   border: 1px solid var(--border);
 }
 .stats-total-num { font-size: 34px; font-weight: 800; color: var(--text); line-height: 1; }
@@ -2677,7 +2677,7 @@ onUnmounted(() => {
   height: 16px;
   border: 1.5px solid var(--border);
   border-radius: 5px;
-  background: var(--white);
+  background: var(--card-solid);
   cursor: pointer;
   transition: all 0.15s;
   vertical-align: -2px;
@@ -2758,12 +2758,12 @@ onUnmounted(() => {
 
 /* ===== 封禁申诉类型样式 ===== */
 .avatar-appeal {
-  background: linear-gradient(135deg, #fef3c7, #fde68a);
-  color: #92400e;
+  background: rgba(245, 158, 11, 0.16);
+  color: #d97706;
 }
 .type-appeal {
-  background: #fef3c7 !important;
-  color: #92400e !important;
+  background: rgba(245, 158, 11, 0.14) !important;
+  color: #d97706 !important;
 }
 .type-badge.small {
   font-size: 10px;
@@ -2784,7 +2784,7 @@ onUnmounted(() => {
   padding: 10px 14px;
   border-radius: 8px;
   background: rgba(245, 158, 11, 0.08);
-  color: #92400e;
+  color: #d97706;
   font-size: 12px;
   line-height: 1.5;
   margin-bottom: 14px;

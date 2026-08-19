@@ -142,7 +142,7 @@ onMounted(loadProfile)
 <style scoped>
 .email-home-page {
   min-height: 100vh;
-  background: #f0f0f0;
+  background: var(--track);
 }
 
 /* Header */
@@ -177,7 +177,7 @@ onMounted(loadProfile)
 .brand-name {
   font-size: 16px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--text-light);
 }
 .logout-btn {
   padding: 8px 18px;
@@ -192,7 +192,7 @@ onMounted(loadProfile)
 .logout-btn:hover {
   border-color: #c00;
   color: #c00;
-  background: #fff5f5;
+  background: rgba(236, 65, 65, 0.10);
 }
 
 /* Main */
@@ -238,7 +238,7 @@ onMounted(loadProfile)
 .profile-info h2 {
   font-size: 18px;
   font-weight: 700;
-  color: #1a1a1a;
+  color: var(--text-light);
   margin: 0 0 4px;
 }
 .email-text {
@@ -274,7 +274,7 @@ onMounted(loadProfile)
   border-radius: 4px;
   font-size: 11px;
   font-weight: 500;
-  background: #f0f0f0;
+  background: var(--track);
   color: #999;
 }
 .status-badge.active {
@@ -295,7 +295,7 @@ onMounted(loadProfile)
 .section-title {
   font-size: 15px;
   font-weight: 600;
-  color: #1a1a1a;
+  color: var(--text-light);
   margin: 0 0 16px;
 }
 .logs-list {
@@ -329,7 +329,7 @@ onMounted(loadProfile)
 }
 .tag-green { background: #f0faf3; color: #1a7a3a; }
 .tag-blue { background: #f0f5ff; color: #1a4a8a; }
-.tag-orange { background: #fff8f0; color: #b8651a; }
+.tag-orange { background: rgba(245, 158, 11, 0.12); color: #b8651a; }
 .tag-gray { background: #f5f5f5; color: #666; }
 
 .log-detail {
@@ -364,7 +364,7 @@ onMounted(loadProfile)
   width: 32px;
   height: 32px;
   border: 3px solid #e0e0e0;
-  border-top-color: #1a1a1a;
+  border-top-color: var(--text-light);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   margin: 0 auto 12px;

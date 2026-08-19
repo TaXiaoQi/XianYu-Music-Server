@@ -326,7 +326,7 @@ onUnmounted(() => {
   font-weight: 600;
   padding: 3px 10px;
   border-radius: 20px;
-  background: #fffbeb;
+  background: rgba(245, 158, 11, 0.14);
   color: #f59e0b;
   animation: badgePulse 2s ease-in-out infinite;
 }
@@ -349,7 +349,7 @@ onUnmounted(() => {
   padding: 10px 18px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
@@ -371,7 +371,7 @@ onUnmounted(() => {
   margin-bottom: 20px;
 }
 .stat-chip {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px 20px;
@@ -392,9 +392,9 @@ onUnmounted(() => {
   justify-content: center;
   flex-shrink: 0;
 }
-.stat-pending .stat-icon { background: #fffbeb; color: #f59e0b; }
+.stat-pending .stat-icon { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .stat-approved .stat-icon { background: #f0fdf4; color: #16a34a; }
-.stat-rejected .stat-icon { background: #fef2f2; color: #dc2626; }
+.stat-rejected .stat-icon { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 
 .stat-pending.pulse { border-color: #fbbf24; }
 .stat-pending.pulse .stat-icon { animation: iconPulse 2s ease-in-out infinite; }
@@ -421,7 +421,7 @@ onUnmounted(() => {
   padding: 10px 18px;
   border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--white);
+  background: var(--card-solid);
   font-size: 14px;
   font-weight: 600;
   color: var(--text-muted);
@@ -455,9 +455,9 @@ onUnmounted(() => {
   background: #f3f4f6;
   color: var(--text-muted);
 }
-.tab-count.pending { background: #fffbeb; color: #f59e0b; }
+.tab-count.pending { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .tab-count.approved { background: #f0fdf4; color: #16a34a; }
-.tab-count.rejected { background: #fef2f2; color: #dc2626; }
+.tab-count.rejected { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .audit-tab.active .tab-count { background: rgba(255, 255, 255, 0.22); color: #fff; }
 
 /* ===== 审核记录列表 ===== */
@@ -467,7 +467,7 @@ onUnmounted(() => {
   gap: 14px;
 }
 .audit-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 18px 20px;
@@ -601,8 +601,8 @@ onUnmounted(() => {
 .act-btn:active { transform: scale(0.95); }
 .act-approve { background: #16a34a; color: #fff; }
 .act-approve:hover { background: #15803d; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); }
-.act-reject { background: var(--white); color: #dc2626; border: 1px solid #fecaca; }
-.act-reject:hover { background: #fef2f2; border-color: #fca5a5; }
+.act-reject { background: var(--card-solid); color: #dc2626; border: 1px solid #fecaca; }
+.act-reject:hover { background: rgba(236, 65, 65, 0.12); border-color: rgba(236, 65, 65, 0.25); }
 
 .history-status {
   display: inline-flex;
@@ -620,7 +620,7 @@ onUnmounted(() => {
 }
 .history-status.approved { background: #f0fdf4; color: #16a34a; }
 .history-status.approved .status-dot { background: #16a34a; }
-.history-status.rejected { background: #fef2f2; color: #dc2626; }
+.history-status.rejected { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .history-status.rejected .status-dot { background: #dc2626; }
 .history-meta {
   font-size: 12px;

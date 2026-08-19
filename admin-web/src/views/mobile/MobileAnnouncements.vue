@@ -360,7 +360,7 @@ onMounted(loadList)
   letter-spacing: 0.02em;
 }
 .badge-info { background: #eff6ff; color: #3b82f6; }
-.badge-warning { background: #fffbeb; color: #f59e0b; }
+.badge-warning { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .badge-update { background: #ecfdf5; color: #10b981; }
 
 /* 开关 */
@@ -381,7 +381,7 @@ onMounted(loadList)
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--white);
+  background: var(--card-solid);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: transform 0.25s;
 }
@@ -539,7 +539,7 @@ onMounted(loadList)
 .pick-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: background 0.18s; }
 .pick-info.active { background: #eff6ff; color: #3b82f6; border-color: transparent; }
 .pick-info.active .pick-dot { background: #3b82f6; }
-.pick-warning.active { background: #fffbeb; color: #f59e0b; border-color: transparent; }
+.pick-warning.active { background: rgba(245, 158, 11, 0.14); color: #f59e0b; border-color: transparent; }
 .pick-warning.active .pick-dot { background: #f59e0b; }
 .pick-update.active { background: #ecfdf5; color: #10b981; border-color: transparent; }
 .pick-update.active .pick-dot { background: #10b981; }

@@ -406,7 +406,7 @@ onMounted(() => {
   padding: 10px 18px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
@@ -425,7 +425,7 @@ onMounted(() => {
   display: flex;
   gap: 4px;
   margin-bottom: 16px;
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 4px;
@@ -479,7 +479,7 @@ onMounted(() => {
   font-size: 13px;
   width: 260px;
   outline: none;
-  background: var(--white);
+  background: var(--card-solid);
   transition: border-color 0.2s;
 }
 .search-input-wrap input:focus { border-color: var(--accent); }
@@ -500,7 +500,7 @@ onMounted(() => {
   padding: 9px 14px;
   border-radius: 10px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-muted);
   font-size: 13px;
   font-weight: 600;
@@ -529,7 +529,7 @@ onMounted(() => {
 }
 .chip:hover { background: #ececec; color: var(--text); }
 .chip-success.active { background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; }
-.chip-error.active { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
+.chip-error.active { background: rgba(236, 65, 65, 0.12); color: #dc2626; border-color: rgba(236, 65, 65, 0.25); }
 .chip.active { background: var(--accent); color: #fff; }
 
 .search-count {
@@ -540,7 +540,7 @@ onMounted(() => {
 
 /* ===== 表格卡片 ===== */
 .table-card {
-  background: var(--white);
+  background: var(--card-solid);
   border: 1px solid var(--border);
   border-radius: 14px;
   overflow: hidden;
@@ -552,7 +552,7 @@ onMounted(() => {
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  background: var(--white);
+  background: var(--card-solid);
   min-width: 720px;
 }
 .data-table th {
@@ -575,9 +575,9 @@ onMounted(() => {
 .data-table tr.table-row {
   animation: rowIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
-.data-table tr.table-row:hover td { background: #fafbfc; }
-.data-table tr.table-row.is-failed td { background: #fffdfd; }
-.data-table tr.table-row.is-failed:hover td { background: #fff8f8; }
+.data-table tr.table-row:hover td { background: var(--table-row-hover); }
+.data-table tr.table-row.is-failed td { background: rgba(236, 65, 65, 0.05); }
+.data-table tr.table-row.is-failed:hover td { background: rgba(236, 65, 65, 0.08); }
 @keyframes rowIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -617,7 +617,7 @@ onMounted(() => {
   font-weight: 600;
 }
 .badge-success { background: #f0fdf4; color: #16a34a; }
-.badge-error { background: #fef2f2; color: #dc2626; }
+.badge-error { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 
 /* ===== 分页 ===== */
 .pagination {
@@ -636,7 +636,7 @@ onMounted(() => {
   padding: 0 10px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: var(--white);
+  background: var(--card-solid);
   color: var(--text-light);
   font-size: 13px;
   font-weight: 600;
