@@ -555,6 +555,9 @@ pub async fn view_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
 
 /// 恢复备份
 pub async fn restore_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    if ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可执行恢复备份");
+    }
     let data = parse_body(body);
     let filename = str_of(&data, "filename").trim().to_string();
     if !sanitize_filename(&filename) {
@@ -565,20 +568,34 @@ pub async fn restore_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
         Ok(c) => c,
         Err(_) => return err(404, "备份文件不存在"),
     };
+    let mut skipped = 0usize;
     let _ = sqlx::query("SET FOREIGN_KEY_CHECKS=0").execute(pool).await;
     for stmt in content.split(';') {
         let s = stmt.trim();
-        if !s.is_empty() {
-            let _ = sqlx::query(s).execute(pool).await;
+        if s.is_empty() {
+            continue;
         }
+        if let Some(reason) = unsafe_sql_reason(s) {
+            tracing::warn!("恢复备份跳过危险语句（{}）：{}", reason, &s.chars().take(100).collect::<String>());
+            skipped += 1;
+            continue;
+        }
+        let _ = sqlx::query(s).execute(pool).await;
     }
     let _ = sqlx::query("SET FOREIGN_KEY_CHECKS=1").execute(pool).await;
-    log_operation(pool, ctx, "数据库恢复", &filename, "").await;
-    ok("恢复成功", Value::Null)
+    log_operation(pool, ctx, "数据库恢复", &filename, &format!("跳过危险语句 {}", skipped)).await;
+    if skipped > 0 {
+        ok("恢复成功（部分危险语句已跳过）", json!({ "skipped": skipped }))
+    } else {
+        ok("恢复成功", Value::Null)
+    }
 }
 
 /// 导入数据库：从前端上传的 SQL 文本执行导入（覆盖式，与恢复备份一致）
 pub async fn import_db(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    if ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可执行导入数据库");
+    }
     let data = parse_body(body);
     let content = str_of(&data, "content");
     if content.trim().is_empty() {
@@ -596,10 +613,16 @@ pub async fn import_db(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
 
     let mut ok_count = 0;
     let mut err_count = 0;
+    let mut skipped = 0usize;
     let _ = sqlx::query("SET FOREIGN_KEY_CHECKS=0").execute(pool).await;
     for stmt in content.split(';') {
         let s = stmt.trim();
         if s.is_empty() {
+            continue;
+        }
+        if let Some(reason) = unsafe_sql_reason(s) {
+            tracing::warn!("导入数据库跳过危险语句（{}）：{}", reason, &s.chars().take(100).collect::<String>());
+            skipped += 1;
             continue;
         }
         match sqlx::query(s).execute(pool).await {
@@ -608,12 +631,56 @@ pub async fn import_db(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
         }
     }
     let _ = sqlx::query("SET FOREIGN_KEY_CHECKS=1").execute(pool).await;
-    log_operation(pool, ctx, "数据库导入", &filename, &format!("成功 {} 失败 {}", ok_count, err_count)).await;
-    if err_count > 0 {
-        ok("导入完成（部分语句失败）", json!({ "filename": filename, "ok": ok_count, "errors": err_count }))
+    log_operation(pool, ctx, "数据库导入", &filename, &format!("成功 {} 失败 {} 跳过 {}", ok_count, err_count, skipped)).await;
+    if err_count > 0 || skipped > 0 {
+        ok("导入完成（部分语句失败或被跳过）", json!({ "filename": filename, "ok": ok_count, "errors": err_count, "skipped": skipped }))
     } else {
-        ok("导入成功", json!({ "filename": filename, "ok": ok_count, "errors": 0 }))
+        ok("导入成功", json!({ "filename": filename, "ok": ok_count, "errors": 0, "skipped": 0 }))
     }
+}
+
+/// 去掉 mysqldump 常见的注释前缀（`--`、`#`、`/*!40000 ... */`），便于识别语句类型
+fn sql_statement_head(stmt: &str) -> &str {
+    let mut s = stmt.trim_start();
+    loop {
+        if let Some(rest) = s.strip_prefix("/*") {
+            let Some(end) = rest.find("*/") else { return "" };
+            s = rest[end + 2..].trim_start();
+        } else if s.starts_with("--") || s.starts_with('#') {
+            let Some(nl) = s.find('\n') else { return "" };
+            s = s[nl + 1..].trim_start();
+        } else {
+            return s;
+        }
+    }
+}
+
+/// SQL 语句安全检测：返回 Some(原因) 表示该语句必须跳过。
+/// 白名单只放行备份恢复所需的数据/结构操作语句，防止借导入通道执行
+/// 文件系统读写、账号权限变更等危险操作。
+fn unsafe_sql_reason(stmt: &str) -> Option<&'static str> {
+    let head = sql_statement_head(stmt);
+    if head.is_empty() {
+        return None;
+    }
+    let first = head.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+    const ALLOWED: &[&str] = &[
+        "INSERT", "REPLACE", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "TRUNCATE",
+        "LOCK", "UNLOCK", "SET", "USE", "ANALYZE", "OPTIMIZE", "RENAME",
+    ];
+    if !ALLOWED.contains(&first.as_str()) {
+        return Some("非白名单语句");
+    }
+    let lower = head.to_ascii_lowercase();
+    const DANGEROUS: &[&str] = &[
+        "into outfile", "into dumpfile", "load_file(", "load data infile",
+        "create user", "drop user", "grant ", "revoke ", "general_log",
+        "performance_schema", "information_schema", "mysql.user",
+    ];
+    if DANGEROUS.iter().any(|p| lower.contains(p)) {
+        return Some("含文件系统/权限系统操作");
+    }
+    None
 }
 
 /// 删除备份文件

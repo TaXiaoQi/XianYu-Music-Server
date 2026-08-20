@@ -58,8 +58,64 @@ pub async fn check_api_rate_limit(
     ctx: &ReqCtx,
 ) -> Option<Response> {
     let data = serde_json::from_str::<Value>(body).unwrap_or(Value::Null);
-    let profile = profile_for_action(action);
     let identity = extract_identity(action, &data, &ctx.client_ip);
+    check_with_identity(limiter, pool, action, identity, &ctx.client_ip, ctx).await
+}
+
+/// 后台登录专用限流：IP 与用户名双维度各自独立计数，任一超限即拦截。
+/// 攻击者即使轮换用户名，其 IP 维度窗口仍会被计满，防止暴力破解。
+pub async fn check_admin_login_rate_limit(
+    limiter: &ApiRateLimiter,
+    pool: Option<&MySqlPool>,
+    body: &str,
+    ctx: &ReqCtx,
+) -> Option<Response> {
+    let action = "admin_login";
+    let ip = if ctx.client_ip.trim().is_empty() {
+        "unknown".to_string()
+    } else {
+        ctx.client_ip.trim().to_string()
+    };
+    if let Some(resp) = check_with_identity(
+        limiter,
+        pool,
+        action,
+        build_identity(action, "ip", ip),
+        &ctx.client_ip,
+        ctx,
+    )
+    .await
+    {
+        return Some(resp);
+    }
+    if let Ok(data) = serde_json::from_str::<Value>(body) {
+        if let Some(username) = first_non_empty(&data, &["username", "account", "identifier"]) {
+            if let Some(resp) = check_with_identity(
+                limiter,
+                pool,
+                action,
+                build_identity(action, "identifier", username),
+                &ctx.client_ip,
+                ctx,
+            )
+            .await
+            {
+                return Some(resp);
+            }
+        }
+    }
+    None
+}
+
+async fn check_with_identity(
+    limiter: &ApiRateLimiter,
+    pool: Option<&MySqlPool>,
+    action: &str,
+    identity: RateIdentity,
+    client_ip: &str,
+    ctx: &ReqCtx,
+) -> Option<Response> {
+    let profile = profile_for_action(action);
     let now = now_seconds();
     let block_key = format!("{}:{}", identity.identity_type, identity.identity);
 
@@ -76,17 +132,17 @@ pub async fn check_api_rate_limit(
     match decision {
         RateDecision::Allow => None,
         RateDecision::Warn { count, threshold } => {
-            log_rate_event(pool, action, &identity, &ctx.client_ip, "warning", count, threshold, profile.window_seconds, None, "请求频率达到预警阈值").await;
+            log_rate_event(pool, action, &identity, client_ip, "warning", count, threshold, profile.window_seconds, None, "请求频率达到预警阈值").await;
             None
         }
         RateDecision::Cooldown { retry_after, count, threshold } => {
-            log_rate_event(pool, action, &identity, &ctx.client_ip, "limited", count, threshold, profile.window_seconds, None, "请求频率超过限制，短暂冷却").await;
+            log_rate_event(pool, action, &identity, client_ip, "limited", count, threshold, profile.window_seconds, None, "请求频率超过限制，短暂冷却").await;
             Some(rate_limited_response(ctx, retry_after, "请求过于频繁，请稍后再试"))
         }
         RateDecision::TempBlock { retry_after, count, threshold } => {
             let blocked_until = now + retry_after;
-            upsert_db_temp_block(pool, &identity, &ctx.client_ip, blocked_until, "短时间内多次触发 API 限流").await;
-            log_rate_event(pool, action, &identity, &ctx.client_ip, "blocked", count, threshold, profile.window_seconds, Some(blocked_until), "短时间内多次超限，临时限制 1 小时").await;
+            upsert_db_temp_block(pool, &identity, client_ip, blocked_until, "短时间内多次触发 API 限流").await;
+            log_rate_event(pool, action, &identity, client_ip, "blocked", count, threshold, profile.window_seconds, Some(blocked_until), "短时间内多次超限，临时限制 1 小时").await;
             Some(rate_limited_response(ctx, retry_after, "请求过于频繁，当前设备已被临时限制 1 小时"))
         }
     }
@@ -222,7 +278,8 @@ fn profile_for_action(action: &str) -> RateProfile {
         | "generate_tv_login_code"
         | "poll_tv_login_status"
         | "scan_tv_login"
-        | "confirm_tv_login" => RateProfile {
+        | "confirm_tv_login"
+        | "admin_login" => RateProfile {
             name: "auth",
             window_seconds: 60,
             warn_threshold: 5,

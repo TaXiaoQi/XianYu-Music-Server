@@ -88,6 +88,9 @@ async function handleLogin() {
     const result = await auth.login(username.value.trim(), password.value)
     if (result.success) {
       showToast('登录成功', 'success')
+      if (result.mustChangePassword) {
+        setTimeout(() => showToast('安全提醒：当前仍在使用默认管理员密码，请尽快在「后台账号」中修改', 'error'), 1200)
+      }
       router.push('/dashboard')
     } else {
       showToast(result.msg)

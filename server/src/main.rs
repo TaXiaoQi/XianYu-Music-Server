@@ -35,6 +35,9 @@ pub struct AppState {
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     let config = Arc::new(Config::load()?);
+    config
+        .validate_security()
+        .map_err(|reason| anyhow::anyhow!("安全配置校验失败，拒绝启动：{reason}"))?;
     let pool = db::connect(&config).await?;
     let db_ready = if config.local_debug_no_db {
         false
@@ -243,8 +246,15 @@ async fn handle_admin_api(
     let raw_body = String::from_utf8_lossy(&body_bytes).into_owned();
     let ip = admin::client_ip(&headers);
 
-    // 登录接口免鉴权
+    // 登录接口免鉴权，但必须限流（IP + 用户名双维度），防暴力破解
     if action == "admin_login" {
+        let req_ctx = response::ReqCtx::new((*state.config).clone(), &headers);
+        let pool = if state.db_ready { Some(&state.pool) } else { None };
+        if let Some(resp) =
+            rate_limit::check_admin_login_rate_limit(&state.rate_limiter, pool, &raw_body, &req_ctx).await
+        {
+            return resp;
+        }
         if !state.db_ready {
             return debug::handle_admin_login(&raw_body, &state.config);
         }

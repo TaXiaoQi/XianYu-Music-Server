@@ -115,7 +115,7 @@ if exist "server\config.json" (
     echo   "admin_username": "admin",>> "%DEPLOY_SERVER%\config.json"
     echo   "admin_password": "adminadmin",>> "%DEPLOY_SERVER%\config.json"
     echo   "listen_addr": "0.0.0.0:8081",>> "%DEPLOY_SERVER%\config.json"
-    echo   "jwt_secret": "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200",>> "%DEPLOY_SERVER%\config.json"
+    echo   "jwt_secret": "",>> "%DEPLOY_SERVER%\config.json"
     echo   "email_api_primary": "",>> "%DEPLOY_SERVER%\config.json"
     echo   "email_api_backup": "",>> "%DEPLOY_SERVER%\config.json"
     echo   "email_sender": "no-reply@example.com",>> "%DEPLOY_SERVER%\config.json"

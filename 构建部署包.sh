@@ -121,7 +121,7 @@ else
   "admin_username": "admin",
   "admin_password": "adminadmin",
   "listen_addr": "0.0.0.0:8081",
-  "jwt_secret": "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200",
+  "jwt_secret": "",
   "email_api_primary": "",
   "email_api_backup": "",
   "email_sender": "no-reply@example.com",

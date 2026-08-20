@@ -303,6 +303,19 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_locked_until` (`locked_until`),
             KEY `idx_updated_at` (`updated_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `user_tokens` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `token` varchar(128) NOT NULL,
+            `ciyuanxi_id` varchar(64) NOT NULL DEFAULT '',
+            `device_id` varchar(128) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `last_used_at` datetime DEFAULT NULL,
+            `expires_at` datetime NOT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_token` (`token`),
+            KEY `idx_ciyuanxi` (`ciyuanxi_id`),
+            KEY `idx_expires` (`expires_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `api_rate_events` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `level` varchar(16) NOT NULL DEFAULT '',

@@ -4,6 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use crate::handlers::helpers::{default_nickname, parse_body, str_of, validate_ciyuanxi_id, validate_nickname};
+use crate::handlers::token;
 use crate::response::ReqCtx;
 
 const CAPTCHA_TTL_MINUTES: i64 = 5;
@@ -68,10 +69,6 @@ pub async fn check_ban_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     }
 
     ctx.ok("ok", json!({ "banned": false }))
-}
-
-fn rand_token() -> String {
-    crate::handlers::helpers::random_hex(32)
 }
 
 /// 根据邮箱判定角色（管理员已去除邮箱，统一返回 member）
@@ -451,7 +448,7 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     match result {
         Ok(r) => {
             let user_id = r.last_insert_id() as i64;
-            let token = rand_token();
+            let token = token::issue(pool, &ciyuanxi_id, &reg_device_id).await;
             let role = resolve_role(pool, &email).await;
             let payload = build_user_payload(
                 user_id,
@@ -545,13 +542,13 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
     let email: String = user.try_get::<String, _>("email").unwrap_or_default();
     let role = resolve_role(pool, &email).await;
-    let token = rand_token();
 
     let user_id: i64 = user.try_get::<i64, _>("id").unwrap_or(0);
     let uname: String = user.try_get::<String, _>("nickname").unwrap_or_default();
     let avatar_url: String = user.try_get::<Option<String>, _>("avatar_url").ok().flatten().unwrap_or_default();
     let ciyuanxi_id: String = user.try_get::<String, _>("ciyuanxi_id").unwrap_or_default();
     let master_quota: i64 = user.try_get::<i64, _>("master_quota").unwrap_or(0);
+    let token = token::issue(pool, &ciyuanxi_id, &login_device_id).await;
     clear_login_failures(&matched, &ctx, pool).await;
 
     // 记录 APP 登录日志（若请求未携带设备信息，则从 app_open_log 按 device_id 兜底补全）
@@ -761,7 +758,9 @@ pub async fn confirm_tv_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     if u_status == 0 {
         return ctx.err(403, "账号已被禁用");
     }
-    let token = rand_token();
+    // TV 端设备标识取自二维码生成时绑定的 device_id
+    let tv_device_id: String = row.try_get::<String, _>("device_id").unwrap_or_default();
+    let token = token::issue(pool, &ciyuanxi_id, &tv_device_id).await;
     let res = sqlx::query("UPDATE tv_login_codes SET status = 'logged_in', token = ?, logged_in_at = NOW() WHERE code = ? AND status = 'scanned'")
         .bind(&token)
         .bind(&code)
@@ -821,12 +820,13 @@ pub async fn login_by_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
         }
         return ctx.err(403, &format!("账号已被封禁，原因：{}。如有疑问请联系管理员", reason));
     }
-    let token = rand_token();
+    let login_device_id = str_of(&data, "device_id").trim().to_string();
     let user_id: i64 = user.get("id");
     let uname: String = user.try_get::<String, _>("nickname").unwrap_or_default();
     let avatar_url: String = user.get("avatar_url");
     let ciyuanxi_id: String = user.get("ciyuanxi_id");
     let master_quota: i64 = user.get("master_quota");
+    let token = token::issue(pool, &ciyuanxi_id, &login_device_id).await;
     let payload = build_user_payload(user_id, &uname, &email, &avatar_url, &ciyuanxi_id, status, master_quota, &token, "");
     ctx.json(200, "登录成功", Some(payload))
 }
@@ -1014,6 +1014,18 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         .bind(&email)
         .execute(pool)
         .await;
+    // 密码被重置后撤销该账号全部已签发 token，强制所有设备重新登录
+    if let Ok(rows) = sqlx::query("SELECT ciyuanxi_id FROM app_users WHERE email = ?")
+        .bind(&email)
+        .fetch_all(pool)
+        .await
+    {
+        for row in rows {
+            if let Ok(id) = row.try_get::<String, _>("ciyuanxi_id") {
+                token::revoke_user(pool, &id).await;
+            }
+        }
+    }
     ctx.ok_empty("密码修改成功")
 }
 
@@ -1143,6 +1155,8 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         .bind(&registered_email)
         .execute(pool)
         .await;
+    // 注销后撤销全部 token
+    token::revoke_user(pool, &ciyuanxi_id).await;
     let result = sqlx::query("DELETE FROM app_users WHERE id = ?")
         .bind(user_id)
         .execute(pool)

@@ -78,7 +78,7 @@ cat > "${INSTALL_DIR}/config.json" <<EOF
   "admin_username": "admin",
   "admin_password": "adminadmin",
   "listen_addr": "0.0.0.0:8081",
-  "jwt_secret": "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200",
+  "jwt_secret": "$(tr -dc 'a-f0-9' < /dev/urandom | head -c 64)",
   "email_api_primary": "http://a.bzxhkj.com/a",
   "email_api_backup": "http://a.bzxhkj.com/b",
   "email_sender": "admin@bzxhkj.com",

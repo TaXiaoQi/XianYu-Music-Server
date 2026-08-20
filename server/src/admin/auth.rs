@@ -59,13 +59,16 @@ pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPo
         .bind("")
         .execute(pool)
         .await;
+    // 仍在使用安装时内置的默认凭据，提示前端弹安全提醒
+    let must_change_password = username == "admin" && password == "adminadmin";
     ok("登录成功", serde_json::json!({
         "token": token,
         "admin_id": id,
         "username": username,
         "role": role,
         "avatar_url": avatar_url,
-        "expires_in": 86400
+        "expires_in": 86400,
+        "must_change_password": must_change_password
     }))
 }
 

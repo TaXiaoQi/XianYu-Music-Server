@@ -16,8 +16,8 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isLoggedIn = computed(() => !!token.value)
 
-  async function login(username: string, password: string): Promise<{ success: boolean; msg: string }> {
-    const res = await adminApi<{ token: string; admin_id: number; username: string; role: string; avatar_url?: string; expires_in: number }>('admin_login', {
+  async function login(username: string, password: string): Promise<{ success: boolean; msg: string; mustChangePassword?: boolean }> {
+    const res = await adminApi<{ token: string; admin_id: number; username: string; role: string; avatar_url?: string; expires_in: number; must_change_password?: boolean }>('admin_login', {
       username,
       password,
     })
@@ -33,7 +33,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
       user.value = u
       setAdminUser(u)
-      return { success: true, msg: '登录成功' }
+      return { success: true, msg: '登录成功', mustChangePassword: !!res.data.must_change_password }
     }
     return { success: false, msg: res.msg || '登录失败' }
   }

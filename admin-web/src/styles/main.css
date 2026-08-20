@@ -85,7 +85,10 @@ button, input, textarea, select { font-family: inherit; }
 /* ---------- 布局 ---------- */
 .layout {
     display: flex;
-    min-height: 100vh;
+    /* 锁定为视口高度：内容在 .main 内滚动，body 恒为 100vh，
+       使 body 上的百分比渐变背景不会随页面长度被拉长，所有页面背景一致 */
+    height: 100vh;
+    overflow: hidden;
     /* 用 backwards 而非 both：动画结束后不保留 translateY(0)，避免残留 transform
        使 .layout 内 position:fixed 弹窗按整页而非视口居中 */
     animation: pageFadeIn 0.42s var(--motion) backwards;
@@ -242,7 +245,7 @@ button, input, textarea, select { font-family: inherit; }
 }
 
 /* ---------- 主内容区 ---------- */
-.main { flex: 1; padding: 28px; overflow-y: auto; min-width: 0; scrollbar-gutter: stable; }
+.main { flex: 1; padding: 28px; overflow-y: auto; min-width: 0; min-height: 0; scrollbar-gutter: stable; }
 .topbar {
     display: flex;
     justify-content: space-between;

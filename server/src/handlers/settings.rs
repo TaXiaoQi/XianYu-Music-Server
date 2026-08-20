@@ -482,6 +482,8 @@ pub async fn change_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         .bind(uid)
         .execute(pool)
         .await;
+    // 改密后撤销该账号全部已签发 token，其他设备需重新登录
+    crate::handlers::token::revoke_user(pool, &ciyuanxi_id).await;
     ctx.ok_empty("密码修改成功")
 }
 
@@ -557,6 +559,8 @@ pub async fn update_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
         .bind(uid)
         .execute(pool)
         .await;
+    // 弦予号是 token 属主标识，变更后旧号下全部 token 失效，客户端需重新登录
+    crate::handlers::token::revoke_user(pool, &old_ciyuanxi_id).await;
 
     ctx.ok("弦予号修改成功", json!({ "ciyuanxi_id": new_ciyuanxi_id }))
 }

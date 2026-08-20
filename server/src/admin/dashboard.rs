@@ -1,5 +1,5 @@
 use axum::response::Response;
-use serde_json::json;
+use serde_json::{json, Value};
 use sqlx::MySqlPool;
 use sqlx::Row;
 
@@ -200,7 +200,12 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "pending_avatars": pending_avatars,
         "pending_nicknames": pending_nicknames,
         "pending_feedback": pending_feedback,
-        "api_secret": ctx.config.api_secret.clone(),
+        // 客户端签名密钥仅超管可见；普通管理员不应掌握可伪造任意 App 请求的总密钥
+        "api_secret": if ctx.role == "super_admin" {
+            Value::String(ctx.config.api_secret.clone())
+        } else {
+            Value::Null
+        },
     });
 
     ok("ok", stats)
