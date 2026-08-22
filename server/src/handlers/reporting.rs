@@ -221,6 +221,34 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         return ctx.ok_empty("ok");
     }
 
+    // 记录播放历史（每日推荐算法的数据源）。
+    // 仅记录有效收听（>=10s），避免快速切歌灌水；同时清理 180 天前的历史控制表体积。
+    if duration >= 10 {
+        let song_name = str_of(&data, "song_name");
+        if !song_name.is_empty() {
+            let _ = sqlx::query(
+                "INSERT INTO play_history (user_id, ciyuanxi_id, song_hash, song_name, singer, source, duration, played_at) \
+                 VALUES (?,?,?,?,?,?,?, NOW() + INTERVAL 8 HOUR)",
+            )
+            .bind(int_of(&data, "user_id").max(0))
+            .bind(&ciyuanxi_id)
+            .bind(str_of(&data, "song_hash"))
+            .bind(&song_name)
+            .bind(str_of(&data, "singer"))
+            .bind(str_of(&data, "source"))
+            .bind(duration)
+            .execute(pool)
+            .await;
+
+            let _ = sqlx::query(
+                "DELETE FROM play_history WHERE ciyuanxi_id = ? AND played_at < (NOW() + INTERVAL 8 HOUR) - INTERVAL 180 DAY",
+            )
+            .bind(&ciyuanxi_id)
+            .execute(pool)
+            .await;
+        }
+    }
+
     // 检查是否存在待处理的听歌统计重置信号，如有则跳过本次更新（由 report_listen_stats 统一处理重置）
     let has_reset: Option<String> = sqlx::query_scalar(
         "SELECT listen_stats_reset_at FROM app_users WHERE ciyuanxi_id = ?",
@@ -243,10 +271,10 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     .execute(pool)
     .await;
 
-    // 同步写入每日统计（用于日榜/周榜）
+    // 同步写入每日统计（用于日榜/周榜）；连接统一 UTC，按北京时间切日
     let _ = sqlx::query(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration) \
-         VALUES (?, CURDATE(), ?) \
+         VALUES (?, DATE(NOW() + INTERVAL 8 HOUR), ?) \
          ON DUPLICATE KEY UPDATE listen_duration = listen_duration + VALUES(listen_duration)",
     )
     .bind(&ciyuanxi_id)

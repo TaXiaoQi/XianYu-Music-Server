@@ -171,7 +171,7 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     let daily_limit = get_feedback_daily_limit(pool).await;
     if daily_limit > 0 {
         let submitted_today: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM user_feedback WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY",
+            "SELECT COUNT(*) FROM user_feedback WHERE ciyuanxi_id = ? AND created_at >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR AND created_at < DATE(NOW() + INTERVAL 8 HOUR) + INTERVAL 16 HOUR",
         )
         .bind(&ciyuanxi_id)
         .fetch_one(pool)
@@ -196,8 +196,10 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         }
     }
     let ip = ctx.client_ip.clone();
+    let platform = str_of(&data, "platform").trim().to_string();
+    let app_version = str_of(&data, "app_version").trim().to_string();
     let result = sqlx::query(
-        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, error_logs, all_logs, log_meta, ip, category) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, error_logs, all_logs, log_meta, ip, category, platform, app_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
         .bind(&ciyuanxi_id)
         .bind(&nickname)
@@ -210,6 +212,8 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         .bind(&log_meta)
         .bind(&ip)
         .bind("feedback")
+        .bind(&platform)
+        .bind(&app_version)
         .execute(pool)
         .await;
     match result {
@@ -240,7 +244,7 @@ pub async fn submit_appeal(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     let daily_limit = get_feedback_daily_limit(pool).await;
     if daily_limit > 0 {
         let submitted_today: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM user_feedback WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY",
+            "SELECT COUNT(*) FROM user_feedback WHERE ciyuanxi_id = ? AND created_at >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR AND created_at < DATE(NOW() + INTERVAL 8 HOUR) + INTERVAL 16 HOUR",
         )
         .bind(&ciyuanxi_id)
         .fetch_one(pool)

@@ -183,6 +183,9 @@ pub async fn get_no_db(_body: &str, ctx: &AdminCtx) -> Response {
 }
 
 pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    if ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可修改服务端配置文件");
+    }
     let config = match merge_config_from_body(body, ctx) {
         Ok(v) => v,
         Err(msg) => return err(400, &msg),
@@ -197,6 +200,9 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
 }
 
 pub async fn save_no_db(body: &str, ctx: &AdminCtx) -> Response {
+    if ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可修改服务端配置文件");
+    }
     let config = match merge_config_from_body(body, ctx) {
         Ok(v) => v,
         Err(msg) => return err(400, &msg),

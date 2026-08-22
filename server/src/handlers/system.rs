@@ -1,7 +1,11 @@
 use axum::response::Response;
 use serde_json::json;
+use serde_json::Value;
 use sqlx::MySqlPool;
 use sqlx::Row;
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use crate::handlers::helpers::{compare_version_code, parse_body, str_of};
 use crate::response::ReqCtx;
@@ -474,19 +478,48 @@ fn loadavg() -> (f64, f64) {
     (cpu, mem)
 }
 
-pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    let kind = data.get("type").and_then(|v| v.as_str()).unwrap_or("listen").to_string();
-    let period = data.get("period").and_then(|v| v.as_str()).unwrap_or("total").to_string();
-    let limit = data.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 100);
-    let ciyuanxi_id = data.get("ciyuanxi_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+/// 排行榜公开部分缓存（Top N + 总人数）：对所有用户一致，30s 内复用
+struct LeaderboardCacheEntry {
+    entries: Vec<Value>,
+    total_users: u32,
+    at: Instant,
+}
 
+static LEADERBOARD_CACHE: OnceLock<Mutex<HashMap<String, LeaderboardCacheEntry>>> = OnceLock::new();
+const LEADERBOARD_CACHE_TTL: Duration = Duration::from_secs(30);
+const LEADERBOARD_CACHE_MAX_ENTRIES: usize = 64;
+
+fn leaderboard_cache_get(key: &str) -> Option<(Vec<Value>, u32)> {
+    let cache = LEADERBOARD_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().ok()?;
+    match guard.get(key) {
+        Some(e) if e.at.elapsed() <= LEADERBOARD_CACHE_TTL => Some((e.entries.clone(), e.total_users)),
+        Some(_) => {
+            guard.remove(key);
+            None
+        }
+        None => None,
+    }
+}
+
+fn leaderboard_cache_put(key: String, entries: Vec<Value>, total_users: u32) {
+    let cache = LEADERBOARD_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    if let Ok(mut guard) = cache.lock() {
+        if guard.len() >= LEADERBOARD_CACHE_MAX_ENTRIES {
+            guard.clear();
+        }
+        guard.insert(key, LeaderboardCacheEntry { entries, total_users, at: Instant::now() });
+    }
+}
+
+/// 构建单个周期的 4 条 SQL（top/count/me/me_count）
+fn build_leaderboard_sql(kind: &str, period: &str) -> (String, String, String, String) {
     let order_col = if kind == "listen" { "listen_duration" } else { "unique_songs_count" };
 
-    // 根据 period 构建不同的查询
-    let (top_sql, count_sql, me_sql, me_count_sql) = match period.as_str() {
+    // 连接统一 UTC，日期计算统一按北京时间(UTC+8)切日，保证日榜/周榜在本地 0 点重置
+    match period {
         "daily" => {
-            let day_filter = "stat_date = CURDATE()";
+            let day_filter = "stat_date = DATE(NOW() + INTERVAL 8 HOUR)";
             (
                 format!(
                     "SELECT d.ciyuanxi_id, u.nickname, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
@@ -531,8 +564,8 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             )
         }
         "weekly" => {
-            // 本周一 ~ 今天
-            let week_filter = "stat_date >= DATE_SUB(CURDATE(), INTERVAL WEEKDAY(CURDATE()) DAY) AND stat_date <= CURDATE()";
+            // 本周一 ~ 今天（按北京时间切日）
+            let week_filter = "stat_date >= DATE_SUB(DATE(NOW() + INTERVAL 8 HOUR), INTERVAL WEEKDAY(DATE(NOW() + INTERVAL 8 HOUR)) DAY) AND stat_date <= DATE(NOW() + INTERVAL 8 HOUR)";
             (
                 format!(
                     "SELECT d.ciyuanxi_id, u.nickname, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
@@ -600,67 +633,75 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                 ),
             )
         }
-    };
-
-    // 查询 Top N 用户
-    let rows = match sqlx::query(&top_sql).bind(limit).fetch_all(pool).await {
-        Ok(rows) => rows,
-        Err(e) => return ctx.err(500, &format!("查询失败: {}", e)),
-    };
-
-    let mut leaderboard: Vec<serde_json::Value> = Vec::new();
-    let mut me_in_list: Option<serde_json::Value> = None;
-
-    for (i, row) in rows.iter().enumerate() {
-        let rank = (i + 1) as u32;
-        let uid: String = row.get("ciyuanxi_id");
-        let username: String = row.get("nickname");
-        let avatar: String = row.get::<Option<String>, _>("avatar_url")
-            .unwrap_or_default();
-        let value: i64 = row.get("value");
-        let is_me = !ciyuanxi_id.is_empty() && uid == ciyuanxi_id;
-
-        let entry = json!({
-            "rank": rank,
-            "username": username,
-            "nickname": username,
-            "ciyuanxi_id": uid,
-            "avatar": avatar,
-            "duration": value,
-            "is_me": is_me,
-        });
-        if is_me {
-            me_in_list = Some(entry.clone());
-        }
-        leaderboard.push(entry);
     }
+}
 
-    // 当前用户不在 Top N 时，单独查询排名
-    let mut me = me_in_list;
-    if !ciyuanxi_id.is_empty() && me.is_none() {
-        let user_row = sqlx::query(&me_sql)
-            .bind(&ciyuanxi_id)
-            .fetch_optional(pool)
-            .await;
+/// 获取单个周期的排行榜（公开部分走缓存，个人排名实时查询）
+async fn fetch_leaderboard_period(
+    pool: &MySqlPool,
+    kind: &str,
+    period: &str,
+    limit: i64,
+    ciyuanxi_id: &str,
+) -> Result<Value, String> {
+    let cache_key = format!("{}|{}|{}", kind, period, limit);
 
-        if let Ok(Some(row)) = user_row {
+    // 公开部分（Top N + 总人数）走缓存，对所有用户一致
+    let (entries, total_users) = if let Some((e, tu)) = leaderboard_cache_get(&cache_key) {
+        (e, tu)
+    } else {
+        let (top_sql, count_sql, _, _) = build_leaderboard_sql(kind, period);
+        let rows = sqlx::query(&top_sql).bind(limit).fetch_all(pool).await
+            .map_err(|e| format!("查询失败: {}", e))?;
+        let mut entries: Vec<Value> = Vec::new();
+        for (i, row) in rows.iter().enumerate() {
+            let uid: String = row.get("ciyuanxi_id");
             let username: String = row.get("nickname");
-            let avatar: String = row.get::<Option<String>, _>("avatar_url")
-                .unwrap_or_default();
+            let avatar: String = row.get::<Option<String>, _>("avatar_url").unwrap_or_default();
             let value: i64 = row.get("value");
+            entries.push(json!({
+                "rank": (i + 1) as u32,
+                "username": username,
+                "nickname": username,
+                "ciyuanxi_id": uid,
+                "avatar": avatar,
+                "duration": value,
+            }));
+        }
+        let total_users = sqlx::query(&count_sql).fetch_one(pool).await
+            .map(|r| r.get::<i64, _>("cnt") as u32)
+            .unwrap_or(entries.len() as u32);
+        leaderboard_cache_put(cache_key, entries.clone(), total_users);
+        (entries, total_users)
+    };
 
+    // 个人排名（me）不缓存，按用户实时查询
+    let mut me: Option<Value> = None;
+    let mut leaderboard: Vec<Value> = Vec::with_capacity(entries.len());
+    for e in entries {
+        let is_me = !ciyuanxi_id.is_empty() && e["ciyuanxi_id"].as_str() == Some(ciyuanxi_id);
+        let mut v = e;
+        v["is_me"] = json!(is_me);
+        if is_me {
+            me = Some(v.clone());
+        }
+        leaderboard.push(v);
+    }
+    if !ciyuanxi_id.is_empty() && me.is_none() {
+        let (_, _, me_sql, me_count_sql) = build_leaderboard_sql(kind, period);
+        let user_row = sqlx::query(&me_sql).bind(ciyuanxi_id).fetch_optional(pool).await
+            .map_err(|e| format!("查询失败: {}", e))?;
+        if let Some(row) = user_row {
+            let username: String = row.get("nickname");
+            let avatar: String = row.get::<Option<String>, _>("avatar_url").unwrap_or_default();
+            let value: i64 = row.get("value");
             if value > 0 {
-                let rank_row = sqlx::query(&me_count_sql)
-                    .bind(value)
-                    .fetch_one(pool)
-                    .await;
-
+                let rank_row = sqlx::query(&me_count_sql).bind(value).fetch_one(pool).await;
                 let rank = if let Ok(r) = rank_row {
                     r.get::<i64, _>("cnt") as u32 + 1
                 } else {
                     0
                 };
-
                 me = Some(json!({
                     "rank": rank,
                     "username": username,
@@ -674,21 +715,37 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         }
     }
 
-    // 统计参与排行的总用户数
-    let total_users = sqlx::query(&count_sql)
-        .fetch_one(pool)
-        .await
-        .map(|r| r.get::<i64, _>("cnt") as u32)
-        .unwrap_or(leaderboard.len() as u32);
+    Ok(json!({
+        "leaderboard": leaderboard,
+        "me": me,
+        "total_users": total_users,
+        "period": period,
+    }))
+}
 
-    ctx.json(
-        200,
-        "ok",
-        Some(json!({
-            "leaderboard": leaderboard,
-            "me": me,
-            "total_users": total_users,
-            "period": period,
-        })),
-    )
+pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let kind = data.get("type").and_then(|v| v.as_str()).unwrap_or("listen").to_string();
+    let period = data.get("period").and_then(|v| v.as_str()).unwrap_or("total").to_string();
+    let limit = data.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 100);
+    let ciyuanxi_id = data.get("ciyuanxi_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+    // period=all：一次请求返回日/周/总三榜，减少客户端多次往返
+    if period == "all" {
+        let mut leaderboards = serde_json::Map::new();
+        for p in ["daily", "weekly", "total"] {
+            match fetch_leaderboard_period(pool, &kind, p, limit, &ciyuanxi_id).await {
+                Ok(v) => {
+                    leaderboards.insert(p.to_string(), v);
+                }
+                Err(e) => return ctx.err(500, &e),
+            }
+        }
+        return ctx.json(200, "ok", Some(json!({ "leaderboards": leaderboards })));
+    }
+
+    match fetch_leaderboard_period(pool, &kind, &period, limit, &ciyuanxi_id).await {
+        Ok(v) => ctx.json(200, "ok", Some(v)),
+        Err(e) => ctx.err(500, &e),
+    }
 }

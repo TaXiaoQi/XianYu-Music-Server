@@ -1,6 +1,9 @@
 use axum::response::Response;
 use serde_json::Value;
 use sqlx::{MySqlPool, Row};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::response::ReqCtx;
 
@@ -10,6 +13,33 @@ const TOKEN_TTL_DAYS: i64 = 30;
 const TOKEN_RENEW_THRESHOLD_DAYS: i64 = 15;
 /// 单用户最多保留的 token 数（多设备），超出删除最旧
 const MAX_TOKENS_PER_USER: i64 = 10;
+/// token 属主校验内存缓存有效期（秒）：命中时跳过数据库查询。
+/// 撤销 token（改密/注销）最多延迟该秒数生效
+const TOKEN_CACHE_TTL_SECONDS: i64 = 15;
+/// last_used_at 落库节流间隔（秒）：活跃 token 无需每次请求都写库，
+/// 也避免分片同步等并发请求对同一行反复加锁
+const TOKEN_TOUCH_INTERVAL_SECONDS: i64 = 300;
+/// token 缓存容量上限，超出时清理已过期条目
+const TOKEN_CACHE_MAX_ENTRIES: usize = 4096;
+
+#[derive(Clone)]
+struct CachedToken {
+    ciyuanxi_id: String,
+    expires_unix: i64,
+    cached_at: i64,
+}
+
+fn token_cache() -> &'static Mutex<HashMap<String, CachedToken>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, CachedToken>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn now_unix() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
 
 /// 需要校验 token 属主的 action（请求体含 ciyuanxi_id / user_id 的用户资源操作）
 const USER_BOUND_ACTIONS: &[&str] = &[
@@ -26,6 +56,8 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "report_listen_stats",
     "deduct_master_quota",
     "get_master_quota_usage",
+    // recommend
+    "get_daily_recommend",
     // social
     "submit_feedback",
     "submit_appeal",
@@ -117,11 +149,29 @@ enum OwnerState {
 }
 
 async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerState {
+    let now = now_unix();
+    // 快路径：命中缓存直接判定，跳过数据库往返（token 撤销最多延迟 TTL 秒生效）
+    if let Some(cached) = token_cache().lock().unwrap().get(token).cloned() {
+        if now - cached.cached_at < TOKEN_CACHE_TTL_SECONDS {
+            if cached.expires_unix <= now {
+                return OwnerState::Expired;
+            }
+            return if cached.ciyuanxi_id == identity {
+                OwnerState::Valid
+            } else {
+                OwnerState::Mismatch
+            };
+        }
+    }
+
     let row = sqlx::query(
-        "SELECT ciyuanxi_id, expires_at < DATE_ADD(NOW(), INTERVAL ? DAY) AS need_renew
+        "SELECT ciyuanxi_id, UNIX_TIMESTAMP(expires_at) AS expires_unix,
+                (expires_at < DATE_ADD(NOW(), INTERVAL ? DAY)) AS need_renew,
+                (last_used_at IS NULL OR last_used_at < DATE_SUB(NOW(), INTERVAL ? SECOND)) AS should_touch
          FROM user_tokens WHERE token = ? AND expires_at > NOW() LIMIT 1",
     )
     .bind(TOKEN_RENEW_THRESHOLD_DAYS)
+    .bind(TOKEN_TOUCH_INTERVAL_SECONDS)
     .bind(token)
     .fetch_optional(pool)
     .await
@@ -132,8 +182,11 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
         if owner != identity {
             return OwnerState::Mismatch;
         }
-        // 剩余有效期不足一半时滑动续期，避免活跃用户被登出
-        if row.try_get::<i64, _>("need_renew").unwrap_or(0) == 1 {
+        let expires_unix: i64 = row.try_get("expires_unix").unwrap_or(0);
+        let need_renew: i64 = row.try_get("need_renew").unwrap_or(0);
+        let should_touch: i64 = row.try_get("should_touch").unwrap_or(1);
+        if need_renew == 1 {
+            // 剩余有效期不足一半时滑动续期，避免活跃用户被登出
             let _ = sqlx::query(
                 "UPDATE user_tokens SET last_used_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE token = ?",
             )
@@ -141,12 +194,25 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
             .bind(token)
             .execute(pool)
             .await;
-        } else {
+        } else if should_touch == 1 {
+            // last_used_at 落库节流：仅距上次使用超过阈值才写库
             let _ = sqlx::query("UPDATE user_tokens SET last_used_at = NOW() WHERE token = ?")
                 .bind(token)
                 .execute(pool)
                 .await;
         }
+        let mut cache = token_cache().lock().unwrap();
+        if cache.len() > TOKEN_CACHE_MAX_ENTRIES {
+            cache.retain(|_, v| v.expires_unix > now);
+        }
+        cache.insert(
+            token.to_string(),
+            CachedToken {
+                ciyuanxi_id: owner,
+                expires_unix,
+                cached_at: now,
+            },
+        );
         return OwnerState::Valid;
     }
     let exists = sqlx::query("SELECT id FROM user_tokens WHERE token = ? LIMIT 1")

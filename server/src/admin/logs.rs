@@ -207,11 +207,11 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     // 统计数据
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log")
         .fetch_one(pool).await.unwrap_or(0);
-    let today_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log WHERE DATE(created_at) = CURDATE()")
+    let today_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log WHERE DATE(created_at) = DATE(NOW() + INTERVAL 8 HOUR)")
         .fetch_one(pool).await.unwrap_or(0);
-    let today_success: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log WHERE DATE(created_at) = CURDATE() AND status = 1")
+    let today_success: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log WHERE DATE(created_at) = DATE(NOW() + INTERVAL 8 HOUR) AND status = 1")
         .fetch_one(pool).await.unwrap_or(0);
-    let yesterday_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log WHERE DATE(created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)")
+    let yesterday_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log WHERE DATE(created_at) = DATE_SUB(DATE(NOW() + INTERVAL 8 HOUR), INTERVAL 1 DAY)")
         .fetch_one(pool).await.unwrap_or(0);
     let distinct_ips: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT ip) FROM admin_app_login_log")
         .fetch_one(pool).await.unwrap_or(0);

@@ -19,7 +19,7 @@ async fn user_active(pool: &MySqlPool, ciyuanxi_id: &str) -> bool {
 
 async fn avatar_submit_block_message(pool: &MySqlPool, ciyuanxi_id: &str) -> Option<&'static str> {
     let status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM user_avatar_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+        "SELECT status FROM user_avatar_pending WHERE ciyuanxi_id = ? AND created_at >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR AND created_at < DATE(NOW() + INTERVAL 8 HOUR) + INTERVAL 16 HOUR ORDER BY id DESC LIMIT 1",
     )
     .bind(ciyuanxi_id)
     .fetch_optional(pool)

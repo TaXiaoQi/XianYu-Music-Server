@@ -71,10 +71,23 @@ md5(x-timestamp + x-nonce + raw_body + api_secret)
 | action | 处理函数 | 说明 |
 |--------|----------|------|
 | `error` | `reporting::error` | 错误上报 |
-| `report_user_behavior` | `reporting::report_user_behavior` | 播放行为上报 |
+| `report_user_behavior` | `reporting::report_user_behavior` | 播放行为上报（写 `play_history`） |
 | `open` | `reporting::app_open` | 客户端启动上报 |
 | `check` | `reporting::check` | 服务连通性检查 |
 | `install` | `reporting::install` | 安装初始化 |
+
+### 推荐
+
+| action | 处理函数 | 说明 |
+|--------|----------|------|
+| `get_daily_recommend` | `recommend::get_daily_recommend` | 每日推荐算法下发（需登录，token 属主校验） |
+
+#### `get_daily_recommend` 说明
+
+- 请求体：`{ "ciyuanxi_id": "..." }`（token 由客户端信封自动注入）。
+- 服务端基于账号近 90 天播放历史（`play_history`）聚合画像（常听歌手/歌曲/收听规模），决策推荐策略权重并下发"算法 DSL"：策略列表（`artist_search` / `song_search` / `keyword_search` + 权重 + 查询词 + 推荐理由）、排除项（近 14 天听过的歌）、每日种子与目标数量。
+- 客户端在本机调用已安装的音源插件按策略执行搜索，过滤排除项、按权重打分去重、按每日种子洗牌，整理出当日推荐歌曲板块。
+- 算法缓存 10 分钟（同用户同日），同一天多次请求返回一致结果；策略与权重由服务端决策，可随时调整无需客户端发版。
 
 ### 系统
 

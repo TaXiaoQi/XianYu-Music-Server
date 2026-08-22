@@ -172,7 +172,7 @@ fn async_of_i64(v: &Value) -> i64 {
 
 async fn nickname_submit_block_message(pool: &MySqlPool, ciyuanxi_id: &str) -> Option<&'static str> {
     let status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM user_nickname_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+        "SELECT status FROM user_nickname_pending WHERE ciyuanxi_id = ? AND created_at >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR AND created_at < DATE(NOW() + INTERVAL 8 HOUR) + INTERVAL 16 HOUR ORDER BY id DESC LIMIT 1",
     )
     .bind(ciyuanxi_id)
     .fetch_optional(pool)
@@ -188,7 +188,7 @@ async fn nickname_submit_block_message(pool: &MySqlPool, ciyuanxi_id: &str) -> O
 
 async fn avatar_submit_block_message(pool: &MySqlPool, ciyuanxi_id: &str) -> Option<&'static str> {
     let status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM user_avatar_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+        "SELECT status FROM user_avatar_pending WHERE ciyuanxi_id = ? AND created_at >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR AND created_at < DATE(NOW() + INTERVAL 8 HOUR) + INTERVAL 16 HOUR ORDER BY id DESC LIMIT 1",
     )
     .bind(ciyuanxi_id)
     .fetch_optional(pool)
@@ -645,7 +645,7 @@ pub async fn get_avatar_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
         return ctx.err(404, "用户不存在");
     }
     let today_status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM user_avatar_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+        "SELECT status FROM user_avatar_pending WHERE ciyuanxi_id = ? AND created_at >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR AND created_at < DATE(NOW() + INTERVAL 8 HOUR) + INTERVAL 16 HOUR ORDER BY id DESC LIMIT 1",
     )
     .bind(&ciyuanxi_id)
     .fetch_optional(pool)
@@ -696,7 +696,7 @@ pub async fn get_nickname_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         return ctx.err(404, "用户不存在");
     };
     let today_status = sqlx::query_scalar::<_, String>(
-        "SELECT status FROM user_nickname_pending WHERE ciyuanxi_id = ? AND created_at >= CURDATE() AND created_at < CURDATE() + INTERVAL 1 DAY ORDER BY id DESC LIMIT 1",
+        "SELECT status FROM user_nickname_pending WHERE ciyuanxi_id = ? AND created_at >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 8 HOUR AND created_at < DATE(NOW() + INTERVAL 8 HOUR) + INTERVAL 16 HOUR ORDER BY id DESC LIMIT 1",
     )
     .bind(&ciyuanxi_id)
     .fetch_optional(pool)
@@ -789,8 +789,13 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         .execute(pool)
         .await;
 
-        // 同时清理每日统计，确保日榜/周榜从零开始
+        // 同时清理每日统计与播放历史，确保日榜/周榜与每日推荐从零开始
         let _ = sqlx::query("DELETE FROM listen_daily_stats WHERE ciyuanxi_id = ?")
+            .bind(&ciyuanxi_id)
+            .execute(pool)
+            .await;
+
+        let _ = sqlx::query("DELETE FROM play_history WHERE ciyuanxi_id = ?")
             .bind(&ciyuanxi_id)
             .execute(pool)
             .await;
@@ -821,7 +826,7 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     // 同步写入每日统计（用于日榜/周榜），使用客户端上报的当日时长而非累计总时长
     let _ = sqlx::query(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
-         VALUES (?, CURDATE(), ?, ?) \
+         VALUES (?, DATE(NOW() + INTERVAL 8 HOUR), ?, ?) \
          ON DUPLICATE KEY UPDATE \
              listen_duration = GREATEST(listen_duration, VALUES(listen_duration)), \
              unique_songs_count = GREATEST(unique_songs_count, VALUES(unique_songs_count))",

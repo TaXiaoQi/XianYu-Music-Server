@@ -787,6 +787,34 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
                 "debug": true,
             }))
         }
+        "get_daily_recommend" => {
+            // 本地调试模式：返回固定示例算法，便于客户端联调每日推荐板块
+            let seed = 424242;
+            ctx.ok("ok", json!({
+                "version": 1,
+                "date": now_string().split(' ').next().unwrap_or("").to_string(),
+                "daily_seed": seed,
+                "target_count": 30,
+                "profile": {
+                    "top_artists": [],
+                    "top_songs": [],
+                    "total_plays": 0,
+                    "active_days": 0,
+                },
+                "strategies": [
+                    json!({
+                        "id": "fresh_discover",
+                        "type": "keyword_search",
+                        "weight": 1.0,
+                        "queries": ["华语流行", "经典老歌", "轻音乐"],
+                        "reason": "本地调试示例策略",
+                    })
+                ],
+                "exclusions": { "match_mode": "title_artist", "songs": [] },
+                "shuffle": { "algorithm": "seeded", "seed": seed },
+                "debug": true,
+            }))
+        }
         _ => ctx.json(200, "本地调试模式：接口已连通", Some(json!({
             "action": action,
             "debug": true

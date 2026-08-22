@@ -49,6 +49,8 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "wallpapers", "uploaded_by_nickname", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "wallpapers", "reviewed_at", "datetime NULL").await;
     ensure_column(pool, "wallpapers", "reviewed_by", "varchar(64) NOT NULL DEFAULT ''").await;
+    // 日推画像聚合与排行榜查询加速：ciyuanxi_id + played_at 复合索引
+    ensure_index(pool, "play_history", "idx_ciyuanxi_played", "ciyuanxi_id, played_at").await;
     ensure_default_admin(pool).await;
 }
 
@@ -99,6 +101,25 @@ async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: 
     }
 }
 
+async fn ensure_index(pool: &MySqlPool, table: &str, index_name: &str, columns: &str) {
+    let exists: i64 = sqlx::query(
+        "SELECT COUNT(*) AS cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
+    )
+    .bind(table)
+    .bind(index_name)
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get("cnt"))
+    .unwrap_or(0);
+    if exists > 0 {
+        return;
+    }
+    let sql = format!("ALTER TABLE `{}` ADD INDEX `{}` ({})", table, index_name, columns);
+    if let Err(e) = sqlx::query(&sql).execute(pool).await {
+        warn!("schema index failed: {} -> {}", sql, e);
+    }
+}
+
 
 
 async fn ensure_feedback_log_columns(pool: &MySqlPool) {
@@ -121,6 +142,8 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "images", "TEXT").await;
     // 平台版本：desktop（桌面版）/ mobile（移动版）/ watch（腕上版，预留），后台创建时由管理员选择
     ensure_column(pool, "user_feedback", "platform", "VARCHAR(32) NOT NULL DEFAULT ''").await;
+    // 客户端反馈时上报的具体应用版本号（如 1.1.4-beta1），用于后台按版本定位问题
+    ensure_column(pool, "user_feedback", "app_version", "VARCHAR(32) NOT NULL DEFAULT ''").await;
     // 回收站：软删除时间与删除人，14天后自动过期
     ensure_column(pool, "user_feedback", "deleted_at", "DATETIME DEFAULT NULL").await;
     ensure_column(pool, "user_feedback", "deleted_by", "VARCHAR(64) NOT NULL DEFAULT ''").await;
@@ -736,7 +759,8 @@ static TABLE_STATEMENTS: &[&str] = &[
             PRIMARY KEY (`id`),
             KEY `idx_user_id` (`user_id`),
             KEY `idx_ciyuanxi_id` (`ciyuanxi_id`),
-            KEY `idx_played_at` (`played_at`)
+            KEY `idx_played_at` (`played_at`),
+            KEY `idx_ciyuanxi_played` (`ciyuanxi_id`, `played_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `admin_app_login_log` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,

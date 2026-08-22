@@ -183,7 +183,7 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
-        "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.platform, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.resolve_images, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
+        "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.platform, f.app_version, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.resolve_images, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
                 f.log_meta,
                 COALESCE(CHAR_LENGTH(f.error_logs), 0) AS error_logs_chars,
                 COALESCE(CHAR_LENGTH(f.all_logs), 0) AS all_logs_chars,
@@ -923,6 +923,7 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
         // 封禁申诉场景不带平台版本，全部归属桌面版
         platform = "desktop".to_string();
     }
+    let app_version = str_of(&data, "app_version").trim().to_string();
     // 封禁申诉类型使用 category='appeal'，其余使用 category='feedback'
     let category = if feedback_type == "appeal" { "appeal" } else { "feedback" };
     let title = str_of(&data, "title").trim().to_string();
@@ -968,13 +969,14 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     let images_json = json!(image_urls).to_string();
     // 后台创建：昵称显示为发起的管理员，ciyuanxi_id 留空标识为后台创建
     let result = sqlx::query(
-        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, platform, images, status, category, ip) VALUES ('', ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
+        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, platform, app_version, images, status, category, ip) VALUES ('', ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
     )
         .bind(&ctx.username)
         .bind(&title)
         .bind(&content)
         .bind(&feedback_type)
         .bind(&platform)
+        .bind(&app_version)
         .bind(&images_json)
         .bind(&category)
         .bind(&ctx.ip)

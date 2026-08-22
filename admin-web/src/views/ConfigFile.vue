@@ -11,11 +11,21 @@
       </div>
       <div class="header-actions">
         <button class="btn-secondary" :disabled="loading || saving" @click="load">刷新</button>
-        <button class="btn-secondary" :disabled="loading || saving || migrating" @click="migrateCache">
+        <button
+          class="btn-secondary"
+          :disabled="loading || saving || migrating || !isSuper"
+          :title="isSuper ? '' : '仅超级管理员可迁移本地缓存'"
+          @click="migrateCache"
+        >
           <span v-if="migrating" class="spinner"></span>
           {{ migrating ? '迁移中...' : '迁移本地缓存' }}
         </button>
-        <button class="btn-primary" :disabled="loading || saving" @click="save">
+        <button
+          class="btn-primary"
+          :disabled="loading || saving || !isSuper"
+          :title="isSuper ? '' : '仅超级管理员可修改服务端配置文件'"
+          @click="save"
+        >
           <span v-if="saving" class="spinner"></span>
           {{ saving ? '保存中...' : '保存配置' }}
         </button>
@@ -217,9 +227,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
+import { useAuthStore } from '@/stores/auth'
+
+const auth = useAuthStore()
+const isSuper = computed(() => auth.user?.role === 'super_admin')
 
 interface ServerConfigForm {
   db_host: string
@@ -375,6 +389,10 @@ function validate(): string {
 }
 
 async function save() {
+  if (!isSuper.value) {
+    showToast('仅超级管理员可修改服务端配置文件')
+    return
+  }
   const msg = validate()
   if (msg) {
     showToast(msg)
@@ -403,6 +421,10 @@ async function save() {
 }
 
 async function migrateCache() {
+  if (!isSuper.value) {
+    showToast('仅超级管理员可迁移本地缓存')
+    return
+  }
   const ok = await webConfirm('迁移前请先保存正确的数据库连接配置。确定要把本地缓存数据迁移到数据库吗？', { title: '迁移数据', confirmText: '确定迁移' })
   if (!ok) {
     return

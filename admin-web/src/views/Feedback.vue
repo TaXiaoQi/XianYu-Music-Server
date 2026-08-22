@@ -165,6 +165,7 @@
                   <div class="user-name-row">
                     <span class="user-name">{{ item.nickname || '匿名用户' }}</span>
                     <span v-if="item.platform && platformLabel(item.platform)" class="platform-badge" :class="`platform-${item.platform}`">{{ platformLabel(item.platform) }}</span>
+                    <span v-if="item.app_version" class="platform-badge version-badge">{{ item.app_version }}</span>
                   </div>
                   <span class="user-id">{{ item.ciyuanxi_id || '后台创建' }}</span>
                 </div>
@@ -2016,6 +2017,7 @@ onUnmounted(() => {
 .platform-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 .platform-mobile { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 .platform-watch { background: rgba(20, 184, 166, 0.12); color: #14b8a6; }
+.version-badge { background: rgba(107, 114, 128, 0.14); color: #6b7280; }
 
 .status-badge {
   display: inline-flex;

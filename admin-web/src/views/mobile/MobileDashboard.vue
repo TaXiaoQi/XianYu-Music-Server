@@ -109,8 +109,13 @@
         <button class="mobile-btn primary" @click="copyApiUrl">复制 API</button>
       </div>
       <div class="api-copy-row api-secret-row">
-        <code>{{ clientApiSecret || '未读取到客户端 API 签名密钥' }}</code>
-        <button class="mobile-btn primary" :disabled="!clientApiSecret" @click="copyApiSecret">复制密钥</button>
+        <code>{{ clientApiSecret || '仅超管可见' }}</code>
+        <button
+          class="mobile-btn primary"
+          :disabled="!clientApiSecret"
+          :title="clientApiSecret ? '复制密钥' : '客户端签名密钥仅超级管理员可见'"
+          @click="copyApiSecret"
+        >复制密钥</button>
       </div>
     </div>
   </div>

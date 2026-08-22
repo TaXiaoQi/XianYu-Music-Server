@@ -2,6 +2,7 @@ use axum::response::Response;
 use serde_json::{json, Value};
 use sqlx::{MySqlPool, Row};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -9,11 +10,19 @@ use crate::response::ReqCtx;
 
 const VIOLATION_WINDOW_SECONDS: i64 = 300;
 
+/// 数据库临时封禁查询的内存负缓存间隔（秒）：
+/// 每个身份在该间隔内只查一次库，避免正常请求每条都付出一次 DB 往返
+const DB_BLOCK_CHECK_TTL_SECONDS: i64 = 15;
+
 #[derive(Default)]
 pub struct ApiRateLimiter {
     windows: Mutex<HashMap<String, WindowState>>,
     cooldowns: Mutex<HashMap<String, i64>>,
     temp_blocks: Mutex<HashMap<String, i64>>,
+    /// 身份 -> 下次允许查库确认封禁的时间戳（负缓存）
+    db_block_checks: Mutex<HashMap<String, i64>>,
+    /// 上次全量清理的时间戳（秒），节流避免每请求都锁三张表全量扫描
+    last_cleanup: AtomicI64,
 }
 
 #[derive(Clone, Debug)]
@@ -123,9 +132,12 @@ async fn check_with_identity(
         return Some(rate_limited_response(ctx, until - now, "请求过于频繁，当前设备已被临时限制"));
     }
 
-    if let Some(db_until) = check_db_temp_block(pool, &identity).await {
-        limiter.set_memory_temp_block(&block_key, db_until);
-        return Some(rate_limited_response(ctx, db_until - now, "请求过于频繁，当前设备已被临时限制"));
+    // 内存无封禁时按负缓存间隔查库确认，命中则同步进内存并拦截
+    if limiter.should_check_db_block(&block_key, now) {
+        if let Some(db_until) = check_db_temp_block(pool, &identity).await {
+            limiter.set_memory_temp_block(&block_key, db_until);
+            return Some(rate_limited_response(ctx, db_until - now, "请求过于频繁，当前设备已被临时限制"));
+        }
     }
 
     let decision = limiter.record(profile, &identity.key, &block_key, now);
@@ -245,7 +257,33 @@ impl ApiRateLimiter {
         self.temp_blocks.lock().unwrap().insert(key.to_string(), until);
     }
 
+    /// 是否需要查库确认封禁：距上次确认不足 TTL 时跳过（负缓存）。
+    /// 封禁记录由限流触发时写入，正常请求高频率查库纯属开销。
+    fn should_check_db_block(&self, block_key: &str, now: i64) -> bool {
+        let mut checks = self.db_block_checks.lock().unwrap();
+        match checks.get(block_key).copied() {
+            Some(until) if until > now => false,
+            _ => {
+                checks.insert(block_key.to_string(), now + DB_BLOCK_CHECK_TTL_SECONDS);
+                true
+            }
+        }
+    }
+
     fn cleanup(&self, now: i64) {
+        // 节流：过期条目本身有 TTL 兜底（读取时会判过期），30 秒清一次足够
+        let last = self.last_cleanup.load(Ordering::Relaxed);
+        if now - last < 30 {
+            return;
+        }
+        if self
+            .last_cleanup
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_err()
+        {
+            return; // 另一个请求正在清理
+        }
+
         let mut cooldowns = self.cooldowns.lock().unwrap();
         cooldowns.retain(|_, until| *until > now);
         drop(cooldowns);
@@ -253,6 +291,10 @@ impl ApiRateLimiter {
         let mut blocks = self.temp_blocks.lock().unwrap();
         blocks.retain(|_, until| *until > now);
         drop(blocks);
+
+        let mut checks = self.db_block_checks.lock().unwrap();
+        checks.retain(|_, until| *until > now);
+        drop(checks);
 
         let mut windows = self.windows.lock().unwrap();
         if windows.len() > 10_000 {

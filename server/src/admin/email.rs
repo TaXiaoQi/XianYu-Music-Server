@@ -553,7 +553,7 @@ pub async fn email_users_stats(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_test_users").fetch_one(pool).await.unwrap_or(0);
     let active: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_test_users WHERE status = 1").fetch_one(pool).await.unwrap_or(0);
     let disabled: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_test_users WHERE status = 0").fetch_one(pool).await.unwrap_or(0);
-    let today: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_test_users WHERE DATE(created_at) = CURDATE()").fetch_one(pool).await.unwrap_or(0);
+    let today: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_test_users WHERE DATE(created_at) = DATE(NOW() + INTERVAL 8 HOUR)").fetch_one(pool).await.unwrap_or(0);
     ok("", json!({
         "total_users": total, "active_users": active, "disabled_users": disabled, "today_users": today
     }))

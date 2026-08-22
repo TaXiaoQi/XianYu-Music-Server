@@ -2,6 +2,7 @@ pub mod auth;
 pub mod email_auth;
 pub mod helpers;
 pub mod playlist;
+pub mod recommend;
 pub mod reporting;
 pub mod settings;
 pub mod social;
@@ -28,6 +29,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "report_user_behavior" => reporting::report_user_behavior(body, ctx, pool).await,
         "search" => reporting::search(body, ctx, pool).await,
         "get_hot_search" => reporting::get_hot_search(body, ctx, pool).await,
+        "get_daily_recommend" => recommend::get_daily_recommend(body, ctx, pool).await,
         "open" => reporting::app_open(body, ctx, pool).await,
         "check" => reporting::check(ctx, pool).await,
         "install" => reporting::install(ctx, pool).await,
