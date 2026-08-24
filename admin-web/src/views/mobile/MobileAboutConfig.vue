@@ -4,10 +4,20 @@
     <section class="mobile-page-head">
       <div class="mobile-head-info">
         <div class="mobile-head-title">关于页配置</div>
-        <div class="mobile-head-desc">配置桌面端关于页的官网、检查更新、项目地址等入口，保存后由客户端从后台下发。</div>
+        <div class="mobile-head-desc">按客户端平台分别配置关于页的官网、检查更新、项目地址等入口，保存后由对应平台客户端下发。</div>
       </div>
       <button class="mobile-btn primary" :disabled="saving" @click="save">{{ saving ? '保存中...' : '保存配置' }}</button>
     </section>
+
+    <div class="platform-tabs">
+      <button
+        v-for="p in PLATFORMS"
+        :key="p.key"
+        class="platform-tab"
+        :class="{ active: platform === p.key }"
+        @click="switchPlatform(p.key)"
+      >{{ p.label }}</button>
+    </div>
 
     <div v-if="loading" class="mobile-empty">加载中...</div>
 
@@ -77,13 +87,13 @@
         </div>
       </section>
 
-      <p class="about-hint">链接留空后，桌面端会隐藏对应外链按钮；检查更新入口可通过开关隐藏。</p>
+      <p class="about-hint">链接留空后，{{ platform === 'mobile' ? '移动端' : '桌面端' }}会隐藏对应外链按钮；检查更新入口可通过开关隐藏。两个平台的配置独立存储、互不影响。</p>
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
 
@@ -100,7 +110,7 @@ interface AboutConfig {
   joinGroupText: string
 }
 
-const defaultConfig: AboutConfig = {
+const desktopDefaults: AboutConfig = {
   officialSiteUrl: 'https://xymusic.cc',
   officialSiteText: '前往官网',
   updateEnabled: true,
@@ -113,15 +123,34 @@ const defaultConfig: AboutConfig = {
   joinGroupText: '加入群组',
 }
 
+const mobileDefaults: AboutConfig = {
+  ...desktopDefaults,
+  projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Mobile',
+  referenceProjectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
+}
+
 const loading = ref(true)
 const saving = ref(false)
-const form = ref<AboutConfig>({ ...defaultConfig })
+const platform = ref<'desktop' | 'mobile'>('desktop')
+const defaultConfig = computed(() => (platform.value === 'mobile' ? mobileDefaults : desktopDefaults))
+const form = ref<AboutConfig>({ ...desktopDefaults })
+
+const PLATFORMS = [
+  { key: 'desktop' as const, label: '桌面端' },
+  { key: 'mobile' as const, label: '移动端' },
+]
+
+function switchPlatform(key: 'desktop' | 'mobile') {
+  if (platform.value === key || loading.value || saving.value) return
+  platform.value = key
+  loadConfig()
+}
 
 async function loadConfig() {
   loading.value = true
-  const res = await adminApi<Partial<AboutConfig>>('get_about_config_admin')
+  const res = await adminApi<Partial<AboutConfig>>('get_about_config_admin', { platform: platform.value })
   if (res.code === 200 && res.data) {
-    form.value = { ...defaultConfig, ...res.data }
+    form.value = { ...defaultConfig.value, ...res.data }
   } else {
     showToast(res.msg || '加载配置失败')
   }
@@ -131,6 +160,7 @@ async function loadConfig() {
 async function save() {
   saving.value = true
   const res = await adminApi('save_about_config', {
+    platform: platform.value,
     ...form.value,
     updateEnabled: form.value.updateEnabled ? 1 : 0,
   })
@@ -166,6 +196,31 @@ onMounted(loadConfig)
 .mobile-page-head .mobile-btn {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.platform-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: var(--control-bg, var(--card-solid));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.platform-tab {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-light, var(--text-muted));
+  padding: 7px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.platform-tab.active {
+  background: var(--card-solid);
+  color: var(--accent);
 }
 
 .about-section {

@@ -21,6 +21,7 @@
           <ul class="submenu" :class="{ open: openMenu === 'content' }">
             <li><router-link to="/announcements">公告管理</router-link></li>
             <li><router-link to="/version">版本管理</router-link></li>
+            <li><router-link to="/fallback-modules">兜底管理</router-link></li>
             <li><router-link to="/wallpapers">壁纸管理</router-link></li>
             <li><router-link to="/avatar-audit">头像/改名审核</router-link></li>
             <li><router-link to="/user-agreement">用户协议</router-link></li>

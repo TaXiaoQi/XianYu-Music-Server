@@ -7,12 +7,23 @@
           壁纸管理
           <span v-if="pendingCount > 0" class="pending-badge">{{ pendingCount }} 项待审核</span>
         </h2>
-        <p class="wp-desc">管理员上传的壁纸直接启用；用户在桌面端上传的壁纸状态为「待审核」，需审核通过后才会展示给所有用户。</p>
+        <p class="wp-desc">壁纸按客户端平台隔离下发：管理员上传时选择平台，用户上传的壁纸继承其客户端平台，审核通过后仅对该平台展示。</p>
       </div>
       <button class="mobile-btn primary wp-add-btn" @click="openAddModal">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         新增壁纸
       </button>
+    </div>
+
+    <!-- 平台切换 -->
+    <div class="platform-tabs">
+      <button
+        v-for="p in PLATFORMS"
+        :key="p.key"
+        class="platform-tab"
+        :class="{ active: platformFilter === p.key }"
+        @click="platformFilter = p.key"
+      >{{ p.label }}</button>
     </div>
 
     <!-- 上传限制配置 -->
@@ -88,8 +99,8 @@
 
     <!-- 空状态 -->
     <div v-if="!loading && filteredList.length === 0" class="mobile-empty">
-      <div class="empty-title">{{ activeFilter === 'all' ? '暂无壁纸' : '该分类下暂无壁纸' }}</div>
-      <div class="empty-sub">点击上方「新增壁纸」上传第一张壁纸</div>
+      <div class="empty-title">{{ activeFilter === 'all' ? `暂无${currentPlatformLabel}壁纸` : '该分类下暂无壁纸' }}</div>
+      <div class="empty-sub">点击上方「新增壁纸」上传第一张{{ currentPlatformLabel }}壁纸</div>
     </div>
 
     <!-- 壁纸画廊 -->
@@ -121,7 +132,10 @@
         <div class="card-info">
           <div class="info-top">
             <h3 class="card-title">{{ item.title }}</h3>
-            <span class="card-category">{{ item.category || '默认' }}</span>
+            <div class="info-tags">
+              <span class="card-platform" :class="`pf-${platformOf(item)}`">{{ platformLabelOf(item) }}</span>
+              <span class="card-category">{{ item.category || '默认' }}</span>
+            </div>
           </div>
           <p v-if="item.description" class="card-desc">{{ item.description }}</p>
           <div class="info-meta">
@@ -168,6 +182,19 @@
             </button>
           </div>
           <div class="modal-body">
+            <div class="modal-field">
+              <span class="required">下发平台</span>
+              <div class="platform-row">
+                <button
+                  v-for="p in PLATFORMS"
+                  :key="p.key"
+                  type="button"
+                  class="platform-btn"
+                  :class="{ on: addForm.platform === p.key }"
+                  @click="addForm.platform = p.key"
+                >{{ p.label }}</button>
+              </div>
+            </div>
             <label class="modal-field">
               <span class="required">标题</span>
               <input v-model="addForm.title" type="text" placeholder="请输入壁纸标题" />
@@ -196,7 +223,7 @@
               <div class="upload-bar-track"><div class="upload-bar-fill" :style="{ width: uploadProgress + '%' }"></div></div>
               <span class="upload-pct">{{ uploadProgress }}%</span>
             </div>
-            <p class="modal-tip">管理员上传的壁纸将直接启用并展示给所有用户。</p>
+            <p class="modal-tip">管理员上传的壁纸将直接启用，仅展示给所选平台的用户。</p>
           </div>
           <div class="modal-foot">
             <button class="modal-btn cancel" @click="closeAddModal">取消</button>
@@ -222,6 +249,7 @@ interface Wallpaper {
   thumbnail_url: string
   url?: string
   category: string
+  platform?: string
   status: string
   uploaded_by: string
   uploaded_by_nickname: string
@@ -247,6 +275,27 @@ const filters = [
   { value: 'disabled', label: '已禁用' },
 ]
 
+type PlatformKey = 'desktop' | 'mobile' | 'watch'
+
+const PLATFORMS: { key: PlatformKey; label: string }[] = [
+  { key: 'desktop', label: '桌面端' },
+  { key: 'mobile', label: '移动端' },
+  { key: 'watch', label: '腕上端' },
+]
+
+function platformOf(item: Wallpaper): PlatformKey {
+  const p = item?.platform
+  return p === 'mobile' || p === 'watch' ? p : 'desktop'
+}
+
+function platformLabelKey(key: string): string {
+  return PLATFORMS.find(p => p.key === key)?.label || '桌面端'
+}
+
+function platformLabelOf(item: Wallpaper): string {
+  return platformLabelKey(platformOf(item))
+}
+
 const statusMap: Record<string, string> = {
   normal: '已启用',
   disabled: '已禁用',
@@ -271,14 +320,15 @@ function uploaderText(item: Wallpaper): string {
 }
 
 function countByStatus(status: string): number {
-  if (status === 'all') return wallpapers.value.length
-  return wallpapers.value.filter(w => w.status === status).length
+  if (status === 'all') return platformList.value.length
+  return platformList.value.filter(w => w.status === status).length
 }
 
 // ===== 列表 =====
 const wallpapers = ref<Wallpaper[]>([])
 const loading = ref(true)
 const activeFilter = ref('all')
+const platformFilter = ref<PlatformKey>('desktop')
 const wallpaperUploadLimit = ref(20)
 const wallpaperUploadLimitInput = ref(20)
 const limitSaving = ref(false)
@@ -287,10 +337,12 @@ const accountLimitLoading = ref(false)
 const accountLimitSaving = ref(false)
 const accountLimitForm = ref({ ciyuanxi_id: '', upload_limit: 20, remark: '' })
 
-const pendingCount = computed(() => wallpapers.value.filter(w => w.status === 'pending').length)
+const pendingCount = computed(() => platformList.value.filter(w => w.status === 'pending').length)
+const platformList = computed(() => wallpapers.value.filter(w => platformOf(w) === platformFilter.value))
+const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
 const filteredList = computed(() => {
-  if (activeFilter.value === 'all') return wallpapers.value
-  return wallpapers.value.filter(w => w.status === activeFilter.value)
+  if (activeFilter.value === 'all') return platformList.value
+  return platformList.value.filter(w => w.status === activeFilter.value)
 })
 
 async function loadList(silent = false) {
@@ -429,10 +481,10 @@ const uploading = ref(false)
 const uploadProgress = ref(0)
 const imagePreview = ref('')
 const fileInputRef = ref<HTMLInputElement | null>(null)
-const addForm = ref({ title: '', description: '', category: '默认', fileName: '', fileSize: 0, fileBase64: '' })
+const addForm = ref({ platform: 'desktop' as PlatformKey, title: '', description: '', category: '默认', fileName: '', fileSize: 0, fileBase64: '' })
 
 function openAddModal() {
-  addForm.value = { title: '', description: '', category: '默认', fileName: '', fileSize: 0, fileBase64: '' }
+  addForm.value = { platform: platformFilter.value, title: '', description: '', category: '默认', fileName: '', fileSize: 0, fileBase64: '' }
   imagePreview.value = ''
   uploadProgress.value = 0
   addModalVisible.value = true
@@ -478,6 +530,7 @@ async function doAddWallpaper() {
   uploading.value = true
   uploadProgress.value = 20
   const res = await adminApi('add_wallpaper', {
+    platform: addForm.value.platform,
     title: addForm.value.title.trim(),
     description: addForm.value.description.trim(),
     category: addForm.value.category.trim() || '默认',
@@ -526,6 +579,32 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   flex-shrink: 0;
   padding: 9px 16px;
   white-space: nowrap;
+}
+
+/* 平台切换 */
+.platform-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: var(--control-bg, var(--card-solid));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.platform-tab {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-light, var(--text-muted));
+  padding: 7px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.platform-tab.active {
+  background: var(--card-solid);
+  color: var(--accent);
 }
 
 /* 状态筛选 */
@@ -661,6 +740,11 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 
 .card-info { padding: 10px 12px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
 .info-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 6px; }
+.info-tags { display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.card-platform { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 999px; white-space: nowrap; }
+.pf-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.pf-mobile { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+.pf-watch { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 .card-title { font-size: 13px; font-weight: 750; margin: 0; color: var(--text); line-height: 1.35; word-break: break-word; }
 .card-category { font-size: 10px; color: var(--text-muted); background: var(--control-bg); padding: 2px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
 .card-desc {
@@ -751,6 +835,15 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   resize: vertical;
 }
 .modal-field input:focus, .modal-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* 平台选择器 */
+.platform-row { display: flex; gap: 8px; }
+.platform-btn {
+  flex: 1; padding: 10px; border-radius: 12px; border: 1px solid var(--border);
+  background: var(--control-bg); color: var(--text-muted);
+  font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.18s;
+}
+.platform-btn.on { background: #EC4141; border-color: #EC4141; color: #fff; }
 
 .upload-zone {
   border: 1.5px dashed var(--border);

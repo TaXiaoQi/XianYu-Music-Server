@@ -837,9 +837,49 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     .execute(pool)
     .await;
 
+    // 返回服务端当前账号总时长，供客户端合并到本地（多端总播放时长同步）
+    let server_total: i64 = sqlx::query_scalar("SELECT listen_duration FROM app_users WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
     match result {
-        Ok(r) if r.rows_affected() > 0 => ctx.ok_empty("ok"),
+        Ok(r) if r.rows_affected() > 0 => ctx.ok("ok", Some(json!({ "server_total_duration": server_total }))),
         Ok(_) => ctx.err(404, "用户不存在"),
+        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+    }
+}
+
+/// get_listen_stats 查询账号累计听歌时长（秒）
+///
+/// 客户端登录后调用，把服务端记录的账号总时长合并进本地统计，
+/// 实现桌面端 / 移动端总播放时长跨端同步。
+pub async fn get_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = extract_id(&data);
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "弦予号不能为空");
+    }
+
+    let row = sqlx::query(
+        "SELECT listen_duration, unique_songs_count FROM app_users WHERE ciyuanxi_id = ?",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_optional(pool)
+    .await;
+
+    match row {
+        Ok(Some(r)) => {
+            use sqlx::Row;
+            let duration: i64 = r.try_get("listen_duration").unwrap_or(0);
+            let songs: i64 = r.try_get("unique_songs_count").unwrap_or(0);
+            ctx.ok(
+                "ok",
+                Some(json!({ "total_duration": duration.max(0), "unique_songs_count": songs.max(0) })),
+            )
+        }
+        Ok(None) => ctx.err(404, "用户不存在"),
         Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
     }
 }

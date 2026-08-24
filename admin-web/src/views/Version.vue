@@ -6,7 +6,7 @@
         <div class="header-info">
           <h2 class="page-title">版本管理</h2>
           <p class="page-desc">
-            管理桌面端在线更新配置。新增或编辑版本后，卡片实时刷新。启用的版本将对客户端生效。
+            按客户端平台管理在线更新配置。新增或编辑版本后，卡片实时刷新。启用的版本只对所选平台的客户端生效。
           </p>
         </div>
         <button class="btn-add" @click="openDesktopModal">
@@ -17,6 +17,17 @@
         </button>
       </div>
     </Transition>
+
+    <!-- 平台切换 -->
+    <div class="platform-tabs">
+      <button
+        v-for="p in PLATFORMS"
+        :key="p.key"
+        class="platform-tab"
+        :class="{ active: platformFilter === p.key }"
+        @click="switchPlatform(p.key)"
+      >{{ p.label }}</button>
+    </div>
 
     <!-- 统计卡片 -->
     <Transition name="fade-up" appear>
@@ -51,35 +62,35 @@
       </div>
     </Transition>
 
-    <!-- 桌面端在线更新卡片 -->
+    <!-- 在线更新卡片（按当前平台过滤） -->
     <Transition name="fade-up" appear>
       <div class="desktop-section">
         <div class="section-label">
-          <span class="section-dot dot-desktop"></span>
-          <h3>桌面端在线更新</h3>
-          <span class="section-hint">桌面端启动时自动比对版本号，低于此版本将弹窗提示更新</span>
+          <span class="section-dot" :class="`dot-${platformFilter}`"></span>
+          <h3>{{ currentPlatformLabel }}在线更新</h3>
+          <span class="section-hint">{{ currentPlatformLabel }}启动时自动比对版本号，低于此版本将弹窗提示更新</span>
         </div>
 
         <div v-if="desktopLoading" class="state-box"><div class="spinner"></div><span>加载中...</span></div>
 
-        <div v-else-if="desktopList.length === 0" class="desktop-empty">
-          <p>暂未配置桌面端更新版本</p>
+        <div v-else-if="platformList.length === 0" class="desktop-empty">
+          <p>暂未配置{{ currentPlatformLabel }}更新版本</p>
           <button class="btn-add-small" @click="openDesktopModal()">+ 新增配置</button>
         </div>
 
         <div v-else class="card-grid">
           <TransitionGroup name="card">
             <div
-              v-for="(item, idx) in desktopList"
-              :key="item.version"
+              v-for="(item, idx) in platformList"
+              :key="`${item.platform || 'desktop'}-${item.version}`"
               class="ann-card"
               :class="{ disabled: !item.enabled }"
               :style="{ animationDelay: `${idx * 60}ms` }"
             >
-              <div class="type-bar bar-desktop"></div>
+              <div class="type-bar" :class="`bar-${item.platform || 'desktop'}`"></div>
               <div class="card-body">
                 <div class="card-top">
-                  <span class="type-badge badge-desktop">桌面端</span>
+                  <span class="type-badge" :class="`badge-${item.platform || 'desktop'}`">{{ platformLabelOf(item) }}</span>
                   <label class="toggle-switch" :title="item.enabled ? '点击禁用' : '点击启用'">
                     <input type="checkbox" :checked="item.enabled" @change="toggleDesktop($event, item)" />
                     <span class="toggle-slider"></span>
@@ -117,12 +128,27 @@
       <div v-if="desktopModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
-            <h3>{{ desktopEditingVersion ? '编辑桌面端配置' : '新增桌面端配置' }}</h3>
+            <h3>{{ desktopEditingVersion ? `编辑${platformLabelKey(desktopDraftPlatform)}配置` : `新增${platformLabelKey(desktopDraftPlatform)}配置` }}</h3>
             <button class="modal-close" @click="closeDesktopModal">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
           <div class="modal-form">
+            <div class="field">
+              <label class="required">客户端平台</label>
+              <div class="type-picker platform-picker">
+                <button
+                  v-for="p in PLATFORMS"
+                  :key="p.key"
+                  class="type-option pick-platform"
+                  :class="{ active: desktopDraftPlatform === p.key, locked: !!desktopEditingVersion }"
+                  :disabled="!!desktopEditingVersion"
+                  @click="desktopDraftPlatform = p.key"
+                >
+                  <span class="pick-dot"></span>{{ p.label }}
+                </button>
+              </div>
+            </div>
             <div class="field">
               <label class="required">版本号</label>
               <input v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
@@ -216,11 +242,40 @@ import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 
-// ===== 桌面端配置 =====
+type PlatformKey = 'desktop' | 'mobile' | 'watch'
+
+const PLATFORMS: { key: PlatformKey; label: string }[] = [
+  { key: 'desktop', label: '桌面端' },
+  { key: 'mobile', label: '移动端' },
+  { key: 'watch', label: '腕上端' },
+]
+
+function platformOf(item: any): PlatformKey {
+  const p = item?.platform
+  return p === 'mobile' || p === 'watch' ? p : 'desktop'
+}
+
+function platformLabelKey(key: string): string {
+  return PLATFORMS.find(p => p.key === key)?.label || '桌面端'
+}
+
+// ===== 版本配置 =====
 const desktopList = ref<any[]>([])
 const desktopLoading = ref(true)
-const enabledCount = computed(() => desktopList.value.filter(v => v.enabled).length)
-const disabledCount = computed(() => desktopList.value.length - enabledCount.value)
+const platformFilter = ref<PlatformKey>('desktop')
+const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
+const platformList = computed(() => desktopList.value.filter(v => platformOf(v) === platformFilter.value))
+const enabledCount = computed(() => platformList.value.filter(v => v.enabled).length)
+const disabledCount = computed(() => platformList.value.length - enabledCount.value)
+
+function platformLabelOf(item: any): string {
+  return platformLabelKey(platformOf(item))
+}
+
+function switchPlatform(key: PlatformKey) {
+  if (platformFilter.value === key || desktopSaving.value) return
+  platformFilter.value = key
+}
 
 async function loadDesktop() {
   desktopLoading.value = true
@@ -231,10 +286,11 @@ async function loadDesktop() {
   desktopLoading.value = false
 }
 
-// 桌面端弹窗
+// 版本配置弹窗
 const desktopModalVisible = ref(false)
 const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string }>({ version: '', updateContent: '', downloadUrl: '' })
 const desktopDraftEnabled = ref(false)
+const desktopDraftPlatform = ref<PlatformKey>('desktop')
 const desktopEditingVersion = ref('')
 const desktopSaving = ref(false)
 const desktopChannelModalVisible = ref(false)
@@ -263,6 +319,7 @@ const desktopChannelDesc = computed(() => {
 function openDesktopModal(item?: any) {
   if (item) {
     desktopEditingVersion.value = item.version || ''
+    desktopDraftPlatform.value = platformOf(item)
     desktopDraft.value = {
       version: item.version || '',
       updateContent: item.updateContent || '',
@@ -271,6 +328,7 @@ function openDesktopModal(item?: any) {
     desktopDraftEnabled.value = !!item.enabled
   } else {
     desktopEditingVersion.value = ''
+    desktopDraftPlatform.value = platformFilter.value
     desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
     desktopDraftEnabled.value = false
   }
@@ -310,6 +368,7 @@ async function saveDesktop() {
   }
   const version = desktopDraft.value.version.trim()
   const res = await adminApi('save_desktop_version', {
+    platform: desktopDraftPlatform.value,
     version,
     download_url: desktopDraft.value.downloadUrl?.trim() || '',
     update_content: desktopDraft.value.updateContent.trim(),
@@ -325,7 +384,7 @@ async function saveDesktop() {
       showToast('修改成功', 'success')
       desktopModalVisible.value = false
     } else {
-      // 新增成功：保持弹窗打开并清空表单，方便继续新增多个版本
+      // 新增成功：保持弹窗打开并清空表单（保留平台），方便继续新增多个版本
       showToast('保存成功，可继续新增版本', 'success')
       desktopEditingVersion.value = ''
       desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
@@ -343,6 +402,7 @@ async function saveDesktop() {
 async function toggleDesktop(e: Event, item: any) {
   const enabled = (e.target as HTMLInputElement).checked
   const res = await adminApi('save_desktop_version', {
+    platform: platformOf(item),
     version: item.version,
     download_url: item.downloadUrl || '',
     update_content: item.updateContent || '',
@@ -359,9 +419,9 @@ async function toggleDesktop(e: Event, item: any) {
 }
 
 async function deleteDesktop(item: any) {
-  const ok = await webConfirm(`确认删除 v${item.version} 的桌面端更新配置？`, { title: '删除配置', confirmText: '确认删除' })
+  const ok = await webConfirm(`确认删除${platformLabelOf(item)} v${item.version} 的更新配置？`, { title: '删除配置', confirmText: '确认删除' })
   if (!ok) return
-  const res = await adminApi('delete_desktop_version', { version: item.version })
+  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), version: item.version })
   if (res.code === 200) {
     showToast('删除成功', 'success')
     loadDesktop()
@@ -591,7 +651,36 @@ onMounted(() => {
   flex-shrink: 0;
 }
 .dot-desktop { background: #3b82f6; }
+.dot-mobile { background: #10b981; }
+.dot-watch { background: #8b5cf6; }
 .dot-app { background: #10b981; }
+
+/* 平台切换 tab */
+.platform-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 20px;
+  background: var(--card-solid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.platform-tab {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-light);
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.platform-tab:hover { color: var(--text); }
+.platform-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 
 /* ===== 加载/错误/空状态 ===== */
 .state-box {
@@ -696,6 +785,8 @@ onMounted(() => {
   flex-shrink: 0;
 }
 .bar-desktop { background: #3b82f6; }
+.bar-mobile { background: #10b981; }
+.bar-watch { background: #8b5cf6; }
 .bar-normal { background: #10b981; }
 .bar-update { background: #3b82f6; }
 .bar-force { background: #f59e0b; }
@@ -728,6 +819,8 @@ onMounted(() => {
   letter-spacing: 0.02em;
 }
 .badge-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.badge-mobile { background: rgba(16, 185, 129, 0.12); color: #10b981; }
+.badge-watch { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 .badge-normal { background: rgba(34, 197, 94, 0.14); color: #10b981; }
 .badge-update { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 .badge-force { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
@@ -1030,6 +1123,11 @@ onMounted(() => {
 .pick-enable.active .pick-dot { background: #10b981; }
 .pick-disable.active { background: var(--control-bg); color: #6b7280; }
 .pick-disable.active .pick-dot { background: #6b7280; }
+
+/* 平台选择器 */
+.platform-picker .pick-platform.active { background: var(--accent-soft); color: var(--accent); }
+.platform-picker .pick-platform.active .pick-dot { background: var(--accent); }
+.platform-picker .pick-platform.locked { cursor: not-allowed; opacity: 0.7; }
 
 /* 渠道选项 */
 .channel-options {

@@ -4,9 +4,20 @@
     <div class="ver-header">
       <div class="ver-header-info">
         <h2 class="ver-title">版本管理</h2>
-        <p class="ver-desc">管理桌面端在线更新配置。新增或编辑版本后，卡片实时刷新。</p>
+        <p class="ver-desc">按客户端平台管理在线更新配置，启用的版本只对所选平台生效。</p>
       </div>
-      <button class="mobile-btn primary" @click="openDesktopModal">+ 新增版本</button>
+      <button class="mobile-btn primary" @click="openDesktopModal()">+ 新增版本</button>
+    </div>
+
+    <!-- 平台切换 -->
+    <div class="platform-tabs">
+      <button
+        v-for="p in PLATFORMS"
+        :key="p.key"
+        class="platform-tab"
+        :class="{ active: platformFilter === p.key }"
+        @click="switchPlatform(p.key)"
+      >{{ p.label }}</button>
     </div>
 
     <!-- 统计卡片 -->
@@ -16,7 +27,7 @@
           <span class="stat-icon stat-icon-total">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </span>
-          <strong>{{ hasConfig ? 1 : 0 }}</strong>
+          <strong>{{ platformList.length }}</strong>
         </div>
         <span class="stat-label">全部</span>
       </div>
@@ -25,7 +36,7 @@
           <span class="stat-icon stat-icon-on">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
           </span>
-          <strong>{{ desktop.enabled ? 1 : 0 }}</strong>
+          <strong>{{ enabledCount }}</strong>
         </div>
         <span class="stat-label">已启用</span>
       </div>
@@ -34,69 +45,90 @@
           <span class="stat-icon stat-icon-off">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
           </span>
-          <strong>{{ hasConfig && !desktop.enabled ? 1 : 0 }}</strong>
+          <strong>{{ platformList.length - enabledCount }}</strong>
         </div>
         <span class="stat-label">已禁用</span>
       </div>
     </div>
 
-    <!-- 桌面端在线更新 -->
+    <!-- 在线更新（按当前平台过滤） -->
     <div class="ver-section">
       <div class="ver-section-label">
-        <span class="ver-section-dot dot-desktop"></span>
-        <h3>桌面端在线更新</h3>
+        <span class="ver-section-dot" :class="`dot-${platformFilter}`"></span>
+        <h3>{{ currentPlatformLabel }}在线更新</h3>
       </div>
 
       <div v-if="desktopLoading" class="ver-empty">加载中...</div>
 
-      <div v-else-if="!desktop.version && !desktop.downloadUrl" class="ver-desktop-empty">
-        <p>暂未配置桌面端更新版本</p>
-        <button class="mobile-btn outline" @click="openDesktopModal">+ 新增配置</button>
+      <div v-else-if="platformList.length === 0" class="ver-desktop-empty">
+        <p>暂未配置{{ currentPlatformLabel }}更新版本</p>
+        <button class="mobile-btn outline" @click="openDesktopModal()">+ 新增配置</button>
       </div>
 
-      <div v-else class="ver-card" :class="{ disabled: !desktop.enabled }">
-        <div class="ver-card-bar bar-desktop"></div>
-        <div class="ver-card-body">
-          <div class="ver-card-top">
-            <span class="ver-badge badge-desktop">桌面端</span>
-            <label class="ver-toggle" :title="desktop.enabled ? '点击禁用' : '点击启用'">
-              <input type="checkbox" :checked="desktop.enabled" @change="toggleDesktop($event)" />
-              <span class="ver-toggle-slider"></span>
-            </label>
-          </div>
-          <div class="ver-card-title">v{{ desktop.version || '-' }}</div>
-          <div class="ver-card-content">{{ desktop.updateContent || '无更新说明' }}</div>
-          <div v-if="desktop.downloadUrl" class="ver-card-link" @click="openUrl(desktop.downloadUrl)">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            <span>下载安装包</span>
-          </div>
-          <div class="ver-card-footer">
-            <span class="ver-card-date">{{ fmtDateTime(desktop.updated_at) || '-' }}</span>
-            <div class="ver-card-actions">
-              <button class="ver-icon-btn" title="编辑" @click="openDesktopModal">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-              </button>
-              <button class="ver-icon-btn ver-icon-danger" title="删除" @click="deleteDesktop">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-              </button>
+      <div v-else class="ver-card-list">
+        <div
+          v-for="item in platformList"
+          :key="`${platformOf(item)}-${item.version}`"
+          class="ver-card"
+          :class="{ disabled: !item.enabled }"
+        >
+          <div class="ver-card-bar" :class="`bar-${platformOf(item)}`"></div>
+          <div class="ver-card-body">
+            <div class="ver-card-top">
+              <span class="ver-badge" :class="`badge-${platformOf(item)}`">{{ platformLabelOf(item) }}</span>
+              <label class="ver-toggle" :title="item.enabled ? '点击禁用' : '点击启用'">
+                <input type="checkbox" :checked="item.enabled" @change="toggleDesktop($event, item)" />
+                <span class="ver-toggle-slider"></span>
+              </label>
+            </div>
+            <div class="ver-card-title">v{{ item.version || '-' }}</div>
+            <div class="ver-card-content">{{ item.updateContent || '无更新说明' }}</div>
+            <div v-if="item.downloadUrl" class="ver-card-link" @click="openUrl(item.downloadUrl)">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+              <span>下载安装包</span>
+            </div>
+            <div class="ver-card-footer">
+              <span class="ver-card-date">{{ fmtDateTime(item.updated_at) || '-' }}</span>
+              <div class="ver-card-actions">
+                <button class="ver-icon-btn" title="编辑" @click="openDesktopModal(item)">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button class="ver-icon-btn ver-icon-danger" title="删除" @click="deleteDesktop(item)">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- 桌面端配置弹窗 -->
+    <!-- 版本配置弹窗 -->
     <Transition name="modal" @before-leave="removeBackdropBlur">
       <div v-if="desktopModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
-            <h3>{{ desktop.version ? '编辑桌面端配置' : '新增桌面端配置' }}</h3>
+            <h3>{{ desktopEditingVersion ? `编辑${platformLabelKey(desktopDraftPlatform)}配置` : `新增${platformLabelKey(desktopDraftPlatform)}配置` }}</h3>
             <button class="modal-close" @click="closeDesktopModal">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
           <div class="modal-body">
             <div class="ver-form">
+              <div class="field">
+                <span class="required">客户端平台</span>
+                <div class="enable-row platform-row">
+                  <button
+                    v-for="p in PLATFORMS"
+                    :key="p.key"
+                    type="button"
+                    class="enable-btn platform-btn"
+                    :class="{ on: desktopDraftPlatform === p.key, locked: !!desktopEditingVersion }"
+                    :disabled="!!desktopEditingVersion"
+                    @click="desktopDraftPlatform = p.key"
+                  >{{ p.label }}</button>
+                </div>
+              </div>
               <label class="field">
                 <span class="required">版本号</span>
                 <input v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
@@ -186,6 +218,27 @@ import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
 import { fmtDateTime } from '@/utils/time'
 
+type PlatformKey = 'desktop' | 'mobile' | 'watch'
+
+const PLATFORMS: { key: PlatformKey; label: string }[] = [
+  { key: 'desktop', label: '桌面端' },
+  { key: 'mobile', label: '移动端' },
+  { key: 'watch', label: '腕上端' },
+]
+
+function platformOf(item: any): PlatformKey {
+  const p = item?.platform
+  return p === 'mobile' || p === 'watch' ? p : 'desktop'
+}
+
+function platformLabelKey(key: string): string {
+  return PLATFORMS.find(p => p.key === key)?.label || '桌面端'
+}
+
+function platformLabelOf(item: any): string {
+  return platformLabelKey(platformOf(item))
+}
+
 function formatFileSize(bytes: number): string {
   if (!bytes) return '-'
   if (bytes < 1024) return bytes + ' B'
@@ -197,24 +250,34 @@ function openUrl(url: string) {
   if (url) window.open(url, '_blank')
 }
 
-// ===== 桌面端配置 =====
-const desktop = ref<any>({ version: '', downloadUrl: '', updateContent: '', enabled: false, updated_at: '' })
+// ===== 版本配置 =====
+const desktopList = ref<any[]>([])
 const desktopLoading = ref(true)
-const hasConfig = computed(() => !!(desktop.value.version || desktop.value.downloadUrl))
+const platformFilter = ref<PlatformKey>('desktop')
+const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
+const platformList = computed(() => desktopList.value.filter(v => platformOf(v) === platformFilter.value))
+const enabledCount = computed(() => platformList.value.filter(v => v.enabled).length)
+
+function switchPlatform(key: PlatformKey) {
+  if (platformFilter.value === key || desktopSaving.value) return
+  platformFilter.value = key
+}
 
 async function loadDesktop() {
   desktopLoading.value = true
   const res = await adminApi<any>('get_desktop_version')
   if (res.code === 200 && res.data) {
-    desktop.value = res.data
+    desktopList.value = Array.isArray(res.data.list) ? res.data.list : []
   }
   desktopLoading.value = false
 }
 
-// 桌面端弹窗
+// 版本配置弹窗
 const desktopModalVisible = ref(false)
 const desktopDraft = ref({ version: '', updateContent: '', downloadUrl: '' })
 const desktopDraftEnabled = ref(false)
+const desktopDraftPlatform = ref<PlatformKey>('desktop')
+const desktopEditingVersion = ref('')
 const desktopSaving = ref(false)
 const desktopChannelModalVisible = ref(false)
 const desktopChannelMode = ref<'link' | 'upload'>('link')
@@ -225,25 +288,34 @@ const desktopPackageDraft = ref({ fileName: '', fileSize: 0, fileBase64: '' })
 
 const desktopChannelLabel = computed(() => {
   if (desktopPackageFile.value?.name) return '上传安装包'
-  const url = desktopDraft.value.downloadUrl || desktop.value.downloadUrl
+  const url = desktopDraft.value.downloadUrl
   if (url) return url.startsWith('/uploads/packages/') ? '服务器安装包' : '下载链接'
   return '未选择下载渠道'
 })
 
 const desktopChannelDesc = computed(() => {
   if (desktopPackageFile.value?.name) return `已选择：${desktopPackageFile.value.name}（${formatFileSize(desktopPackageFile.value.size)}）`
-  const url = desktopDraft.value.downloadUrl || desktop.value.downloadUrl
+  const url = desktopDraft.value.downloadUrl
   if (url) return url
   return desktopDraftEnabled.value ? '启用更新时需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
 })
 
-function openDesktopModal() {
-  desktopDraft.value = {
-    version: desktop.value.version || '',
-    updateContent: desktop.value.updateContent || '',
-    downloadUrl: desktop.value.downloadUrl || '',
+function openDesktopModal(item?: any) {
+  if (item) {
+    desktopEditingVersion.value = item.version || ''
+    desktopDraftPlatform.value = platformOf(item)
+    desktopDraft.value = {
+      version: item.version || '',
+      updateContent: item.updateContent || '',
+      downloadUrl: item.downloadUrl || '',
+    }
+    desktopDraftEnabled.value = !!item.enabled
+  } else {
+    desktopEditingVersion.value = ''
+    desktopDraftPlatform.value = platformFilter.value
+    desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+    desktopDraftEnabled.value = false
   }
-  desktopDraftEnabled.value = desktop.value.enabled || false
   desktopPackageFile.value = null
   desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
   desktopModalVisible.value = true
@@ -257,7 +329,7 @@ function closeDesktopModal() {
 async function saveDesktop() {
   if (!desktopDraft.value.version?.trim()) { showToast('请填写版本号'); return }
   const hasPackage = !!desktopPackageFile.value
-  const hasUrl = !!desktopDraft.value.downloadUrl?.trim() || !!desktop.value.downloadUrl?.trim()
+  const hasUrl = !!desktopDraft.value.downloadUrl?.trim()
   if (desktopDraftEnabled.value && !hasPackage && !hasUrl) {
     showToast('启用更新时，请填写下载链接或选择安装包')
     return
@@ -269,8 +341,9 @@ async function saveDesktop() {
     catch { desktopSaving.value = false; showToast('安装包读取失败'); return }
   }
   const res = await adminApi('save_desktop_version', {
+    platform: desktopDraftPlatform.value,
     version: desktopDraft.value.version.trim(),
-    download_url: desktopDraft.value.downloadUrl?.trim() || desktop.value.downloadUrl?.trim() || '',
+    download_url: desktopDraft.value.downloadUrl?.trim() || '',
     update_content: desktopDraft.value.updateContent?.trim() || '',
     enabled: desktopDraftEnabled.value ? 1 : 0,
     file_name: desktopPackageFile.value?.name || '',
@@ -286,31 +359,29 @@ async function saveDesktop() {
   }
 }
 
-async function toggleDesktop(e: Event) {
+async function toggleDesktop(e: Event, item: any) {
   const enabled = (e.target as HTMLInputElement).checked
   const res = await adminApi('save_desktop_version', {
-    version: desktop.value.version,
-    download_url: desktop.value.downloadUrl,
-    update_content: desktop.value.updateContent,
+    platform: platformOf(item),
+    version: item.version,
+    download_url: item.downloadUrl || '',
+    update_content: item.updateContent || '',
     enabled: enabled ? 1 : 0,
     file_name: '',
     file_data: '',
   })
   if (res.code === 200) {
     showToast(enabled ? '已启用' : '已禁用', 'success')
-    loadDesktop()
   } else {
     showToast(res.msg || '操作失败')
-    loadDesktop()
   }
+  loadDesktop()
 }
 
-async function deleteDesktop() {
-  const ok = await mobileConfirm('确认删除桌面端更新配置？', { title: '删除配置', confirmText: '确认删除', danger: true })
+async function deleteDesktop(item: any) {
+  const ok = await mobileConfirm(`确认删除${platformLabelOf(item)} v${item.version} 的更新配置？`, { title: '删除配置', confirmText: '确认删除', danger: true })
   if (!ok) return
-  const res = await adminApi('save_desktop_version', {
-    version: '', download_url: '', update_content: '', enabled: 0, file_name: '', file_data: '',
-  })
+  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), version: item.version })
   if (res.code === 200) { showToast('删除成功', 'success'); loadDesktop() }
   else showToast(res.msg || '删除失败')
 }
@@ -385,6 +456,32 @@ onMounted(() => {
 .ver-desc { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0; }
 .ver-header .mobile-btn { align-self: flex-start; padding: 10px 20px; }
 
+/* 平台切换 */
+.platform-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: var(--control-bg, var(--card-solid));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.platform-tab {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-light, var(--text-muted));
+  padding: 7px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.platform-tab.active {
+  background: var(--card-solid);
+  color: var(--accent);
+}
+
 /* 统计栏 */
 .ver-stats { display: flex; gap: 10px; margin-bottom: 20px; }
 .ver-stat {
@@ -408,6 +505,8 @@ onMounted(() => {
 .ver-section-label h3 { font-size: 15px; font-weight: 750; margin: 0; color: var(--text); }
 .ver-section-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dot-desktop { background: #3b82f6; }
+.dot-mobile { background: #10b981; }
+.dot-watch { background: #8b5cf6; }
 .dot-app { background: #10b981; }
 
 /* 空状态 */
@@ -458,6 +557,8 @@ onMounted(() => {
 
 .ver-card-bar { width: 4px; flex-shrink: 0; }
 .bar-desktop { background: #3b82f6; }
+.bar-mobile { background: #10b981; }
+.bar-watch { background: #8b5cf6; }
 .bar-normal { background: #10b981; }
 .bar-update { background: #3b82f6; }
 .bar-force { background: #f59e0b; }
@@ -476,6 +577,8 @@ onMounted(() => {
   font-weight: 600;
 }
 .badge-desktop { background: #eff6ff; color: #3b82f6; }
+.badge-mobile { background: #ecfdf5; color: #10b981; }
+.badge-watch { background: #f5f3ff; color: #8b5cf6; }
 .badge-normal { background: #ecfdf5; color: #10b981; }
 .badge-update { background: #eff6ff; color: #3b82f6; }
 .badge-force { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }

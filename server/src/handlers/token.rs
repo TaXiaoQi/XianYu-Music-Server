@@ -54,6 +54,7 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "get_avatar_status",
     "get_nickname_status",
     "report_listen_stats",
+    "get_listen_stats",
     "deduct_master_quota",
     "get_master_quota_usage",
     // recommend

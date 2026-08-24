@@ -36,10 +36,11 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         // system
         "get_source_status" => system::get_source_status(ctx, pool).await,
         "get_version_status" => system::get_version_status(body, ctx, pool).await,
-        "get_latest_version" => system::get_latest_version(ctx, pool).await,
+        "get_latest_version" => system::get_latest_version(body, ctx, pool).await,
+        "get_fallback_modules" => system::get_fallback_modules(ctx).await,
         "get_announcement" => system::get_announcement(body, ctx, pool).await,
         "confirm_announcement" => system::confirm_announcement(body, ctx, pool).await,
-        "get_about_config" => system::get_about_config(ctx).await,
+        "get_about_config" => system::get_about_config(body, ctx).await,
         "get_site_logo" => system::get_site_logo(ctx, pool).await,
         "get_user_agreement" => system::get_user_agreement(ctx, pool).await,
         "get_server_load" => system::get_server_load(ctx, pool).await,
@@ -71,6 +72,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_avatar_status" => settings::get_avatar_status(body, ctx, pool).await,
         "get_nickname_status" => settings::get_nickname_status(body, ctx, pool).await,
         "report_listen_stats" => settings::report_listen_stats(body, ctx, pool).await,
+        "get_listen_stats" => settings::get_listen_stats(body, ctx, pool).await,
         "deduct_master_quota" => settings::deduct_master_quota(body, ctx, pool).await,
         "get_master_quota_usage" => settings::get_master_quota_usage(body, ctx, pool).await,
         // social

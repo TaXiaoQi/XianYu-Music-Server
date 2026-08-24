@@ -49,6 +49,8 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "wallpapers", "uploaded_by_nickname", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "wallpapers", "reviewed_at", "datetime NULL").await;
     ensure_column(pool, "wallpapers", "reviewed_by", "varchar(64) NOT NULL DEFAULT ''").await;
+    // 壁纸分平台下发：desktop / mobile / watch（腕上端预留）。旧数据视为桌面端。
+    ensure_column(pool, "wallpapers", "platform", "varchar(16) NOT NULL DEFAULT 'desktop'").await;
     // 日推画像聚合与排行榜查询加速：ciyuanxi_id + played_at 复合索引
     ensure_index(pool, "play_history", "idx_ciyuanxi_played", "ciyuanxi_id, played_at").await;
     ensure_default_admin(pool).await;
@@ -152,6 +154,9 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "completed_by", "TEXT").await;
     // 完成反馈时附带的图片（管理员在完成弹窗上传），存图片 URL 的 JSON 数组
     ensure_column(pool, "user_feedback", "resolve_images", "TEXT").await;
+    // 提交设备的唯一标识：回执（处理结果通知）只下发给提交反馈的设备，
+    // 避免移动端问题弹到同账号的桌面端；为空（旧数据/后台创建）时所有设备可见
+    ensure_column(pool, "user_feedback", "device_id", "VARCHAR(64) NOT NULL DEFAULT ''").await;
 }
 
 /// 账号系统重构迁移：将 app_users.username 列改名为 nickname。
@@ -657,6 +662,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `image_url` varchar(512) NOT NULL DEFAULT '',
             `thumbnail_url` varchar(512) NOT NULL DEFAULT '',
             `category` varchar(64) NOT NULL DEFAULT '默认',
+            `platform` varchar(16) NOT NULL DEFAULT 'desktop',
             `sort_order` int(11) NOT NULL DEFAULT 0,
             `status` varchar(32) NOT NULL DEFAULT 'normal',
             `uploaded_by` varchar(32) NOT NULL DEFAULT '',

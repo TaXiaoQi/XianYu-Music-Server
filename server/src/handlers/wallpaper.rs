@@ -12,6 +12,15 @@ fn wallpaper_dir() -> std::path::PathBuf {
     std::path::Path::new("uploads").join("wallpapers")
 }
 
+/// 平台白名单：desktop / mobile / watch（腕上端预留）。未携带或非法值回退 desktop。
+fn normalize_platform(raw: &str) -> String {
+    match raw {
+        "mobile" => "mobile".to_string(),
+        "watch" => "watch".to_string(),
+        _ => "desktop".to_string(),
+    }
+}
+
 async fn read_global_wallpaper_upload_limit(pool: &MySqlPool) -> i64 {
     sqlx::query_scalar::<_, Option<String>>(
         "SELECT setting_value FROM server_settings WHERE setting_key = 'wallpaper_upload_limit' LIMIT 1",
@@ -97,6 +106,7 @@ fn row_to_wallpaper(ctx: &ReqCtx, row: &sqlx::mysql::MySqlRow) -> Value {
         "imageUrl": image_url,
         "thumbnailUrl": thumbnail_url,
         "category": row.try_get::<String, _>("category").unwrap_or_default(),
+        "platform": row.try_get::<String, _>("platform").unwrap_or_else(|_| "desktop".to_string()),
         "uploaderId": row.try_get::<String, _>("uploaded_by").unwrap_or_default(),
         "uploaderNickname": row.try_get::<String, _>("uploaded_by_nickname").unwrap_or_default(),
         "status": row.try_get::<String, _>("status").unwrap_or_default(),
@@ -106,10 +116,12 @@ fn row_to_wallpaper(ctx: &ReqCtx, row: &sqlx::mysql::MySqlRow) -> Value {
     })
 }
 
-pub async fn list_wallpapers(_body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+pub async fn list_wallpapers(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let platform = normalize_platform(str_of(&parse_body(body), "platform").trim());
     let rows = sqlx::query(
-        "SELECT * FROM wallpapers WHERE status = 'normal' ORDER BY sort_order DESC, id DESC",
+        "SELECT * FROM wallpapers WHERE status = 'normal' AND platform = ? ORDER BY sort_order DESC, id DESC",
     )
+    .bind(&platform)
     .fetch_all(pool)
     .await;
     match rows {
@@ -124,13 +136,15 @@ pub async fn list_wallpapers(_body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
 pub async fn my_wallpapers(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let platform = normalize_platform(str_of(&data, "platform").trim());
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "弦予号不能为空");
     }
     let rows = sqlx::query(
-        "SELECT * FROM wallpapers WHERE uploaded_by = ? ORDER BY id DESC",
+        "SELECT * FROM wallpapers WHERE uploaded_by = ? AND platform = ? ORDER BY id DESC",
     )
     .bind(&ciyuanxi_id)
+    .bind(&platform)
     .fetch_all(pool)
     .await;
     match rows {
@@ -149,6 +163,7 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     let title = str_of(&data, "title").trim().to_string();
     let description = str_of(&data, "description").trim().to_string();
     let mut category = str_of(&data, "category").trim().to_string();
+    let platform = normalize_platform(str_of(&data, "platform").trim());
     let image_data = str_of(&data, "image_data");
 
     if ciyuanxi_id.is_empty() {
@@ -210,7 +225,7 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         pool,
         "wallpaper",
         &image_data,
-        json!({ "ciyuanxi_id": ciyuanxi_id, "title": title, "category": category }),
+        json!({ "ciyuanxi_id": ciyuanxi_id, "title": title, "category": category, "platform": platform }),
     )
     .await;
     let initial_status = match audit.decision {
@@ -225,11 +240,12 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     };
 
     let ins = sqlx::query(
-        "INSERT INTO wallpapers (title, description, category, image_url, thumbnail_url, status, uploaded_by, uploaded_by_nickname, reviewed_at, reviewed_by) VALUES (?, ?, ?, '', '', ?, ?, ?, IF(? = 'pending', NULL, NOW()), ?)",
+        "INSERT INTO wallpapers (title, description, category, platform, image_url, thumbnail_url, status, uploaded_by, uploaded_by_nickname, reviewed_at, reviewed_by) VALUES (?, ?, ?, ?, '', '', ?, ?, ?, IF(? = 'pending', NULL, NOW()), ?)",
     )
     .bind(&title)
     .bind(&description)
     .bind(&category)
+    .bind(&platform)
     .bind(initial_status)
     .bind(&ciyuanxi_id)
     .bind(&nickname)

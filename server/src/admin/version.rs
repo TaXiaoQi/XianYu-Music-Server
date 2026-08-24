@@ -236,6 +236,20 @@ fn read_desktop_versions() -> Vec<Value> {
     Vec::new()
 }
 
+/// 平台白名单：desktop / mobile / watch（腕上端预留）。未携带或非法值回退 desktop。
+fn normalize_platform(raw: &str) -> String {
+    match raw {
+        "mobile" => "mobile".to_string(),
+        "watch" => "watch".to_string(),
+        _ => "desktop".to_string(),
+    }
+}
+
+/// 配置项的平台标签；旧数据（分平台上线前保存的）视为 desktop。
+fn item_platform(item: &Value) -> String {
+    normalize_platform(item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop").trim())
+}
+
 fn write_desktop_versions(list: &[Value]) -> bool {
     let path = desktop_version_path();
     if let Some(dir) = path.parent() {
@@ -253,10 +267,12 @@ pub async fn get_desktop_version(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     ok("", json!({ "list": list }))
 }
 
-/// 保存桌面端版本配置。按版本号 upsert：版本号已存在则替换该条，否则新增一条，其余版本保持不变。
+/// 保存版本更新配置。按「平台 + 版本号」upsert：同平台版本号已存在则替换该条，
+/// 否则新增；各平台版本号独立比较，互不影响。
 pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let version = str_of(&data, "version").trim().to_string();
+    let platform = normalize_platform(str_of(&data, "platform").trim());
     let mut download_url = str_of(&data, "download_url").trim().to_string();
     let update_content = str_of(&data, "update_content").trim().to_string();
     let enabled = int_of(&data, "enabled") != 0;
@@ -279,7 +295,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         }
         let ext = safe_file_ext(&file_name);
         let ts = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
-        let new_filename = format!("desktop_v{}_{}.{}", safe_version_part(&version), ts, ext);
+        let new_filename = format!("{}_v{}_{}.{}", platform, safe_version_part(&version), ts, ext);
         let target_path = upload_dir.join(&new_filename);
         if std::fs::write(&target_path, &file_bytes).is_err() {
             return err(500, "安装包保存失败，请检查目录权限");
@@ -290,11 +306,16 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         return err(400, "启用更新时，请填写下载链接或上传安装包");
     }
     let mut list = read_desktop_versions();
-    // 新增版本号必须大于当前已列出的最高版本，防止版本号回退
-    let is_new = !list.iter().any(|item| item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()));
+    // 新增版本号必须大于该平台当前已列出的最高版本，防止版本号回退
+    let is_new = !list.iter().any(|item| {
+        item_platform(item) == platform && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
+    });
     if is_new {
         let mut max_ver: Option<&str> = None;
         for item in &list {
+            if item_platform(item) != platform {
+                continue;
+            }
             let ver = item.get("version").and_then(|v| v.as_str()).unwrap_or("");
             if ver.is_empty() {
                 continue;
@@ -307,12 +328,13 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         }
         if let Some(mv) = max_ver {
             if compare_version_code(&version, mv) <= 0 {
-                return err(400, &format!("新版本 {} 必须大于已有的最高版本 {}", version, mv));
+                return err(400, &format!("新版本 {} 必须大于该平台已有的最高版本 {}", version, mv));
             }
         }
     }
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let new_item = json!({
+        "platform": platform.clone(),
         "version": version.clone(),
         "downloadUrl": download_url,
         "updateContent": update_content,
@@ -321,7 +343,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     });
     let mut replaced = false;
     for item in list.iter_mut() {
-        if item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()) {
+        if item_platform(item) == platform && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()) {
             *item = new_item.clone();
             replaced = true;
             break;
@@ -333,31 +355,43 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if !write_desktop_versions(&list) {
         return err(500, "写入文件失败，请检查 api 目录权限");
     }
-    log_operation(
-        pool, ctx,
-        if replaced { "修改桌面端更新配置" } else { "新增桌面端更新配置" },
-        &version,
-        if enabled { "启用" } else { "禁用" },
-    ).await;
-    ok("保存成功", json!({ "version": version }))
+    let platform_label = platform_label(&platform);
+    let action_label = if replaced {
+        format!("修改{}更新配置", platform_label)
+    } else {
+        format!("新增{}更新配置", platform_label)
+    };
+    log_operation(pool, ctx, &action_label, &version, if enabled { "启用" } else { "禁用" }).await;
+    ok("保存成功", json!({ "version": version, "platform": platform }))
 }
 
-/// 删除桌面端版本配置
+fn platform_label(platform: &str) -> &'static str {
+    match platform {
+        "mobile" => "移动端",
+        "watch" => "腕上端",
+        _ => "桌面端",
+    }
+}
+
+/// 删除版本更新配置（按平台 + 版本号匹配）
 pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let version = str_of(&data, "version").trim().to_string();
+    let platform = normalize_platform(str_of(&data, "platform").trim());
     if version.is_empty() {
         return err(400, "版本号不能为空");
     }
     let mut list = read_desktop_versions();
     let before = list.len();
-    list.retain(|item| item.get("version").and_then(|v| v.as_str()) != Some(version.as_str()));
+    list.retain(|item| {
+        !(item_platform(item) == platform && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()))
+    });
     if list.len() == before {
         return err(404, "版本不存在");
     }
     if !write_desktop_versions(&list) {
         return err(500, "写入文件失败，请检查 api 目录权限");
     }
-    log_operation(pool, ctx, "删除桌面端更新配置", &version, "").await;
+    log_operation(pool, ctx, &format!("删除{}更新配置", platform_label(&platform)), &version, "").await;
     ok("删除成功", Value::Null)
 }

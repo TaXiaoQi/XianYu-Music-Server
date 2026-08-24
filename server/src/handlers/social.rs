@@ -198,8 +198,9 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     let ip = ctx.client_ip.clone();
     let platform = str_of(&data, "platform").trim().to_string();
     let app_version = str_of(&data, "app_version").trim().to_string();
+    let device_id = str_of(&data, "device_id").trim().chars().take(64).collect::<String>();
     let result = sqlx::query(
-        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, error_logs, all_logs, log_meta, ip, category, platform, app_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, error_logs, all_logs, log_meta, ip, category, platform, app_version, device_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
         .bind(&ciyuanxi_id)
         .bind(&nickname)
@@ -214,6 +215,7 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         .bind("feedback")
         .bind(&platform)
         .bind(&app_version)
+        .bind(&device_id)
         .execute(pool)
         .await;
     match result {
@@ -269,13 +271,15 @@ pub async fn submit_appeal(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
         }
     }
     let ip = ctx.client_ip.clone();
-    let result = sqlx::query("INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, category, ip) VALUES (?,?,?,?,?,?)")
+    let device_id = str_of(&data, "device_id").trim().chars().take(64).collect::<String>();
+    let result = sqlx::query("INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, category, ip, device_id) VALUES (?,?,?,?,?,?,?)")
         .bind(&ciyuanxi_id)
         .bind(&nickname)
         .bind("账号申诉")
         .bind(&content)
         .bind("appeal")
         .bind(&ip)
+        .bind(&device_id)
         .execute(pool)
         .await;
     match result {
@@ -315,6 +319,8 @@ pub async fn check_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
 
 /// 获取当前用户的反馈处理通知：返回该用户已解决（resolved）或已拒绝（rejected）
 /// 且尚未确认（notified_at 为空）的反馈。客户端据此展示处理管理员与完成说明/拒绝理由。
+/// 请求携带 device_id 时只返回该设备提交的反馈（回执按设备下发，避免移动端问题
+/// 弹到同账号的桌面端）；未带 device_id 的旧客户端保持原全量行为。
 pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -324,18 +330,29 @@ pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySql
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "请先登录");
     }
-    let rows = sqlx::query(
-        "SELECT id, title, content, status, assignee, replied_by, resolve_note, reject_reason, resolve_images, replied_at, updated_at
-         FROM user_feedback
-         WHERE ciyuanxi_id = ? AND status IN ('resolved','rejected') AND assignee <> ''
-           AND ((status = 'resolved' AND resolve_note IS NOT NULL AND resolve_note <> '')
-                OR (status = 'rejected' AND reject_reason IS NOT NULL AND reject_reason <> ''))
-           AND notified_at IS NULL AND deleted_at IS NULL
-         ORDER BY updated_at DESC",
-    )
-    .bind(&ciyuanxi_id)
-    .fetch_all(pool)
-    .await;
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    let base_filter = "ciyuanxi_id = ? AND status IN ('resolved','rejected') AND assignee <> ''
+               AND ((status = 'resolved' AND resolve_note IS NOT NULL AND resolve_note <> '')
+                    OR (status = 'rejected' AND reject_reason IS NOT NULL AND reject_reason <> ''))
+               AND notified_at IS NULL AND deleted_at IS NULL";
+    let rows = if device_id.is_empty() {
+        sqlx::query(&format!(
+            "SELECT id, title, content, status, assignee, replied_by, resolve_note, reject_reason, resolve_images, replied_at, updated_at
+             FROM user_feedback WHERE {base_filter} ORDER BY updated_at DESC"
+        ))
+        .bind(&ciyuanxi_id)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query(&format!(
+            "SELECT id, title, content, status, assignee, replied_by, resolve_note, reject_reason, resolve_images, replied_at, updated_at
+             FROM user_feedback WHERE {base_filter} AND (device_id = '' OR device_id = ?) ORDER BY updated_at DESC"
+        ))
+        .bind(&ciyuanxi_id)
+        .bind(&device_id)
+        .fetch_all(pool)
+        .await
+    };
     let list: Vec<Value> = match rows {
         Ok(rows) => rows.iter().map(row_to_json).collect(),
         Err(_) => Vec::new(),

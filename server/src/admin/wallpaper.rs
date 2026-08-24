@@ -48,6 +48,15 @@ fn wallpaper_dir() -> std::path::PathBuf {
     std::path::Path::new("uploads").join("wallpapers")
 }
 
+/// 平台白名单：desktop / mobile / watch（腕上端预留）。未携带或非法值回退 desktop。
+fn normalize_platform(raw: &str) -> String {
+    match raw {
+        "mobile" => "mobile".to_string(),
+        "watch" => "watch".to_string(),
+        _ => "desktop".to_string(),
+    }
+}
+
 /// 将相对路径拼接为完整 URL（与 handlers::wallpaper::public_url 逻辑一致）
 /// 优先使用 base_url（从请求头构造），其次使用 config_public_base_url（配置兜底）
 fn full_url(base_url: &str, config_public_base_url: &str, url: &str) -> String {
@@ -101,6 +110,7 @@ pub async fn add_wallpaper(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Resp
     if category.is_empty() {
         category = "默认".into();
     }
+    let platform = normalize_platform(str_of(&data, "platform").trim());
     if title.is_empty() {
         return err(400, "请填写壁纸标题");
     }
@@ -123,11 +133,12 @@ pub async fn add_wallpaper(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Resp
         return err(500, "无法创建上传目录");
     }
     let ins = sqlx::query(
-        "INSERT INTO wallpapers (title, description, category, image_url, thumbnail_url, status, uploaded_by, uploaded_by_nickname, reviewed_at, reviewed_by) VALUES (?, ?, ?, '', '', 'normal', 'admin', ?, NOW(), ?)",
+        "INSERT INTO wallpapers (title, description, category, platform, image_url, thumbnail_url, status, uploaded_by, uploaded_by_nickname, reviewed_at, reviewed_by) VALUES (?, ?, ?, ?, '', '', 'normal', 'admin', ?, NOW(), ?)",
     )
     .bind(&title)
     .bind(&description)
     .bind(&category)
+    .bind(&platform)
     .bind(&ctx.username)
     .bind(&ctx.username)
     .execute(pool)
@@ -149,8 +160,16 @@ pub async fn add_wallpaper(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Resp
     let thumb_url = format!("/uploads/wallpapers/thumb_{}.jpg", wp_id);
     let _ = sqlx::query("UPDATE wallpapers SET image_url = ?, thumbnail_url = ? WHERE id = ?")
         .bind(&image_url).bind(&thumb_url).bind(wp_id).execute(pool).await;
-    log_operation(pool, ctx, "新增壁纸", &title, &format!("ID:{}", wp_id)).await;
+    log_operation(pool, ctx, &format!("新增{}壁纸", platform_label(&platform)), &title, &format!("ID:{}", wp_id)).await;
     ok("上传成功", json!({ "id": wp_id }))
+}
+
+fn platform_label(platform: &str) -> &'static str {
+    match platform {
+        "mobile" => "移动端",
+        "watch" => "腕上端",
+        _ => "桌面端",
+    }
 }
 
 /// 壁纸列表

@@ -18,6 +18,15 @@ fn about_config_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("about_config.json")
 }
 
+/// 平台专属关于页配置文件：desktop / mobile 配置结构独立，互不覆盖。
+fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
+    match platform {
+        "desktop" => Some(std::path::Path::new("api").join("about_config_desktop.json")),
+        "mobile" => Some(std::path::Path::new("api").join("about_config_mobile.json")),
+        _ => None,
+    }
+}
+
 fn default_about_config() -> serde_json::Value {
     json!({
         "officialSiteUrl": "https://xymusic.cc",
@@ -208,13 +217,24 @@ pub async fn get_version_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     }
 }
 
-fn latest_enabled_desktop_version() -> Option<serde_json::Value> {
+/// 读取指定平台的最新已启用版本配置。
+/// 旧数据（无 platform 字段）视为桌面端配置，保证分平台上线前的数据继续生效。
+fn latest_enabled_platform_version(platform: &str) -> Option<serde_json::Value> {
     let path = std::path::Path::new("api").join("version.json");
     let content = std::fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&content).ok()?;
     let arr = value.as_array()?;
+    let platform = match platform {
+        "mobile" => "mobile",
+        "watch" => "watch",
+        _ => "desktop",
+    };
     let mut best: Option<serde_json::Value> = None;
     for item in arr {
+        let item_platform = item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop");
+        if item_platform != platform {
+            continue;
+        }
         let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
         if !enabled {
             continue;
@@ -233,19 +253,25 @@ fn latest_enabled_desktop_version() -> Option<serde_json::Value> {
     best
 }
 
-pub async fn get_latest_version(ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    // 优先读取桌面端更新配置（version.json），取已启用且版本号最大的一条
-    if let Some(item) = latest_enabled_desktop_version() {
+pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let platform = str_of(&parse_body(body), "platform").trim().to_string();
+    // 读取该平台的更新配置（version.json），取已启用且版本号最大的一条
+    if let Some(item) = latest_enabled_platform_version(&platform) {
         let version = item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let updated_at = item.get("updated_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let app_name = match platform.as_str() {
+            "mobile" => "弦予音乐移动端",
+            "watch" => "弦予音乐腕上端",
+            _ => "弦予音乐桌面端",
+        };
         return ctx.json(
             200,
             "ok",
             Some(json!({
                 "id": 0,
-                "app_name": "弦予音乐桌面端",
+                "app_name": app_name,
                 "version": version,
                 "content": content,
                 "download_url": url,
@@ -286,6 +312,13 @@ pub async fn get_latest_version(ctx: ReqCtx, pool: &MySqlPool) -> Response {
         }
         None => ctx.json(200, "ok", Some(json!([]))),
     }
+}
+
+/// 下发兜底模块：桌面端启动及每 30 分钟拉取一次，
+/// 返回已启用模块的 {moduleKey, name, version, digest, code, updatedAt} 列表
+pub async fn get_fallback_modules(ctx: ReqCtx) -> Response {
+    let modules = crate::admin::fallback::enabled_modules_payload();
+    ctx.json(200, "ok", Some(json!({ "modules": modules })))
 }
 
 fn announcement_version(item: &serde_json::Value) -> String {
@@ -419,8 +452,55 @@ pub async fn confirm_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     }
 }
 
-pub async fn get_about_config(ctx: ReqCtx) -> Response {
-    ctx.json(200, "ok", Some(read_about_config()))
+/// 移动端专属链接覆盖：开源地址指向移动端仓库，
+/// 参考项目改为桌面端仓库（即配置中的 projectUrl）。
+pub fn apply_mobile_about_overrides(config: &mut Value) {
+    let Some(obj) = config.as_object_mut() else { return };
+    let desktop_url = obj
+        .get("projectUrl")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("https://github.com/TaXiaoQi/XianYu-Music-Desktop")
+        .to_string();
+    obj.insert("projectUrl".into(), json!("https://github.com/TaXiaoQi/XianYu-Music-Mobile"));
+    obj.insert("referenceProjectUrl".into(), json!(desktop_url));
+}
+
+pub fn apply_platform_about_overrides(config: &mut Value, body: &str) {
+    if str_of(&parse_body(body), "platform") != "mobile" {
+        return;
+    }
+    apply_mobile_about_overrides(config);
+}
+
+/// 读取平台专属关于页配置；文件不存在返回 None（调用方回退默认配置）。
+/// 移动端存档以移动端默认值（开源=移动端仓库、参考=桌面端仓库）为基底合并，
+/// 缺省字段不会被桌面端默认值污染。
+fn read_platform_about_config(platform: &str) -> Option<serde_json::Value> {
+    let path = platform_about_config_path(platform)?;
+    let content = std::fs::read_to_string(path).ok()?;
+    let saved = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+    let obj = saved.as_object()?.clone();
+    let mut base = default_about_config();
+    if platform == "mobile" {
+        apply_mobile_about_overrides(&mut base);
+    }
+    let mut merged = base.as_object().cloned().unwrap_or_default();
+    for (key, value) in obj {
+        merged.insert(key, value);
+    }
+    Some(serde_json::Value::Object(merged))
+}
+
+pub async fn get_about_config(body: &str, ctx: ReqCtx) -> Response {
+    let platform = str_of(&parse_body(body), "platform").trim().to_string();
+    // 平台专属配置优先；无平台配置时回退默认配置（移动端叠加链接覆盖，保持旧行为）
+    if let Some(config) = read_platform_about_config(&platform) {
+        return ctx.json(200, "ok", Some(config));
+    }
+    let mut config = read_about_config();
+    apply_platform_about_overrides(&mut config, body);
+    ctx.json(200, "ok", Some(config))
 }
 
 /// 获取站点 Logo（公开接口，供后台登录页等无需登录场景使用）

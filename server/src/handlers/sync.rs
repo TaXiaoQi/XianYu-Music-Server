@@ -206,6 +206,22 @@ fn write_snapshot(ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
     std::fs::write(dir.join(name), serde_json::to_string(data).unwrap_or_default()).is_ok()
 }
 
+/// 清洗订阅列表：仅保留带有效 url 的对象，其余字段透传（id/name/addedAt 等）。
+fn sanitize_subscriptions(raw: &Value) -> Option<Vec<Value>> {
+    let arr = raw.as_array()?;
+    let list: Vec<Value> = arr
+        .iter()
+        .filter(|item| {
+            item.get("url")
+                .and_then(|u| u.as_str())
+                .map(|u| !u.trim().is_empty())
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect();
+    Some(list)
+}
+
 pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
@@ -216,11 +232,17 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
     if !plugin.is_object() {
         return ctx.err(400, "plugin 格式错误");
     }
+    // 纯订阅同步（本地无插件）时客户端会传空 plugin 仅携带 subscriptions。
+    let plugin_empty = plugin.get("id").and_then(|v| v.as_str()).unwrap_or("").is_empty()
+        && plugin.get("script").and_then(|v| v.as_str()).unwrap_or("").is_empty();
+    if plugin_empty && data.get("subscriptions").is_none() {
+        return ctx.err(400, "缺少插件或订阅数据");
+    }
     let is_first = matches!(data.get("is_first"), Some(Value::Bool(true)));
     let mut save_data = read_snapshot(&ciyuanxi_id, "plugins.json").unwrap_or_else(|_| {
         json!({
             "version": 1, "uploaded_at": now_str(), "timestamp": now_ts(),
-            "stats": { "plugin_count": 0 }, "plugins": []
+            "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
         })
     });
     if is_first {
@@ -230,19 +252,27 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
     let mut plugins: Vec<Value> = save_data.get("plugins").and_then(|x| x.as_array()).cloned().unwrap_or_default();
     let pid = plugin.get("id").cloned().unwrap_or(Value::Null);
     let mut found = false;
-    for p in plugins.iter_mut() {
-        if p.get("id").cloned().unwrap_or(Value::Null) == pid {
-            *p = plugin.clone();
-            found = true;
-            break;
+    if !plugin_empty {
+        for p in plugins.iter_mut() {
+            if p.get("id").cloned().unwrap_or(Value::Null) == pid {
+                *p = plugin.clone();
+                found = true;
+                break;
+            }
         }
-    }
-    if !found {
-        plugins.push(plugin.clone());
+        if !found {
+            plugins.push(plugin.clone());
+        }
     }
     let count = plugins.len() as i64;
     save_data["plugins"] = json!(plugins);
     save_data["stats"]["plugin_count"] = json!(count);
+    // 订阅链接列表整包替换（与插件同步语义一致：上传端为权威）。
+    if let Some(subs) = data.get("subscriptions").and_then(sanitize_subscriptions) {
+        let sub_count = subs.len() as i64;
+        save_data["subscriptions"] = json!(subs);
+        save_data["stats"]["subscription_count"] = json!(sub_count);
+    }
     save_data["uploaded_at"] = json!(now_str());
     save_data["timestamp"] = json!(now_ts());
     if !write_snapshot(&ciyuanxi_id, "plugins.json", &save_data) {
@@ -263,8 +293,59 @@ pub async fn plugin_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-fn settings_snapshot(ciyuanxi_id: &str) -> Option<Value> {
-    read_snapshot(ciyuanxi_id, "settings.json").ok()
+/// 平台标识对应的快照文件名：desktop / mobile 设置结构不同，分开存储互不覆盖。
+/// 未携带 platform（旧客户端）沿用旧的 settings.json，下载时平台文件不存在也回退到它。
+fn settings_file_name(platform: &str) -> String {
+    match platform {
+        "desktop" => "settings_desktop.json".to_string(),
+        "mobile" => "settings_mobile.json".to_string(),
+        _ => "settings.json".to_string(),
+    }
+}
+
+pub async fn settings_sync_upload(body: &str, ctx: ReqCtx) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let settings = data.get("settings").cloned().unwrap_or(Value::Null);
+    if !settings.is_object() {
+        return ctx.err(400, "settings 格式错误");
+    }
+    let file_name = settings_file_name(str_of(&data, "platform").trim());
+    let save = json!({
+        "version": 1,
+        "uploaded_at": now_str(),
+        "timestamp": now_ts(),
+        "settings": settings
+    });
+    if !write_snapshot(&ciyuanxi_id, &file_name, &save) {
+        return ctx.err(500, "文件写入失败");
+    }
+    ctx.ok("上传成功", json!({ "uploaded_at": save["uploaded_at"] }))
+}
+
+pub async fn settings_sync_download(body: &str, ctx: ReqCtx) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let platform = str_of(&data, "platform").trim().to_string();
+    let file_name = settings_file_name(&platform);
+    // 平台文件优先；不存在时回退旧版共用 settings.json（首次升级迁移）
+    if platform == "desktop" || platform == "mobile" {
+        if let Ok(v) = read_snapshot(&ciyuanxi_id, &file_name) {
+            return ctx.ok("获取成功", v);
+        }
+        if let Ok(v) = read_snapshot(&ciyuanxi_id, "settings.json") {
+            return ctx.ok("获取成功", v);
+        }
+    } else if let Ok(v) = read_snapshot(&ciyuanxi_id, &file_name) {
+        return ctx.ok("获取成功", v);
+    }
+    ctx.ok("暂无同步数据", json!({ "settings": null }))
 }
 
 /// 上传当前用户收藏歌曲列表（文件快照：data/sync/{id}/favorites.json）
@@ -305,36 +386,3 @@ pub async fn favorites_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-pub async fn settings_sync_upload(body: &str, ctx: ReqCtx) -> Response {
-    let data = parse_body(body);
-    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
-    if ciyuanxi_id.is_empty() {
-        return ctx.err(400, "参数错误");
-    }
-    let settings = data.get("settings").cloned().unwrap_or(Value::Null);
-    if !settings.is_object() {
-        return ctx.err(400, "settings 格式错误");
-    }
-    let save = json!({
-        "version": 1,
-        "uploaded_at": now_str(),
-        "timestamp": now_ts(),
-        "settings": settings
-    });
-    if !write_snapshot(&ciyuanxi_id, "settings.json", &save) {
-        return ctx.err(500, "文件写入失败");
-    }
-    ctx.ok("上传成功", json!({ "uploaded_at": save["uploaded_at"] }))
-}
-
-pub async fn settings_sync_download(body: &str, ctx: ReqCtx) -> Response {
-    let data = parse_body(body);
-    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
-    if ciyuanxi_id.is_empty() {
-        return ctx.err(400, "参数错误");
-    }
-    match settings_snapshot(&ciyuanxi_id) {
-        Some(v) => ctx.ok("获取成功", v),
-        None => ctx.ok("暂无同步数据", json!({ "settings": null })),
-    }
-}

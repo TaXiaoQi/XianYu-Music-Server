@@ -9,6 +9,16 @@ fn about_config_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("about_config.json")
 }
 
+/// 平台专属配置文件：desktop / mobile 分开存储，互不覆盖；
+/// 不带 platform（旧后台）沿用默认 about_config.json。
+fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
+    match platform {
+        "desktop" => Some(std::path::Path::new("api").join("about_config_desktop.json")),
+        "mobile" => Some(std::path::Path::new("api").join("about_config_mobile.json")),
+        _ => None,
+    }
+}
+
 fn default_about_config() -> Value {
     json!({
         "officialSiteUrl": "https://xymusic.cc",
@@ -40,8 +50,39 @@ fn read_about_config() -> Value {
     Value::Object(merged)
 }
 
-fn write_about_config(config: &Value) -> std::io::Result<()> {
-    let path = about_config_path();
+/// 平台感知默认值：移动端开源地址指向移动端仓库、参考项目指向桌面端仓库，
+/// 与客户端 get_about_config 的下发逻辑保持一致。
+fn default_about_config_for(platform: &str) -> Value {
+    let mut config = default_about_config();
+    if platform == "mobile" {
+        crate::handlers::system::apply_mobile_about_overrides(&mut config);
+    }
+    config
+}
+
+/// 读取平台专属配置；无存档时回退共享配置并叠加平台默认覆盖，
+/// 保证后台展示与客户端实际收到的配置一致。
+fn read_platform_about_config(platform: &str) -> Value {
+    let mut config = read_about_config();
+    if platform == "mobile" {
+        crate::handlers::system::apply_mobile_about_overrides(&mut config);
+    }
+    if let Some(path) = platform_about_config_path(platform) {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Ok(Value::Object(saved)) = serde_json::from_str::<Value>(&content) {
+                let mut merged = default_about_config_for(platform).as_object().cloned().unwrap_or_default();
+                for (key, value) in saved {
+                    merged.insert(key, value);
+                }
+                return Value::Object(merged);
+            }
+        }
+    }
+    config
+}
+
+fn write_about_config(config: &Value, platform: &str) -> std::io::Result<()> {
+    let path = platform_about_config_path(platform).unwrap_or_else(about_config_path);
     if let Some(dir) = path.parent() {
         let _ = std::fs::create_dir_all(dir);
     }
@@ -51,12 +92,14 @@ fn write_about_config(config: &Value) -> std::io::Result<()> {
     std::fs::rename(&tmp, &path)
 }
 
-pub async fn get(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
-    ok("ok", read_about_config())
+pub async fn get(body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
+    let platform = str_of(&parse_body(body), "platform").trim().to_string();
+    ok("ok", read_platform_about_config(&platform))
 }
 
 pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
+    let platform = str_of(&data, "platform").trim().to_string();
     let official_site_url = str_of(&data, "officialSiteUrl").trim().to_string();
     let official_site_text = str_of(&data, "officialSiteText").trim().to_string();
     let update_text = str_of(&data, "updateText").trim().to_string();
@@ -80,10 +123,15 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
         "joinGroupText": join_group_text,
     });
 
-    if write_about_config(&config).is_err() {
+    if write_about_config(&config, &platform).is_err() {
         return err(500, "写入关于页配置失败，请检查 api 目录权限");
     }
 
-    log_operation(pool, ctx, "保存关于页配置", "about_config", "更新官网、更新检查、项目地址等入口").await;
+    let platform_label = match platform.as_str() {
+        "desktop" => "桌面端",
+        "mobile" => "移动端",
+        _ => "默认",
+    };
+    log_operation(pool, ctx, "保存关于页配置", "about_config", &format!("更新{platform_label}官网、更新检查、项目地址等入口")).await;
     ok("保存成功", config)
 }

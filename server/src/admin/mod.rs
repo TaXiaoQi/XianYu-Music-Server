@@ -17,6 +17,7 @@ pub mod config_file;
 pub mod dashboard;
 pub mod db;
 pub mod email;
+pub mod fallback;
 pub mod feedback;
 pub mod logs;
 pub mod playlist;
@@ -314,6 +315,11 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "delete_announcement" => announcement::delete(body, &ctx, pool).await,
         "toggle_announcement" => announcement::toggle(body, &ctx, pool).await,
         "list_announcements" => announcement::list(body, &ctx, pool).await,
+        // fallback modules（兜底管理）
+        "list_fallback_modules" => fallback::list(body, &ctx, pool).await,
+        "save_fallback_module" => fallback::save(body, &ctx, pool).await,
+        "delete_fallback_module" => fallback::delete(body, &ctx, pool).await,
+        "toggle_fallback_module" => fallback::toggle(body, &ctx, pool).await,
         // audit (avatar / nickname / notification email)
         "list_avatar_pending" => audit::list_avatar_pending(body, &ctx, pool).await,
         "list_nickname_pending" => audit::list_nickname_pending(body, &ctx, pool).await,

@@ -318,6 +318,7 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             "status": "normal"
         }))),
         "get_version_status" => ctx.json(200, "ok", Some(json!({ "status": "normal", "debug": true }))),
+        "get_fallback_modules" => ctx.json(200, "ok", Some(json!({ "modules": [], "debug": true }))),
         "get_announcement" => ctx.json(200, "ok", Some(json!({
             "id": "debug",
             "title": "本地调试模式",
@@ -328,7 +329,11 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             "actionText": "",
             "updatedAt": now_string()
         }))),
-        "get_about_config" => ctx.json(200, "ok", Some(about_config())),
+        "get_about_config" => {
+            let mut config = about_config();
+            crate::handlers::system::apply_platform_about_overrides(&mut config, body);
+            ctx.json(200, "ok", Some(config))
+        }
         "get_user_agreement" => ctx.json(200, "ok", Some(user_agreement())),
         "get_server_load" => ctx.json(200, "ok", Some(json!({
             "cpu": 0,
@@ -622,8 +627,9 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             rows.push(json!({ "action": action, "data": data, "created_at": now_string() }));
             set_array(&mut state, "listen_stats", rows);
             let _ = save_state(&state);
-            ctx.json(200, "本地调试模式：上报已保存到临时存储", Some(json!({ "id": now_ts(), "debug": true })))
+            ctx.json(200, "本地调试模式：上报已保存到临时存储", Some(json!({ "id": now_ts(), "debug": true, "server_total_duration": 0 })))
         }
+        "get_listen_stats" => ctx.ok("ok", json!({ "total_duration": 0, "unique_songs_count": 0, "debug": true })),
         "deduct_master_quota" => ctx.ok("扣减成功", json!({ "remaining": 999, "debug": true })),
         "get_master_quota_usage" => ctx.ok("ok", json!({ "used": 0, "limit": 999, "remaining": 999, "debug": true })),
         "submit_feedback" => {
@@ -705,15 +711,27 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
         "settings_sync_upload" => {
             let mut state = load_state();
             let ciyuanxi_id = str_of(&data, "user_id");
+            let platform = str_of(&data, "platform");
+            let key = match platform.as_str() {
+                "desktop" | "mobile" => format!("settings_sync_{}", platform),
+                _ => "settings_sync".to_string(),
+            };
             let save = json!({ "version": 1, "uploaded_at": now_string(), "timestamp": now_ts(), "settings": data.get("settings").cloned().unwrap_or(Value::Null) });
-            put_map_value(&mut state, "settings_sync", &ciyuanxi_id, save.clone());
+            put_map_value(&mut state, &key, &ciyuanxi_id, save.clone());
             let _ = save_state(&state);
             ctx.ok("上传成功", json!({ "uploaded_at": save["uploaded_at"], "debug": true }))
         }
         "settings_sync_download" => {
             let state = load_state();
             let ciyuanxi_id = str_of(&data, "user_id");
-            let v = get_map_value(&state, "settings_sync", &ciyuanxi_id).unwrap_or_else(|| json!({ "settings": null }));
+            let platform = str_of(&data, "platform");
+            let (key, legacy) = match platform.as_str() {
+                "desktop" | "mobile" => (format!("settings_sync_{}", platform), true),
+                _ => ("settings_sync".to_string(), false),
+            };
+            let v = get_map_value(&state, &key, &ciyuanxi_id)
+                .or_else(|| if legacy { get_map_value(&state, "settings_sync", &ciyuanxi_id) } else { None })
+                .unwrap_or_else(|| json!({ "settings": null }));
             ctx.ok("获取成功", v)
         }
         "generate_tv_login_code" => {
