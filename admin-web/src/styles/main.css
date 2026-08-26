@@ -120,6 +120,9 @@ button, input, textarea, select { font-family: inherit; }
     box-shadow: 10px 0 36px rgba(15, 23, 42, 0.05);
     display: flex;
     flex-direction: column;
+    /* 固定宽度侧边栏：任何子项都不允许横向溢出，禁止出现左右滚动条 */
+    overflow-x: hidden;
+    min-width: 0;
 }
 .sidebar-title {
     padding: 8px 12px 18px;
@@ -151,8 +154,24 @@ button, input, textarea, select { font-family: inherit; }
     gap: 4px;
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     min-height: 0;
+    min-width: 0;
+    /* 预留滚动条空间：内容超高出现滚动条时，选中态红色背景不与滚动条轨道贴边 */
+    scrollbar-gutter: stable;
 }
+/* 侧边栏菜单项与滚动条保持间距，避免选中态红色背景被滚动条"吃掉"右侧
+   （active 项有 translateX(3px) 右移，故 padding 需略大于滚动条宽度） */
+.sidebar-menu > li {
+    padding-right: 10px;
+}
+.sidebar-menu::-webkit-scrollbar { width: 6px; }
+.sidebar-menu::-webkit-scrollbar-track { background: transparent; }
+.sidebar-menu::-webkit-scrollbar-thumb {
+    background: rgba(31, 41, 55, 0.18);
+    border-radius: 3px;
+}
+.sidebar-menu::-webkit-scrollbar-thumb:hover { background: rgba(31, 41, 55, 0.30); }
 .sidebar-switch {
     margin-top: 12px;
     padding-top: 12px;
@@ -198,6 +217,8 @@ button, input, textarea, select { font-family: inherit; }
     border-radius: 12px;
     cursor: pointer;
     position: relative;
+    min-width: 0;
+    overflow: hidden;
 }
 .sidebar-menu > li > a:hover,
 .sidebar-menu > li > a.router-link-active,
@@ -213,8 +234,15 @@ button, input, textarea, select { font-family: inherit; }
     box-shadow: 0 10px 22px rgba(236, 65, 65, 0.22);
 }
 .menu-icon { margin-right: 9px; display: inline-flex; align-items: center; flex-shrink: 0; }
-.menu-label { display: inline-flex; align-items: center; }
-.menu-arrow { font-size: 10px; transition: transform 0.24s var(--motion); opacity: 0.55; }
+.menu-label {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.menu-arrow { flex-shrink: 0; font-size: 10px; transition: transform 0.24s var(--motion); opacity: 0.55; }
 .submenu {
     list-style: none;
     max-height: 0;
@@ -236,6 +264,10 @@ button, input, textarea, select { font-family: inherit; }
     transition: transform 0.2s var(--motion), background 0.2s, color 0.2s;
     border-left: 0;
     border-radius: 10px;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 .submenu li a:hover,
 .submenu li a.router-link-active {

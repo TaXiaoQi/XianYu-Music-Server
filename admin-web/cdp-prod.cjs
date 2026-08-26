@@ -4,7 +4,7 @@ const fs = require('fs')
 
 const EDGE = 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe'
 const PORT = 9224
-const APP = 'https://back.xymusic.cc'
+const APP = 'https://api.xianyumusic.cn'
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)) }
 

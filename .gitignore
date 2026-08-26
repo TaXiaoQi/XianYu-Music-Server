@@ -1,6 +1,9 @@
 # 密钥与配置（含数据库密码、API 密钥），禁止入库
 server/config.json
 
+# 兜底模块签名私钥，禁止入库
+server/api/fallback_sign_key.txt
+
 # Rust 编译产物
 server/target/
 

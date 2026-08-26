@@ -139,6 +139,9 @@ interface DashboardStats {
   today_source_calls?: number
   total_shares?: number
   today_shares?: number
+  total_share_views?: number
+  today_share_views?: number
+  yesterday_share_views?: number
   source_distribution?: SourceDistributionItem[]
   today_hot_search_keyword?: string
   today_hot_search_count?: number
@@ -186,6 +189,12 @@ const statCards = [
     key: 'today_shares',
     value: () => stats.value.today_shares ?? 0,
     sub: () => `总计 ${stats.value.total_shares ?? 0} 次`,
+  },
+  {
+    label: '今日分享浏览',
+    key: 'today_share_views',
+    value: () => stats.value.today_share_views ?? 0,
+    sub: () => `昨日 ${stats.value.yesterday_share_views ?? 0} · 累计 ${stats.value.total_share_views ?? 0} 次`,
   },
   {
     label: '今日热搜',

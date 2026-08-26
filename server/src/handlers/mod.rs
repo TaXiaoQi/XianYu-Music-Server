@@ -5,6 +5,7 @@ pub mod playlist;
 pub mod recommend;
 pub mod reporting;
 pub mod settings;
+pub mod share;
 pub mod social;
 pub mod sync;
 pub mod system;
@@ -75,6 +76,9 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_listen_stats" => settings::get_listen_stats(body, ctx, pool).await,
         "deduct_master_quota" => settings::deduct_master_quota(body, ctx, pool).await,
         "get_master_quota_usage" => settings::get_master_quota_usage(body, ctx, pool).await,
+        // share
+        "create_share" => share::create_share(body, ctx, pool).await,
+        "share_download" => system::share_download(body, ctx, pool).await,
         // social
         "submit_feedback" => social::submit_feedback(body, ctx, pool).await,
         "submit_appeal" => social::submit_appeal(body, ctx, pool).await,
@@ -103,6 +107,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "favorites_sync_download" => sync::favorites_sync_download(body, ctx).await,
         // upload
         "upload_avatar" => upload::upload_avatar(body, ctx, pool).await,
+        "upload_cover" => upload::upload_cover(body, ctx, pool).await,
         // email auth (邮箱注册登录测试)
         "email_send_code" => email_auth::send_code(body, ctx, pool).await,
         "email_get_captcha_config" => email_auth::get_captcha_config(body, ctx, pool).await,

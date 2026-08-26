@@ -160,7 +160,7 @@ fn get_map_value(state: &Value, map_key: &str, item_key: &str) -> Option<Value> 
 
 fn about_config() -> Value {
     json!({
-        "officialSiteUrl": "https://xymusic.cc",
+        "officialSiteUrl": "https://xianyumusic.cn",
         "officialSiteText": "前往官网",
         "updateEnabled": true,
         "updateText": "检查更新",
@@ -689,18 +689,43 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             let mut state = load_state();
             let ciyuanxi_id = str_of(&data, "user_id");
             let plugin = data.get("plugin").cloned().unwrap_or(Value::Null);
-            let mut save = get_map_value(&state, "plugins", &ciyuanxi_id).unwrap_or_else(|| json!({ "version": 1, "plugins": [] }));
+            let mut save = get_map_value(&state, "plugins", &ciyuanxi_id).unwrap_or_else(|| json!({
+                "version": 1, "uploaded_at": now_string(), "timestamp": now_ts(),
+                "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
+            }));
+            // 纯订阅同步（本地无插件）时客户端会传空 plugin 仅携带 subscriptions。
+            let plugin_empty = plugin.get("id").and_then(|v| v.as_str()).unwrap_or("").is_empty()
+                && plugin.get("script").and_then(|v| v.as_str()).unwrap_or("").is_empty();
+            if plugin_empty && data.get("subscriptions").is_none() {
+                return ctx.err(400, "缺少插件或订阅数据");
+            }
+            let is_first = matches!(data.get("is_first"), Some(Value::Bool(true)));
+            if is_first {
+                save["plugins"] = json!([]);
+                save["stats"]["plugin_count"] = json!(0);
+            }
             let mut plugins = save.get("plugins").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-            let pid = plugin.get("id").cloned().unwrap_or(Value::Null);
-            plugins.retain(|p| p.get("id").cloned().unwrap_or(Value::Null) != pid);
-            plugins.push(plugin);
+            if !plugin_empty {
+                let pid = plugin.get("id").cloned().unwrap_or(Value::Null);
+                plugins.retain(|p| p.get("id").cloned().unwrap_or(Value::Null) != pid);
+                plugins.push(plugin);
+            }
             save["plugins"] = json!(plugins);
-            save["stats"] = json!({ "plugin_count": save["plugins"].as_array().map(|a| a.len()).unwrap_or(0) });
+            save["stats"]["plugin_count"] = json!(plugins.len());
+            // 订阅链接列表整包替换（与插件同步语义一致：上传端为权威）。
+            if let Some(subs) = data.get("subscriptions").and_then(|v| v.as_array()) {
+                let clean: Vec<Value> = subs.iter()
+                    .filter(|item| item.get("url").and_then(|u| u.as_str()).map(|u| !u.trim().is_empty()).unwrap_or(false))
+                    .cloned()
+                    .collect();
+                save["subscriptions"] = json!(clean.clone());
+                save["stats"]["subscription_count"] = json!(clean.len());
+            }
             save["uploaded_at"] = json!(now_string());
             save["timestamp"] = json!(now_ts());
             put_map_value(&mut state, "plugins", &ciyuanxi_id, save.clone());
             let _ = save_state(&state);
-            ctx.ok("上传成功", json!({ "plugin_count": save["plugins"].as_array().map(|a| a.len()).unwrap_or(0), "debug": true }))
+            ctx.ok("上传成功", json!({ "plugin_count": plugins.len(), "debug": true }))
         }
         "plugin_sync_download" => {
             let state = load_state();

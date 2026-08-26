@@ -21,7 +21,7 @@ fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
 
 fn default_about_config() -> Value {
     json!({
-        "officialSiteUrl": "https://xymusic.cc",
+        "officialSiteUrl": "https://xianyumusic.cn",
         "officialSiteText": "前往官网",
         "updateEnabled": true,
         "updateText": "检查更新",

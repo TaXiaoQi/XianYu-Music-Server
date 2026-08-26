@@ -35,6 +35,11 @@ pub struct Config {
     /// 当请求头中无法获取 Host 时，使用此配置作为兜底
     #[serde(default)]
     pub public_base_url: String,
+    /// 分享落地页独立域名（如 https://share.xianyumusic.cn）。
+    /// 客户端经 api 域名调用 create_share 时，分享链接直接拼到该域名；
+    /// 留空则回退用请求 Host 拼（即 api 域名下的 /s/{id}）。
+    #[serde(default)]
+    pub share_base_url: String,
     /// App 用户资源操作是否强制要求 user_token（true=硬模式拒绝无 token 请求；false=软模式仅校验携带 token 的请求）
     #[serde(default)]
     pub require_user_token: bool,
@@ -60,6 +65,7 @@ impl Config {
         cfg.hcaptcha_secret = env::var("HCAPTCHA_SECRET").unwrap_or(cfg.hcaptcha_secret);
         cfg.static_dir = env::var("STATIC_DIR").unwrap_or(cfg.static_dir);
         cfg.public_base_url = env::var("PUBLIC_BASE_URL").unwrap_or(cfg.public_base_url);
+        cfg.share_base_url = env::var("SHARE_BASE_URL").unwrap_or(cfg.share_base_url);
         cfg.require_user_token = env::var("REQUIRE_USER_TOKEN")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
@@ -130,6 +136,7 @@ impl Config {
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
                 .unwrap_or(false),
             public_base_url: env::var("PUBLIC_BASE_URL").unwrap_or_default(),
+            share_base_url: env::var("SHARE_BASE_URL").unwrap_or_default(),
             require_user_token: env::var("REQUIRE_USER_TOKEN")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))

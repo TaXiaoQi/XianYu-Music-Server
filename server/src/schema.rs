@@ -725,6 +725,14 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_created_at` (`created_at`),
             KEY `idx_expired_at` (`expired_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `share_views` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `share_id` varchar(16) NOT NULL DEFAULT '',
+            `viewed_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_share_id` (`share_id`),
+            KEY `idx_viewed_at` (`viewed_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `ciyuanxi_pretty_ids` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
@@ -750,6 +758,17 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ciyuanxi_id` (`ciyuanxi_id`),
             KEY `idx_created_at` (`created_at`),
             KEY `idx_reason` (`reason`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `view_access_log` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `viewer_ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `target_ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `action` varchar(64) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_viewer` (`viewer_ciyuanxi_id`),
+            KEY `idx_target` (`target_ciyuanxi_id`),
+            KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `play_history` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,

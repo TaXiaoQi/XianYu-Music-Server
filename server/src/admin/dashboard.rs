@@ -76,6 +76,15 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "SELECT COUNT(*) FROM share_log WHERE created_at >= '{}' AND created_at < '{}'",
         yesterday_start, today_start
     );
+    let sql_total_share_views = "SELECT COUNT(*) FROM share_views".to_string();
+    let sql_today_share_views = format!(
+        "SELECT COUNT(*) FROM share_views WHERE viewed_at >= '{}' AND viewed_at < '{}'",
+        today_start, tomorrow_start
+    );
+    let sql_yesterday_share_views = format!(
+        "SELECT COUNT(*) FROM share_views WHERE viewed_at >= '{}' AND viewed_at < '{}'",
+        yesterday_start, today_start
+    );
     let sql_active_users = format!(
         "SELECT COUNT(DISTINCT device_id) FROM app_open_log WHERE created_at >= '{}' AND created_at < '{}' AND device_id != ''",
         today_start, tomorrow_start
@@ -121,6 +130,9 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         total_shares,
         today_shares,
         yesterday_shares,
+        total_share_views,
+        today_share_views,
+        yesterday_share_views,
         active_users,
         pending_wallpapers,
         pending_avatars,
@@ -142,6 +154,9 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         safe_count(pool, &sql_total_shares),
         safe_count(pool, &sql_today_shares),
         safe_count(pool, &sql_yesterday_shares),
+        safe_count(pool, &sql_total_share_views),
+        safe_count(pool, &sql_today_share_views),
+        safe_count(pool, &sql_yesterday_share_views),
         safe_count(pool, &sql_active_users),
         safe_count(pool, &sql_pending_wallpapers),
         safe_count(pool, &sql_pending_avatars),
@@ -192,6 +207,9 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "total_shares": total_shares,
         "today_shares": today_shares,
         "yesterday_shares": yesterday_shares,
+        "total_share_views": total_share_views,
+        "today_share_views": today_share_views,
+        "yesterday_share_views": yesterday_share_views,
         "active_users": active_users,
         "source_distribution": source_distribution,
         "today_hot_search_keyword": today_hot_search_keyword,

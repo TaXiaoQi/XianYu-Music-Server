@@ -10,7 +10,7 @@ mod schema;
 mod sign;
 
 use axum::body::Body;
-use axum::extract::{Query, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -67,12 +67,16 @@ async fn main() -> anyhow::Result<()> {
 
     // 确保 uploads 目录及子目录存在
     let _ = std::fs::create_dir_all("uploads/wallpapers");
+    let _ = std::fs::create_dir_all("uploads/covers");
 
     let app = Router::new()
         .route("/api", get(handle_api).post(handle_api))
         .route("/api/", get(handle_api).post(handle_api))
+        .route("/s/:share_id", get(share_landing))
+        .route("/s/:share_id/", get(share_landing))
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
         .route("/admin/api/", get(handle_admin_api).post(handle_admin_api))
+        .route("/uploads/covers/:filename", get(serve_cover))
         .nest_service("/uploads", ServeDir::new("uploads"))
         .fallback(spa_fallback)
         .layer(cors)
@@ -139,11 +143,11 @@ async fn handle_api(
     let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
 
     // 签名验证（免签操作放行）
-    let no_sign: [&str; 19] = [
+    let no_sign: [&str; 20] = [
         "install", "check", "get_source_status", "upload_avatar",
         "debug_sign", "deduct_master_quota", "get_master_quota_usage",
         "get_captcha", "verify_captcha", "email_send_code", "email_get_captcha_config", "email_get_turnstile_config", "email_register", "email_login", "email_reset_password", "email_get_profile",
-        "open", "get_user_agreement", "get_site_logo",
+        "open", "get_user_agreement", "get_site_logo", "share_download",
     ];
     if !state.config.local_debug_no_db && !no_sign.contains(&action.as_str()) {
         let timestamp = headers
@@ -406,4 +410,116 @@ fn mime_of(path: &str) -> &'static str {
         "apk" => "application/vnd.android.package-archive",
         _ => "application/octet-stream",
     }
+}
+
+/// 分享页封面资源：支持 `?w=N` 按宽度等比缩小输出 JPEG，
+/// 供落地页“先展示缩略图、高清图就绪后无缝替换”的渐进加载；不含 `w` 时原样返回。
+async fn serve_cover(
+    Path(filename): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    }
+    let file_path = std::path::Path::new("uploads/covers").join(&filename);
+    let Ok(bytes) = std::fs::read(&file_path) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
+    let w = params
+        .get("w")
+        .and_then(|s| s.parse::<u32>().ok())
+        .unwrap_or(0);
+    if (1..=2000).contains(&w) {
+        if let Ok(img) = image::load_from_memory(&bytes) {
+            let (ow, oh) = (img.width(), img.height());
+            if ow > 0 && w < ow {
+                let h = ((oh as f32 * w as f32 / ow as f32).round().max(1.0)) as u32;
+                let resized = img.resize(w, h, image::imageops::FilterType::Triangle);
+                let rgb = resized.to_rgb8();
+                let mut out = std::io::Cursor::new(Vec::new());
+                let mut enc =
+                    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 82);
+                let _ = enc.encode(
+                    &rgb,
+                    rgb.width(),
+                    rgb.height(),
+                    image::ExtendedColorType::Rgb8,
+                );
+                return (
+                    StatusCode::OK,
+                    [
+                        (axum::http::header::CONTENT_TYPE, "image/jpeg"),
+                        (axum::http::header::CACHE_CONTROL, "public, max-age=86400"),
+                    ],
+                    out.into_inner(),
+                )
+                    .into_response();
+            }
+        }
+    }
+    let ext = filename.rsplit('.').next().unwrap_or("png");
+    let mime = mime_of(ext);
+    (StatusCode::OK, [(axum::http::header::CONTENT_TYPE, mime)], bytes).into_response()
+}
+
+/// 分享落地页：/s/{share_id} 服务端渲染，自增浏览量，注入 __SHARE_DATA__
+async fn share_landing(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(share_id): Path<String>,
+) -> Response {
+    if !state.db_ready {
+        return share_404();
+    }
+    // 分享链接带有效时长：过期的分享记录直接丢弃（落地页与客户端均打不开）
+    let row = sqlx::query("SELECT * FROM share_log WHERE share_id = ? AND expired_at > NOW()")
+        .bind(&share_id)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(row) = row else {
+        return share_404();
+    };
+
+    // 浏览量自增（失败不阻塞渲染）
+    let _ = sqlx::query("UPDATE share_log SET view_count = view_count + 1 WHERE share_id = ?")
+        .bind(&share_id)
+        .execute(&state.pool)
+        .await;
+
+    // 按次记录浏览时间戳，供仪表台统计今日/昨日浏览（fire-and-forget，失败不阻塞渲染）
+    let _ = sqlx::query("INSERT INTO share_views (share_id) VALUES (?)")
+        .bind(&share_id)
+        .execute(&state.pool)
+        .await;
+
+    let row_val = crate::admin::row_to_value(&row);
+    let params_str = row_val
+        .get("request_params")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let params_val = serde_json::from_str(params_str).unwrap_or(serde_json::Value::Null);
+
+    let base = response::ReqCtx::new((*state.config).clone(), &headers)
+        .base_url
+        .trim_end_matches('/')
+        .to_string();
+    let download_api = format!("{}/api?action=share_download", base);
+    let html = handlers::share::render_landing_page(&row_val, &params_val, &download_api);
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"), (axum::http::header::CACHE_CONTROL, "no-cache")],
+        Body::from(html),
+    )
+        .into_response()
+}
+
+fn share_404() -> Response {
+    (
+        StatusCode::NOT_FOUND,
+        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        Body::from("分享不存在或已过期"),
+    )
+        .into_response()
 }

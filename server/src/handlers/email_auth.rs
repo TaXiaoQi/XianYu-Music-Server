@@ -1155,6 +1155,10 @@ mod tests {
             turnstile_secret: "".into(),
             hcaptcha_secret: "".into(),
             local_debug_no_db: false,
+            static_dir: "../admin-web/dist".into(),
+            public_base_url: "".into(),
+            share_base_url: "".into(),
+            require_user_token: false,
         }
     }
 

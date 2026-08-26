@@ -54,8 +54,10 @@ pub async fn notify_external_emails_for_module(
     }
     let login_base = if !base_url.trim().is_empty() {
         base_url.to_string()
+    } else if !config.public_base_url.trim().is_empty() {
+        config.public_base_url.trim_end_matches('/').to_string()
     } else {
-        "https://back.xymusic.cc/".to_string()
+        "https://api.xianyumusic.cn".to_string()
     };
     // 触发统一事件广播（Webhook + WS订阅 + SSE订阅），内部自行检查各通道开关与板块配置
     super::commtool::broadcast_event(pool, module, subject, body, image_url, &login_base).await;
@@ -103,7 +105,7 @@ fn html_escape(s: &str) -> String {
 /// `image_url` 为可选审核图片（完整 URL 或 data URI），`login_url_base` 用于拼接「前往审核」链接。
 pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_url_base: &str) -> String {
     let login_url = if login_url_base.trim().is_empty() {
-        "https://back.xymusic.cc/".to_string()
+        "https://api.xianyumusic.cn".to_string()
     } else {
         login_url_base.trim_end_matches('/').to_string()
     };

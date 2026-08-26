@@ -90,6 +90,14 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "preverify_delete_account",
 ];
 
+/// 查看他人公开数据的只读 action（排行榜"查看"用户详情）。
+/// 这些接口必须携带有效 token（记录访问者），但属主不必与目标 user_id 一致，
+/// 否则用本人 token 查看他人数据会被属主校验误判为"登录状态与账号不匹配"。
+const VIEW_OTHER_ACTIONS: &[&str] = &[
+    "favorites_sync_download",
+    "file_sync_download",
+];
+
 /// 签发用户 token 并落库；同设备旧 token 立即失效
 pub async fn issue(pool: &MySqlPool, ciyuanxi_id: &str, device_id: &str) -> String {
     let token = crate::handlers::helpers::random_hex(32);
@@ -272,6 +280,11 @@ pub async fn check_dispatch_auth(
     }
     match verify_owner(pool, &token, &identity).await {
         OwnerState::Valid => None,
+        // 查看他人公开数据：token 有效即可，属主不必与目标 user_id 一致，但必须记录访问
+        OwnerState::Mismatch if VIEW_OTHER_ACTIONS.contains(&action) => {
+            record_view_access(pool, &token, &identity, action).await;
+            None
+        }
         OwnerState::Mismatch => Some(ctx.err(401, "登录状态与账号不匹配，请重新登录")),
         OwnerState::Expired => Some(ctx.err(401, "登录已过期，请重新登录")),
         OwnerState::Unknown => {
@@ -281,5 +294,28 @@ pub async fn check_dispatch_auth(
                 None
             }
         }
+    }
+}
+
+/// 记录"查看他人数据"访问：访问者（token 属主）+ 目标 user_id + action + 时间。
+/// 写入失败不影响主流程（只读接口，审计尽力而为）。
+async fn record_view_access(pool: &MySqlPool, token: &str, target: &str, action: &str) {
+    let viewer: Option<String> = sqlx::query_scalar(
+        "SELECT ciyuanxi_id FROM user_tokens WHERE token = ? LIMIT 1",
+    )
+    .bind(token)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    if let Some(viewer) = viewer {
+        let _ = sqlx::query(
+            "INSERT INTO view_access_log (viewer_ciyuanxi_id, target_ciyuanxi_id, action) VALUES (?, ?, ?)",
+        )
+        .bind(&viewer)
+        .bind(target)
+        .bind(action)
+        .execute(pool)
+        .await;
     }
 }

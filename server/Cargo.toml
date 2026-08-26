@@ -20,6 +20,7 @@ aes = "0.8"
 cbc = "0.1"
 hex = "0.4"
 base64 = "0.22"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
 rand = "0.8"
 bcrypt = "0.15"
 tracing = "0.1"

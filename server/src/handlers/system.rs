@@ -29,7 +29,7 @@ fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
 
 fn default_about_config() -> serde_json::Value {
     json!({
-        "officialSiteUrl": "https://xymusic.cc",
+        "officialSiteUrl": "https://xianyumusic.cn",
         "officialSiteText": "前往官网",
         "updateEnabled": true,
         "updateText": "检查更新",
@@ -311,6 +311,64 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
             )
         }
         None => ctx.json(200, "ok", Some(json!([]))),
+    }
+}
+
+/// 分享落地页「去下载」用的免签接口：返回指定平台服务器发布的最新版本下载信息。
+/// 与官网对齐——下载来源统一取服务器发布的版本（version.json → app_versions 兜底）。
+pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let raw = parse_body(body);
+    let req_platform = str_of(&raw, "platform");
+    let platform = if req_platform.is_empty() {
+        "mobile".to_string()
+    } else {
+        req_platform
+    };
+    let app_name = match platform.as_str() {
+        "mobile" => "弦予音乐移动端",
+        "watch" => "弦予音乐腕上端",
+        _ => "弦予音乐桌面端",
+    };
+
+    // 优先：分平台 version.json 中已启用且版本号最大的一条
+    if let Some(item) = latest_enabled_platform_version(&platform) {
+        let version = item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        return ctx.ok(
+            "ok",
+            json!({
+                "platform": platform,
+                "app_name": app_name,
+                "version": version,
+                "content": content,
+                "download_url": url,
+            }),
+        );
+    }
+
+    // 兜底：历史 app_versions 中最新的非禁用版本
+    let row = sqlx::query("SELECT * FROM app_versions WHERE status != 'disabled' ORDER BY id DESC LIMIT 1")
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    match row {
+        Some(r) => {
+            let version: String = r.get("version_code");
+            let url: String = r.get("download_url");
+            ctx.ok(
+                "ok",
+                json!({
+                    "platform": platform,
+                    "app_name": app_name,
+                    "version": version,
+                    "content": "",
+                    "download_url": url,
+                }),
+            )
+        }
+        None => ctx.err(404, "暂无可用下载"),
     }
 }
 
