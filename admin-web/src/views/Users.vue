@@ -234,6 +234,10 @@
           <label>当前听歌时长</label>
           <input :value="resetForm.duration" type="text" disabled />
         </div>
+        <div class="form-group">
+          <label>清除原因 <span style="color:#f59e0b">（必填，下发给用户）</span></label>
+          <textarea v-model="resetForm.reason" rows="2" placeholder="请输入清除原因，客户端将弹窗通知用户" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid rgba(128,128,128,0.35);border-radius:6px;resize:vertical;" />
+        </div>
         <div style="background:rgba(245,158,11,0.14);border:1px solid rgba(245,158,11,0.30);color:#f59e0b;padding:10px 14px;border-radius:6px;font-size:12px;">
           重置后听歌时长与新歌数将清零，此操作不可恢复。
         </div>
@@ -906,7 +910,7 @@ async function submitEmailChange() {
 // ===== 重置听歌时长弹窗 =====
 const showResetModal = ref(false)
 const resetLoading = ref(false)
-const resetForm = ref({ userId: 0, username: '', nickname: '', duration: '', ciyuanxiId: '' })
+const resetForm = ref({ userId: 0, username: '', nickname: '', duration: '', ciyuanxiId: '', reason: '' })
 
 function openResetModal(u: User) {
   resetForm.value = {
@@ -915,15 +919,22 @@ function openResetModal(u: User) {
     nickname: u.nickname || u.username,
     duration: formatDuration(u.listen_duration),
     ciyuanxiId: u.ciyuanxi_id || '',
+    reason: '',
   }
   showResetModal.value = true
 }
 
 async function submitReset() {
+  const reason = resetForm.value.reason.trim()
+  if (!reason) {
+    showToast('请填写清除原因')
+    return
+  }
   resetLoading.value = true
   const res = await adminApi('reset_listen_duration', {
     user_id: resetForm.value.userId,
     ciyuanxi_id: resetForm.value.ciyuanxiId,
+    reason,
   })
   resetLoading.value = false
   if (res.code === 200) {

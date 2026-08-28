@@ -173,12 +173,6 @@ const sourceItems = computed(() => {
 // 统计卡片配置（支持动态值，与桌面版一致，今日热搜在最后）
 const statCards = [
   {
-    label: '总用户数',
-    key: 'total_users',
-    sub: () => `今日新增 ${stats.value.today_users ?? 0} · 昨日 ${stats.value.yesterday_users ?? 0}`,
-    value: () => stats.value.total_users ?? 0,
-  },
-  {
     label: '今日用户',
     key: 'active_users',
     value: () => stats.value.active_users ?? 0,

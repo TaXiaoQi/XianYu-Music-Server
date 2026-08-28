@@ -435,8 +435,11 @@ async function changeCiyuanxi(u: any) {
   }
 }
 async function resetDuration(u: any) {
+  const reason = await mobilePrompt(`请输入清除 ${u.nickname || u.username} 听歌时长的原因（必填，将下发给用户）`, '')
+  if (reason === null) return
+  if (!reason.trim()) { showToast('请填写清除原因'); return }
   if (!(await mobileConfirm(`确认重置 ${u.nickname || u.username} 的听歌时长？`))) return
-  const res = await adminApi('reset_listen_duration', { user_id: u.id })
+  const res = await adminApi('reset_listen_duration', { user_id: u.id, reason: reason.trim() })
   if (res.code === 200) showToast('已重置', 'success'); else showToast(res.msg || '重置失败')
 }
 async function changeEmail(u: any) {
