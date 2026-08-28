@@ -259,6 +259,12 @@ pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str)
         format!("{}/logo.png", base)
     };
     let og_url = format!("{}/s/{}", base, str_of(row, "share_id"));
+    // 落地页 <title>：带歌曲名，QQ/微信卡片在缺 og:title 时会回退读 title
+    let page_title = if og_title.is_empty() {
+        "弦予音乐 · 分享".to_string()
+    } else {
+        format!("{} · 弦予音乐", og_title)
+    };
 
     // 落地页展示封面与 og:image 保持一致，避免本地/相对封面在页面与卡片里显示不一致
     let data = row_to_share_data(row, body_params, download_api, &cover_abs);
@@ -266,6 +272,7 @@ pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str)
 
     HTML
         .replace("__SHARE_JSON__", &json_str)
+        .replace("__TITLE__", &html_escape(&page_title))
         .replace("__OG_TITLE__", &html_escape(&og_title))
         .replace("__OG_DESC__", &html_escape(og_desc))
         .replace("__OG_IMAGE__", &html_escape(&cover_abs))
@@ -277,15 +284,19 @@ const HTML: &str = r#"<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>弦予音乐 · 分享</title>
-<meta name="description" content="弦予音乐">
-<!-- Open Graph：供微信 / QQ / 各大平台分享卡片抓取 -->
+<title>__TITLE__</title>
+<meta name="description" content="__OG_DESC__">
+<!-- Open Graph：供微信 / 各大平台分享卡片抓取 -->
 <meta property="og:type" content="music.song">
 <meta property="og:site_name" content="弦予音乐">
 <meta property="og:title" content="__OG_TITLE__">
 <meta property="og:description" content="__OG_DESC__">
 <meta property="og:image" content="__OG_IMAGE__">
 <meta property="og:url" content="__OG_URL__">
+<!-- QQ / 手机QQ 卡片：腾讯爬虫读取 itemprop 微数据而非 og -->
+<meta itemprop="name" content="__OG_TITLE__">
+<meta itemprop="image" content="__OG_IMAGE__">
+<meta itemprop="description" name="description" content="__OG_DESC__">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:site" content="@xianyu_music">
 <meta name="twitter:title" content="__OG_TITLE__">
@@ -316,8 +327,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans G
   .btn:active{transform:scale(.97)}
   .btn-primary{background:linear-gradient(135deg,#ec4141,#d63b3b);color:#fff;box-shadow:0 10px 26px rgba(236,65,65,.35)}
   .btn-ghost{background:rgba(255,255,255,.8);color:#555a66;border:1px solid var(--border);backdrop-filter:blur(10px)}
-  .btn-group{background:linear-gradient(135deg,#5865F2,#4a53cf);color:#fff;box-shadow:0 10px 26px rgba(88,101,242,.28)}
-  .btn-group::before{content:"";width:16px;height:16px;flex-shrink:0;background:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23fff"><path d="M12 2a9 9 0 0 0-9 9c0 2.3.87 4.4 2.3 6L4 22l5.2-1.5a9.3 9.3 0 0 0 2.8.4A9 9 0 1 0 12 2zm5 9.5c-.5 1-2 2-2.4 2-.4 0-.7.2-1.5-.2-.6-.3-1.5-1.1-2.9-2.6-1-1-1.7-1.9-1.9-2.5-.2-.6 0-.9.1-1.2.1-.3.6-1.4 1-1.6.3-.2.5-.2.7 0l.4 1c.1.3.1.6-.3 1.1l-.7.9c-.2.3-.2.5 0 .9s1.5 2.6 3 3.4.9.4 1.2.3l.9-.7c.4-.4.8-.3 1.1-.2l1 .4c.3.2.4.5.2.8z"/></svg>') center/cover no-repeat}
 /* 下载弹窗 */
 .modal-mask{position:fixed;inset:0;z-index:50;background:rgba(15,23,42,.45);display:none;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(6px)}
 .modal-mask.show{display:flex}
@@ -361,8 +370,7 @@ window.__SHARE_DATA__ = __SHARE_JSON__;
   </div>
   <div class="actions">
     <a class="btn btn-primary" href="javascript:void(0)" onclick="openApp()">在弦予音乐中打开</a>
-    <a class="btn btn-ghost" href="javascript:void(0)" onclick="copyLink()">复制分享链接</a>
-    <a class="btn btn-group" href="https://qm.qq.com/q/d0Yfxu40us" target="_blank" rel="noopener">加入官方群聊</a>
+    <a class="btn btn-ghost" href="https://qm.qq.com/q/d0Yfxu40us" target="_blank" rel="noopener">加入官方群聊</a>
   </div>
 </div>
 
@@ -426,11 +434,6 @@ window.__SHARE_DATA__ = __SHARE_JSON__;
   document.getElementById('singerName').textContent = d.artist || '';
 
   window.__devicePlatform = detectPlatform();
-
-  window.__copyText = function(t){
-    if (navigator.clipboard) return navigator.clipboard.writeText(t);
-    return Promise.resolve();
-  };
 })();
 
 /* 下载渠道元数据 */
@@ -534,16 +537,6 @@ function loadChannels(){
         item.removeAttribute('href');
       }
     });
-  });
-}
-function copyLink(){
-  var url = window.location.href;
-  window.__copyText(url).then(function(){ showToast('链接已复制'); }, function(){
-    var ta = document.createElement('textarea');
-    ta.value = url; ta.style.position='fixed'; ta.style.opacity='0';
-    document.body.appendChild(ta); ta.select();
-    try { document.execCommand('copy'); showToast('链接已复制'); } catch(e){ showToast('复制失败'); }
-    document.body.removeChild(ta);
   });
 }
 var _toastTimer=null;
