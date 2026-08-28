@@ -83,6 +83,8 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "settings_sync_download",
     "favorites_sync_upload",
     "favorites_sync_download",
+    "listen_stats_sync_upload",
+    "listen_stats_sync_download",
     // upload
     "upload_avatar",
     // account lifecycle

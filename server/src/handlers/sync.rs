@@ -206,6 +206,33 @@ fn write_snapshot(ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
     std::fs::write(dir.join(name), serde_json::to_string(data).unwrap_or_default()).is_ok()
 }
 
+/// 后台重置听歌时长时写入「清零快照」。
+/// reset_at 记录本次清零时间点：客户端通过它做一次性下发（仅当云端更重置时间新于本地
+/// 已应用的 reset_at 才清零一次），避免永久屏蔽用户后续重新累计。
+/// reason 为管理员填写的清除原因，随快照下发供客户端弹窗展示。
+pub fn write_listen_stats_reset(ciyuanxi_id: &str, reason: &str) -> bool {
+    let trimmed = reason.trim();
+    let save = json!({
+        "version": 2,
+        "uploaded_at": now_str(),
+        "timestamp": now_ts(),
+        "merged": true,
+        "cleared": true,
+        "reset_at": now_ts(),
+        "reason": if trimmed.is_empty() { "违规" } else { trimmed },
+        "listen_stats": {
+            "global": {
+                "total_play_count": 0,
+                "total_play_time_ms": 0,
+                "first_played_at": null,
+                "last_played_at": null
+            },
+            "daily": []
+        }
+    });
+    write_snapshot(ciyuanxi_id, "listen_stats.json", &save)
+}
+
 /// 清洗订阅列表：仅保留带有效 url 的对象，其余字段透传（id/name/addedAt 等）。
 fn sanitize_subscriptions(raw: &Value) -> Option<Vec<Value>> {
     let arr = raw.as_array()?;
@@ -383,6 +410,70 @@ pub async fn favorites_sync_download(body: &str, ctx: ReqCtx) -> Response {
     match read_snapshot(&ciyuanxi_id, "favorites.json") {
         Ok(v) => ctx.ok("获取成功", v),
         Err(_) => ctx.ok("暂无同步数据", json!({ "favorites": [] })),
+    }
+}
+
+/// 上传当前用户听歌统计快照（文件快照：data/sync/{id}/listen_stats.json）。
+/// 载荷中 listen_stats 为统计对象（累计时长/首数 + 每日明细），整份存储。
+/// merged = 本地离线数据是否已被一次性地并入服务端累计；cleared = 服务端后台是否已清零（制裁）。
+pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let stats = data.get("listen_stats").cloned().unwrap_or_else(|| json!(null));
+    if stats.is_null() {
+        return ctx.err(400, "listen_stats 不能为空");
+    }
+    let merged = matches!(data.get("merged"), Some(Value::Bool(true)));
+    let cleared = matches!(data.get("cleared"), Some(Value::Bool(true)));
+    // reset_at（后台清零时间点）尽量沿用客户端上报值，缺失时保留既有文件值，避免覆盖丢失。
+    let mut reset_at = data.get("reset_at").and_then(Value::as_i64).unwrap_or(0);
+    if reset_at == 0 {
+        reset_at = read_snapshot(&ciyuanxi_id, "listen_stats.json")
+            .ok()
+            .and_then(|v| v.get("reset_at").and_then(Value::as_i64))
+            .unwrap_or(0);
+    }
+    // reason（清零原因）客户端一般不回传，沿用既有文件值，确保后续设备仍能读到原因。
+    let mut reason = data
+        .get("reason")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_default();
+    if reason.trim().is_empty() {
+        reason = read_snapshot(&ciyuanxi_id, "listen_stats.json")
+            .ok()
+            .and_then(|v| v.get("reason").and_then(Value::as_str).map(String::from))
+            .unwrap_or_default();
+    }
+    let save = json!({
+        "version": 2,
+        "uploaded_at": now_str(),
+        "timestamp": now_ts(),
+        "merged": merged,
+        "cleared": cleared,
+        "reset_at": reset_at,
+        "reason": reason,
+        "listen_stats": stats
+    });
+    if !write_snapshot(&ciyuanxi_id, "listen_stats.json", &save) {
+        return ctx.err(500, "文件写入失败");
+    }
+    ctx.ok("上传成功", json!({ "updated": true }))
+}
+
+/// 下载当前用户听歌统计快照。
+pub async fn listen_stats_sync_download(body: &str, ctx: ReqCtx) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    match read_snapshot(&ciyuanxi_id, "listen_stats.json") {
+        Ok(v) => ctx.ok("获取成功", v),
+        Err(_) => ctx.ok("暂无同步数据", json!({ "listen_stats": null })),
     }
 }
 

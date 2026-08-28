@@ -257,7 +257,7 @@ pub async fn change_user_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     ok("修改成功", serde_json::json!({ "role": "普通成员" }))
 }
 
-/// 重置用户听歌时长与新歌数
+/// 重置用户听歌时长与新歌数（管理员须填写清除原因，随快照下发客户端弹窗提示）。
 pub async fn reset_listen_duration(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
     let mut ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
@@ -266,6 +266,10 @@ pub async fn reset_listen_duration(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     }
     if ciyuanxi_id.is_empty() {
         return err(400, "用户参数错误");
+    }
+    let reason = str_of(&data, "reason").trim().to_string();
+    if reason.is_empty() {
+        return err(400, "请填写清除原因");
     }
     let _ = sqlx::query("UPDATE app_users SET listen_duration = 0, unique_songs_count = 0, listen_stats_reset_at = NOW(), listen_duration_offset = 0, unique_songs_offset = 0 WHERE ciyuanxi_id = ?")
         .bind(&ciyuanxi_id)
@@ -276,6 +280,8 @@ pub async fn reset_listen_duration(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
-    log_operation(pool, ctx, "重置听歌时长", &format!("ciyuanxi_id={}", ciyuanxi_id), "").await;
+    // 写入听歌统计清零快照，触发客户端一次性清零下发（reset_at 时间点 + 清除原因）。
+    crate::handlers::sync::write_listen_stats_reset(&ciyuanxi_id, &reason);
+    log_operation(pool, ctx, "重置听歌时长", &format!("ciyuanxi_id={}, reason={}", ciyuanxi_id, reason), "").await;
     ok("重置成功", serde_json::Value::Null)
 }

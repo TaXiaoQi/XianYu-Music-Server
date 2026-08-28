@@ -105,6 +105,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "settings_sync_download" => sync::settings_sync_download(body, ctx).await,
         "favorites_sync_upload" => sync::favorites_sync_upload(body, ctx).await,
         "favorites_sync_download" => sync::favorites_sync_download(body, ctx).await,
+        "listen_stats_sync_upload" => sync::listen_stats_sync_upload(body, ctx).await,
+        "listen_stats_sync_download" => sync::listen_stats_sync_download(body, ctx).await,
         // upload
         "upload_avatar" => upload::upload_avatar(body, ctx, pool).await,
         "upload_cover" => upload::upload_cover(body, ctx, pool).await,
