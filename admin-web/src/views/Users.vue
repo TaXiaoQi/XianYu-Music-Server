@@ -40,6 +40,30 @@
     </div>
     </Transition>
 
+    <!-- 统计行：用户总数 / 正常 / 被封禁（同设备管理页三卡片） -->
+    <Transition name="fade-up" appear>
+      <div class="stats-row">
+        <div class="stat-chip">
+          <div class="stat-icon stat-icon-total">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M3 20c1.4-2.6 3.8-4 6-4s4.6 1.4 6 4"/></svg>
+          </div>
+          <div class="stat-body"><span class="stat-num">{{ stats.total }}</span><span class="stat-label">用户总数</span></div>
+        </div>
+        <div class="stat-chip">
+          <div class="stat-icon stat-icon-active">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </div>
+          <div class="stat-body"><span class="stat-num">{{ stats.normal }}</span><span class="stat-label">正常</span></div>
+        </div>
+        <div class="stat-chip">
+          <div class="stat-icon stat-icon-banned">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          </div>
+          <div class="stat-body"><span class="stat-num">{{ stats.banned }}</span><span class="stat-label">被封禁</span></div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 用户表格 -->
     <Transition name="fade-up" appear>
     <div class="card">
@@ -479,6 +503,9 @@ const total = ref(0)
 const totalPages = ref(0)
 const batchLoading = ref(false)
 
+// 顶部统计卡片（总数 / 正常 / 封禁）
+const stats = ref({ total: 0, normal: 0, banned: 0 })
+
 // 分页页码计算
 const pageNumbers = computed(() => {
   const max = 7
@@ -512,6 +539,19 @@ async function loadUsers() {
     users.value = []
   }
   loading.value = false
+  loadUserStats()
+}
+
+// 刷新顶部统计卡片（返回全量统计，与搜索关键字无关）
+async function loadUserStats() {
+  const res = await adminApi<{ total: number; normal: number; banned: number }>('get_user_stats')
+  if (res.code === 200 && res.data) {
+    stats.value = {
+      total: Number(res.data.total) || 0,
+      normal: Number(res.data.normal) || 0,
+      banned: Number(res.data.banned) || 0,
+    }
+  }
 }
 
 function handleSearch() {
@@ -1134,6 +1174,43 @@ onMounted(() => {
 }
 .search-box input:focus { border-color: var(--accent); }
 
+/* 统计卡片（同设备管理页三卡片样式） */
+.stats-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.stat-chip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--card-solid);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.stat-chip:hover { transform: translateY(-2px); }
+.stat-icon {
+  width: 38px; height: 38px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+.stat-icon-total { background: #eff6ff; color: #3b82f6; }
+.stat-icon-active { background: #f0fdf4; color: #16a34a; }
+.stat-icon-banned { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
+.stat-body { display: flex; flex-direction: column; }
+.stat-num { font-size: 22px; font-weight: 800; line-height: 1.2; }
+.stat-label { font-size: 12px; color: var(--text-muted); }
+@media (max-width: 768px) {
+  .stats-row { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat-chip { padding: 12px; gap: 8px; }
+  .stat-icon { width: 32px; height: 32px; }
+  .stat-num { font-size: 18px; }
+}
+
 /* 右侧操作区 */
 .toolbar-actions {
   display: flex;
@@ -1293,10 +1370,18 @@ onMounted(() => {
 }
 .device-id-cell:hover { opacity: 0.7; }
 
-/* 表格 */
+/* 表格（同设备管理页：列固定横向，宽度不足时横向滚动，表头不换行竖排） */
 .table-wrapper {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 960px;
+}
+thead th {
+  white-space: nowrap;
 }
 
 /* 头像 */

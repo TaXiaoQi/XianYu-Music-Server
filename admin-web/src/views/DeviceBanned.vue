@@ -17,10 +17,6 @@
         <div class="toolbar-actions">
           <Transition name="batch-swap" mode="out-in">
             <div v-if="!isBatchMode" key="normal" class="toolbar-actions-row">
-              <button class="btn btn-dark" @click="showBanForm = !showBanForm">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                手动封禁
-              </button>
               <button class="btn btn-primary" @click="enterBatchMode">批量管理</button>
             </div>
 
@@ -31,25 +27,12 @@
                 </span>
                 {{ isAllSelected ? '取消全选' : '全选' }}
               </button>
+              <button class="btn btn-sm btn-danger" @click="batchBan" :disabled="selectedCount === 0 || batchLoading">批量封禁</button>
               <button class="btn btn-sm btn-danger" @click="batchDelete" :disabled="selectedCount === 0 || batchLoading">删除</button>
               <span class="batch-count">已选 {{ selectedCount }} 项</span>
               <button class="btn btn-sm btn-primary" @click="exitBatchMode">完成</button>
             </div>
           </Transition>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 手动封禁表单（折叠） -->
-    <Transition name="fade-up">
-      <div v-if="showBanForm" class="ban-panel">
-        <div class="ban-form">
-          <input v-model="banDeviceInput" type="text" placeholder="设备 ID（必填）" class="ban-input" />
-          <input v-model="banReasonInput" type="text" placeholder="封禁原因（必填）" class="ban-input" @keyup.enter="manualBanDevice" />
-          <button class="btn-ban" :disabled="banning" @click="manualBanDevice">
-            <span v-if="banning" class="btn-spinner"></span>
-            {{ banning ? '封禁中...' : '封禁' }}
-          </button>
         </div>
       </div>
     </Transition>
@@ -362,34 +345,6 @@ function goPage(p: number) {
   loadDevices()
 }
 
-// ===== 手动封禁 =====
-const showBanForm = ref(false)
-const banDeviceInput = ref('')
-const banReasonInput = ref('')
-const banning = ref(false)
-
-async function manualBanDevice() {
-  const deviceId = banDeviceInput.value.trim()
-  if (!deviceId) { showToast('请输入设备ID'); return }
-  const reason = banReasonInput.value.trim()
-  if (!reason) { showToast('封禁原因不能为空'); return }
-  const ok = await webConfirm(`确定封禁设备 (${deviceId.substring(0, 16)}...) 吗？封禁后该设备将无法登录。`, {
-    title: '封禁设备', confirmText: '确认封禁',
-  })
-  if (!ok) return
-  banning.value = true
-  const res = await adminApi('ban_device', { device_id: deviceId, reason })
-  banning.value = false
-  if (res.code === 200) {
-    showToast('设备已封禁', 'success')
-    banDeviceInput.value = ''
-    banReasonInput.value = ''
-    await loadDevices()
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-
 // ===== 行操作菜单 =====
 async function openRowMenu(d: Device) {
   const action = await webActionMenu(`设备操作 · ${d.device_id.substring(0, 20)}`, [
@@ -504,6 +459,31 @@ function toggleSelectAll() {
     selectedIds.value = new Set()
   } else {
     selectedIds.value = new Set(devices.value.map(d => d.device_id))
+  }
+}
+
+async function batchBan() {
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) return
+  const reason = await webPrompt(`请输入封禁选中的 ${ids.length} 台设备的统一原因：`, '', {
+    title: '批量封禁', placeholder: '封禁原因（必填）',
+  })
+  if (reason === null) return
+  const reasonText = reason.trim()
+  if (!reasonText) { showToast('封禁原因不能为空'); return }
+  const ok = await webConfirm(`确定封禁选中的 ${ids.length} 台设备吗？封禁后将无法登录。`, {
+    title: '批量封禁', confirmText: '确认封禁',
+  })
+  if (!ok) return
+  batchLoading.value = true
+  const res = await adminApi('batch_ban_devices', { device_ids: ids, reason: reasonText })
+  batchLoading.value = false
+  if (res.code === 200) {
+    showToast(res.msg || '批量封禁成功', 'success')
+    selectedIds.value = new Set()
+    await loadDevices()
+  } else {
+    showToast(res.msg || '操作失败')
   }
 }
 

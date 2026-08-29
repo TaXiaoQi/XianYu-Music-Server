@@ -26,6 +26,38 @@
         </div>
       </div>
     </div>
+
+    <!-- 统计：用户总数 / 正常 / 封禁（同设备管理页三卡片） -->
+    <div class="mobile-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
+      <div class="mobile-stat">
+        <div class="stat-icon-row">
+          <span class="stat-icon stat-icon-total">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M3 20c1.4-2.6 3.8-4 6-4s4.6 1.4 6 4"/></svg>
+          </span>
+          <strong>{{ stats.total }}</strong>
+        </div>
+        <span class="stat-label">用户总数</span>
+      </div>
+      <div class="mobile-stat">
+        <div class="stat-icon-row">
+          <span class="stat-icon stat-icon-normal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          </span>
+          <strong>{{ stats.normal }}</strong>
+        </div>
+        <span class="stat-label">正常</span>
+      </div>
+      <div class="mobile-stat">
+        <div class="stat-icon-row">
+          <span class="stat-icon stat-icon-banned">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+          </span>
+          <strong>{{ stats.banned }}</strong>
+        </div>
+        <span class="stat-label">被封禁</span>
+      </div>
+    </div>
+
     <transition name="user-expand">
       <div v-if="openAdd" class="mobile-card mobile-form user-expand-wrap">
         <div class="user-expand-inner">
@@ -235,6 +267,8 @@ const saving = ref(false)
 const openAdd = ref(false)
 const list = ref<any[]>([])
 const addForm = ref({ ciyuanxi_id: '', nickname: '', password: '', email: '' })
+// 顶部统计卡片（总数 / 正常 / 封禁）
+const stats = ref({ total: 0, normal: 0, banned: 0 })
 
 function toggleAdd() {
   openAdd.value = !openAdd.value
@@ -371,6 +405,18 @@ async function loadList() {
   list.value = res.code === 200 && res.data ? (res.data.list || []) : []
   if (res.code !== 200) showToast(res.msg || '加载用户失败')
   loading.value = false
+  loadUserStats()
+}
+// 刷新顶部统计卡片（返回全量统计，与搜索关键字无关）
+async function loadUserStats() {
+  const res = await adminApi<any>('get_user_stats')
+  if (res.code === 200 && res.data) {
+    stats.value = {
+      total: Number(res.data.total) || 0,
+      normal: Number(res.data.normal) || 0,
+      banned: Number(res.data.banned) || 0,
+    }
+  }
 }
 async function addUser() {
   const ciyuanxi = addForm.value.ciyuanxi_id.trim()

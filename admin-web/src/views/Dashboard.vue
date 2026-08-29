@@ -118,11 +118,11 @@
         <button class="btn btn-primary btn-sm" @click="copyApiUrl">复制 API</button>
       </div>
       <div class="api-copy-row api-secret-row">
-        <code>{{ clientApiSecret || '仅超管可见' }}</code>
+        <code>{{ clientApiSecret || '未读取到密钥' }}</code>
         <button
           class="btn btn-primary btn-sm"
           :disabled="!clientApiSecret"
-          :title="clientApiSecret ? '复制密钥' : '客户端签名密钥仅超级管理员可见'"
+          :title="clientApiSecret ? '复制密钥' : '未读取到客户端签名密钥'"
           @click="copyApiSecret"
         >复制密钥</button>
       </div>
@@ -164,6 +164,7 @@ interface DashboardStats {
   pending_nicknames?: number
   pending_feedback?: number
   api_secret?: string
+  public_api_url?: string
 }
 
 const stats = ref<DashboardStats>({})
@@ -307,10 +308,12 @@ async function copyText(text: string, successMessage: string) {
 }
 
 onMounted(async () => {
-  publicApiUrl.value = resolvePublicApiUrl()
+  publicApiUrl.value = resolvePublicApiUrl() // 先给兜底值，避免首帧空白
   const res = await adminApi<DashboardStats>('dashboard_stats')
   if (res.code === 200 && res.data) {
     stats.value = res.data
+    // 优先用服务端权威地址（基于请求 Host / public_base_url），兜底时才用窗口猜测
+    if (stats.value.public_api_url) publicApiUrl.value = stats.value.public_api_url
   } else {
     loadError.value = res.msg || '数据加载失败（数据库可能未连接）'
   }
