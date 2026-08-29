@@ -90,6 +90,11 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     // account lifecycle
     "delete_account",
     "preverify_delete_account",
+    // watch 联动：命令中继 + 设备在线状态（需本账号 token）
+    "watch_submit_command",
+    "watch_poll_command",
+    "watch_phone_ping",
+    "watch_phone_query",
 ];
 
 /// 查看他人公开数据的只读 action（排行榜"查看"用户详情）。

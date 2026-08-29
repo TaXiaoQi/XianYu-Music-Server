@@ -12,6 +12,7 @@ pub mod system;
 pub mod token;
 pub mod upload;
 pub mod wallpaper;
+pub mod watch;
 
 use axum::response::Response;
 use sqlx::MySqlPool;
@@ -78,6 +79,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_master_quota_usage" => settings::get_master_quota_usage(body, ctx, pool).await,
         // share
         "create_share" => share::create_share(body, ctx, pool).await,
+        "report_share_action" => share::report_share_action(body, ctx, pool).await,
         "share_download" => system::share_download(body, ctx, pool).await,
         // social
         "submit_feedback" => social::submit_feedback(body, ctx, pool).await,
@@ -118,6 +120,11 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "email_login" => email_auth::login(body, ctx, pool).await,
         "email_reset_password" => email_auth::reset_password(body, ctx, pool).await,
         "email_get_profile" => email_auth::get_profile(body, ctx, pool).await,
+        // watch 联动（手表↔手机 命令中继 + 在线状态）
+        "watch_submit_command" => watch::watch_submit_command(body, ctx, pool).await,
+        "watch_poll_command" => watch::watch_poll_command(body, ctx, pool).await,
+        "watch_phone_ping" => watch::watch_phone_ping(body, ctx, pool).await,
+        "watch_phone_query" => watch::watch_phone_query(body, ctx, pool).await,
         _ => {
             let msg = format!("未知操作: {}", action);
             ctx.err(404, &msg)
