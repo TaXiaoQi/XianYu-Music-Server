@@ -225,7 +225,7 @@ pub async fn list_audit_records(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
 
     let avatar_rows = sqlx::query(
         "SELECT p.id, p.ciyuanxi_id, p.avatar_data, p.status, p.created_at, p.reviewed_at, p.reviewed_by, \
-         u.nickname AS username, u.avatar_url AS current_avatar \
+         u.nickname AS username, p.old_avatar AS current_avatar \
          FROM user_avatar_pending p \
          LEFT JOIN app_users u ON u.ciyuanxi_id = p.ciyuanxi_id \
          WHERE p.status = ? \
@@ -237,9 +237,8 @@ pub async fn list_audit_records(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
 
     let nickname_rows = sqlx::query(
         "SELECT n.id, n.ciyuanxi_id, n.nickname AS new_name, n.status, n.created_at, n.reviewed_at, n.reviewed_by, \
-         u.nickname AS old_name \
+         n.old_name AS old_name \
          FROM user_nickname_pending n \
-         LEFT JOIN app_users u ON u.ciyuanxi_id = n.ciyuanxi_id \
          WHERE n.status = ? \
          ORDER BY n.created_at DESC",
     )

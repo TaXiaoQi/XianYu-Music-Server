@@ -147,6 +147,12 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     if let Some(msg) = avatar_submit_block_message(pool, &ciyuanxi_id).await {
         return ctx.err(429, msg);
     }
+    // 快照提交前的旧头像，供后台「当前头像」对比（批准后 avatar_url 会被覆盖）
+    let old_avatar: String = sqlx::query_scalar("SELECT COALESCE(avatar_url, '') FROM app_users WHERE ciyuanxi_id = ?")
+        .bind(&ciyuanxi_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or_default();
     let audit = audit_policy::audit_image(
         pool,
         "avatar",
@@ -165,9 +171,10 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
             .bind(&ciyuanxi_id)
             .execute(pool)
             .await;
-        let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, status, reviewed_at, reviewed_by) VALUES (?, ?, 'approved', NOW(), ?)")
+        let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, old_avatar, status, reviewed_at, reviewed_by) VALUES (?, ?, ?, 'approved', NOW(), ?)")
             .bind(&ciyuanxi_id)
             .bind(&avatar_data)
+            .bind(&old_avatar)
             .bind(format!("external:{}", audit.provider))
             .execute(pool)
             .await;
@@ -178,9 +185,10 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
             .bind(&ciyuanxi_id)
             .execute(pool)
             .await;
-        let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, status, reviewed_at, reviewed_by) VALUES (?, ?, 'rejected', NOW(), ?)")
+        let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, old_avatar, status, reviewed_at, reviewed_by) VALUES (?, ?, ?, 'rejected', NOW(), ?)")
             .bind(&ciyuanxi_id)
             .bind(&avatar_data)
+            .bind(&old_avatar)
             .bind(format!("external:{}", audit.provider))
             .execute(pool)
             .await;
@@ -190,9 +198,10 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
-    let ins = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, status) VALUES (?,?, 'pending')")
+    let ins = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, old_avatar, status) VALUES (?,?, ?, 'pending')")
         .bind(&ciyuanxi_id)
         .bind(&avatar_data)
+        .bind(&old_avatar)
         .execute(pool)
         .await;
     match ins {

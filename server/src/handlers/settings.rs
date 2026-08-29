@@ -287,9 +287,10 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 .bind(&ciyuanxi_id)
                 .execute(pool)
                 .await;
-            let _ = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, status, reviewed_at, reviewed_by) VALUES (?, ?, 'approved', NOW(), ?)")
+            let _ = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, old_name, status, reviewed_at, reviewed_by) VALUES (?, ?, ?, 'approved', NOW(), ?)")
                 .bind(&ciyuanxi_id)
                 .bind(&nickname)
+                .bind(&current_nickname)
                 .bind(format!("external:{}", audit.provider))
                 .execute(pool)
                 .await;
@@ -299,9 +300,10 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 .bind(&ciyuanxi_id)
                 .execute(pool)
                 .await;
-            let _ = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, status, reviewed_at, reviewed_by) VALUES (?, ?, 'rejected', NOW(), ?)")
+            let _ = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, old_name, status, reviewed_at, reviewed_by) VALUES (?, ?, ?, 'rejected', NOW(), ?)")
                 .bind(&ciyuanxi_id)
                 .bind(&nickname)
+                .bind(&current_nickname)
                 .bind(format!("external:{}", audit.provider))
                 .execute(pool)
                 .await;
@@ -311,9 +313,10 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 .bind(&ciyuanxi_id)
                 .execute(pool)
                 .await;
-            let result = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, status) VALUES (?, ?, 'pending')")
+            let result = sqlx::query("INSERT INTO user_nickname_pending (ciyuanxi_id, nickname, old_name, status) VALUES (?, ?, ?, 'pending')")
                 .bind(&ciyuanxi_id)
                 .bind(&nickname)
+                .bind(&current_nickname)
                 .execute(pool)
                 .await;
             if let Err(e) = result {
