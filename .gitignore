@@ -26,3 +26,6 @@ beifen/
 # 系统文件
 Thumbs.db
 .DS_Store
+
+# 旧版构建产物备份
+admin-web/dist_old/
