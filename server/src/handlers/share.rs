@@ -118,6 +118,21 @@ async fn gen_unique_share_id(pool: &MySqlPool) -> String {
     }
 }
 
+/// 上报一次真实「用户点分享」动作（切歌预生成 share_log 不触发本接口），
+/// 供仪表台分享统计使用，避免被预加载刷虚高。
+pub async fn report_share_action(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").to_string();
+    match sqlx::query("INSERT INTO share_actions (ciyuanxi_id) VALUES (?)")
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await
+    {
+        Ok(_) => ctx.ok("ok", json!({})),
+        Err(e) => ctx.err(500, &format!("上报失败: {}", e)),
+    }
+}
+
 /// 校验封面 URL 是否可被外部访问：仅接受远程 http(s)，拒绝本地/回环/Tauri asset 地址，
 /// 避免本地封面路径或混合内容进入落地页（导致「不安全」提示与封面无法加载）。
 fn sanitize_cover_url(cover: &str) -> String {
