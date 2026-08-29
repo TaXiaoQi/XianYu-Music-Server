@@ -124,11 +124,37 @@ pub async fn get_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response 
         .execute(pool)
         .await;
 
-    let left = crate::handlers::helpers::random_int(2, 9);
-    let right = crate::handlers::helpers::random_int(1, 9);
+    // 九九乘法表型人机验证：操作数取值 1~9，加减乘除随机一种，结果恒为非负整数。
+    // 定义「除」保证整除（被除数=两因数之积，商=因数），「减」保证 a>b（结果≥1）。
+    let ops = ['+', '-', '×', '÷'];
+    let op = ops[crate::handlers::helpers::random_int(0, 3) as usize];
+    let (left, right, answer) = match op {
+        '+' => {
+            let a = crate::handlers::helpers::random_int(1, 9);
+            let b = crate::handlers::helpers::random_int(1, 9);
+            (a, b, a + b)
+        }
+        '-' => {
+            // 令 a>b，结果最小为 1，避免出现负号
+            let a = crate::handlers::helpers::random_int(2, 9);
+            let b = crate::handlers::helpers::random_int(1, a - 1);
+            (a, b, a - b)
+        }
+        '×' => {
+            let a = crate::handlers::helpers::random_int(1, 9);
+            let b = crate::handlers::helpers::random_int(1, 9);
+            (a, b, a * b)
+        }
+        '÷' => {
+            let a = crate::handlers::helpers::random_int(1, 9); // 商
+            let b = crate::handlers::helpers::random_int(1, 9); // 除数
+            (a * b, b, a)
+        }
+        _ => unreachable!(),
+    };
     let captcha_id = crate::handlers::helpers::random_hex(16);
-    let answer = (left + right).to_string();
-    let question = format!("{} + {} = ?", left, right);
+    let answer = answer.to_string();
+    let question = format!("{} {} {} = ?", left, op, right);
 
     let result = sqlx::query(
         "INSERT INTO human_captcha_challenges (captcha_id, purpose, answer, ip, expires_at) VALUES (?,?,?,?,DATE_ADD(NOW(), INTERVAL ? MINUTE))",
@@ -610,20 +636,22 @@ pub async fn generate_tv_login_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     if device_id.is_empty() {
         return ctx.err(400, "设备标识不能为空");
     }
+    let location = str_of(&data, "location").trim().to_string();
     let _ = sqlx::query("DELETE FROM tv_login_codes WHERE device_id = ? AND created_at < (NOW() - INTERVAL 10 MINUTE)")
         .bind(&device_id)
         .execute(pool)
         .await;
     let code = crate::handlers::helpers::random_hex(16);
     let ip = ctx.client_ip.clone();
-    let result = sqlx::query("INSERT INTO tv_login_codes (code, device_id, status, ip, expires_at) VALUES (?,?,'pending',?,DATE_ADD(NOW(), INTERVAL 5 MINUTE))")
+    let result = sqlx::query("INSERT INTO tv_login_codes (code, device_id, status, ip, location, expires_at) VALUES (?,?,'pending',?,?,DATE_ADD(NOW(), INTERVAL 5 MINUTE))")
         .bind(&code)
         .bind(&device_id)
         .bind(&ip)
+        .bind(&location)
         .execute(pool)
         .await;
     match result {
-        Ok(_) => ctx.json(200, "ok", Some(json!({ "code": code, "expire_seconds": 300 }))),
+        Ok(_) => ctx.json(200, "ok", Some(json!({ "code": code, "expire_seconds": 300, "location": location }))),
         Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
     }
 }
@@ -714,10 +742,19 @@ pub async fn scan_tv_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
         .bind(&code)
         .execute(pool)
         .await;
+    let device_id: String = row.try_get::<String, _>("device_id").unwrap_or_default();
+    let location: String = row.try_get::<String, _>("location").unwrap_or_default();
     ctx.json(
         200,
         "扫码成功，请在手机端确认登录",
-        Some(json!({ "ciyuanxi_id": ciyuanxi_id, "nickname": nickname, "username": nickname })),
+        Some(json!({
+            "app_name": "弦予.桌面版",
+            "device_id": device_id,
+            "location": location,
+            "ciyuanxi_id": ciyuanxi_id,
+            "nickname": nickname,
+            "username": nickname,
+        })),
     )
 }
 
