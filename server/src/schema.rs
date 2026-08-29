@@ -46,6 +46,9 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     // 壁纸表后置补列：旧库可能缺少新增列，缺列会导致列表查询报“数据库错误”
     ensure_column(pool, "wallpapers", "category", "varchar(64) NOT NULL DEFAULT '默认'").await;
     ensure_column(pool, "wallpapers", "sort_order", "int(11) NOT NULL DEFAULT 0").await;
+    // 头像/改名待审记录：快照提交前的旧值，供后台「当前/旧」对比（批准后会覆盖原始字段）
+    ensure_column(pool, "user_avatar_pending", "old_avatar", "LONGTEXT NULL").await;
+    ensure_column(pool, "user_nickname_pending", "old_name", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "wallpapers", "uploaded_by_nickname", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "wallpapers", "reviewed_at", "datetime NULL").await;
     ensure_column(pool, "wallpapers", "reviewed_by", "varchar(64) NOT NULL DEFAULT ''").await;
@@ -53,6 +56,8 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "wallpapers", "platform", "varchar(16) NOT NULL DEFAULT 'desktop'").await;
     // 日推画像聚合与排行榜查询加速：ciyuanxi_id + played_at 复合索引
     ensure_index(pool, "play_history", "idx_ciyuanxi_played", "ciyuanxi_id, played_at").await;
+    // 扫码登录：被扫桌面端上报的位置信息（供移动端确认页展示）
+    ensure_column(pool, "tv_login_codes", "location", "varchar(255) NOT NULL DEFAULT ''").await;
     ensure_default_admin(pool).await;
 }
 
@@ -540,6 +545,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `token` varchar(64) NOT NULL DEFAULT '',
             `ip` varchar(64) NOT NULL DEFAULT '',
+            `location` varchar(255) NOT NULL DEFAULT '',
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             `scanned_at` datetime DEFAULT NULL,
             `logged_in_at` datetime DEFAULT NULL,
@@ -612,6 +618,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `avatar_data` LONGTEXT NOT NULL,
+            `old_avatar` LONGTEXT NULL,
             `status` varchar(16) NOT NULL DEFAULT 'pending',
             `reviewed_at` datetime DEFAULT NULL,
             `reviewed_by` varchar(64) NOT NULL DEFAULT '',
@@ -624,6 +631,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `nickname` varchar(64) NOT NULL DEFAULT '',
+            `old_name` varchar(64) NOT NULL DEFAULT '',
             `status` varchar(16) NOT NULL DEFAULT 'pending',
             `reviewed_at` datetime DEFAULT NULL,
             `reviewed_by` varchar(64) NOT NULL DEFAULT '',
@@ -732,6 +740,13 @@ static TABLE_STATEMENTS: &[&str] = &[
             PRIMARY KEY (`id`),
             KEY `idx_share_id` (`share_id`),
             KEY `idx_viewed_at` (`viewed_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `share_actions` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(64) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `ciyuanxi_pretty_ids` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
@@ -883,7 +898,6 @@ static TABLE_STATEMENTS: &[&str] = &[
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `feedback_admin_notifications` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
-            `feedback_id` bigint(20) NOT NULL DEFAULT 0,
             `to_admin` varchar(64) NOT NULL DEFAULT '',
             `from_admin` varchar(64) NOT NULL DEFAULT '',
             `type` varchar(32) NOT NULL DEFAULT '',
@@ -894,5 +908,41 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_to_admin` (`to_admin`),
             KEY `idx_read_at` (`read_at`),
             KEY `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        // 手表↔手机 联动命令中继队列：手表提交，手机轮询取出执行
+        "CREATE TABLE IF NOT EXISTS `watch_commands` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `request_id` varchar(64) NOT NULL DEFAULT '',
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `from_device_id` varchar(128) NOT NULL DEFAULT '',
+            `op` varchar(32) NOT NULL DEFAULT '',
+            `payload` text,
+            `status` varchar(16) NOT NULL DEFAULT 'pending',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `consumed_at` datetime DEFAULT NULL,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_request_id` (`request_id`),
+            KEY `idx_ciyuanxi_status` (`ciyuanxi_id`, `status`),
+            KEY `idx_status_created` (`status`, `created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        // 设备在线状态（presence）：手机 ping，手表据此判断目标手机是否在线并取当前播放信息
+        "CREATE TABLE IF NOT EXISTS `device_presence` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `device_id` varchar(128) NOT NULL DEFAULT '',
+            `device_type` varchar(16) NOT NULL DEFAULT 'mobile',
+            `device_model` varchar(128) NOT NULL DEFAULT '',
+            `app_version` varchar(32) NOT NULL DEFAULT '',
+            `playing_title` varchar(255) NOT NULL DEFAULT '',
+            `playing_artist` varchar(255) NOT NULL DEFAULT '',
+            `playing_album` varchar(255) NOT NULL DEFAULT '',
+            `playing_cover` varchar(512) NOT NULL DEFAULT '',
+            `is_playing` tinyint(1) NOT NULL DEFAULT 0,
+            `is_favorite` tinyint(1) NOT NULL DEFAULT 0,
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_account_device` (`ciyuanxi_id`, `device_id`),
+            KEY `idx_ciyuanxi_type` (`ciyuanxi_id`, `device_type`),
+            KEY `idx_updated_at` (`updated_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];
