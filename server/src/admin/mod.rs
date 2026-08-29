@@ -201,6 +201,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "dashboard_stats" => dashboard::dashboard_stats(body, &ctx, pool).await,
         // users
         "get_users" => users::get_users(body, &ctx, pool).await,
+        "get_user_stats" => users::get_user_stats(body, &ctx, pool).await,
         // auth / account / admins
         "admin_logout" => auth::admin_logout(&ctx, pool).await,
         "change_password" => auth::change_password(body, &ctx, pool).await,
@@ -245,6 +246,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "reset_device_listen_stats" => users::reset_device_listen_stats(body, &ctx, pool).await,
         "delete_device_record" => users::delete_device_record(body, &ctx, pool).await,
         "batch_delete_devices" => users::batch_delete_devices(body, &ctx, pool).await,
+        "batch_ban_devices" => users::batch_ban_devices(body, &ctx, pool).await,
         "get_device_plugins" => users::get_device_plugins(body, &ctx, pool).await,
         // db
         "repair_database" => db::repair_database(body, &ctx, pool).await,

@@ -67,13 +67,15 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "SELECT COUNT(*) FROM error_log WHERE error_time >= '{}' AND error_time < '{}'",
         yesterday_start, today_start
     );
-    let sql_total_shares = "SELECT COUNT(*) FROM share_log".to_string();
+    // 分享统计：仅统计「真实分享动作」（客户端点分享时上报 share_actions），
+    // 不含客户端切歌预生成的 share_log（否则被预加载刷虚高）。
+    let sql_total_shares = "SELECT COUNT(*) FROM share_actions".to_string();
     let sql_today_shares = format!(
-        "SELECT COUNT(*) FROM share_log WHERE created_at >= '{}' AND created_at < '{}'",
+        "SELECT COUNT(*) FROM share_actions WHERE created_at >= '{}' AND created_at < '{}'",
         today_start, tomorrow_start
     );
     let sql_yesterday_shares = format!(
-        "SELECT COUNT(*) FROM share_log WHERE created_at >= '{}' AND created_at < '{}'",
+        "SELECT COUNT(*) FROM share_actions WHERE created_at >= '{}' AND created_at < '{}'",
         yesterday_start, today_start
     );
     let sql_total_share_views = "SELECT COUNT(*) FROM share_views".to_string();
@@ -191,7 +193,12 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         _ => (String::new(), 0),
     };
 
+    // 客户端要连接的真实 API 地址（基于请求 Host 或 public_base_url 兜底），
+    // 供仪表台「服务器 API」直接展示，避免前端靠窗口端口去猜。
+    let public_api_url = format!("{}/api", ctx.base_url.trim_end_matches('/'));
+
     let stats = json!({
+        "public_api_url": public_api_url,
         "total_users": total_users,
         "today_users": today_users,
         "yesterday_users": yesterday_users,
@@ -218,12 +225,8 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "pending_avatars": pending_avatars,
         "pending_nicknames": pending_nicknames,
         "pending_feedback": pending_feedback,
-        // 客户端签名密钥仅超管可见；普通管理员不应掌握可伪造任意 App 请求的总密钥
-        "api_secret": if ctx.role == "super_admin" {
-            Value::String(ctx.config.api_secret.clone())
-        } else {
-            Value::Null
-        },
+        // 客户端签名密钥：所有管理员均可查看/复制（便于接入第三方工具）
+        "api_secret": Value::String(ctx.config.api_secret.clone()),
     });
 
     ok("ok", stats)

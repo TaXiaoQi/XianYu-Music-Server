@@ -67,6 +67,21 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
     }
 }
 
+/// 用户统计汇总（总数 / 正常 / 封禁），用于用户管理页顶部三卡片。
+pub async fn get_user_stats(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let total: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM app_users").fetch_one(pool).await.unwrap_or(0);
+    let normal: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_users WHERE status != 0")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    let banned: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM app_users WHERE status = 0")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    ok("ok", json!({ "total": total, "normal": normal, "banned": banned }))
+}
+
 pub async fn toggle_user_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -1065,6 +1080,39 @@ pub async fn batch_delete_devices(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     ).await;
 
     ok(&format!("已删除 {} 台设备的记录", total_deleted), Value::Null)
+}
+
+/// 批量封禁设备（统一原因，逐台 INSERT IGNORE）
+pub async fn batch_ban_devices(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_ids: Vec<String> = data.get("device_ids")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect())
+        .unwrap_or_default();
+    let reason = str_of(&data, "reason").trim().to_string();
+
+    if device_ids.is_empty() {
+        return err(400, "请选择要封禁的设备");
+    }
+    if reason.is_empty() {
+        return err(400, "封禁原因不能为空");
+    }
+
+    let mut total = 0u64;
+    for did in &device_ids {
+        let r = sqlx::query("INSERT IGNORE INTO banned_devices (device_id, reason, banned_by) VALUES (?, ?, ?)")
+            .bind(did)
+            .bind(&reason)
+            .bind(&ctx.username)
+            .execute(pool)
+            .await;
+        if r.map(|res| res.rows_affected() > 0).unwrap_or(false) {
+            total += 1;
+        }
+    }
+
+    log_operation(pool, ctx, "批量封禁设备", &format!("封禁{}台设备", total), &format!("原因:{}", reason)).await;
+    ok(&format!("已封禁 {} 台设备", total), Value::Null)
 }
 
 /// 获取设备关联账号的插件信息（取当前关联账号）

@@ -901,6 +901,7 @@ pub fn handle_admin_api(action: &str) -> Response {
             "total_errors": 3,
             "today_errors": 0,
             "yesterday_errors": 1,
+            "public_api_url": "http://localhost:8081/api",
             "total_shares": 26,
             "today_shares": 2,
             "yesterday_shares": 4,
@@ -971,6 +972,13 @@ pub fn handle_admin_api(action: &str) -> Response {
                 "created_at": now_string()
             }]
         })),
+        "get_user_stats" => admin::ok("ok", json!({
+            "total": 1,
+            "normal": 1,
+            "banned": 0
+        })),
+        "report_share_action" => admin::ok("ok", json!({})),
+        "batch_ban_devices" => admin::ok("ok", json!({})),
         "list_admins" => admin::ok("ok", json!([{
             "id": 1,
             "username": "debug-admin",
