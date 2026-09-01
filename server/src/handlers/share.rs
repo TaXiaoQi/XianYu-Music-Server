@@ -228,6 +228,9 @@ fn row_to_share_data(row: &Value, body_params: &Value, download_api: &str, cover
         "cover": cover_abs,
         "duration_ms": duration_ms,
         "deep_link": build_song_deep_link(&song_id, &hash, &song_name, &singer, duration_ms, &source, cover_abs),
+        // Android 包名（客户端运行时上报，debug 包带 .debug 后缀）：
+        // QQ/浏览器内置 WebView 拦截裸 scheme，落地页需用 intent://package= 拉起
+        "android_package": str_of(body_params, "android_package"),
         // 用于拼接 App 唤醒失败后的下载地址的上前缀：{base}/api?action=share_download
         "download_api": download_api,
     })
@@ -274,6 +277,15 @@ pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str)
         format!("{}/logo.png", base)
     };
     let og_url = format!("{}/s/{}", base, str_of(row, "share_id"));
+    // og:image 用本站方形缩略图（?w=300 实时缩放，与深链 w=150 同通道）：
+    // 原图体积大爬虫抓取慢甚至超时，非方形封面还会导致 QQ 卡片封面排版偏移。
+    // 仅对本站 /uploads/covers/ 封面生效；logo 兜底与第三方 CDN 封面原样使用。
+    let og_image = if cover_abs.contains("/uploads/covers/") {
+        let sep = if cover_abs.contains('?') { '&' } else { '?' };
+        format!("{cover_abs}{sep}w=300")
+    } else {
+        cover_abs.clone()
+    };
     // 落地页 <title>：带歌曲名，QQ/微信卡片在缺 og:title 时会回退读 title
     let page_title = if og_title.is_empty() {
         "弦予音乐 · 分享".to_string()
@@ -290,7 +302,7 @@ pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str)
         .replace("__TITLE__", &html_escape(&page_title))
         .replace("__OG_TITLE__", &html_escape(&og_title))
         .replace("__OG_DESC__", &html_escape(og_desc))
-        .replace("__OG_IMAGE__", &html_escape(&cover_abs))
+        .replace("__OG_IMAGE__", &html_escape(&og_image))
         .replace("__OG_URL__", &html_escape(&og_url))
 }
 
@@ -392,11 +404,13 @@ window.__SHARE_DATA__ = __SHARE_JSON__;
 <div class="modal-mask" id="downloadMask">
   <div class="modal">
     <h3>未检测到弦予音乐</h3>
+    <p id="browserHint" style="display:none;color:#ec4141;font-weight:700">你在 QQ / 微信内打开，拉起可能被拦截：点右上角「···」选「在浏览器打开」后重试；找不到菜单时，可直接复制链接粘贴到手机浏览器。</p>
     <p id="downloadHint">确认前往官方下载页安装最新版本吗？已安装用户在收到歌曲后即可直接打开收听。</p>
     <div class="row">
       <button class="btn btn-cancel" onclick="hideDownload()">暂不</button>
       <button class="btn btn-download" onclick="goDownload()" id="downloadPrimary">前往下载</button>
     </div>
+    <button class="btn btn-ghost" onclick="copyLink()" style="margin-top:2px">复制链接，去浏览器打开</button>
     <div class="more-wrap" id="moreWrap">
       <button type="button" class="more-toggle" onclick="toggleChannels()">更多下载渠道 <span class="more-arrow">▾</span></button>
       <div class="more-channels" id="moreChannels"></div>
@@ -470,8 +484,41 @@ function detectPlatform(){
   return 'desktop';
 }
 
-function openApp(){
+/* Android：QQ/微信等内置 WebView 拦截裸 scheme 跳转，需用 intent:// 拉起。
+   带上 package= 直达解析 + S.browser_fallback_url（Chrome 未装时自动开落地页）。
+   iOS 及桌面端无此问题，维持裸 scheme。 */
+function buildLaunchUrl(){
   var d = window.__SHARE_DATA__ || {};
+  var dl = d.deep_link || 'xianyu://';
+  if (!/android/i.test(navigator.userAgent || '')) return dl;
+  var inner = dl.replace(/^xianyu:\/\/\/?/, '');
+  var intent = 'intent://' + inner + '#Intent;scheme=xianyu;';
+  if (d.android_package) intent += 'package=' + encodeURIComponent(d.android_package) + ';';
+  intent += 'S.browser_fallback_url=' + encodeURIComponent(location.href) + ';end';
+  return intent;
+}
+
+/* QQ/微信内置 WebView 对 location.href 的 scheme/intent 导航拦截最狠，
+   动态 <a> 标签点击是用户手势导航通道，放行率高；location.href 兜底。 */
+function navigate(url){
+  try {
+    var a = document.createElement('a');
+    a.href = url;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function(){ a.remove(); }, 300);
+  } catch (e) {
+    window.location.href = url;
+  }
+}
+/* QQ/微信内打开：intent/scheme 都可能被拦，失败时引导用右上角菜单转到系统浏览器 */
+function inTencentWebview(){
+  var ua = navigator.userAgent || '';
+  return /MQQBrowser/i.test(ua) || /\bQQ\//i.test(ua) || /MicroMessenger/i.test(ua);
+}
+
+function openApp(){
   showToast('正在打开弦予音乐...');
   var launched = false;
   function markLaunched(){
@@ -480,17 +527,43 @@ function openApp(){
     document.removeEventListener('visibilitychange', onVisibility);
   }
   function onVisibility(){ if (document.hidden) markLaunched(); }
-  // 直接改 location 唤起 scheme：隐藏 iframe 灌 scheme 在 Chrome 桌面端会被拦截，
-  // 导致已安装用户被误判为未安装而弹下载引导；blur + visibilitychange 双重检测 App 是否真正拉起
+  // blur + visibilitychange 双重检测 App 是否真正拉起
   window.addEventListener('blur', markLaunched);
   document.addEventListener('visibilitychange', onVisibility);
-  window.location.href = d.deep_link || 'xianyu://';
+  navigate(buildLaunchUrl());
   setTimeout(function(){
     if (!launched) showDownload();
   }, 2500);
 }
-function showDownload(){ document.getElementById('downloadMask').classList.add('show'); }
+function showDownload(){
+  var hint = document.getElementById('browserHint');
+  if (hint) hint.style.display = inTencentWebview() ? 'block' : 'none';
+  document.getElementById('downloadMask').classList.add('show');
+}
 function hideDownload(){ document.getElementById('downloadMask').classList.remove('show'); }
+
+/* 复制落地页链接：QQ 新版内置视图可能没有「···」菜单，复制粘贴是保底出口。
+   navigator.clipboard 在老 X5 内核可能缺失，textarea + execCommand 兜底。 */
+function copyLink(){
+  var url = location.href;
+  function ok(){ showToast('链接已复制，请粘贴到浏览器打开'); hideDownload(); }
+  function legacy(){
+    var ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    var done = false;
+    try { done = document.execCommand('copy'); } catch (e) {}
+    ta.remove();
+    if (done) ok(); else showToast('复制失败，请手动复制地址栏链接');
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(ok, legacy);
+  } else {
+    legacy();
+  }
+}
 
 /* 请求某平台的服务器发布版本（成员 auth 接口，返回 download_url）*/
 function requestDownload(platform, cb){
