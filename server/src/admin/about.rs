@@ -22,15 +22,15 @@ fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
 fn default_about_config() -> Value {
     json!({
         "officialSiteUrl": "https://xianyumusic.cn",
-        "officialSiteText": "前往官网",
         "updateEnabled": true,
-        "updateText": "检查更新",
         "projectUrl": "https://github.com/TaXiaoQi/XianYu-Music-Desktop",
-        "projectText": "开源地址",
         "referenceProjectUrl": "https://github.com/Billy636/XianYuMusic",
-        "referenceProjectText": "参考项目",
         "joinGroupUrl": "https://qm.qq.com/q/kvteWSD8yY",
-        "joinGroupText": "加入群组"
+        "acknowledgements": [
+            { "name": "@Billy636", "url": "https://github.com/Billy636" },
+            { "name": "@Zencok", "url": "https://github.com/Zencok" },
+            { "name": "@kiomosu", "url": "https://github.com/kiomosu" }
+        ]
     })
 }
 
@@ -101,26 +101,48 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let platform = str_of(&data, "platform").trim().to_string();
     let official_site_url = str_of(&data, "officialSiteUrl").trim().to_string();
-    let official_site_text = str_of(&data, "officialSiteText").trim().to_string();
-    let update_text = str_of(&data, "updateText").trim().to_string();
     let project_url = str_of(&data, "projectUrl").trim().to_string();
-    let project_text = str_of(&data, "projectText").trim().to_string();
     let reference_project_url = str_of(&data, "referenceProjectUrl").trim().to_string();
-    let reference_project_text = str_of(&data, "referenceProjectText").trim().to_string();
     let join_group_url = str_of(&data, "joinGroupUrl").trim().to_string();
-    let join_group_text = str_of(&data, "joinGroupText").trim().to_string();
+
+    // 只下发链接，不覆盖按钮显示文字（由各端客户端多语言本地化）。
+    // 名单：payload 未携带（旧后台/移动后台页）时沿用现有存档，避免丢名单。
+    let acknowledgements: Vec<Value> = match data.get("acknowledgements") {
+        Some(Value::Array(arr)) => arr
+            .iter()
+            .filter_map(|item| {
+                let name = item
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
+                    .unwrap_or("")
+                    .to_string();
+                if name.is_empty() {
+                    return None;
+                }
+                let url = item
+                    .get("url")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.trim())
+                    .unwrap_or("")
+                    .to_string();
+                Some(json!({ "name": name, "url": url }))
+            })
+            .collect(),
+        _ => read_platform_about_config(&platform)
+            .get("acknowledgements")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default(),
+    };
 
     let config = json!({
         "officialSiteUrl": official_site_url,
-        "officialSiteText": official_site_text,
         "updateEnabled": bool_of(&data, "updateEnabled"),
-        "updateText": update_text,
         "projectUrl": project_url,
-        "projectText": project_text,
         "referenceProjectUrl": reference_project_url,
-        "referenceProjectText": reference_project_text,
         "joinGroupUrl": join_group_url,
-        "joinGroupText": join_group_text,
+        "acknowledgements": acknowledgements,
     });
 
     if write_about_config(&config, &platform).is_err() {

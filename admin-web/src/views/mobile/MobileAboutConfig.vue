@@ -26,10 +26,6 @@
       <section class="mobile-card about-section">
         <h3 class="mobile-card-title">官网入口</h3>
         <div class="about-field">
-          <label>按钮文字</label>
-          <input v-model="form.officialSiteText" class="mobile-input" type="text" placeholder="前往官网" />
-        </div>
-        <div class="about-field">
           <label>官网链接</label>
           <input v-model="form.officialSiteUrl" class="mobile-input" type="text" placeholder="https://..." />
         </div>
@@ -39,10 +35,6 @@
       <section class="mobile-card about-section">
         <h3 class="mobile-card-title">加入群组入口</h3>
         <div class="about-field">
-          <label>按钮文字</label>
-          <input v-model="form.joinGroupText" class="mobile-input" type="text" placeholder="加入群组" />
-        </div>
-        <div class="about-field">
           <label>群组链接</label>
           <input v-model="form.joinGroupUrl" class="mobile-input" type="text" placeholder="https://..." />
         </div>
@@ -51,10 +43,6 @@
       <!-- 检查更新入口 -->
       <section class="mobile-card about-section">
         <h3 class="mobile-card-title">检查更新入口</h3>
-        <div class="about-field">
-          <label>按钮文字</label>
-          <input v-model="form.updateText" class="mobile-input" type="text" placeholder="检查更新" />
-        </div>
         <label class="switch-row">
           <input v-model="form.updateEnabled" type="checkbox" />
           <span>显示检查更新按钮</span>
@@ -65,10 +53,6 @@
       <section class="mobile-card about-section">
         <h3 class="mobile-card-title">项目地址</h3>
         <div class="about-field">
-          <label>按钮文字</label>
-          <input v-model="form.projectText" class="mobile-input" type="text" placeholder="开源地址" />
-        </div>
-        <div class="about-field">
           <label>项目链接</label>
           <input v-model="form.projectUrl" class="mobile-input" type="text" placeholder="https://..." />
         </div>
@@ -78,16 +62,12 @@
       <section class="mobile-card about-section">
         <h3 class="mobile-card-title">参考项目</h3>
         <div class="about-field">
-          <label>按钮文字</label>
-          <input v-model="form.referenceProjectText" class="mobile-input" type="text" placeholder="参考项目" />
-        </div>
-        <div class="about-field">
           <label>参考项目链接</label>
           <input v-model="form.referenceProjectUrl" class="mobile-input" type="text" placeholder="https://..." />
         </div>
       </section>
 
-      <p class="about-hint">链接留空后，{{ platform === 'mobile' ? '移动端' : '桌面端' }}会隐藏对应外链按钮；检查更新入口可通过开关隐藏。两个平台的配置独立存储、互不影响。</p>
+      <p class="about-hint">只配置链接，按钮显示文字由客户端按语言本地化。链接留空后，{{ platform === 'mobile' ? '移动端' : '桌面端' }}会隐藏对应外链按钮；检查更新入口可通过开关隐藏。两个平台的配置独立存储、互不影响。</p>
     </template>
   </div>
 </template>
@@ -99,28 +79,18 @@ import './MobilePage.css'
 
 interface AboutConfig {
   officialSiteUrl: string
-  officialSiteText: string
   updateEnabled: boolean
-  updateText: string
   projectUrl: string
-  projectText: string
   referenceProjectUrl: string
-  referenceProjectText: string
   joinGroupUrl: string
-  joinGroupText: string
 }
 
 const desktopDefaults: AboutConfig = {
   officialSiteUrl: 'https://xianyumusic.cn',
-  officialSiteText: '前往官网',
   updateEnabled: true,
-  updateText: '检查更新',
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
-  projectText: '开源地址',
   referenceProjectUrl: 'https://github.com/Billy636/XianYuMusic',
-  referenceProjectText: '参考项目',
   joinGroupUrl: 'https://qm.qq.com/q/kvteWSD8yY',
-  joinGroupText: '加入群组',
 }
 
 const mobileDefaults: AboutConfig = {

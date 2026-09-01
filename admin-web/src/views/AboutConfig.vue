@@ -29,12 +29,10 @@
         加载中...
       </div>
       <div v-else class="config-card">
+      <!-- 只下发链接，按钮显示文字由各端客户端多语言本地化，后台不再配置文字 -->
+
       <div class="section-title">官网入口</div>
       <div class="field-grid">
-        <label class="field">
-          <span>按钮文字</span>
-          <input v-model="form.officialSiteText" type="text" placeholder="前往官网" />
-        </label>
         <label class="field">
           <span>官网链接</span>
           <input v-model="form.officialSiteUrl" type="text" placeholder="https://..." />
@@ -44,33 +42,19 @@
       <div class="section-title">加入群组入口</div>
       <div class="field-grid">
         <label class="field">
-          <span>按钮文字</span>
-          <input v-model="form.joinGroupText" type="text" placeholder="加入群组" />
-        </label>
-        <label class="field">
           <span>群组链接</span>
           <input v-model="form.joinGroupUrl" type="text" placeholder="https://..." />
         </label>
       </div>
 
       <div class="section-title">检查更新入口</div>
-      <div class="field-grid">
-        <label class="field">
-          <span>按钮文字</span>
-          <input v-model="form.updateText" type="text" placeholder="检查更新" />
-        </label>
-        <label class="switch-row">
-          <input v-model="form.updateEnabled" type="checkbox" />
-          <span>显示检查更新按钮</span>
-        </label>
-      </div>
+      <label class="switch-row">
+        <input v-model="form.updateEnabled" type="checkbox" />
+        <span>显示检查更新按钮</span>
+      </label>
 
       <div class="section-title">项目地址</div>
       <div class="field-grid">
-        <label class="field">
-          <span>按钮文字</span>
-          <input v-model="form.projectText" type="text" placeholder="开源地址" />
-        </label>
         <label class="field">
           <span>项目链接</span>
           <input v-model="form.projectUrl" type="text" placeholder="https://..." />
@@ -80,16 +64,28 @@
       <div class="section-title">参考项目</div>
       <div class="field-grid">
         <label class="field">
-          <span>按钮文字</span>
-          <input v-model="form.referenceProjectText" type="text" placeholder="参考项目" />
-        </label>
-        <label class="field">
           <span>参考项目链接</span>
           <input v-model="form.referenceProjectUrl" type="text" placeholder="https://..." />
         </label>
       </div>
 
-      <p class="hint">链接留空后，{{ platform === 'mobile' ? '移动端' : '桌面端' }}会隐藏对应外链按钮；检查更新入口可通过开关隐藏。两个平台的配置独立存储、互不影响。</p>
+      <div class="section-title">致谢名单</div>
+      <div class="ack-list">
+        <div v-for="(item, index) in form.acknowledgements" :key="index" class="ack-item">
+          <label class="field">
+            <span>名字</span>
+            <input v-model="item.name" type="text" placeholder="名字" />
+          </label>
+          <label class="field">
+            <span>主页链接</span>
+            <input v-model="item.url" type="text" placeholder="https://..." />
+          </label>
+          <button type="button" class="btn-remove" @click="removeAcknowledgement(index)">删除</button>
+        </div>
+        <button type="button" class="btn-add" @click="addAcknowledgement">＋ 添加成员</button>
+      </div>
+
+      <p class="hint">各个入口只配置链接，按钮显示文字由客户端按语言本地化，不再由后台覆盖。链接留空后，{{ platform === 'mobile' ? '移动端' : '桌面端' }}会隐藏对应外链按钮；检查更新入口可通过开关隐藏。两个平台的配置独立存储、互不影响。致谢名单展示在{{ platform === 'mobile' ? '移动端' : '桌面端' }}“参考项目”下方，点击成员名字跳转其主页，留空的名字会被忽略。</p>
       </div>
     </Transition>
   </div>
@@ -99,30 +95,31 @@
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 
+interface AcknowledgementsItem {
+  name: string
+  url: string
+}
+
 interface AboutConfig {
   officialSiteUrl: string
-  officialSiteText: string
   updateEnabled: boolean
-  updateText: string
   projectUrl: string
-  projectText: string
   referenceProjectUrl: string
-  referenceProjectText: string
   joinGroupUrl: string
-  joinGroupText: string
+  acknowledgements: AcknowledgementsItem[]
 }
 
 const desktopDefaults: AboutConfig = {
   officialSiteUrl: 'https://xianyumusic.cn',
-  officialSiteText: '前往官网',
   updateEnabled: true,
-  updateText: '检查更新',
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
-  projectText: '开源地址',
   referenceProjectUrl: 'https://github.com/Billy636/XianYuMusic',
-  referenceProjectText: '参考项目',
   joinGroupUrl: 'https://qm.qq.com/q/kvteWSD8yY',
-  joinGroupText: '加入群组',
+  acknowledgements: [
+    { name: '@Billy636', url: 'https://github.com/Billy636' },
+    { name: '@Zencok', url: 'https://github.com/Zencok' },
+    { name: '@kiomosu', url: 'https://github.com/kiomosu' },
+  ],
 }
 
 const mobileDefaults: AboutConfig = {
@@ -153,10 +150,21 @@ async function loadConfig() {
   const res = await adminApi<Partial<AboutConfig>>('get_about_config_admin', { platform: platform.value })
   if (res.code === 200 && res.data) {
     form.value = { ...defaultConfig.value, ...res.data }
+    if (!Array.isArray(form.value.acknowledgements)) {
+      form.value.acknowledgements = [...defaultConfig.value.acknowledgements]
+    }
   } else {
     showToast(res.msg || '加载配置失败')
   }
   loading.value = false
+}
+
+function addAcknowledgement() {
+  form.value.acknowledgements.push({ name: '', url: '' })
+}
+
+function removeAcknowledgement(index: number) {
+  form.value.acknowledgements.splice(index, 1)
 }
 
 async function save() {
@@ -330,6 +338,46 @@ onMounted(loadConfig)
   height: 18px;
   accent-color: var(--accent);
 }
+.ack-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ack-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--control-bg);
+}
+.btn-add,
+.btn-remove {
+  border: 1.5px dashed var(--border);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-light);
+  padding: 9px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-add:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.btn-remove {
+  border-style: solid;
+  color: var(--danger, #e02020);
+  white-space: nowrap;
+  align-self: end;
+}
+.btn-remove:hover {
+  background: rgba(224, 32, 32, 0.08);
+}
 .hint {
   margin: 22px 0 0;
   font-size: 12px;
@@ -343,6 +391,9 @@ onMounted(loadConfig)
   .field-grid {
     grid-template-columns: 1fr;
     flex-direction: column;
+  }
+  .ack-item {
+    grid-template-columns: 1fr;
   }
 }
 

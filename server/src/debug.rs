@@ -161,15 +161,15 @@ fn get_map_value(state: &Value, map_key: &str, item_key: &str) -> Option<Value> 
 fn about_config() -> Value {
     json!({
         "officialSiteUrl": "https://xianyumusic.cn",
-        "officialSiteText": "前往官网",
         "updateEnabled": true,
-        "updateText": "检查更新",
         "projectUrl": "https://github.com/TaXiaoQi/XianYu-Music-Desktop",
-        "projectText": "开源地址",
         "referenceProjectUrl": "https://github.com/Billy636/XianYuMusic",
-        "referenceProjectText": "参考项目",
         "joinGroupUrl": "https://qm.qq.com/q/kvteWSD8yY",
-        "joinGroupText": "加入群组"
+        "acknowledgements": [
+            { "name": "@Billy636", "url": "https://github.com/Billy636" },
+            { "name": "@Zencok", "url": "https://github.com/Zencok" },
+            { "name": "@kiomosu", "url": "https://github.com/kiomosu" }
+        ]
     })
 }
 
