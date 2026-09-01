@@ -205,6 +205,10 @@
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ item.resolve_note }}</span></div>
                   </div>
+                  <div v-if="item.status === 'rejected' && item.reject_reason" class="resolve-note reject-note">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                    <div class="resolve-text"><span class="resolve-label">拒绝原因</span><span>{{ item.reject_reason }}</span></div>
+                  </div>
                   <div v-if="item.status === 'resolved' && resolveItemImages(item).length > 0" class="resolve-imgs" @click.stop="openImageViewer(resolveItemImages(item), 0)">
                     <img v-for="(img, i) in resolveItemImages(item)" :key="i" :src="img" class="resolve-thumb" alt="完成图片" />
                     <span v-if="resolveItemImages(item).length > 1" class="resolve-count-badge">{{ resolveItemImages(item).length }}</span>
@@ -2167,6 +2171,9 @@ onUnmounted(() => {
 .resolve-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .resolve-label { font-weight: 700; }
 .resolve-text span:last-child { color: #16a34a; white-space: pre-wrap; word-break: break-word; }
+/* 拒绝原因（复用 resolve-note 布局，红色区分） */
+.reject-note { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
+.reject-note .resolve-text span:last-child { color: #ef4444; }
 /* 完成图片缩略图 */
 .resolve-imgs {
   display: flex;

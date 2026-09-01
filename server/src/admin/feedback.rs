@@ -183,7 +183,7 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
 
     // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
-        "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.platform, f.app_version, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.resolve_images, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
+        "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.platform, f.app_version, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.resolve_images, f.reject_reason, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
                 f.log_meta,
                 COALESCE(CHAR_LENGTH(f.error_logs), 0) AS error_logs_chars,
                 COALESCE(CHAR_LENGTH(f.all_logs), 0) AS all_logs_chars,

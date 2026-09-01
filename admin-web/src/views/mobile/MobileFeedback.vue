@@ -166,6 +166,10 @@
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ f.resolve_note }}</span></div>
               </div>
+              <div v-if="f.status === 'rejected' && f.reject_reason" class="resolve-note reject-note">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+                <div class="resolve-text"><span class="resolve-label">拒绝原因</span><span>{{ f.reject_reason }}</span></div>
+              </div>
             </div>
           </div>
           <!-- 图片堆叠（仅显示第一张） -->
@@ -1244,6 +1248,7 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   border: 1px solid rgba(59, 130, 246, 0.25);
 }
 .resolve-note { display: flex; align-items: flex-start; gap: 4px; font-size: 11px; color: #16a34a; width: 100%; }
+.reject-note { color: #ef4444; }
 .resolve-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .resolve-label { font-weight: 800; }
 .resolve-text span { word-break: break-word; }
