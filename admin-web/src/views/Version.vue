@@ -9,12 +9,19 @@
             按客户端平台管理在线更新配置。新增或编辑版本后，卡片实时刷新。启用的版本只对所选平台的客户端生效。
           </p>
         </div>
-        <button class="btn-add" @click="openDesktopModal">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-          </svg>
-          新增版本
-        </button>
+        <div class="header-actions">
+          <button class="btn-beta" @click="openBetaModal">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+            内测名单
+            <span v-if="betaList.length" class="beta-count">{{ betaList.length }}</span>
+          </button>
+          <button class="btn-add" @click="openDesktopModal">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            新增版本
+          </button>
+        </div>
       </div>
     </Transition>
 
@@ -90,7 +97,10 @@
               <div class="type-bar" :class="`bar-${item.platform || 'desktop'}`"></div>
               <div class="card-body">
                 <div class="card-top">
-                  <span class="type-badge" :class="`badge-${item.platform || 'desktop'}`">{{ platformLabelOf(item) }}</span>
+                  <div class="card-badges">
+                    <span class="type-badge" :class="`badge-${platformOf(item)}`">{{ platformLabelOf(item) }}</span>
+                    <span v-if="channelOf(item) === 'beta'" class="type-badge badge-beta">测试版</span>
+                  </div>
                   <label class="toggle-switch" :title="item.enabled ? '点击禁用' : '点击启用'">
                     <input type="checkbox" :checked="item.enabled" @change="toggleDesktop($event, item)" />
                     <span class="toggle-slider"></span>
@@ -150,8 +160,25 @@
               </div>
             </div>
             <div class="field">
+              <label class="required">更新渠道</label>
+              <div class="type-picker channel-picker">
+                <button class="type-option pick-stable" :class="{ active: desktopDraftChannel === 'stable' }" @click="desktopDraftChannel = 'stable'">
+                  <span class="pick-dot"></span>正式版
+                </button>
+                <button class="type-option pick-beta-opt" :class="{ active: desktopDraftChannel === 'beta' }" @click="desktopDraftChannel = 'beta'">
+                  <span class="pick-dot"></span>测试版
+                </button>
+              </div>
+              <p v-if="desktopDraftChannel === 'beta'" class="field-hint">测试版仅对「内测名单」中的设备ID下发，普通用户检测更新与官网下载均不受影响。</p>
+            </div>
+            <div class="field">
               <label class="required">版本号</label>
-              <input v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
+              <input v-if="desktopDraftChannel === 'stable'" v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
+              <div v-else class="version-combo">
+                <input v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
+                <span class="version-combo-sep">-beta-</span>
+                <input v-model="desktopDraftBetaNum" type="text" inputmode="numeric" placeholder="1" class="version-combo-num" />
+              </div>
             </div>
             <div class="field">
               <label>下载渠道</label>
@@ -234,6 +261,49 @@
       </div>
     </Transition>
 
+    <!-- 内测名单弹窗 -->
+    <Transition name="modal">
+      <div v-if="betaModalVisible" class="modal-backdrop beta-backdrop">
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>内测名单</h3>
+            <button class="modal-close" @click="closeBetaModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-form">
+            <p class="field-hint">名单内的设备ID可收到「测试版」渠道的更新下发；正式版与官网下载对所有用户不变。设备ID可在客户端「关于/反馈」上报数据或设备管理中查询。</p>
+            <div class="beta-add-row">
+              <input v-model="betaDeviceIdDraft" type="text" placeholder="输入设备ID" @keyup.enter="addBetaTester" />
+              <input v-model="betaNoteDraft" type="text" placeholder="备注（可选）" class="beta-note-input" @keyup.enter="addBetaTester" />
+              <button class="btn-save" :disabled="betaSaving" @click="addBetaTester">{{ betaSaving ? '添加中...' : '添加' }}</button>
+            </div>
+            <div v-if="betaLoading" class="state-box"><div class="spinner"></div><span>加载中...</span></div>
+            <div v-else-if="betaList.length === 0" class="beta-empty">暂无内测设备，添加后测试版将仅对这些设备下发</div>
+            <div v-else class="beta-list">
+              <TransitionGroup name="card">
+                <div v-for="t in betaList" :key="t.id" class="beta-item" :style="{ animationDelay: '0ms' }">
+                  <div class="beta-item-main">
+                    <span class="beta-device-id" :title="t.device_id">{{ t.device_id }}</span>
+                    <span v-if="t.note" class="beta-item-note">{{ t.note }}</span>
+                  </div>
+                  <div class="beta-item-side">
+                    <span class="beta-item-date">{{ t.created_at || '-' }}</span>
+                    <button class="icon-btn icon-btn-danger" title="移除" @click="removeBetaTester(t)">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    </button>
+                  </div>
+                </div>
+              </TransitionGroup>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeBetaModal">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
   </div>
 </template>
 
@@ -253,6 +323,10 @@ const PLATFORMS: { key: PlatformKey; label: string }[] = [
 function platformOf(item: any): PlatformKey {
   const p = item?.platform
   return p === 'mobile' || p === 'watch' ? p : 'desktop'
+}
+
+function channelOf(item: any): 'stable' | 'beta' {
+  return item?.channel === 'beta' ? 'beta' : 'stable'
 }
 
 function platformLabelKey(key: string): string {
@@ -291,7 +365,10 @@ const desktopModalVisible = ref(false)
 const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string }>({ version: '', updateContent: '', downloadUrl: '' })
 const desktopDraftEnabled = ref(false)
 const desktopDraftPlatform = ref<PlatformKey>('desktop')
+const desktopDraftChannel = ref<'stable' | 'beta'>('stable')
+const desktopDraftBetaNum = ref('')
 const desktopEditingVersion = ref('')
+const desktopEditingChannel = ref<'stable' | 'beta'>('stable')
 const desktopSaving = ref(false)
 const desktopChannelModalVisible = ref(false)
 const desktopChannelMode = ref<'link' | 'upload'>('link')
@@ -316,20 +393,38 @@ const desktopChannelDesc = computed(() => {
   return desktopDraftEnabled.value ? '启用更新时，需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
 })
 
+/** 测试版组合版本号：主版本 + -beta- + beta号（如 1.2.0-beta-3） */
+const composedVersion = computed(() => {
+  if (desktopDraftChannel.value !== 'beta') return desktopDraft.value.version.trim()
+  const main = desktopDraft.value.version.trim()
+  const num = (parseInt(desktopDraftBetaNum.value, 10) || 0)
+  if (!main || num <= 0) return ''
+  return `${main}-beta-${num}`
+})
+
 function openDesktopModal(item?: any) {
   if (item) {
-    desktopEditingVersion.value = item.version || ''
+    const version = item.version || ''
+    const betaIdx = version.indexOf('-beta-')
+    const isBeta = betaIdx >= 0
+    desktopEditingVersion.value = version
+    desktopEditingChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraftPlatform.value = platformOf(item)
+    desktopDraftChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraft.value = {
-      version: item.version || '',
+      version: isBeta ? version.slice(0, betaIdx) : version,
       updateContent: item.updateContent || '',
       downloadUrl: item.downloadUrl || '',
     }
+    desktopDraftBetaNum.value = isBeta ? version.slice(betaIdx + '-beta-'.length) : ''
     desktopDraftEnabled.value = !!item.enabled
   } else {
     desktopEditingVersion.value = ''
+    desktopEditingChannel.value = 'stable'
     desktopDraftPlatform.value = platformFilter.value
+    desktopDraftChannel.value = 'stable'
     desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+    desktopDraftBetaNum.value = ''
     desktopDraftEnabled.value = false
   }
   desktopPackageFile.value = null
@@ -345,8 +440,9 @@ function closeDesktopModal() {
 }
 
 async function saveDesktop() {
-  if (!desktopDraft.value.version.trim()) {
-    showToast('请填写版本号')
+  const version = composedVersion.value
+  if (!version) {
+    showToast(desktopDraftChannel.value === 'beta' ? '请填写版本号和 beta 号（正整数）' : '请填写版本号')
     return
   }
   const hasPackage = !!desktopPackageFile.value
@@ -366,9 +462,9 @@ async function saveDesktop() {
       return
     }
   }
-  const version = desktopDraft.value.version.trim()
   const res = await adminApi('save_desktop_version', {
     platform: desktopDraftPlatform.value,
+    channel: desktopDraftChannel.value,
     version,
     download_url: desktopDraft.value.downloadUrl?.trim() || '',
     update_content: desktopDraft.value.updateContent.trim(),
@@ -378,16 +474,18 @@ async function saveDesktop() {
   })
   desktopSaving.value = false
   if (res.code === 200) {
-    const replaced = !!desktopEditingVersion.value && desktopEditingVersion.value === version
+    const replaced = !!desktopEditingVersion.value && desktopEditingVersion.value === version && desktopEditingChannel.value === desktopDraftChannel.value
     loadDesktop()
     if (replaced) {
       showToast('修改成功', 'success')
       desktopModalVisible.value = false
     } else {
-      // 新增成功：保持弹窗打开并清空表单（保留平台），方便继续新增多个版本
+      // 新增成功：保持弹窗打开并清空表单（保留平台与渠道），方便继续新增多个版本
       showToast('保存成功，可继续新增版本', 'success')
       desktopEditingVersion.value = ''
+      desktopEditingChannel.value = desktopDraftChannel.value
       desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+      desktopDraftBetaNum.value = ''
       desktopDraftEnabled.value = false
       desktopPackageFile.value = null
       desktopPackageFileDraft.value = null
@@ -403,6 +501,7 @@ async function toggleDesktop(e: Event, item: any) {
   const enabled = (e.target as HTMLInputElement).checked
   const res = await adminApi('save_desktop_version', {
     platform: platformOf(item),
+    channel: channelOf(item),
     version: item.version,
     download_url: item.downloadUrl || '',
     update_content: item.updateContent || '',
@@ -512,8 +611,66 @@ function readFileAsBase64(file: File): Promise<string> {
   })
 }
 
+// ===== 内测名单 =====
+const betaModalVisible = ref(false)
+const betaList = ref<any[]>([])
+const betaLoading = ref(false)
+const betaSaving = ref(false)
+const betaDeviceIdDraft = ref('')
+const betaNoteDraft = ref('')
+
+async function loadBeta() {
+  betaLoading.value = true
+  const res = await adminApi<any>('list_beta_testers')
+  if (res.code === 200 && res.data) {
+    betaList.value = Array.isArray(res.data.list) ? res.data.list : []
+  }
+  betaLoading.value = false
+}
+
+function openBetaModal() {
+  betaModalVisible.value = true
+  if (!betaLoading.value && betaList.value.length === 0) loadBeta()
+}
+
+function closeBetaModal() {
+  betaModalVisible.value = false
+}
+
+async function addBetaTester() {
+  const deviceId = betaDeviceIdDraft.value.trim()
+  if (!deviceId) {
+    showToast('请输入设备ID')
+    return
+  }
+  betaSaving.value = true
+  const res = await adminApi('add_beta_tester', { device_id: deviceId, note: betaNoteDraft.value.trim() })
+  betaSaving.value = false
+  if (res.code === 200) {
+    showToast('已添加到内测名单', 'success')
+    betaDeviceIdDraft.value = ''
+    betaNoteDraft.value = ''
+    loadBeta()
+  } else {
+    showToast(res.msg || '添加失败')
+  }
+}
+
+async function removeBetaTester(t: any) {
+  const ok = await webConfirm(`确认将设备 ${t.device_id} 移出内测名单？`, { title: '移除内测设备', confirmText: '确认移除' })
+  if (!ok) return
+  const res = await adminApi('delete_beta_tester', { device_id: t.device_id })
+  if (res.code === 200) {
+    showToast('已移除', 'success')
+    loadBeta()
+  } else {
+    showToast(res.msg || '移除失败')
+  }
+}
+
 onMounted(() => {
   loadDesktop()
+  loadBeta()
 })
 </script>
 
@@ -585,6 +742,12 @@ onMounted(() => {
 }
 
 /* 新增按钮 */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
 .btn-add {
   display: inline-flex;
   align-items: center;
@@ -606,6 +769,43 @@ onMounted(() => {
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
 }
 .btn-add:active { transform: scale(0.96); }
+
+/* 内测名单按钮 */
+.btn-beta {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.btn-beta:hover {
+  background: rgba(245, 158, 11, 0.18);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.22);
+}
+.btn-beta:active { transform: scale(0.96); }
+.beta-count {
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 .btn-add-small {
   display: inline-flex;
@@ -821,6 +1021,8 @@ onMounted(() => {
 .badge-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 .badge-mobile { background: rgba(16, 185, 129, 0.12); color: #10b981; }
 .badge-watch { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.badge-beta { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+.card-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .badge-normal { background: rgba(34, 197, 94, 0.14); color: #10b981; }
 .badge-update { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 .badge-force { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
@@ -1129,6 +1331,132 @@ onMounted(() => {
 .platform-picker .pick-platform.active .pick-dot { background: var(--accent); }
 .platform-picker .pick-platform.locked { cursor: not-allowed; opacity: 0.7; }
 
+/* 渠道选择器（正式版 / 测试版） */
+.pick-stable.active { background: rgba(34, 197, 94, 0.14); color: #10b981; }
+.pick-stable.active .pick-dot { background: #10b981; }
+.pick-beta-opt.active { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+.pick-beta-opt.active .pick-dot { background: #f59e0b; }
+
+.field-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* 测试版组合版本号：版本号 -beta- beta号 */
+.version-combo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.version-combo input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  outline: none;
+  background: var(--control-bg);
+  font-family: inherit;
+  transition: border-color 0.2s, background 0.2s;
+}
+.version-combo input:focus { border-color: var(--accent); background: var(--card-solid); }
+.version-combo-sep {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #d97706;
+  background: rgba(245, 158, 11, 0.12);
+  padding: 6px 10px;
+  border-radius: 8px;
+  user-select: none;
+}
+.version-combo-num { max-width: 90px !important; }
+
+/* 内测名单弹窗 */
+.beta-backdrop { z-index: 10010; }
+.beta-add-row {
+  display: flex;
+  gap: 8px;
+}
+.beta-add-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  outline: none;
+  background: var(--control-bg);
+  font-family: inherit;
+  transition: border-color 0.2s, background 0.2s;
+}
+.beta-add-row input:focus { border-color: var(--accent); background: var(--card-solid); }
+.beta-add-row .beta-note-input { flex: 0.7; }
+.beta-add-row .btn-save { flex-shrink: 0; }
+.beta-empty {
+  padding: 32px 16px;
+  border: 1.5px dashed var(--border);
+  border-radius: 12px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.beta-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.beta-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--control-bg);
+}
+.beta-item-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.beta-device-id {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.beta-item-note {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  background: var(--track);
+  padding: 2px 8px;
+  border-radius: 999px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.beta-item-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.beta-item-date { font-size: 11px; color: var(--text-muted); }
+
 /* 渠道选项 */
 .channel-options {
   display: grid;
@@ -1300,6 +1628,11 @@ onMounted(() => {
 /* ===== 响应式 ===== */
 @media (max-width: 768px) {
   .page-header { flex-direction: column; }
+  .header-actions { width: 100%; }
+  .header-actions .btn-add,
+  .header-actions .btn-beta { flex: 1; justify-content: center; }
+  .beta-add-row { flex-wrap: wrap; }
+  .beta-add-row .beta-note-input { flex: 1 0 100%; order: 3; }
   .page-desc { max-width: 100%; }
   .card-grid { grid-template-columns: 1fr; }
   .stats-row { flex-wrap: wrap; }

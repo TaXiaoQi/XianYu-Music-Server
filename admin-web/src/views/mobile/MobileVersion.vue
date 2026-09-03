@@ -6,7 +6,13 @@
         <h2 class="ver-title">版本管理</h2>
         <p class="ver-desc">按客户端平台管理在线更新配置，启用的版本只对所选平台生效。</p>
       </div>
-      <button class="mobile-btn primary" @click="openDesktopModal()">+ 新增版本</button>
+      <div class="ver-header-actions">
+        <button class="mobile-btn beta-btn" @click="openBetaModal">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          内测名单<span v-if="betaList.length" class="beta-count">{{ betaList.length }}</span>
+        </button>
+        <button class="mobile-btn primary" @click="openDesktopModal()">+ 新增版本</button>
+      </div>
     </div>
 
     <!-- 平台切换 -->
@@ -75,7 +81,10 @@
           <div class="ver-card-bar" :class="`bar-${platformOf(item)}`"></div>
           <div class="ver-card-body">
             <div class="ver-card-top">
-              <span class="ver-badge" :class="`badge-${platformOf(item)}`">{{ platformLabelOf(item) }}</span>
+              <div class="ver-badges">
+                <span class="ver-badge" :class="`badge-${platformOf(item)}`">{{ platformLabelOf(item) }}</span>
+                <span v-if="channelOf(item) === 'beta'" class="ver-badge badge-beta">测试版</span>
+              </div>
               <label class="ver-toggle" :title="item.enabled ? '点击禁用' : '点击启用'">
                 <input type="checkbox" :checked="item.enabled" @change="toggleDesktop($event, item)" />
                 <span class="ver-toggle-slider"></span>
@@ -129,9 +138,22 @@
                   >{{ p.label }}</button>
                 </div>
               </div>
+              <div class="field">
+                <span class="required">更新渠道</span>
+                <div class="enable-row channel-row">
+                  <button type="button" class="enable-btn channel-stable" :class="{ on: desktopDraftChannel === 'stable' }" @click="desktopDraftChannel = 'stable'">正式版</button>
+                  <button type="button" class="enable-btn channel-beta" :class="{ on: desktopDraftChannel === 'beta' }" @click="desktopDraftChannel = 'beta'">测试版</button>
+                </div>
+                <p v-if="desktopDraftChannel === 'beta'" class="field-hint">测试版仅对「内测名单」中的设备ID下发，普通用户检测更新与官网下载均不受影响。</p>
+              </div>
               <label class="field">
                 <span class="required">版本号</span>
-                <input v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
+                <input v-if="desktopDraftChannel === 'stable'" v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
+                <div v-else class="ver-combo">
+                  <input v-model="desktopDraft.version" type="text" placeholder="如 1.2.0" />
+                  <span class="ver-combo-sep">-beta-</span>
+                  <input v-model="desktopDraftBetaNum" type="text" inputmode="numeric" placeholder="1" class="ver-combo-num" />
+                </div>
               </label>
               <label class="field">
                 <span>下载渠道</span>
@@ -208,6 +230,44 @@
       </div>
     </Transition>
 
+    <!-- 内测名单弹窗 -->
+    <Transition name="modal" @before-leave="removeBackdropBlur">
+      <div v-if="betaModalVisible" class="modal-backdrop beta-backdrop">
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>内测名单</h3>
+            <button class="modal-close" @click="betaModalVisible = false">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <p class="field-hint">名单内的设备ID可收到「测试版」渠道的更新下发；正式版与官网下载对所有用户不变。设备ID可在设备管理或反馈详情中查询。</p>
+            <div class="beta-add-row">
+              <input v-model="betaDeviceIdDraft" type="text" placeholder="输入设备ID" />
+              <input v-model="betaNoteDraft" type="text" placeholder="备注（可选）" class="beta-note-input" />
+            </div>
+            <button class="mobile-btn primary beta-add-btn" :disabled="betaSaving" @click="addBetaTester">{{ betaSaving ? '添加中...' : '+ 添加设备' }}</button>
+            <div v-if="betaLoading" class="ver-empty">加载中...</div>
+            <div v-else-if="betaList.length === 0" class="ver-desktop-empty"><p>暂无内测设备</p></div>
+            <div v-else class="beta-list">
+              <div v-for="t in betaList" :key="t.id" class="beta-item">
+                <div class="beta-item-main">
+                  <span class="beta-device-id">{{ t.device_id }}</span>
+                  <span v-if="t.note" class="beta-item-note">{{ t.note }}</span>
+                </div>
+                <button class="ver-icon-btn ver-icon-danger" title="移除" @click="removeBetaTester(t)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="modal-foot">
+            <button class="modal-btn cancel" @click="betaModalVisible = false">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
   </div>
 </template>
 
@@ -229,6 +289,10 @@ const PLATFORMS: { key: PlatformKey; label: string }[] = [
 function platformOf(item: any): PlatformKey {
   const p = item?.platform
   return p === 'mobile' || p === 'watch' ? p : 'desktop'
+}
+
+function channelOf(item: any): 'stable' | 'beta' {
+  return item?.channel === 'beta' ? 'beta' : 'stable'
 }
 
 function platformLabelKey(key: string): string {
@@ -277,7 +341,10 @@ const desktopModalVisible = ref(false)
 const desktopDraft = ref({ version: '', updateContent: '', downloadUrl: '' })
 const desktopDraftEnabled = ref(false)
 const desktopDraftPlatform = ref<PlatformKey>('desktop')
+const desktopDraftChannel = ref<'stable' | 'beta'>('stable')
+const desktopDraftBetaNum = ref('')
 const desktopEditingVersion = ref('')
+const desktopEditingChannel = ref<'stable' | 'beta'>('stable')
 const desktopSaving = ref(false)
 const desktopChannelModalVisible = ref(false)
 const desktopChannelMode = ref<'link' | 'upload'>('link')
@@ -300,20 +367,38 @@ const desktopChannelDesc = computed(() => {
   return desktopDraftEnabled.value ? '启用更新时需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
 })
 
+/** 测试版组合版本号：主版本 + -beta- + beta号（如 1.2.0-beta-3） */
+const composedVersion = computed(() => {
+  if (desktopDraftChannel.value !== 'beta') return desktopDraft.value.version.trim()
+  const main = desktopDraft.value.version.trim()
+  const num = parseInt(desktopDraftBetaNum.value, 10) || 0
+  if (!main || num <= 0) return ''
+  return `${main}-beta-${num}`
+})
+
 function openDesktopModal(item?: any) {
   if (item) {
-    desktopEditingVersion.value = item.version || ''
+    const version = item.version || ''
+    const betaIdx = version.indexOf('-beta-')
+    const isBeta = betaIdx >= 0
+    desktopEditingVersion.value = version
+    desktopEditingChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraftPlatform.value = platformOf(item)
+    desktopDraftChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraft.value = {
-      version: item.version || '',
+      version: isBeta ? version.slice(0, betaIdx) : version,
       updateContent: item.updateContent || '',
       downloadUrl: item.downloadUrl || '',
     }
+    desktopDraftBetaNum.value = isBeta ? version.slice(betaIdx + '-beta-'.length) : ''
     desktopDraftEnabled.value = !!item.enabled
   } else {
     desktopEditingVersion.value = ''
+    desktopEditingChannel.value = 'stable'
     desktopDraftPlatform.value = platformFilter.value
+    desktopDraftChannel.value = 'stable'
     desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+    desktopDraftBetaNum.value = ''
     desktopDraftEnabled.value = false
   }
   desktopPackageFile.value = null
@@ -327,7 +412,11 @@ function closeDesktopModal() {
 }
 
 async function saveDesktop() {
-  if (!desktopDraft.value.version?.trim()) { showToast('请填写版本号'); return }
+  const version = composedVersion.value
+  if (!version) {
+    showToast(desktopDraftChannel.value === 'beta' ? '请填写版本号和 beta 号（正整数）' : '请填写版本号')
+    return
+  }
   const hasPackage = !!desktopPackageFile.value
   const hasUrl = !!desktopDraft.value.downloadUrl?.trim()
   if (desktopDraftEnabled.value && !hasPackage && !hasUrl) {
@@ -342,7 +431,8 @@ async function saveDesktop() {
   }
   const res = await adminApi('save_desktop_version', {
     platform: desktopDraftPlatform.value,
-    version: desktopDraft.value.version.trim(),
+    channel: desktopDraftChannel.value,
+    version,
     download_url: desktopDraft.value.downloadUrl?.trim() || '',
     update_content: desktopDraft.value.updateContent?.trim() || '',
     enabled: desktopDraftEnabled.value ? 1 : 0,
@@ -363,6 +453,7 @@ async function toggleDesktop(e: Event, item: any) {
   const enabled = (e.target as HTMLInputElement).checked
   const res = await adminApi('save_desktop_version', {
     platform: platformOf(item),
+    channel: channelOf(item),
     version: item.version,
     download_url: item.downloadUrl || '',
     update_content: item.updateContent || '',
@@ -444,6 +535,52 @@ function readFileAsBase64(file: File): Promise<string> {
   })
 }
 
+// ===== 内测名单 =====
+const betaModalVisible = ref(false)
+const betaList = ref<any[]>([])
+const betaLoading = ref(false)
+const betaSaving = ref(false)
+const betaDeviceIdDraft = ref('')
+const betaNoteDraft = ref('')
+
+async function loadBeta() {
+  betaLoading.value = true
+  const res = await adminApi<any>('list_beta_testers')
+  if (res.code === 200 && res.data) {
+    betaList.value = Array.isArray(res.data.list) ? res.data.list : []
+  }
+  betaLoading.value = false
+}
+
+function openBetaModal() {
+  betaModalVisible.value = true
+  if (!betaLoading.value && betaList.value.length === 0) loadBeta()
+}
+
+async function addBetaTester() {
+  const deviceId = betaDeviceIdDraft.value.trim()
+  if (!deviceId) { showToast('请输入设备ID'); return }
+  betaSaving.value = true
+  const res = await adminApi('add_beta_tester', { device_id: deviceId, note: betaNoteDraft.value.trim() })
+  betaSaving.value = false
+  if (res.code === 200) {
+    showToast('已添加到内测名单', 'success')
+    betaDeviceIdDraft.value = ''
+    betaNoteDraft.value = ''
+    loadBeta()
+  } else {
+    showToast(res.msg || '添加失败')
+  }
+}
+
+async function removeBetaTester(t: any) {
+  const ok = await mobileConfirm(`确认将设备 ${t.device_id} 移出内测名单？`, { title: '移除内测设备', confirmText: '确认移除', danger: true })
+  if (!ok) return
+  const res = await adminApi('delete_beta_tester', { device_id: t.device_id })
+  if (res.code === 200) { showToast('已移除', 'success'); loadBeta() }
+  else showToast(res.msg || '移除失败')
+}
+
 onMounted(() => {
   loadDesktop()
 })
@@ -455,6 +592,32 @@ onMounted(() => {
 .ver-title { font-size: 18px; font-weight: 850; margin: 0 0 4px; color: var(--text); }
 .ver-desc { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0; }
 .ver-header .mobile-btn { align-self: flex-start; padding: 10px 20px; }
+.ver-header-actions { display: flex; gap: 8px; align-self: flex-start; }
+.ver-header-actions .mobile-btn { align-self: auto; }
+
+/* 内测名单按钮 */
+.beta-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1.5px solid rgba(245, 158, 11, 0.55);
+  background: rgba(245, 158, 11, 0.1);
+  color: #d97706;
+}
+.beta-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 
 /* 平台切换 */
 .platform-tabs {
@@ -585,6 +748,61 @@ onMounted(() => {
 .badge-disabled { background: #f3f4f6; color: #6b7280; }
 .badge-crash { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .badge-group { background: #f5f3ff; color: #8b5cf6; }
+.badge-beta { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+.ver-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* 渠道选择（正式版/测试版） */
+.channel-stable.on { background: #10b981; border-color: #10b981; color: #fff; }
+.channel-beta.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
+.field-hint { font-size: 11px; color: var(--text-muted); line-height: 1.5; margin: 0; }
+
+/* 测试版组合版本号 */
+.ver-combo { display: flex; align-items: center; gap: 6px; }
+.ver-combo input {
+  flex: 1; min-width: 0;
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 11px 12px; font-size: 14px; font-family: inherit;
+  outline: none; background: var(--control-bg); color: var(--text);
+  transition: border-color 0.18s, box-shadow 0.18s;
+  box-sizing: border-box;
+}
+.ver-combo input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ver-combo-sep {
+  flex-shrink: 0; font-size: 12px; font-weight: 700; color: #d97706;
+  background: rgba(245, 158, 11, 0.12); padding: 5px 8px; border-radius: 8px; user-select: none;
+}
+.ver-combo-num { max-width: 76px !important; }
+
+/* 内测名单弹窗 */
+.beta-backdrop { z-index: 11000; }
+.beta-add-row { display: flex; gap: 8px; }
+.beta-add-row input {
+  flex: 1; min-width: 0;
+  border: 1px solid var(--border); border-radius: 12px;
+  padding: 11px 12px; font-size: 13px; font-family: inherit;
+  outline: none; background: var(--control-bg); color: var(--text);
+  transition: border-color 0.18s;
+}
+.beta-add-row input:focus { border-color: var(--accent); }
+.beta-add-row .beta-note-input { flex: 0.7; }
+.beta-add-btn { width: 100%; justify-content: center; }
+.beta-list { display: flex; flex-direction: column; gap: 8px; max-height: 42vh; overflow-y: auto; }
+.beta-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--control-bg);
+}
+.beta-item-main { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.beta-device-id {
+  font-size: 12px; font-weight: 600; color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.beta-item-note {
+  flex-shrink: 0; font-size: 11px; color: var(--text-muted);
+  background: var(--border); padding: 2px 8px; border-radius: 999px;
+  max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 /* Toggle */
 .ver-toggle { position: relative; display: inline-block; width: 38px; height: 22px; cursor: pointer; flex-shrink: 0; }

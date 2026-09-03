@@ -267,12 +267,21 @@ pub async fn get_desktop_version(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     ok("", json!({ "list": list }))
 }
 
-/// 保存版本更新配置。按「平台 + 版本号」upsert：同平台版本号已存在则替换该条，
-/// 否则新增；各平台版本号独立比较，互不影响。
+/// 渠道白名单：stable（正式版）/ beta（测试版，仅对内测名单设备下发）。非法值回退 stable。
+fn normalize_channel(raw: &str) -> String {
+    match raw {
+        "beta" => "beta".to_string(),
+        _ => "stable".to_string(),
+    }
+}
+
+/// 保存版本更新配置。按「平台 + 渠道 + 版本号」upsert：同平台同渠道版本号已存在则替换该条，
+/// 否则新增；各平台/渠道版本号独立比较，互不影响。
 pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let version = str_of(&data, "version").trim().to_string();
     let platform = normalize_platform(str_of(&data, "platform").trim());
+    let channel = normalize_channel(str_of(&data, "channel").trim());
     let mut download_url = str_of(&data, "download_url").trim().to_string();
     let update_content = str_of(&data, "update_content").trim().to_string();
     let enabled = int_of(&data, "enabled") != 0;
@@ -306,14 +315,17 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         return err(400, "启用更新时，请填写下载链接或上传安装包");
     }
     let mut list = read_desktop_versions();
-    // 新增版本号必须大于该平台当前已列出的最高版本，防止版本号回退
+    // 新增版本号必须大于该平台同渠道已列出的最高版本，防止版本号回退
+    // （正式版与测试版互不干扰：1.2.0-beta-1 允许与 1.2.0 正式版并存）
     let is_new = !list.iter().any(|item| {
-        item_platform(item) == platform && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
+        item_platform(item) == platform
+            && item_channel(item) == channel
+            && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
     });
     if is_new {
         let mut max_ver: Option<&str> = None;
         for item in &list {
-            if item_platform(item) != platform {
+            if item_platform(item) != platform || item_channel(item) != channel {
                 continue;
             }
             let ver = item.get("version").and_then(|v| v.as_str()).unwrap_or("");
@@ -328,13 +340,15 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         }
         if let Some(mv) = max_ver {
             if compare_version_code(&version, mv) <= 0 {
-                return err(400, &format!("新版本 {} 必须大于该平台已有的最高版本 {}", version, mv));
+                let channel_label = if channel == "beta" { "测试版" } else { "正式版" };
+                return err(400, &format!("新版本 {} 必须大于该平台{}已有的最高版本 {}", version, channel_label, mv));
             }
         }
     }
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let new_item = json!({
         "platform": platform.clone(),
+        "channel": channel.clone(),
         "version": version.clone(),
         "downloadUrl": download_url,
         "updateContent": update_content,
@@ -343,7 +357,10 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     });
     let mut replaced = false;
     for item in list.iter_mut() {
-        if item_platform(item) == platform && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()) {
+        if item_platform(item) == platform
+            && item_channel(item) == channel
+            && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
+        {
             *item = new_item.clone();
             replaced = true;
             break;
@@ -356,13 +373,19 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         return err(500, "写入文件失败，请检查 api 目录权限");
     }
     let platform_label = platform_label(&platform);
+    let channel_label = if channel == "beta" { "测试版" } else { "正式版" };
     let action_label = if replaced {
-        format!("修改{}更新配置", platform_label)
+        format!("修改{}{}更新配置", platform_label, channel_label)
     } else {
-        format!("新增{}更新配置", platform_label)
+        format!("新增{}{}更新配置", platform_label, channel_label)
     };
     log_operation(pool, ctx, &action_label, &version, if enabled { "启用" } else { "禁用" }).await;
-    ok("保存成功", json!({ "version": version, "platform": platform }))
+    ok("保存成功", json!({ "version": version, "platform": platform, "channel": channel }))
+}
+
+/// 配置项的渠道标签；旧数据（分渠道上线前保存的）视为正式版。
+fn item_channel(item: &Value) -> String {
+    normalize_channel(item.get("channel").and_then(|v| v.as_str()).unwrap_or("stable").trim())
 }
 
 fn platform_label(platform: &str) -> &'static str {
@@ -394,4 +417,72 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     }
     log_operation(pool, ctx, &format!("删除{}更新配置", platform_label(&platform)), &version, "").await;
     ok("删除成功", Value::Null)
+}
+
+/// 获取内测名单（beta_testers 全量列表，按添加时间倒序）
+pub async fn list_beta_testers(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    match sqlx::query("SELECT id, device_id, note, created_at FROM beta_testers ORDER BY id DESC")
+        .fetch_all(pool)
+        .await
+    {
+        Ok(rows) => {
+            let list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            ok("ok", json!({ "list": list }))
+        }
+        Err(e) => err(500, &format!("查询失败: {}", e)),
+    }
+}
+
+/// 添加内测设备（device_id 唯一，可选备注）
+pub async fn add_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    let note = str_of(&data, "note").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+    if device_id.chars().count() > 128 {
+        return err(400, "设备ID过长（最多128字符）");
+    }
+    let dup: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM beta_testers WHERE device_id = ?")
+        .bind(&device_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    if dup > 0 {
+        return err(400, "该设备ID已在内测名单中");
+    }
+    match sqlx::query("INSERT INTO beta_testers (device_id, note) VALUES (?, ?)")
+        .bind(&device_id)
+        .bind(&note)
+        .execute(pool)
+        .await
+    {
+        Ok(_) => {
+            log_operation(pool, ctx, "添加内测设备", &device_id, &note).await;
+            ok("添加成功", Value::Null)
+        }
+        Err(e) => err(500, &format!("数据库错误: {}", e)),
+    }
+}
+
+/// 从内测名单移除设备
+pub async fn delete_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+    match sqlx::query("DELETE FROM beta_testers WHERE device_id = ?")
+        .bind(&device_id)
+        .execute(pool)
+        .await
+    {
+        Ok(r) if r.rows_affected() > 0 => {
+            log_operation(pool, ctx, "移除内测设备", &device_id, "").await;
+            ok("删除成功", Value::Null)
+        }
+        Ok(_) => err(404, "设备不在内测名单中"),
+        Err(_) => err(500, "数据库错误"),
+    }
 }

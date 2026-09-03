@@ -39,6 +39,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_source_status" => system::get_source_status(ctx, pool).await,
         "get_version_status" => system::get_version_status(body, ctx, pool).await,
         "get_latest_version" => system::get_latest_version(body, ctx, pool).await,
+        "check_beta_access" => system::check_beta_access(body, ctx, pool).await,
         "get_fallback_modules" => system::get_fallback_modules(ctx).await,
         "get_announcement" => system::get_announcement(body, ctx, pool).await,
         "confirm_announcement" => system::confirm_announcement(body, ctx, pool).await,

@@ -122,6 +122,23 @@ pub fn parse_version_code(v: &str) -> Option<(i32, i32, i32)> {
     ))
 }
 
+/// 判断版本号是否带预发布后缀（如 `1.0.1-beta7` 含 `-`）。
+fn has_prerelease(v: &str) -> bool {
+    v.contains('-')
+}
+
+/// 提取预发布后缀中的数字：`1.0.1-beta7` → 7；`beta`（无数字）→ 0。
+fn prerelease_number(v: &str) -> Option<i64> {
+    let idx = v.find('-')?;
+    let tail = &v[idx + 1..];
+    tail.chars()
+        .skip_while(|c| c.is_ascii_alphabetic() || c.is_ascii_whitespace())
+        .take_while(|c| c.is_ascii_digit())
+        .collect::<String>()
+        .parse()
+        .ok()
+}
+
 /// 比较两个版本号：1 if a>b, -1 if a<b, 0 if equal/unparseable
 pub fn compare_version_code(a: &str, b: &str) -> i32 {
     let pa = parse_version_code(a);
@@ -139,6 +156,20 @@ pub fn compare_version_code(a: &str, b: &str) -> i32 {
             }
             if pa.2 != pb.2 {
                 return if pa.2 > pb.2 { 1 } else { -1 };
+            }
+            // 主版本相等：正式版 > 预发布版；预发布之间按后缀数字比较，
+            // 避免 `1.0.1-beta7` 与 `1.0.1-beta6` 被判为相等。
+            let a_pre = has_prerelease(a);
+            let b_pre = has_prerelease(b);
+            if a_pre != b_pre {
+                return if a_pre { -1 } else { 1 };
+            }
+            if a_pre && b_pre {
+                let an = prerelease_number(a).unwrap_or(0);
+                let bn = prerelease_number(b).unwrap_or(0);
+                if an != bn {
+                    return if an > bn { 1 } else { -1 };
+                }
             }
             0
         }

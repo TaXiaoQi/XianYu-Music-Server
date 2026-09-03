@@ -217,9 +217,9 @@ pub async fn get_version_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     }
 }
 
-/// 读取指定平台的最新已启用版本配置。
-/// 旧数据（无 platform 字段）视为桌面端配置，保证分平台上线前的数据继续生效。
-fn latest_enabled_platform_version(platform: &str) -> Option<serde_json::Value> {
+/// 读取指定平台指定渠道（stable/beta）的最新已启用版本配置。
+/// 旧数据（无 platform/channel 字段）视为正式版配置，保证分平台/分渠道上线前的数据继续生效。
+fn latest_enabled_platform_version(platform: &str, channel: &str) -> Option<serde_json::Value> {
     let path = std::path::Path::new("api").join("version.json");
     let content = std::fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -233,6 +233,11 @@ fn latest_enabled_platform_version(platform: &str) -> Option<serde_json::Value> 
     for item in arr {
         let item_platform = item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop");
         if item_platform != platform {
+            continue;
+        }
+        // 渠道过滤：未标注 channel 的历史条目一律视为正式版
+        let item_channel = item.get("channel").and_then(|v| v.as_str()).unwrap_or("stable");
+        if item_channel != channel {
             continue;
         }
         let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -253,10 +258,69 @@ fn latest_enabled_platform_version(platform: &str) -> Option<serde_json::Value> 
     best
 }
 
+/// 设备是否在内测名单中（beta_testers 表）。
+async fn beta_device_allowed(pool: &MySqlPool, device_id: &str) -> bool {
+    if device_id.is_empty() {
+        return false;
+    }
+    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM beta_testers WHERE device_id = ?")
+        .bind(device_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
+        > 0
+}
+
+/// 内测资格检查（客户端开屏门槛）：
+/// 客户端自行判定本地版本号含 beta 预发布段即为内测构建，携带 device_id 上报，
+/// 服务端只查 beta_testers 名单返回 allowed；不在名单 → 客户端拦截并弹内测申请窗。
+/// 不在名单且该设备存在待审核的内测申请时附 `pending: true`，
+/// 客户端改为弹「审核中」窗（仅退出软件，不再提供申请入口）。
+pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let raw = parse_body(body);
+    let device_id = str_of(&raw, "device_id").trim().to_string();
+    let allowed = beta_device_allowed(pool, &device_id).await;
+    let mut pending = false;
+    if !allowed && !device_id.is_empty() {
+        pending = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM user_feedback WHERE device_id = ? AND feedback_type = 'beta' AND status IN ('pending', 'processing')",
+        )
+        .bind(&device_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
+            > 0;
+    }
+    ctx.json(200, "ok", Some(json!({ "allowed": allowed, "pending": pending })))
+}
+
 pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let platform = str_of(&parse_body(body), "platform").trim().to_string();
-    // 读取该平台的更新配置（version.json），取已启用且版本号最大的一条
-    if let Some(item) = latest_enabled_platform_version(&platform) {
+    let raw = parse_body(body);
+    let platform = str_of(&raw, "platform").trim().to_string();
+    let device_id = str_of(&raw, "device_id").trim().to_string();
+
+    // 渠道细分：普通设备只拉正式版；内测名单中的设备额外参与测试版比价，
+    // 测试版版本号更高时才下发（正式版发布后高于测试版则自然回正）。
+    let mut selected: Option<serde_json::Value> =
+        latest_enabled_platform_version(&platform, "stable");
+    if beta_device_allowed(pool, &device_id).await {
+        if let Some(beta) = latest_enabled_platform_version(&platform, "beta") {
+            let beta_newer = match &selected {
+                Some(stable) => {
+                    let bv = beta.get("version").and_then(|v| v.as_str()).unwrap_or("");
+                    let sv = stable.get("version").and_then(|v| v.as_str()).unwrap_or("");
+                    compare_version_code(bv, sv) > 0
+                }
+                None => true,
+            };
+            if beta_newer {
+                selected = Some(beta);
+            }
+        }
+    }
+
+    if let Some(item) = selected {
+        let is_beta = item.get("channel").and_then(|v| v.as_str()) == Some("beta");
         let version = item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -277,6 +341,7 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
                 "download_url": url,
                 "file_size": 0,
                 "status": "normal",
+                "channel": if is_beta { "beta" } else { "stable" },
                 "updated_at": updated_at
             })),
         );
@@ -310,7 +375,8 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
                 })),
             )
         }
-        None => ctx.json(200, "ok", Some(json!([]))),
+        // 无任何已发布版本：data 返回 null（不要返回数组，客户端按对象解析）
+        None => ctx.json::<serde_json::Value>(200, "ok", None),
     }
 }
 
@@ -330,8 +396,8 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         _ => "弦予音乐桌面端",
     };
 
-    // 优先：分平台 version.json 中已启用且版本号最大的一条
-    if let Some(item) = latest_enabled_platform_version(&platform) {
+    // 优先：分平台 version.json 中已启用且版本号最大的正式版（下载页/分享页不对内测渠道开放）
+    if let Some(item) = latest_enabled_platform_version(&platform, "stable") {
         let version = item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();

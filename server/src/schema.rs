@@ -529,6 +529,14 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_status` (`status`),
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `beta_testers` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `device_id` varchar(128) NOT NULL DEFAULT '',
+            `note` varchar(255) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_device_id` (`device_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_settings` (
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
             `stream_cache_enabled` tinyint(1) NOT NULL DEFAULT 1,

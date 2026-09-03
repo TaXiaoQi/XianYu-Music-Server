@@ -247,6 +247,76 @@ pub async fn get_feedback_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     }
 }
 
+/// 同意内测申请：填写回执（必填），并把申请提交设备ID自动加入版本管理的内测名单。
+/// 与普通反馈的「完成」解耦：无需认领，待处理/处理中均可直接同意，终态不可变更。
+pub async fn resolve_beta_application(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "id");
+    let note = str_of(&data, "note").trim().to_string();
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    if note.is_empty() {
+        return err(400, "回执内容不能为空");
+    }
+    if note.chars().count() > 1000 {
+        return err(400, "回执内容不能超过 1000 字");
+    }
+    let cur = sqlx::query_as::<_, (String, String, String)>(
+        "SELECT status, COALESCE(feedback_type, ''), COALESCE(device_id, '') FROM user_feedback WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await;
+    let (status_val, fb_type, device_id) = match cur {
+        Ok(Some(v)) => v,
+        Ok(None) => return err(404, "反馈不存在"),
+        Err(_) => return err(500, "服务器错误"),
+    };
+    if fb_type != "beta" {
+        return err(400, "该反馈不是内测申请");
+    }
+    if status_val == "resolved" || status_val == "rejected" {
+        return err(409, "该申请已处于终态，无法变更");
+    }
+    let upd = sqlx::query(
+        "UPDATE user_feedback SET status = 'resolved', resolve_note = ?, resolve_images = '[]', assignee = ?, replied_by = ?, replied_at = NOW(), resolved_at = NOW(), notified_at = NULL, updated_at = NOW() WHERE id = ?",
+    )
+    .bind(&note)
+    .bind(&ctx.username)
+    .bind(&ctx.username)
+    .bind(id)
+    .execute(pool)
+    .await;
+    match upd {
+        Ok(r) if r.rows_affected() > 0 => {
+            // 同意即自动把申请设备加入内测名单（重复设备由唯一键忽略）
+            let device_added = if device_id.is_empty() {
+                false
+            } else {
+                sqlx::query("INSERT IGNORE INTO beta_testers (device_id, note) VALUES (?, ?)")
+                    .bind(&device_id)
+                    .bind(format!("内测申请自动加入（反馈#{})", id))
+                    .execute(pool)
+                    .await
+                    .map(|r| r.rows_affected() > 0)
+                    .unwrap_or(false)
+            };
+            log_operation(
+                pool,
+                ctx,
+                "同意内测申请",
+                &format!("id={}", id),
+                &format!("设备={} 加入名单={} 操作人={}", device_id, device_added, ctx.username),
+            )
+            .await;
+            ok("已同意该内测申请", json!({ "id": id, "device_added": device_added }))
+        }
+        Ok(_) => err(409, "该申请状态已变化，请刷新后重试"),
+        Err(e) => err(500, &format!("服务器错误: {}", e)),
+    }
+}
+
 /// 更新反馈状态
 pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
