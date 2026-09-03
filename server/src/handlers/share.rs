@@ -635,6 +635,16 @@ function showToast(msg){
   clearTimeout(_toastTimer);
   setTimeout(function(){ t.style.opacity='0'; setTimeout(function(){ t.remove(); },350); },2000);
 }
+
+/* QQ/微信内置 WebView 拉起 scheme/intent 几乎必被拦，主按钮直接换成
+   「复制链接去浏览器打开」，省去一次注定失败的尝试与弹窗绕路。 */
+if (inTencentWebview()) {
+  var _primaryBtn = document.querySelector('.actions .btn-primary');
+  if (_primaryBtn) {
+    _primaryBtn.textContent = '复制链接，去浏览器打开';
+    _primaryBtn.setAttribute('onclick', 'copyLink()');
+  }
+}
 </script>
 </body>
 </html>
