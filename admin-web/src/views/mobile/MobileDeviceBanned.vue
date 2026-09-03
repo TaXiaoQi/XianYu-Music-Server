@@ -75,6 +75,7 @@
           <div class="mobile-item-main">
             <div class="mobile-item-title-row">
               <span class="mobile-item-title">{{ d.device_model || '未知设备' }}</span>
+              <span v-if="platformLabel(d)" class="platform-badge" :class="`platform-${platformKey(d)}`">{{ platformLabel(d) }}</span>
               <span class="mobile-badge" :class="d.ban_id ? 'red' : 'green'">{{ d.ban_id ? '已封禁' : '正常' }}</span>
             </div>
             <div class="mobile-item-sub monospace">{{ d.device_id }}</div>
@@ -460,6 +461,16 @@ function closePlugins() {
 }
 
 // ===== 工具函数 =====
+// 平台标签：优先取服务端记录的 platform；旧数据无该字段时按 os_version 推断
+function platformKey(d: Device): string {
+  if (d.platform) return d.platform
+  return /windows/i.test(d.os_version || '') ? 'desktop' : 'mobile'
+}
+function platformLabel(d: Device): string {
+  const map: Record<string, string> = { desktop: '桌面端', mobile: '移动端', watch: '腕上端' }
+  return map[platformKey(d)] || ''
+}
+
 function formatDuration(seconds: number): string {
   if (!seconds || seconds === 0) return '0分钟'
   const h = Math.floor(seconds / 3600)
@@ -584,6 +595,20 @@ onMounted(loadDevices)
   justify-content: space-between;
   gap: 8px;
 }
+/* 平台标签（与反馈页同款） */
+.platform-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.platform-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
+.platform-mobile { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.platform-watch { background: rgba(20, 184, 166, 0.12); color: #14b8a6; }
 .mobile-item-foot {
   display: flex;
   align-items: center;

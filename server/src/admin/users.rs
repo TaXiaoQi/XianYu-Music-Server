@@ -645,6 +645,7 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             a.ciyuanxi_id,
             a.ip,
             a.created_at,
+            a.platform,
             COALESCE(
                 (SELECT u2.nickname FROM app_users u2 WHERE u2.last_device_id = a.device_id ORDER BY u2.id DESC LIMIT 1),
                 u.nickname

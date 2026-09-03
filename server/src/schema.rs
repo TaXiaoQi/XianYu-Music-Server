@@ -15,6 +15,7 @@ pub async fn ensure_schema(pool: &MySqlPool) {
         }
     }
     ensure_feedback_log_columns(pool).await;
+    ensure_column(pool, "app_open_log", "platform", "varchar(16) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "email_verified", "tinyint(1) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "ciyuanxi_id", "varchar(32) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "avatar_url", "LONGTEXT NULL").await;
