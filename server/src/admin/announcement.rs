@@ -49,6 +49,15 @@ fn valid_type(t: &str) -> &str {
     }
 }
 
+/// 公告所属平台（如版本/壁纸）：旧数据无 platform 字段视为 desktop（桌面端）。
+fn valid_platform(p: &str) -> &str {
+    if p == "mobile" || p == "watch" {
+        p
+    } else {
+        "desktop"
+    }
+}
+
 /// 获取公告列表（按创建时间倒序）
 pub async fn list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     let mut list = read_announcements();
@@ -75,18 +84,19 @@ pub async fn add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
         return err(400, "标题和内容不能为空");
     }
     let typ = valid_type(&typ).to_string();
+    let platform = valid_platform(&str_of(&data, "platform").trim()).to_string();
     let mut list = read_announcements();
     let max_id = list.iter().map(|a| a.get("id").and_then(|v| v.as_str()).and_then(|s| s.parse::<i64>().ok()).unwrap_or(0)).max().unwrap_or(0);
     let new_id = (max_id + 1).to_string();
     list.push(json!({
-        "id": new_id, "title": title, "content": content, "type": typ,
+        "id": new_id, "title": title, "content": content, "type": typ, "platform": platform,
         "date": now_ymd(), "actionUrl": action_url, "actionText": "",
         "enabled": enabled, "created_at": now_ymd_hms(), "updated_at": now_ymd_hms(),
     }));
     if write_announcements(&list).is_err() {
         return err(500, "写入文件失败，请检查 api 目录权限");
     }
-    log_operation(pool, ctx, "新增公告", &title, &format!("类型:{} 启用:{}", typ, if enabled { "是" } else { "否" })).await;
+    log_operation(pool, ctx, "新增公告", &title, &format!("类型:{} 平台:{} 启用:{}", typ, platform, if enabled { "是" } else { "否" })).await;
     ok("添加成功", Value::Null)
 }
 
@@ -99,6 +109,7 @@ pub async fn update(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let typ = str_of(&data, "type");
     let typ = if typ.is_empty() { "info".to_string() } else { valid_type(&typ).to_string() };
     let action_url = str_of(&data, "action_url").trim().to_string();
+    let platform = valid_platform(&str_of(&data, "platform").trim()).to_string();
     if id.is_empty() || title.is_empty() || content.is_empty() {
         return err(400, "参数错误");
     }
@@ -109,6 +120,7 @@ pub async fn update(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
             a["title"] = json!(title);
             a["content"] = json!(content);
             a["type"] = json!(typ);
+            a["platform"] = json!(platform);
             a["actionUrl"] = json!(action_url);
             a["updated_at"] = json!(now_ymd_hms());
             found = true;

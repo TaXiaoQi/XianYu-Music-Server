@@ -480,9 +480,19 @@ pub async fn get_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
     let device_id = str_of(&data, "device_id").trim().to_string();
+    // 根据平台单独推送，如版本/壁纸：请求方传入 platform，只取该平台可用的公告。
+    // 旧数据（无 platform 字段）视为桌面端配置，保证分平台上线前的公告继续生效。
+    let platform = {
+        let p = str_of(&data, "platform").trim().to_string();
+        if p.is_empty() { "desktop".to_string() } else { p }
+    };
     let mut list: Vec<serde_json::Value> = read_announcements()
         .into_iter()
         .filter(|item| item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false))
+        .filter(|item| {
+            let p = item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop");
+            p == platform
+        })
         .collect();
     list.sort_by(|a, b| {
         let ta = a.get("updated_at")

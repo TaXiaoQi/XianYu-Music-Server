@@ -18,6 +18,19 @@
       </div>
     </Transition>
 
+    <!-- 平台切换（同版本管理） -->
+    <Transition name="fade-up" appear>
+      <div class="platform-tabs">
+        <button
+          v-for="p in PLATFORMS"
+          :key="p.key"
+          class="platform-tab"
+          :class="{ active: platformFilter === p.key }"
+          @click="switchPlatform(p.key)"
+        >{{ p.label }}</button>
+      </div>
+    </Transition>
+
     <!-- 统计栏 -->
     <Transition name="fade-up" appear>
       <div class="stats-row">
@@ -26,7 +39,7 @@
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </div>
           <div class="stat-body">
-            <span class="stat-num">{{ announcements.length }}</span>
+            <span class="stat-num">{{ filteredList.length }}</span>
             <span class="stat-label">全部</span>
           </div>
         </div>
@@ -64,7 +77,7 @@
     </div>
 
     <!-- 空状态 -->
-    <Transition name="fade-up" appear v-else-if="announcements.length === 0">
+    <Transition name="fade-up" appear v-else-if="filteredList.length === 0">
       <div class="state-box state-empty">
         <div class="empty-icon">
           <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
@@ -72,8 +85,8 @@
             <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
           </svg>
         </div>
-        <p class="empty-title">暂无公告</p>
-        <p class="empty-sub">点击右上角「新增公告」创建第一条公告</p>
+        <p class="empty-title">暂无{{ currentPlatformLabel }}公告</p>
+        <p class="empty-sub">点击右上角「新增公告」为{{ currentPlatformLabel }}推送公告</p>
       </div>
     </Transition>
 
@@ -81,7 +94,7 @@
     <div v-else class="card-grid">
       <TransitionGroup name="card">
         <div
-          v-for="(item, idx) in announcements"
+          v-for="(item, idx) in filteredList"
           :key="item.id"
           class="ann-card"
           :class="[`type-${item.type || 'info'}`, { disabled: !item.enabled }]"
@@ -93,9 +106,14 @@
           <!-- 卡片内容 -->
           <div class="card-body">
             <div class="card-top">
-              <span class="type-badge" :class="`badge-${item.type || 'info'}`">
-                {{ typeLabel(item.type) }}
-              </span>
+              <div class="badge-row">
+                <span class="type-badge" :class="`badge-${item.type || 'info'}`">
+                  {{ typeLabel(item.type) }}
+                </span>
+                <span class="plat-badge" :class="`plat-${item.platform || 'desktop'}`">
+                  {{ platformLabelKey(item.platform) }}
+                </span>
+              </div>
               <label class="toggle-switch" :title="item.enabled ? '点击禁用' : '点击启用'">
                 <input type="checkbox" :checked="item.enabled" @change="toggleAnn(item.id, ($event.target as HTMLInputElement).checked)" />
                 <span class="toggle-slider"></span>
@@ -165,6 +183,20 @@
               </div>
             </div>
             <div class="field">
+              <label class="required">推送平台</label>
+              <div class="type-picker">
+                <button
+                  v-for="p in PLATFORMS"
+                  :key="p.key"
+                  class="type-option"
+                  :class="[`pick-plat-${p.key}`, { active: form.platform === p.key }]"
+                  @click="form.platform = p.key"
+                >
+                  <span class="pick-dot"></span>{{ p.label }}
+                </button>
+              </div>
+            </div>
+            <div class="field">
               <label>按钮链接 <span class="field-optional">（可空）</span></label>
               <input v-model="form.actionUrl" type="text" placeholder="https://..." />
             </div>
@@ -204,6 +236,7 @@ interface Announcement {
   title: string
   content: string
   type: string
+  platform?: string
   date: string
   actionUrl: string
   actionText: string
@@ -223,13 +256,39 @@ function typeLabel(t: string | undefined): string {
   return typeOptions.find(o => o.value === t)?.label || '通知'
 }
 
+type PlatformKey = 'desktop' | 'mobile' | 'watch'
+
+const PLATFORMS: { key: PlatformKey; label: string }[] = [
+  { key: 'desktop', label: '桌面端' },
+  { key: 'mobile', label: '移动端' },
+  { key: 'watch', label: '腕上端' },
+]
+
+function platformOf(a: Announcement): PlatformKey {
+  const p = a.platform
+  return p === 'mobile' || p === 'watch' ? p : 'desktop'
+}
+
+function platformLabelKey(key: string | undefined): string {
+  return PLATFORMS.find(p => p.key === key)?.label || PLATFORMS[0].label
+}
+
+// 平台切换筛选（同版本管理）
+const platformFilter = ref<PlatformKey>('desktop')
+const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
+const filteredList = computed(() => announcements.value.filter(a => platformOf(a) === platformFilter.value))
+function switchPlatform(key: PlatformKey) {
+  if (platformFilter.value === key) return
+  platformFilter.value = key
+}
+
 // ===== 列表 =====
 const announcements = ref<Announcement[]>([])
 const loading = ref(true)
 const loadError = ref('')
 
-const enabledCount = computed(() => announcements.value.filter(a => a.enabled).length)
-const disabledCount = computed(() => announcements.value.filter(a => !a.enabled).length)
+const enabledCount = computed(() => filteredList.value.filter(a => a.enabled).length)
+const disabledCount = computed(() => filteredList.value.length - enabledCount.value)
 
 async function loadList() {
   loading.value = true
@@ -277,13 +336,14 @@ const form = ref({
   title: '',
   content: '',
   type: 'info',
+  platform: 'desktop',
   actionUrl: '',
   enabled: true,
 })
 
 function openAddModal() {
   editingId.value = ''
-  form.value = { title: '', content: '', type: 'info', actionUrl: '', enabled: true }
+  form.value = { title: '', content: '', type: 'info', platform: platformFilter.value, actionUrl: '', enabled: true }
   modalVisible.value = true
 }
 
@@ -293,6 +353,7 @@ function openEditModal(item: Announcement) {
     title: item.title || '',
     content: item.content || '',
     type: item.type || 'info',
+    platform: item.platform || 'desktop',
     actionUrl: item.actionUrl || '',
     enabled: item.enabled,
   }
@@ -314,6 +375,7 @@ async function save() {
     title: form.value.title.trim(),
     content: form.value.content.trim(),
     type: form.value.type,
+    platform: form.value.platform,
     action_url: form.value.actionUrl.trim(),
   }
 
@@ -392,9 +454,36 @@ onMounted(() => {
 }
 .btn-add:active { transform: scale(0.96); }
 
+/* 平台切换 tab */
+.platform-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 20px;
+  background: var(--card-solid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.platform-tab {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-light);
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.platform-tab:hover { color: var(--text); }
+.platform-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
 /* ===== 统计栏 ===== */
 .stats-row {
-  display: grid;
+  display: flex;
   grid-template-columns: repeat(3, 1fr);
   gap: 16px;
   margin-bottom: 24px;
@@ -541,6 +630,19 @@ onMounted(() => {
 .badge-info { background: #eff6ff; color: #3b82f6; }
 .badge-warning { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .badge-update { background: #ecfdf5; color: #10b981; }
+.badge-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.plat-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.plat-desktop { background: #f3f4f6; color: #374151; }
+.plat-mobile { background: #eef2ff; color: #4f46e5; }
+.plat-watch { background: #e7f5ea; color: #15803d; }
 
 /* Toggle 开关 */
 .toggle-switch {
@@ -791,6 +893,12 @@ onMounted(() => {
 .pick-enable.active .pick-dot { background: #10b981; }
 .pick-disable.active { background: #f9fafb; color: #6b7280; }
 .pick-disable.active .pick-dot { background: #6b7280; }
+.pick-plat-desktop.active { background: #f3f4f6; color: #374151; }
+.pick-plat-desktop.active .pick-dot { background: #6b7280; }
+.pick-plat-mobile.active { background: #eef2ff; color: #4f46e5; }
+.pick-plat-mobile.active .pick-dot { background: #4f46e5; }
+.pick-plat-watch.active { background: #e7f5ea; color: #15803d; }
+.pick-plat-watch.active .pick-dot { background: #15803d; }
 
 /* 弹窗底部 */
 .modal-foot {

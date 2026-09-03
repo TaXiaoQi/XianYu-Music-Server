@@ -12,6 +12,17 @@
       </button>
     </div>
 
+    <!-- 平台切换（同版本管理） -->
+    <div class="mplat-tabs">
+      <button
+        v-for="p in PLATFORMS"
+        :key="p.key"
+        class="mplat-tab"
+        :class="{ active: platformFilter === p.key }"
+        @click="switchPlatform(p.key)"
+      >{{ p.label }}</button>
+    </div>
+
     <!-- 统计 -->
     <div class="mobile-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
       <div class="mobile-stat">
@@ -19,7 +30,7 @@
           <span class="stat-icon stat-icon-total">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </span>
-          <strong>{{ list.length }}</strong>
+          <strong>{{ filteredList.length }}</strong>
         </div>
         <span class="stat-label">全部</span>
       </div>
@@ -47,15 +58,15 @@
     <div v-if="loading" class="mobile-empty">加载中...</div>
 
     <!-- 空状态 -->
-    <div v-else-if="list.length === 0" class="mobile-empty">
-      <div class="empty-title">暂无公告</div>
-      <div class="empty-sub">点击上方「新增公告」创建第一条公告</div>
+    <div v-else-if="filteredList.length === 0" class="mobile-empty">
+      <div class="empty-title">暂无{{ currentPlatformLabel }}公告</div>
+      <div class="empty-sub">点击上方「新增公告」为{{ currentPlatformLabel }}推送公告</div>
     </div>
 
     <!-- 公告列表 -->
     <div v-else class="ann-list">
       <div
-        v-for="(item, idx) in list"
+        v-for="(item, idx) in filteredList"
         :key="item.id"
         class="ann-card"
         :class="['type-' + (item.type || 'info'), { 'is-disabled': !item.enabled }]"
@@ -65,7 +76,10 @@
         <div class="type-bar"></div>
         <div class="ann-body">
           <div class="ann-top">
-            <span class="type-badge" :class="'badge-' + (item.type || 'info')">{{ typeLabel(item.type) }}</span>
+            <div class="ann-badges">
+              <span class="type-badge" :class="'badge-' + (item.type || 'info')">{{ typeLabel(item.type) }}</span>
+              <span class="plat-badge" :class="'plat-' + (item.platform || 'desktop')">{{ platformLabelKey(item.platform) }}</span>
+            </div>
             <label class="switch" :title="item.enabled ? '点击禁用' : '点击启用'">
               <input :checked="item.enabled" type="checkbox" @change="toggle(item, ($event.target as HTMLInputElement).checked)" />
               <span class="track"><span class="thumb"></span></span>
@@ -124,6 +138,20 @@
                 </button>
               </div>
             </div>
+            <div class="modal-field">
+              <span class="required">推送平台</span>
+              <div class="type-picker">
+                <button
+                  v-for="p in PLATFORMS"
+                  :key="p.key"
+                  class="type-option"
+                  :class="['pick-plat-' + p.key, { active: form.platform === p.key }]"
+                  @click="form.platform = p.key"
+                >
+                  <span class="pick-dot"></span>{{ p.label }}
+                </button>
+              </div>
+            </div>
             <label class="modal-field">
               <span>按钮链接 <em class="optional">（可空）</em></span>
               <input v-model="form.actionUrl" type="text" placeholder="https://..." />
@@ -158,6 +186,7 @@ interface Announcement {
   title: string
   content: string
   type: string
+  platform?: string
   date: string
   actionUrl: string
   actionText: string
@@ -177,13 +206,39 @@ function typeLabel(t: string | undefined): string {
   return typeOptions.find(o => o.value === t)?.label || '通知'
 }
 
+type PlatformKey = 'desktop' | 'mobile' | 'watch'
+
+const PLATFORMS: { key: PlatformKey; label: string }[] = [
+  { key: 'desktop', label: '桌面端' },
+  { key: 'mobile', label: '移动端' },
+  { key: 'watch', label: '腕上端' },
+]
+
+function platformOf(a: Announcement): PlatformKey {
+  const p = a.platform
+  return p === 'mobile' || p === 'watch' ? p : 'desktop'
+}
+
+function platformLabelKey(key: string | undefined): string {
+  return PLATFORMS.find(p => p.key === key)?.label || PLATFORMS[0].label
+}
+
+// 平台切换筛选（同版本管理）
+const platformFilter = ref<PlatformKey>('desktop')
+const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
+const filteredList = computed(() => list.value.filter(a => platformOf(a) === platformFilter.value))
+function switchPlatform(key: PlatformKey) {
+  if (platformFilter.value === key) return
+  platformFilter.value = key
+}
+
 const loading = ref(true)
 const saving = ref(false)
 const list = ref<Announcement[]>([])
 const loadError = ref('')
 
-const enabledCount = computed(() => list.value.filter(a => a.enabled).length)
-const disabledCount = computed(() => list.value.filter(a => !a.enabled).length)
+const enabledCount = computed(() => filteredList.value.filter(a => a.enabled).length)
+const disabledCount = computed(() => filteredList.value.length - enabledCount.value)
 
 async function loadList() {
   loading.value = true
@@ -215,13 +270,14 @@ const form = ref({
   title: '',
   content: '',
   type: 'info',
+  platform: 'desktop',
   actionUrl: '',
   enabled: true,
 })
 
 function openAddModal() {
   editingId.value = ''
-  form.value = { title: '', content: '', type: 'info', actionUrl: '', enabled: true }
+  form.value = { title: '', content: '', type: 'info', platform: platformFilter.value, actionUrl: '', enabled: true }
   modalVisible.value = true
 }
 
@@ -231,6 +287,7 @@ function openEditModal(item: Announcement) {
     title: item.title || '',
     content: item.content || '',
     type: item.type || 'info',
+    platform: item.platform || 'desktop',
     actionUrl: item.actionUrl || '',
     enabled: item.enabled,
   }
@@ -252,6 +309,7 @@ async function save() {
     title: form.value.title.trim(),
     content: form.value.content.trim(),
     type: form.value.type,
+    platform: form.value.platform,
     action_url: form.value.actionUrl.trim(),
   }
 
@@ -298,6 +356,35 @@ onMounted(loadList)
 .ann-header-info { min-width: 0; }
 .ann-title { font-size: 18px; font-weight: 850; margin: 0 0 4px; color: var(--text); }
 .ann-desc { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0; }
+
+/* 平台切换 tab（同版本管理） */
+.mplat-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  padding: 4px;
+  margin-top: 16px;
+  margin-bottom: 16px;
+  background: var(--card-solid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.mplat-tab {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-light);
+  padding: 8px 0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.mplat-tab:hover { color: var(--text); }
+.mplat-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 .ann-add {
   display: inline-flex;
   align-items: center;
@@ -362,6 +449,19 @@ onMounted(loadList)
 .badge-info { background: #eff6ff; color: #3b82f6; }
 .badge-warning { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .badge-update { background: #ecfdf5; color: #10b981; }
+.ann-badges { display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.plat-badge {
+  display: inline-block;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.plat-desktop { background: #f3f4f6; color: #374151; }
+.plat-mobile { background: #eef2ff; color: #4f46e5; }
+.plat-watch { background: #e7f5ea; color: #15803d; }
 
 /* 开关 */
 .switch { position: relative; display: inline-flex; flex-shrink: 0; cursor: pointer; }
@@ -547,6 +647,12 @@ onMounted(loadList)
 .pick-enable.active .pick-dot { background: #10b981; }
 .pick-disable.active { background: var(--control-bg); color: var(--text-muted); border-color: transparent; }
 .pick-disable.active .pick-dot { background: #6b7280; }
+.pick-plat-desktop.active { background: #f3f4f6; color: #374151; border-color: transparent; }
+.pick-plat-desktop.active .pick-dot { background: #6b7280; }
+.pick-plat-mobile.active { background: #eef2ff; color: #4f46e5; border-color: transparent; }
+.pick-plat-mobile.active .pick-dot { background: #4f46e5; }
+.pick-plat-watch.active { background: #e7f5ea; color: #15803d; border-color: transparent; }
+.pick-plat-watch.active .pick-dot { background: #15803d; }
 
 .modal-foot {
   display: flex;
