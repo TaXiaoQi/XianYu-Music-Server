@@ -199,8 +199,14 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     let platform = str_of(&data, "platform").trim().to_string();
     let app_version = str_of(&data, "app_version").trim().to_string();
     let device_id = str_of(&data, "device_id").trim().chars().take(64).collect::<String>();
+    // 详细设备信息：厂商/型号/系统版本/架构/计算机名（移动端与桌面端上报，便于定位具体设备）
+    let device_brand = str_of(&data, "device_brand").trim().chars().take(64).collect::<String>();
+    let device_model = str_of(&data, "device_model").trim().chars().take(128).collect::<String>();
+    let os_version = str_of(&data, "os_version").trim().chars().take(64).collect::<String>();
+    let architecture = str_of(&data, "architecture").trim().chars().take(32).collect::<String>();
+    let machine_name = str_of(&data, "machine_name").trim().chars().take(64).collect::<String>();
     let result = sqlx::query(
-        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, error_logs, all_logs, log_meta, ip, category, platform, app_version, device_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, images, error_logs, all_logs, log_meta, ip, category, platform, app_version, device_id, device_brand, device_model, os_version, architecture, machine_name) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
     )
         .bind(&ciyuanxi_id)
         .bind(&nickname)
@@ -216,6 +222,11 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         .bind(&platform)
         .bind(&app_version)
         .bind(&device_id)
+        .bind(&device_brand)
+        .bind(&device_model)
+        .bind(&os_version)
+        .bind(&architecture)
+        .bind(&machine_name)
         .execute(pool)
         .await;
     match result {

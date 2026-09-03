@@ -162,6 +162,12 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     // 提交设备的唯一标识：回执（处理结果通知）只下发给提交反馈的设备，
     // 避免移动端问题弹到同账号的桌面端；为空（旧数据/后台创建）时所有设备可见
     ensure_column(pool, "user_feedback", "device_id", "VARCHAR(64) NOT NULL DEFAULT ''").await;
+    // 详细设备信息：厂商/型号/系统版本/架构/计算机名，反馈 bug 时一眼识别具体设备
+    ensure_column(pool, "user_feedback", "device_brand", "VARCHAR(64) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "user_feedback", "device_model", "VARCHAR(128) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "user_feedback", "os_version", "VARCHAR(64) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "user_feedback", "architecture", "VARCHAR(32) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "user_feedback", "machine_name", "VARCHAR(64) NOT NULL DEFAULT ''").await;
 }
 
 /// 账号系统重构迁移：将 app_users.username 列改名为 nickname。

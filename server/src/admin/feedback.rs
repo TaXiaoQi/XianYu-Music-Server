@@ -185,6 +185,7 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
     let list_sql = format!(
         "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.platform, f.app_version, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.resolve_images, f.reject_reason, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
                 f.log_meta,
+                f.device_id, f.device_brand, f.device_model, f.os_version, f.architecture, f.machine_name,
                 COALESCE(CHAR_LENGTH(f.error_logs), 0) AS error_logs_chars,
                 COALESCE(CHAR_LENGTH(f.all_logs), 0) AS all_logs_chars,
                 CASE WHEN f.error_logs IS NULL OR f.error_logs = '' THEN 0 ELSE 1 END AS has_error_logs,

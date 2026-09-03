@@ -189,6 +189,10 @@
               <div class="card-main">
                 <p class="fb-content fb-content-main">{{ item.content || '无内容' }}</p>
                 <div class="detail-more">
+                  <div v-if="deviceInfoText(item)" class="device-info-row">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    <span class="device-info-text">{{ deviceInfoText(item) }}</span>
+                  </div>
                   <div v-if="hasErrorLogs(item) || hasAllLogs(item)" class="log-summary">
                     <span v-if="hasErrorLogs(item)" class="log-chip">错误日志 {{ formatLogSize(item.error_logs_chars) }}</span>
                     <span v-if="hasAllLogs(item)" class="log-chip">全量日志 {{ formatLogSize(item.all_logs_chars) }}</span>
@@ -1295,6 +1299,23 @@ function hasAllLogs(item: Feedback): boolean {
   return truthyFlag(item.has_all_logs) || !!item.all_logs
 }
 
+/** 拼装设备信息展示文本：厂商 · 型号 · 系统版本（架构/计算机名） */
+function deviceInfoText(item: Feedback): string {
+  const brand = item.device_brand || ''
+  const model = item.device_model || ''
+  const os = item.os_version || ''
+  const arch = item.architecture || ''
+  const machine = item.machine_name || ''
+  if (!brand && !model && !os && !arch && !machine) return ''
+  const parts: string[] = []
+  const dev = `${brand && model && brand !== model ? brand + ' · ' : ''}${model}`
+  if (dev.trim()) parts.push(dev.trim())
+  if (os) parts.push(os)
+  if (arch) parts.push(arch)
+  if (machine) parts.push('主机 ' + machine)
+  return parts.join(' ｜ ')
+}
+
 const filteredList = computed(() => {
   let arr = feedbackList.value
   if (activeFilter.value !== 'all') {
@@ -2071,6 +2092,24 @@ onUnmounted(() => {
   color: var(--text-light);
   font-size: 11px;
   font-weight: 600;
+}
+
+.device-info-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  color: var(--text-light);
+}
+.device-info-row svg {
+  flex-shrink: 0;
+}
+.device-info-text {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
 }
 
 /* 卡片底部 */
