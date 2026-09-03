@@ -1,4 +1,4 @@
-﻿use sqlx::MySqlPool;
+use sqlx::MySqlPool;
 use sqlx::Row;
 use tracing::warn;
 
