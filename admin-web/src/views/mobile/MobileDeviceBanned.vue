@@ -215,8 +215,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { mobileConfirm, mobilePrompt, mobileActionMenu, removeBackdropBlur } from '@/utils/mobileDialog'
+import { mobileConfirm, mobilePrompt, mobileActionMenu, mobileInfo, removeBackdropBlur } from '@/utils/mobileDialog'
 import { fmtDateTime } from '@/utils/time'
+import { useAuthStore } from '@/stores/auth'
 import './MobilePage.css'
 
 interface Device {
@@ -231,12 +232,14 @@ interface Device {
   ban_id: number | null
   ban_reason: string
   account_count?: number
+  platform?: string
   [key: string]: any
 }
 
 // ===== 列表数据 =====
 const devices = ref<Device[]>([])
 const loading = ref(true)
+const auth = useAuthStore()
 const keyword = ref('')
 const total = ref(0)
 
@@ -293,6 +296,10 @@ async function manualBanDevice() {
 
 // ===== 行操作菜单 =====
 async function openActionMenu(d: Device) {
+  if (auth.isGuest) {
+    await mobileInfo('访客账号仅可查看，无法查看或操作详情。', { title: '权限不足', confirmText: '知道了' })
+    return
+  }
   const action = await mobileActionMenu(`设备操作 · ${(d.device_model || d.device_id).substring(0, 20)}`, [
     { key: 'detail', label: '设备详情' },
     { key: 'plugins', label: '查看插件' },

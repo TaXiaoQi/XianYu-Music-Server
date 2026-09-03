@@ -194,8 +194,144 @@ pub fn row_to_value(row: &sqlx::mysql::MySqlRow) -> Value {
     Value::Object(map)
 }
 
+/// 批量对行对象中的涉密敏感字段脱敏（guest 专用），其余角色原样返回。
+pub fn mask_sensitive(role: &str, rows: Vec<Value>) -> Vec<Value> {
+    if role != "guest" {
+        return rows;
+    }
+    let sensitive = [
+        "email", "password", "password_hash", "auth_token", "login_token",
+        "location", "ip", "ban_reason",
+    ];
+    rows.into_iter()
+        .map(|v| {
+            let Value::Object(mut m) = v else { return v };
+            for k in sensitive {
+                m.insert(k.to_string(), Value::String(String::new()));
+            }
+            Value::Object(m)
+        })
+        .collect()
+}
+
+/// 各角色通用的「查看型」动作白名单。
+///
+/// 三级访客只能查看这些内容；二级管理在其基础上另可操作反馈与审核。
+/// 任何写操作或涉密读取（数据库/配置文件/外部通知/邮箱/审核密钥/后台日志/管理员列表等）一律拦截。
+fn is_read_action(action: &str) -> bool {
+    matches!(
+        action,
+        "admin_logout"
+            // 个人（含账号自助：改密/改登录信息/上传头像/改用户名，仅作用于自身）
+            | "get_account_info"
+            | "change_password"
+            | "change_login"
+            | "list_password_targets"
+            | "upload_admin_avatar"
+            | "change_username"
+            // 概览 / 用户
+            | "dashboard_stats"
+            | "get_users"
+            | "get_user_stats"
+            // 设备（只读）
+            | "list_banned_devices"
+            | "list_all_devices"
+            | "get_user_devices"
+            | "get_device_detail"
+            | "get_user_plugins"
+            // 内容（只读）
+            | "get_about_config_admin"
+            | "get_site_logo"
+            | "get_user_agreement_admin"
+            | "list_versions"
+            | "get_desktop_version"
+            | "list_beta_testers"
+            | "list_wallpapers"
+            | "get_wallpaper_upload_limit"
+            | "list_wallpaper_account_limits"
+            | "list_announcements"
+            | "list_fallback_modules"
+            // 审核 / 反馈（只读）
+            | "list_avatar_pending"
+            | "list_nickname_pending"
+            | "list_audit_records"
+            | "list_feedback"
+            | "get_feedback_detail"
+            | "list_recycle_bin"
+            | "feedback_admin_stats"
+            // 日志类一律不放行（报错日志/登录日志等涉密读取，访客及低级别不可见）
+            | "view_share_detail"
+            | "get_user_playlists"
+    )
+}
+
+/// 反馈类可写动作（二级管理可执行）。
+fn is_feedback_action(action: &str) -> bool {
+    matches!(
+        action,
+        "update_feedback_status"
+            | "claim_feedback"
+            | "abandon_feedback"
+            | "resolve_feedback"
+            | "resolve_beta_application"
+            | "add_collaborator"
+            | "poll_collab_requests"
+            | "respond_collab_request"
+            | "poll_admin_notifications"
+            | "mark_notifications_read"
+            | "collaborator_complete"
+            | "create_feedback"
+            | "update_feedback_limit"
+            | "batch_delete_feedback"
+            | "restore_feedback"
+    )
+}
+
+/// 审核类可写动作（二级管理可执行，含头像/改名审核、审核设置、作弊词、验证码审核配置）。
+fn is_audit_action(action: &str) -> bool {
+    matches!(
+        action,
+        "approve_avatar"
+            | "reject_avatar"
+            | "approve_nickname"
+            | "reject_nickname"
+            | "get_audit_external_config"
+            | "save_audit_external_config"
+            | "test_audit_external_config"
+            | "get_banned_words_config"
+            | "save_banned_words_config"
+            | "test_banned_words"
+            | "get_captcha_config"
+            | "save_captcha_config"
+            | "get_turnstile_config"
+            | "save_turnstile_config"
+    )
+}
+
+/// 角色是否允许执行该动作。
+///
+/// 分级：超管(超级管理)、一级管理(admin) 拥有全量操作；二级管理(admin2) 仅反馈+审核+查看；
+/// 三级访客(guest) 仅查看。漏给任意低级别角色放行任何高危动作。
+fn role_allowed(role: &str, action: &str) -> bool {
+    match role {
+        "guest" => is_read_action(action),
+        "admin2" => is_read_action(action) || is_feedback_action(action) || is_audit_action(action),
+        // admin（一级管理）与 super_admin（超管）默认全量放行，个别超管专属操作由具体接口自行校验。
+        _ => true,
+    }
+}
+
 /// 后台 action 分发（仅登录态调用）
 pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool) -> Response {
+    // 分级权限强拦截：低级别账号仅放行其职责内的动作。
+    if !role_allowed(&ctx.role, action) {
+        let msg = match ctx.role.as_str() {
+            "guest" => "访客账号仅可查看，不能操作",
+            "admin2" => "二级管理仅可操作反馈与审核",
+            _ => "当前账号无权限执行该操作",
+        };
+        return err(403, msg);
+    }
     match action {
         // dashboard
         "dashboard_stats" => dashboard::dashboard_stats(body, &ctx, pool).await,
@@ -223,6 +359,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "delete_admin" => admins::delete_admin(body, &ctx, pool).await,
         "list_admins" => admins::list_admins(body, &ctx, pool).await,
         "toggle_admin_status" => admins::toggle_admin_status(body, &ctx, pool).await,
+        "change_admin_role" => admins::change_admin_role(body, &ctx, pool).await,
         // users
         "toggle_user_status" => users::toggle_user_status(body, &ctx, pool).await,
         "batch_toggle_user_status" => users::batch_toggle_user_status(body, &ctx, pool).await,

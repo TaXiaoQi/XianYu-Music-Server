@@ -145,7 +145,7 @@
           <span v-if="auth.user" class="topbar-admin">
             <img v-if="auth.user.avatar_url" :src="auth.user.avatar_url" alt="" class="topbar-avatar" />
             <span v-else class="topbar-avatar topbar-avatar-letter">{{ (auth.user.username || 'A').charAt(0).toUpperCase() }}</span>
-            <span class="topbar-admin-name">{{ auth.user.username }} ({{ auth.user.role }})</span>
+            <span class="topbar-admin-name">{{ auth.user.username }} ({{ auth.roleLabel }})</span>
           </span>
           <button class="logout-btn" @click="handleLogout">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -159,7 +159,7 @@
       </div>
       <router-view v-slot="{ Component }">
         <transition name="route-fade" mode="out-in">
-          <component :is="Component" />
+          <component :is="sensitiveBlocked ? SensitiveNotice : Component" />
         </transition>
       </router-view>
     </main>
@@ -174,6 +174,7 @@ import { useThemeStore } from '@/stores/theme'
 import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
 import { loadSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
+import SensitiveNotice from '@/views/SensitiveNotice.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -189,6 +190,15 @@ const isDebugMode = import.meta.env.DEV
 
 const pageTitle = computed(() => (route.meta.title as string) || '仪表盘')
 const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
+/** 低级别账号访问涉密页面时，用「涉密资料」占位内容替换真实数据区。
+ * 分级：三级访客拦截全部涉密页；二级管理仅放行「审核设置」，其余涉密页（数据库/配置/账号/外部通知/后台日志等）拦截。 */
+const sensitiveBlocked = computed(() => {
+  if (route.meta.sensitive !== true) return false
+  if (auth.isGuest) return true
+  if (auth.user?.role === 'admin2') return !route.path.endsWith('/turnstile-config')
+  // admin（一级管理）与超管正常访问
+  return false
+})
 
 /** 铃铛消息通知列表（与仪表盘「消息通知」一致） */
 const noticeItems = computed(() => [

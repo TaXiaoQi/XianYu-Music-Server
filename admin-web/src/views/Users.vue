@@ -464,8 +464,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { webConfirm, webPrompt, webActionMenu } from '@/utils/webDialog'
+import { webConfirm, webPrompt, webActionMenu, webInfo } from '@/utils/webDialog'
 import { fmtDateTime } from '@/utils/time'
+import { useAuthStore } from '@/stores/auth'
 
 // ===== 类型定义 =====
 interface User {
@@ -495,6 +496,7 @@ interface Plugin {
 // ===== 列表数据 =====
 const users = ref<User[]>([])
 const loading = ref(true)
+const auth = useAuthStore()
 const loadError = ref('')
 const keyword = ref('')
 const page = ref(1)
@@ -588,6 +590,10 @@ function formatScriptSize(bytes: number | undefined): string {
 
 // ===== 行操作 =====
 async function openRowMenu(u: User) {
+  if (auth.isGuest) {
+    await webInfo('访客账号仅可查看，无法查看或操作详情。', { title: '权限不足', confirmText: '知道了' })
+    return
+  }
   const action = await webActionMenu(`用户操作 · ${u.nickname || u.username}`, [
     { key: 'toggle', label: u.status != 0 ? '禁用用户' : '启用用户', danger: u.status != 0, success: u.status == 0 },
     { key: 'nickname', label: '修改昵称' },

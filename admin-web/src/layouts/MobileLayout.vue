@@ -38,7 +38,7 @@
     <main class="mobile-main">
       <router-view v-slot="{ Component, route: r }">
         <transition name="route-fade" mode="out-in">
-          <component :is="Component" :key="r.path" />
+          <component :is="sensitiveBlocked ? SensitiveNotice : Component" :key="r.path" />
         </transition>
       </router-view>
     </main>
@@ -98,9 +98,19 @@ import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
 import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
+import SensitiveNotice from '@/views/SensitiveNotice.vue'
 
 const router = useRouter()
 const route = useRoute()
+
+/** 低级别账号访问涉密页面时，用「涉密资料」占位内容替换真实数据区（页面外壳与切换动效保留）。
+ * 分级：三级访客拦截全部涉密页；二级管理仅放行「审核设置」，其余涉密页拦截。 */
+const sensitiveBlocked = computed(() => {
+  if (route.meta.sensitive !== true) return false
+  if (auth.isGuest) return true
+  if (auth.user?.role === 'admin2') return !route.path.endsWith('/turnstile-config')
+  return false
+})
 
 // 切换路由时回到容器顶部
 watch(

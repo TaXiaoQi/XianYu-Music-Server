@@ -258,11 +258,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { mobileConfirm, mobilePrompt, mobileActionMenu, removeBackdropBlur } from '@/utils/mobileDialog'
+import { mobileConfirm, mobilePrompt, mobileActionMenu, mobileInfo, removeBackdropBlur } from '@/utils/mobileDialog'
 import { fmtDateTime } from '@/utils/time'
+import { useAuthStore } from '@/stores/auth'
 import './MobilePage.css'
 const keyword = ref('')
 const loading = ref(false)
+const auth = useAuthStore()
 const saving = ref(false)
 const openAdd = ref(false)
 const list = ref<any[]>([])
@@ -429,6 +431,10 @@ async function addUser() {
   if (res.code === 200) { showToast('新增成功', 'success'); openAdd.value = false; addForm.value = { ciyuanxi_id: '', nickname: '', password: '', email: '' }; loadList() } else showToast(res.msg || '新增失败')
 }
 async function openActionMenu(u: any) {
+  if (auth.isGuest) {
+    await mobileInfo('访客账号仅可查看，无法查看或操作详情。', { title: '权限不足', confirmText: '知道了' })
+    return
+  }
   const action = await mobileActionMenu(`用户操作 · ${u.nickname || u.username}`, [
     { key: 'toggle', label: u.status == 1 ? '禁用用户' : '启用用户', danger: u.status == 1, success: u.status != 1 },
     { key: 'nickname', label: '修改昵称' },

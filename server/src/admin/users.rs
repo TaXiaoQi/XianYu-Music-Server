@@ -53,7 +53,9 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
 
     match rows {
         Ok(rows) => {
-            let list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            let mut list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            // 访客账号不展示邮箱/密码等敏感字段。
+            list = super::mask_sensitive(&_ctx.role, list);
             let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
             ok("ok", json!({
                 "total": total,
@@ -611,7 +613,9 @@ pub async fn list_banned_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
 
     match rows {
         Ok(rows) => {
-            let list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            let mut list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            // 访客账号不展示邮箱/密码等敏感字段。
+            list = super::mask_sensitive(&_ctx.role, list);
             let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
             ok("ok", json!({ "total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "list": list }))
         }
@@ -693,7 +697,9 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
 
     match rows {
         Ok(rows) => {
-            let list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            let mut list: Vec<Value> = rows.iter().map(row_to_value).collect();
+            // 访客账号不展示邮箱/密码等敏感字段。
+            list = super::mask_sensitive(&_ctx.role, list);
             let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
             ok("ok", json!({ "total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "list": list }))
         }

@@ -29,7 +29,25 @@
           <div class="stat-icon stat-icon-super">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>
           </div>
-          <div class="stat-body"><span class="stat-num">{{ stats.super_admin }}</span><span class="stat-label">超级管理员</span></div>
+          <div class="stat-body"><span class="stat-num">{{ stats.super_admin }}</span><span class="stat-label">超级管理</span></div>
+        </div>
+        <div class="stat-chip">
+          <div class="stat-icon stat-icon-admin1">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          </div>
+          <div class="stat-body"><span class="stat-num">{{ stats.admin }}</span><span class="stat-label">一级管理</span></div>
+        </div>
+        <div class="stat-chip">
+          <div class="stat-icon stat-icon-admin2">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+          </div>
+          <div class="stat-body"><span class="stat-num">{{ stats.admin2 }}</span><span class="stat-label">二级管理</span></div>
+        </div>
+        <div class="stat-chip">
+          <div class="stat-icon stat-icon-guest">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
+          <div class="stat-body"><span class="stat-num">{{ stats.guest }}</span><span class="stat-label">三级访客</span></div>
         </div>
         <div class="stat-chip">
           <div class="stat-icon stat-icon-disabled">
@@ -56,7 +74,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
-          新增管理员
+          新增账号
         </button>
       </div>
 
@@ -92,7 +110,7 @@
               <div class="card-top">
                 <div class="avatar-wrap">
                   <img v-if="item.avatar_url" :src="item.avatar_url" alt="" class="admin-avatar-img" />
-                  <div v-else class="admin-avatar" :class="item.role === 'super_admin' ? 'avatar-super' : 'avatar-normal'">
+                  <div v-else class="admin-avatar" :class="item.role === 'super_admin' ? 'avatar-super' : item.role === 'admin2' ? 'avatar-admin2' : item.role === 'guest' ? 'avatar-guest' : 'avatar-normal'">
                     {{ initialOf(item.username) }}
                   </div>
                   <button
@@ -109,15 +127,15 @@
                     <span class="admin-name">{{ item.username }}</span>
                     <span v-if="item.id === currentAdminId" class="self-tag">你</span>
                   </div>
-                  <span class="admin-sub">{{ item.role === 'super_admin' ? '超级管理员账号' : '管理员账号' }}</span>
+                  <span class="admin-sub">{{ item.role === 'super_admin' ? '超级管理账号' : item.role === 'admin2' ? '二级管理账号' : item.role === 'guest' ? '三级访客账号' : '一级管理账号' }}</span>
                   <span v-if="item.email" class="admin-email">
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M22 7l-10 6L2 7"/></svg>
                     {{ item.email }}
                   </span>
                 </div>
-                <span class="role-badge" :class="item.role === 'super_admin' ? 'badge-super' : 'badge-admin'">
+                <span class="role-badge" :class="item.role === 'super_admin' ? 'badge-super' : item.role === 'admin2' ? 'badge-admin2' : item.role === 'guest' ? 'badge-guest' : 'badge-admin'">
                   <svg v-if="item.role === 'super_admin'" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>
-                  {{ item.role === 'super_admin' ? '超级管理员' : '管理员' }}
+                  {{ item.role === 'super_admin' ? '超级管理' : item.role === 'admin2' ? '二级管理' : item.role === 'guest' ? '三级访客' : '一级管理' }}
                 </span>
               </div>
 
@@ -141,6 +159,14 @@
                   >
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
                     修改登录
+                  </button>
+                  <button
+                    v-if="isSuper && item.id !== currentAdminId"
+                    class="act-btn act-role"
+                    @click="openRoleModal(item)"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M21 8v5h-5"/><path d="M3 8v5h5"/><circle cx="12" cy="15" r="4"/></svg>
+                    改等级
                   </button>
                   <button
                     v-if="item.id !== currentAdminId"
@@ -174,7 +200,7 @@
       <div v-if="addModalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
-            <h3>新增管理员</h3>
+            <h3>新增账号</h3>
             <button class="modal-close" @click="closeAddModal">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -204,8 +230,8 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   </div>
                   <div class="role-opt-text">
-                    <span class="role-opt-name">管理员</span>
-                    <span class="role-opt-desc">常规后台管理权限</span>
+                    <span class="role-opt-name">一级管理</span>
+                    <span class="role-opt-desc">现有管理员的全部操作</span>
                   </div>
                 </div>
                 <div
@@ -217,8 +243,34 @@
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>
                   </div>
                   <div class="role-opt-text">
-                    <span class="role-opt-name">超级管理员</span>
+                    <span class="role-opt-name">超级管理</span>
                     <span class="role-opt-desc">全部权限，全局仅可有一个</span>
+                  </div>
+                </div>
+                <div
+                  class="role-option"
+                  :class="{ active: form.role === 'admin2' }"
+                  @click="form.role = 'admin2'"
+                >
+                  <div class="role-opt-icon role-opt-admin2">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+                  </div>
+                  <div class="role-opt-text">
+                    <span class="role-opt-name">二级管理</span>
+                    <span class="role-opt-desc">仅可操作反馈与审核</span>
+                  </div>
+                </div>
+                <div
+                  class="role-option"
+                  :class="{ active: form.role === 'guest' }"
+                  @click="form.role = 'guest'"
+                >
+                  <div class="role-opt-icon role-opt-guest">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  </div>
+                  <div class="role-opt-text">
+                    <span class="role-opt-name">三级访客</span>
+                    <span class="role-opt-desc">仅可查看，不能操作，不展示敏感信息</span>
                   </div>
                 </div>
               </div>
@@ -229,6 +281,86 @@
             <button class="btn-save" :disabled="saving" @click="doAdd">
               <span v-if="saving" class="btn-spinner"></span>
               {{ saving ? '提交中...' : '确认添加' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 变更账号等级弹窗 -->
+    <Transition name="modal">
+      <div v-if="roleModalVisible" class="modal-backdrop">
+        <div class="modal-dialog modal-role">
+          <div class="modal-head">
+            <h3>变更等级 - {{ roleTarget?.username || '' }}</h3>
+            <button class="modal-close" @click="closeRoleModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div class="role-select">
+              <div
+                class="role-option"
+                :class="{ active: roleForm.role === 'super_admin' }"
+                @click="roleForm.role = 'super_admin'"
+              >
+                <div class="role-opt-icon role-opt-super">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l3 7h7l-5.5 4.5L18 21l-6-4-6 4 1.5-7.5L2 9h7z"/></svg>
+                </div>
+                <div class="role-opt-text">
+                  <span class="role-opt-name">超级管理</span>
+                  <span class="role-opt-desc">全部权限</span>
+                </div>
+              </div>
+              <div
+                class="role-option"
+                :class="{ active: roleForm.role === 'admin' }"
+                @click="roleForm.role = 'admin'"
+              >
+                <div class="role-opt-icon role-opt-admin">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                </div>
+                <div class="role-opt-text">
+                  <span class="role-opt-name">一级管理</span>
+                  <span class="role-opt-desc">现有管理员的全部操作</span>
+                </div>
+              </div>
+              <div
+                class="role-option"
+                :class="{ active: roleForm.role === 'admin2' }"
+                @click="roleForm.role = 'admin2'"
+              >
+                <div class="role-opt-icon role-opt-admin2">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l2.5 2.5L16 9"/></svg>
+                </div>
+                <div class="role-opt-text">
+                  <span class="role-opt-name">二级管理</span>
+                  <span class="role-opt-desc">仅可操作反馈与审核</span>
+                </div>
+              </div>
+              <div
+                class="role-option"
+                :class="{ active: roleForm.role === 'guest' }"
+                @click="roleForm.role = 'guest'"
+              >
+                <div class="role-opt-icon role-opt-guest">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                </div>
+                <div class="role-opt-text">
+                  <span class="role-opt-name">三级访客</span>
+                  <span class="role-opt-desc">仅可查看，不能操作</span>
+                </div>
+              </div>
+            </div>
+            <p v-if="roleForm.role === 'super_admin'" class="role-transfer-warn">
+              转让超级管理：{{ roleTarget?.username || '该账号' }} 将成为超级管理，当前账号将自动降为一级管理。
+            </p>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="closeRoleModal">取消</button>
+            <button class="btn-save" :disabled="roleSaving || roleForm.role === roleTarget?.role" @click="doChangeRole">
+              <span v-if="roleSaving" class="btn-spinner"></span>
+              {{ roleSaving ? '提交中...' : (roleForm.role === 'super_admin' ? '确认转让' : '确认变更') }}
             </button>
           </div>
         </div>
@@ -354,6 +486,8 @@ interface AdminStats {
   disabled: number
   super_admin: number
   admin: number
+  admin2: number
+  guest: number
 }
 
 const auth = useAuthStore()
@@ -363,11 +497,50 @@ const currentAdminId = computed(() => auth.user?.id ?? 0)
 // ===== 管理员列表 =====
 const loading = ref(true)
 const adminList = ref<Admin[]>([])
-const stats = ref<AdminStats>({ total: 0, active: 0, disabled: 0, super_admin: 0, admin: 0 })
+const stats = ref<AdminStats>({ total: 0, active: 0, disabled: 0, super_admin: 0, admin: 0, admin2: 0, guest: 0 })
 
 function initialOf(name: string): string {
   if (!name) return '?'
   return name.charAt(0).toUpperCase()
+}
+
+// ===== 变更账号等级 =====
+const roleModalVisible = ref(false)
+const roleSaving = ref(false)
+const roleTarget = ref<Admin | null>(null)
+const roleForm = ref<{ role: string }>({ role: 'admin' })
+
+function openRoleModal(item: Admin): void {
+  roleTarget.value = item
+  roleForm.value.role = item.role || 'admin'
+  roleModalVisible.value = true
+}
+function closeRoleModal(): void {
+  if (roleSaving.value) return
+  roleModalVisible.value = false
+  roleTarget.value = null
+}
+async function doChangeRole(): Promise<void> {
+  if (!roleTarget.value || roleSaving.value) return
+  roleSaving.value = true
+  try {
+    const res = await adminApi('change_admin_role', { id: roleTarget.value.id, role: roleForm.value.role })
+    if (res.code === 0) {
+      showToast(res.msg || '等级已变更', 'success')
+      // 转让超管后当前账号降级，刷新后不再拥有超管操作权限
+      const target = roleTarget.value
+      const newRole = roleForm.value.role
+      await loadList()
+      if (newRole === 'super_admin' && target && auth.user) {
+        auth.updateUser({ ...auth.user, role: 'admin' })
+      }
+      closeRoleModal()
+    } else {
+      showToast(res.msg || '操作失败')
+    }
+  } finally {
+    roleSaving.value = false
+  }
 }
 
 // 头像上传权限：超管可传任意管理员，普通管理员只能传自己
@@ -422,6 +595,8 @@ async function deleteAdmin(item: Admin) {
     if (item.status == 1) stats.value.active--
     else stats.value.disabled--
     if (item.role === 'super_admin') stats.value.super_admin--
+    else if (item.role === 'admin2') stats.value.admin2--
+    else if (item.role === 'guest') stats.value.guest--
     else stats.value.admin--
     adminList.value = adminList.value.filter(a => a.id !== item.id)
   } else {
@@ -728,6 +903,9 @@ onMounted(() => {
 .stat-icon-total { background: var(--track); color: var(--text-light); }
 .stat-icon-active { background: #f0fdf4; color: #16a34a; }
 .stat-icon-super { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.stat-icon-admin1 { background: #eff6ff; color: #3b82f6; }
+.stat-icon-admin2 { background: rgba(6, 182, 212, 0.14); color: #0891b2; }
+.stat-icon-guest { background: rgba(16, 185, 129, 0.14); color: #10b981; }
 .stat-icon-disabled { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .stat-body { display: flex; flex-direction: column; }
 .stat-num { font-size: 22px; font-weight: 800; line-height: 1.1; color: var(--text); }
@@ -809,6 +987,12 @@ onMounted(() => {
 }
 .avatar-normal {
   background: linear-gradient(135deg, #6366f1, #818cf8);
+}
+.avatar-admin2 {
+  background: linear-gradient(135deg, #0891b2, #22d3ee);
+}
+.avatar-guest {
+  background: linear-gradient(135deg, #10b981, #34d399);
 }
 .avatar-wrap {
   position: relative;
@@ -934,6 +1118,8 @@ onMounted(() => {
 }
 .badge-super { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
 .badge-admin { background: #eff6ff; color: #3b82f6; }
+.badge-admin2 { background: rgba(6, 182, 212, 0.14); color: #0891b2; }
+.badge-guest { background: rgba(16, 185, 129, 0.14); color: #10b981; }
 
 .card-foot {
   display: flex;
@@ -985,6 +1171,8 @@ onMounted(() => {
 .act-disable:hover { background: #fef3c7; }
 .act-login { background: #eff6ff; color: #3b82f6; }
 .act-login:hover { background: #dbeafe; }
+.act-role { background: rgba(6, 182, 212, 0.14); color: #0891b2; }
+.act-role:hover { background: #cffafe; }
 .act-delete { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .act-delete:hover { background: #fee2e2; }
 
@@ -1197,9 +1385,23 @@ onMounted(() => {
 }
 .role-opt-admin { background: #eff6ff; color: #3b82f6; }
 .role-opt-super { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
+.role-opt-admin2 { background: rgba(6, 182, 212, 0.14); color: #0891b2; }
+.role-opt-guest { background: rgba(16, 185, 129, 0.14); color: #10b981; }
 .role-opt-text { display: flex; flex-direction: column; gap: 2px; }
 .role-opt-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .role-opt-desc { font-size: 11px; color: var(--text-muted); }
+
+/* 转让超级管理提示 */
+.role-transfer-warn {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  color: #b45309;
+  font-size: 12px;
+  line-height: 1.6;
+}
 
 /* ===== 空状态 / 加载 ===== */
 .state-box {

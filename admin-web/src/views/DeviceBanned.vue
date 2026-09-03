@@ -259,8 +259,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { webConfirm, webPrompt, webActionMenu } from '@/utils/webDialog'
+import { webConfirm, webPrompt, webActionMenu, webInfo } from '@/utils/webDialog'
 import { fmtDateTime } from '@/utils/time'
+import { useAuthStore } from '@/stores/auth'
 
 interface Device {
   device_id: string
@@ -275,12 +276,14 @@ interface Device {
   ban_reason: string
   account_count?: number
   current_account_count?: number
+  platform?: string
   [key: string]: any
 }
 
 // ===== 列表数据 =====
 const devices = ref<Device[]>([])
 const loading = ref(true)
+const auth = useAuthStore()
 const keyword = ref('')
 const page = ref(1)
 const pageSize = 20
@@ -347,6 +350,10 @@ function goPage(p: number) {
 
 // ===== 行操作菜单 =====
 async function openRowMenu(d: Device) {
+  if (auth.isGuest) {
+    await webInfo('访客账号仅可查看，无法查看或操作详情。', { title: '权限不足', confirmText: '知道了' })
+    return
+  }
   const action = await webActionMenu(`设备操作 · ${d.device_id.substring(0, 20)}`, [
     { key: 'detail', label: '设备详情' },
     { key: 'plugins', label: '查看插件' },
