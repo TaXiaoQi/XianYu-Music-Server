@@ -193,7 +193,7 @@
             <!-- 主体：左内容，右图片（默认展开） -->
             <div class="card-body">
               <div class="card-main">
-                <p class="fb-content fb-content-main">{{ item.content || '无内容' }}</p>
+                <p class="fb-content fb-content-main fb-content-click" title="点击查看完整留言" @click.stop="openContentModal(item)">{{ item.content || '无内容' }}</p>
                 <div class="detail-more">
                   <div v-if="deviceInfoText(item)" class="device-info-row">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -470,6 +470,52 @@
           </div>
           <div class="modal-foot">
             <button class="btn-cancel" @click="closeLogModal">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 留言详情弹窗 -->
+    <Transition name="modal">
+      <div v-if="contentModalVisible" class="modal-backdrop">
+        <div class="modal-dialog detail-dialog">
+          <div class="modal-head">
+            <h3>留言详情</h3>
+            <button class="modal-close" @click="closeContentModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body detail-body">
+            <template v-if="contentModalItem">
+              <div class="detail-user-row">
+                <strong class="detail-user-name">{{ contentModalItem.nickname || '匿名用户' }}</strong>
+                <span v-if="contentModalItem.platform && platformLabel(contentModalItem.platform)" class="platform-badge" :class="`platform-${contentModalItem.platform}`">{{ platformLabel(contentModalItem.platform) }}</span>
+                <span v-if="contentModalItem.app_version" class="platform-badge version-badge">{{ contentModalItem.app_version }}</span>
+                <span v-if="contentModalItem.category === 'appeal'" class="type-badge type-appeal">封禁申诉</span>
+                <span v-else-if="contentModalItem.feedback_type" class="type-badge" :class="contentModalItem.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
+                  {{ contentModalItem.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
+                </span>
+                <span class="status-badge" :class="`badge-${contentModalItem.status}`">{{ statusLabel(contentModalItem.status) }}</span>
+                <span class="detail-time">{{ fmtTime(contentModalItem.created_at) }}</span>
+              </div>
+              <div v-if="deviceInfoText(contentModalItem)" class="device-info-row">
+                <svg v-if="deviceIcon(contentModalItem) === 'mobile'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                <svg v-else-if="deviceIcon(contentModalItem) === 'watch'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span class="device-info-text">{{ deviceInfoText(contentModalItem) }}</span>
+              </div>
+              <p class="detail-content">{{ contentModalItem.content || '无内容' }}</p>
+              <div v-if="itemImages(contentModalItem).length > 0" class="detail-imgs">
+                <img
+                  v-for="(img, i) in itemImages(contentModalItem)"
+                  :key="i"
+                  :src="img"
+                  class="detail-img"
+                  alt="反馈图片"
+                  @click.stop="openImageViewer(itemImages(contentModalItem), i)"
+                />
+              </div>
+            </template>
           </div>
         </div>
       </div>
@@ -1296,6 +1342,27 @@ async function confirmResolve() {
   } else {
     showToast(res.msg || '操作失败')
   }
+}
+
+/** 按平台返回设备图标类型：桌面显示器 / 手机 / 手表 */
+function deviceIcon(item: Feedback): 'desktop' | 'mobile' | 'watch' {
+  if (item.platform === 'mobile') return 'mobile'
+  if (item.platform === 'watch') return 'watch'
+  return 'desktop'
+}
+
+// ===== 留言详情弹窗 =====
+const contentModalVisible = ref(false)
+const contentModalItem = ref<Feedback | null>(null)
+
+function openContentModal(item: Feedback) {
+  contentModalItem.value = item
+  contentModalVisible.value = true
+}
+
+function closeContentModal() {
+  contentModalVisible.value = false
+  contentModalItem.value = null
 }
 
 // ===== 拒绝弹窗 =====
@@ -2167,6 +2234,55 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
 }
+.fb-content-click {
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+.fb-content-click:hover { color: var(--accent); }
+.detail-dialog {
+  width: min(600px, calc(100vw - 48px));
+}
+.detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+.detail-user-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.detail-user-name { font-size: 14px; }
+.detail-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.detail-content {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+.detail-imgs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.detail-img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  cursor: zoom-in;
+  transition: opacity 0.15s ease;
+}
+.detail-img:hover { opacity: 0.85; }
 .fb-content-main {
   font-size: 14px;
   font-weight: 700;
