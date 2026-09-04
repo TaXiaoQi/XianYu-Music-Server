@@ -16,6 +16,8 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     }
     ensure_feedback_log_columns(pool).await;
     ensure_column(pool, "app_open_log", "platform", "varchar(16) NOT NULL DEFAULT ''").await;
+    // 设备市场名（如「小米16」），客户端上报；展示名优先用它，无则回退型号
+    ensure_column(pool, "app_open_log", "device_name", "varchar(128) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "email_verified", "tinyint(1) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "ciyuanxi_id", "varchar(32) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "avatar_url", "LONGTEXT NULL").await;

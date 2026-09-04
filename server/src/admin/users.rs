@@ -623,6 +623,33 @@ pub async fn list_banned_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     }
 }
 
+/// 平台归一：desktop/mobile/watch。
+/// 老记录 platform 为空时按 os_version 兜底（含 Windows → 桌面端，其余 → 移动端）。
+fn normalize_platform(platform: &str, os_version: &str) -> &'static str {
+    match platform {
+        "desktop" | "windows" => "desktop",
+        "watch" => "watch",
+        "mobile" | "android" | "ios" => "mobile",
+        "" => {
+            if os_version.to_lowercase().contains("windows") {
+                "desktop"
+            } else {
+                "mobile"
+            }
+        }
+        _ => "mobile",
+    }
+}
+
+/// SQL 版平台归一（与 normalize_platform 对齐），用于设备列表过滤与分类计数。
+/// 注意：`a` 必须是每台设备最新一条 app_open_log 记录。
+const PLATFORM_CASE_SQL: &str = "CASE \
+    WHEN a.platform IN ('desktop', 'windows') THEN 'desktop' \
+    WHEN a.platform = 'watch' THEN 'watch' \
+    WHEN a.platform IN ('mobile', 'android', 'ios') THEN 'mobile' \
+    WHEN (a.platform IS NULL OR a.platform = '') AND a.os_version LIKE '%Windows%' THEN 'desktop' \
+    ELSE 'mobile' END";
+
 /// 获取所有设备列表（分页 + 关键词搜索，从 app_open_log 取每台设备最新一条记录）
 pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
@@ -633,19 +660,28 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     };
     let offset = (page - 1) * page_size;
     let keyword = str_of(&data, "keyword").trim().to_string();
+    // 平台过滤：desktop/mobile/watch，空或其他值表示不过滤
+    let platform_filter = match str_of(&data, "platform").trim() {
+        "desktop" => Some("desktop".to_string()),
+        "mobile" => Some("mobile".to_string()),
+        "watch" => Some("watch".to_string()),
+        _ => None,
+    };
 
     // 关联 app_open_log 取每台设备最新一条记录，再关联 app_users 取昵称，关联 banned_devices 判断是否被封禁。
     // 关联账号优先取 app_users.last_device_id（登录时写入，最可靠），回退到 app_open_log.ciyuanxi_id。
-    let base_sql = "
+    // platform 输出为归一后的值（desktop/mobile/watch），老记录为空时按 os_version 兜底。
+    let base_sql = format!("
         SELECT
             a.device_id,
+            a.device_name,
             a.device_model,
             a.os_version,
             a.app_version,
             a.ciyuanxi_id,
             a.ip,
             a.created_at,
-            a.platform,
+            {} AS platform,
             COALESCE(
                 (SELECT u2.nickname FROM app_users u2 WHERE u2.last_device_id = a.device_id ORDER BY u2.id DESC LIMIT 1),
                 u.nickname
@@ -668,17 +704,66 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         ) latest ON a.id = latest.max_id
         LEFT JOIN app_users u ON a.ciyuanxi_id = u.ciyuanxi_id
         LEFT JOIN banned_devices b ON b.device_id = a.device_id
-    ";
+    ", PLATFORM_CASE_SQL);
+
+    // 平台分类计数（latest-join 后按归一平台分组）
+    let counts_sql = format!(
+        "SELECT {} AS plat, COUNT(*) AS c FROM app_open_log a \
+         INNER JOIN (SELECT device_id, MAX(id) AS max_id FROM app_open_log GROUP BY device_id) latest \
+         ON a.id = latest.max_id GROUP BY plat",
+        PLATFORM_CASE_SQL
+    );
+    let mut platform_counts = serde_json::Map::new();
+    platform_counts.insert("all".into(), json!(0));
+    platform_counts.insert("desktop".into(), json!(0));
+    platform_counts.insert("mobile".into(), json!(0));
+    platform_counts.insert("watch".into(), json!(0));
+    if let Ok(rows) = sqlx::query(&counts_sql).fetch_all(pool).await {
+        for r in rows.iter() {
+            use sqlx::Row;
+            let plat: String = r.try_get("plat").unwrap_or_default();
+            let c: i64 = r.try_get("c").unwrap_or(0);
+            platform_counts.insert(plat, json!(c));
+        }
+        // all = 三端之和（GROUP BY 只会产出三端桶）
+        let sum: i64 = ["desktop", "mobile", "watch"]
+            .iter()
+            .filter_map(|k| platform_counts.get(*k).and_then(|v| v.as_i64()))
+            .sum();
+        platform_counts.insert("all".into(), json!(sum));
+    }
+    let platform_counts = Value::Object(platform_counts);
 
     let (total, rows) = if keyword.is_empty() {
-        let total: i64 = sqlx::query_scalar("SELECT COUNT(DISTINCT device_id) FROM app_open_log")
-            .fetch_one(pool).await.unwrap_or(0);
-        let rows = sqlx::query(&format!("{} ORDER BY a.created_at DESC LIMIT ? OFFSET ?", base_sql))
-            .bind(page_size).bind(offset).fetch_all(pool).await;
+        let latest_join = "FROM app_open_log a INNER JOIN (SELECT device_id, MAX(id) AS max_id FROM app_open_log GROUP BY device_id) latest ON a.id = latest.max_id";
+        let total: i64 = match &platform_filter {
+            Some(_) => {
+                let sql = format!("SELECT COUNT(*) {} WHERE {} = ?", latest_join, PLATFORM_CASE_SQL);
+                sqlx::query_scalar(&sql).bind(platform_filter.as_deref().unwrap_or(""))
+                    .fetch_one(pool).await.unwrap_or(0)
+            }
+            None => sqlx::query_scalar("SELECT COUNT(DISTINCT device_id) FROM app_open_log")
+                .fetch_one(pool).await.unwrap_or(0),
+        };
+        let list_sql = match &platform_filter {
+            Some(_) => format!("{} WHERE {} = ? ORDER BY a.created_at DESC LIMIT ? OFFSET ?", base_sql, PLATFORM_CASE_SQL),
+            None => format!("{} ORDER BY a.created_at DESC LIMIT ? OFFSET ?", base_sql),
+        };
+        let mut q = sqlx::query(&list_sql);
+        if let Some(p) = &platform_filter { q = q.bind(p); }
+        let rows = q.bind(page_size).bind(offset).fetch_all(pool).await;
         (total, rows)
     } else {
         let pat = format!("%{}%", keyword);
-        let where_clause = "WHERE a.device_id LIKE ? OR a.device_model LIKE ? OR a.ciyuanxi_id LIKE ? OR u.nickname LIKE ? OR (SELECT u2.nickname FROM app_users u2 WHERE u2.last_device_id = a.device_id ORDER BY u2.id DESC LIMIT 1) LIKE ?";
+        let platform_clause = if platform_filter.is_some() {
+            format!(" AND {} = ?", PLATFORM_CASE_SQL)
+        } else {
+            String::new()
+        };
+        let where_clause = format!(
+            "WHERE a.device_id LIKE ? OR a.device_name LIKE ? OR a.device_model LIKE ? OR a.ciyuanxi_id LIKE ? OR u.nickname LIKE ? OR (SELECT u2.nickname FROM app_users u2 WHERE u2.last_device_id = a.device_id ORDER BY u2.id DESC LIMIT 1) LIKE ?{}",
+            platform_clause
+        );
         let count_sql = format!(
             "SELECT COUNT(*) FROM (
                 SELECT 1 FROM app_open_log a
@@ -688,11 +773,15 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
                 LEFT JOIN app_users u ON a.ciyuanxi_id = u.ciyuanxi_id
                 {}
             ) t", where_clause);
-        let total: i64 = sqlx::query_scalar(&count_sql)
-            .bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(&pat)
-            .fetch_one(pool).await.unwrap_or(0);
-        let rows = sqlx::query(&format!("{} {} ORDER BY a.created_at DESC LIMIT ? OFFSET ?", base_sql, where_clause))
-            .bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(page_size).bind(offset).fetch_all(pool).await;
+        let mut cq = sqlx::query_scalar::<_, i64>(&count_sql);
+        cq = cq.bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(&pat);
+        if let Some(p) = &platform_filter { cq = cq.bind(p); }
+        let total: i64 = cq.fetch_one(pool).await.unwrap_or(0);
+        let list_sql = format!("{} {} ORDER BY a.created_at DESC LIMIT ? OFFSET ?", base_sql, where_clause);
+        let mut q = sqlx::query(&list_sql);
+        q = q.bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(&pat).bind(&pat);
+        if let Some(p) = &platform_filter { q = q.bind(p); }
+        let rows = q.bind(page_size).bind(offset).fetch_all(pool).await;
         (total, rows)
     };
 
@@ -702,7 +791,7 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             // 访客账号不展示邮箱/密码等敏感字段。
             list = super::mask_sensitive(&_ctx.role, list);
             let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
-            ok("ok", json!({ "total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "list": list }))
+            ok("ok", json!({ "total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "platform_counts": platform_counts, "list": list }))
         }
         Err(e) => err(500, &format!("查询失败: {}", e)),
     }
@@ -827,11 +916,94 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
     })).collect();
 
+    // 该账号关联的全部设备（去重），每台带型号/系统/平台/封禁状态/最后活跃。
+    // 来源：app_open_log 中该弦予号出现过的设备 + app_users.last_device_id。
+    let mut devices: Vec<Value> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let device_rows = sqlx::query(
+        "SELECT a.device_id, a.device_name, a.device_model, a.os_version, a.app_version, a.platform, a.created_at, \
+                (b.id IS NOT NULL) AS is_banned \
+         FROM app_open_log a \
+         INNER JOIN (SELECT device_id, MAX(id) AS max_id FROM app_open_log WHERE ciyuanxi_id = ? GROUP BY device_id) l \
+             ON a.id = l.max_id \
+         LEFT JOIN banned_devices b ON b.device_id = a.device_id \
+         ORDER BY a.created_at DESC",
+    )
+    .bind(&user_ciyuanxi_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    for r in device_rows.iter() {
+        let device_id: String = r.try_get("device_id").unwrap_or_default();
+        if device_id.is_empty() || !seen.insert(device_id.clone()) {
+            continue;
+        }
+        let platform_raw: String = r.try_get("platform").unwrap_or_default();
+        let os_version: String = r.try_get("os_version").unwrap_or_default();
+        let platform = normalize_platform(&platform_raw, &os_version);
+        devices.push(json!({
+            "device_id": device_id,
+            "device_name": r.try_get::<String, _>("device_name").unwrap_or_default(),
+            "device_model": r.try_get::<String, _>("device_model").unwrap_or_default(),
+            "os_version": os_version,
+            "app_version": r.try_get::<String, _>("app_version").unwrap_or_default(),
+            "platform": platform,
+            "is_banned": r.try_get::<bool, _>("is_banned").unwrap_or(false),
+            "is_last": false,
+            "last_active": r.try_get::<String, _>("created_at").unwrap_or_default(),
+        }));
+    }
+    // last_device_id 可能没有该账号的启动记录（只在登录表），单独补一条
+    if !last_device_id.is_empty() && seen.insert(last_device_id.clone()) {
+        let extra = sqlx::query(
+            "SELECT a.device_id, a.device_name, a.device_model, a.os_version, a.app_version, a.platform, a.created_at, \
+                    (b.id IS NOT NULL) AS is_banned \
+             FROM app_open_log a \
+             LEFT JOIN banned_devices b ON b.device_id = a.device_id \
+             WHERE a.device_id = ? ORDER BY a.id DESC LIMIT 1",
+        )
+        .bind(&last_device_id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        if let Some(r) = extra {
+            let platform_raw: String = r.try_get("platform").unwrap_or_default();
+            let os_version: String = r.try_get("os_version").unwrap_or_default();
+            let platform = normalize_platform(&platform_raw, &os_version);
+            devices.push(json!({
+                "device_id": last_device_id,
+                "device_name": r.try_get::<String, _>("device_name").unwrap_or_default(),
+                "device_model": r.try_get::<String, _>("device_model").unwrap_or_default(),
+                "os_version": os_version,
+                "app_version": r.try_get::<String, _>("app_version").unwrap_or_default(),
+                "platform": platform,
+                "is_banned": r.try_get::<bool, _>("is_banned").unwrap_or(false),
+                "is_last": true,
+                "last_active": r.try_get::<String, _>("created_at").unwrap_or_default(),
+            }));
+        } else {
+            devices.push(json!({
+                "device_id": last_device_id,
+                "device_model": "",
+                "os_version": "",
+                "app_version": "",
+                "platform": "",
+                "is_banned": false,
+                "is_last": true,
+                "last_active": "",
+            }));
+        }
+    }
+    // 当前登录设备排在最前
+    devices.sort_by_key(|d| d.get("is_last").and_then(|v| v.as_bool()).unwrap_or(false) == false);
+
     ok("ok", json!({
         "nickname": username,
         "ciyuanxi_id": user_ciyuanxi_id,
         "last_device_id": last_device_id,
         "is_banned": is_banned,
+        "devices": devices,
         "login_logs": login_list,
         "open_logs": open_list,
     }))

@@ -7,7 +7,7 @@
           <input
             v-model="keyword"
             type="text"
-            placeholder="搜索设备ID、型号、弦予号或昵称"
+            placeholder="搜索设备名、设备ID、型号、弦予号或昵称"
             @keyup.enter="handleSearch"
           />
           <button class="btn btn-primary" @click="handleSearch">搜索</button>
@@ -36,6 +36,17 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 平台切换 -->
+    <div class="platform-tabs">
+      <button
+        v-for="p in PLATFORM_TABS"
+        :key="p.key"
+        class="platform-tab"
+        :class="{ active: platformFilter === p.key }"
+        @click="switchPlatform(p.key)"
+      >{{ p.label }}<span class="tab-count">{{ platformCounts[p.key] || 0 }}</span></button>
+    </div>
 
     <!-- 统计行 -->
     <Transition name="fade-up" appear>
@@ -85,6 +96,7 @@
                   </span>
                 </th>
                 <th>设备</th>
+                <th>平台</th>
                 <th>系统版本</th>
                 <th>应用版本</th>
                 <th>关联账号</th>
@@ -103,11 +115,13 @@
                 <td class="col-device-cell">
                   <div class="device-cell">
                     <div class="device-model-row">
-                      <span class="device-model">{{ d.device_model || '未知型号' }}</span>
-                      <span v-if="platformLabel(d)" class="platform-badge" :class="`platform-${platformKey(d)}`">{{ platformLabel(d) }}</span>
+                      <span class="device-model">{{ deviceDisplayName(d) }}</span>
                     </div>
                     <span class="device-id" :title="d.device_id">{{ d.device_id }}</span>
                   </div>
+                </td>
+                <td class="col-platform">
+                  <span class="platform-badge" :class="`platform-${platformKey(d)}`">{{ platformLabel(d) || '未知' }}</span>
                 </td>
                 <td class="col-os">{{ d.os_version || '-' }}</td>
                 <td class="col-version">{{ d.app_version || '-' }}</td>
@@ -280,6 +294,7 @@ interface Device {
   account_count?: number
   current_account_count?: number
   platform?: string
+  device_name?: string
   [key: string]: any
 }
 
@@ -290,8 +305,26 @@ const auth = useAuthStore()
 const keyword = ref('')
 const page = ref(1)
 const pageSize = 20
+
+// ===== 平台切换（参考版本管理页） =====
+const PLATFORM_TABS: { key: string; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'desktop', label: '桌面端' },
+  { key: 'mobile', label: '移动端' },
+  { key: 'watch', label: '腕上端' },
+]
+const platformFilter = ref('all')
+
+function switchPlatform(key: string) {
+  if (platformFilter.value === key) return
+  platformFilter.value = key
+  page.value = 1
+  loadDevices()
+}
 const total = ref(0)
 const totalPages = ref(0)
+// 各平台设备数（服务端归一口径：latest-join 后分组）
+const platformCounts = ref<Record<string, number>>({ all: 0, desktop: 0, mobile: 0, watch: 0 })
 
 const stats = computed(() => {
   const banned = devices.value.filter(d => d.ban_id).length
@@ -318,15 +351,17 @@ const pageNumbers = computed(() => {
 
 async function loadDevices() {
   loading.value = true
-  const res = await adminApi<{ total: number; total_pages: number; list: Device[] }>('list_all_devices', {
+  const res = await adminApi<{ total: number; total_pages: number; platform_counts?: Record<string, number>; list: Device[] }>('list_all_devices', {
     page: page.value,
     page_size: pageSize,
     keyword: keyword.value,
+    platform: platformFilter.value === 'all' ? '' : platformFilter.value,
   })
   if (res.code === 200 && res.data) {
     devices.value = res.data.list || []
     total.value = res.data.total
     totalPages.value = res.data.total_pages
+    if (res.data.platform_counts) platformCounts.value = res.data.platform_counts
   } else {
     devices.value = []
     showToast(res.msg || '加载失败')
@@ -553,14 +588,22 @@ async function openPluginsModal(d: Device) {
 }
 
 // ===== 工具函数 =====
-// 平台标签：优先取服务端记录的 platform；旧数据无该字段时按 os_version 推断
+// 平台标签：服务端 list_all_devices 已输出归一后的 platform（desktop/mobile/watch）；
+// 兜底逻辑仅用于异常数据
 function platformKey(d: Device): string {
-  if (d.platform) return d.platform
+  if (d.platform === 'desktop' || d.platform === 'mobile' || d.platform === 'watch') return d.platform
   return /windows/i.test(d.os_version || '') ? 'desktop' : 'mobile'
 }
 function platformLabel(d: Device): string {
   const map: Record<string, string> = { desktop: '桌面端', mobile: '移动端', watch: '腕上端' }
   return map[platformKey(d)] || ''
+}
+// 展示名：设备名（市场名，如「小米16」）优先，型号作括注；无名字才纯展示型号
+function deviceDisplayName(d: Device): string {
+  const name = (d.device_name || '').trim()
+  const model = (d.device_model || '').trim()
+  if (name && model && name !== model) return `${name}（${model}）`
+  return name || model || '未知型号'
 }
 
 function formatDuration(seconds: number): string {
@@ -767,6 +810,49 @@ tbody tr:hover td { background: #fafbfc; }
 .col-device-cell { min-width: 200px; max-width: 240px; }
 .device-cell { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .device-model-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.device-platform-icon {
+  flex-shrink: 0;
+  color: var(--text-light);
+}
+/* 平台切换（与版本管理页同款） */
+.platform-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 20px;
+  background: var(--card-solid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.platform-tab {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-light);
+  padding: 8px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.platform-tab:hover { color: var(--text); }
+.platform-tab.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.platform-tab .tab-count {
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(128, 128, 128, 0.12);
+  color: var(--text-muted);
+}
+.platform-tab.active .tab-count {
+  background: var(--accent);
+  color: #fff;
+}
 .device-model {
   font-size: 13px;
   font-weight: 600;
@@ -774,8 +860,9 @@ tbody tr:hover td { background: #fafbfc; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 160px;
+  max-width: 260px;
 }
+.col-platform { white-space: nowrap; }
 /* 平台标签（与反馈页同款） */
 .platform-badge {
   flex-shrink: 0;

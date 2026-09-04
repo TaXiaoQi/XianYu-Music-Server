@@ -63,6 +63,17 @@
       </div>
     </div>
 
+    <!-- 平台切换 -->
+    <div class="platform-tabs">
+      <button
+        v-for="p in PLATFORM_TABS"
+        :key="p.key"
+        class="platform-tab"
+        :class="{ active: platformFilter === p.key }"
+        @click="switchPlatform(p.key)"
+      >{{ p.label }}<span class="tab-count">{{ platformCounts[p.key] || 0 }}</span></button>
+    </div>
+
     <!-- 设备列表 -->
     <div v-if="loading" class="mobile-empty">加载中...</div>
     <div v-else-if="devices.length === 0" class="mobile-empty">暂无设备数据</div>
@@ -74,8 +85,8 @@
           </span>
           <div class="mobile-item-main">
             <div class="mobile-item-title-row">
-              <span class="mobile-item-title">{{ d.device_model || '未知设备' }}</span>
-              <span v-if="platformLabel(d)" class="platform-badge" :class="`platform-${platformKey(d)}`">{{ platformLabel(d) }}</span>
+              <span class="mobile-item-title">{{ deviceDisplayName(d) }}</span>
+              <span class="platform-badge" :class="`platform-${platformKey(d)}`">{{ platformLabel(d) || '未知' }}</span>
               <span class="mobile-badge" :class="d.ban_id ? 'red' : 'green'">{{ d.ban_id ? '已封禁' : '正常' }}</span>
             </div>
             <div class="mobile-item-sub monospace">{{ d.device_id }}</div>
@@ -234,6 +245,7 @@ interface Device {
   ban_reason: string
   account_count?: number
   platform?: string
+  device_name?: string
   [key: string]: any
 }
 
@@ -253,16 +265,35 @@ const stats = computed(() => {
   }
 })
 
+// ===== 平台切换（与桌面端/版本管理同款） =====
+const PLATFORM_TABS: { key: string; label: string }[] = [
+  { key: 'all', label: '全部' },
+  { key: 'desktop', label: '桌面端' },
+  { key: 'mobile', label: '移动端' },
+  { key: 'watch', label: '腕上端' },
+]
+const platformFilter = ref('all')
+// 各平台设备数（服务端归一口径）
+const platformCounts = ref<Record<string, number>>({ all: 0, desktop: 0, mobile: 0, watch: 0 })
+
+function switchPlatform(key: string) {
+  if (platformFilter.value === key) return
+  platformFilter.value = key
+  loadDevices()
+}
+
 async function loadDevices() {
   loading.value = true
-  const res = await adminApi<{ total: number; list: Device[] }>('list_all_devices', {
+  const res = await adminApi<{ total: number; platform_counts?: Record<string, number>; list: Device[] }>('list_all_devices', {
     page: 1,
     page_size: 50,
     keyword: keyword.value,
+    platform: platformFilter.value === 'all' ? '' : platformFilter.value,
   })
   if (res.code === 200 && res.data) {
     devices.value = res.data.list || []
     total.value = res.data.total
+    if (res.data.platform_counts) platformCounts.value = res.data.platform_counts
   } else {
     devices.value = []
     showToast(res.msg || '加载失败')
@@ -463,12 +494,19 @@ function closePlugins() {
 // ===== 工具函数 =====
 // 平台标签：优先取服务端记录的 platform；旧数据无该字段时按 os_version 推断
 function platformKey(d: Device): string {
-  if (d.platform) return d.platform
+  if (d.platform === 'desktop' || d.platform === 'mobile' || d.platform === 'watch') return d.platform
   return /windows/i.test(d.os_version || '') ? 'desktop' : 'mobile'
 }
 function platformLabel(d: Device): string {
   const map: Record<string, string> = { desktop: '桌面端', mobile: '移动端', watch: '腕上端' }
   return map[platformKey(d)] || ''
+}
+// 展示名：设备名（市场名，如「小米16」）优先，型号作括注；无名字才纯展示型号
+function deviceDisplayName(d: Device): string {
+  const name = (d.device_name || '').trim()
+  const model = (d.device_model || '').trim()
+  if (name && model && name !== model) return `${name}（${model}）`
+  return name || model || '未知设备'
 }
 
 function formatDuration(seconds: number): string {
@@ -609,6 +647,45 @@ onMounted(loadDevices)
 .platform-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 .platform-mobile { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 .platform-watch { background: rgba(20, 184, 166, 0.12); color: #14b8a6; }
+/* 平台切换（与版本管理页同款） */
+.platform-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 14px;
+  background: var(--control-bg, var(--card-solid));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.platform-tab {
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-light, var(--text-muted));
+  padding: 7px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.platform-tab.active {
+  background: var(--card-solid);
+  color: var(--accent);
+}
+.platform-tab .tab-count {
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(128, 128, 128, 0.12);
+  color: var(--text-muted);
+}
+.platform-tab.active .tab-count {
+  background: var(--accent);
+  color: #fff;
+}
+.device-platform-icon { flex-shrink: 0; color: var(--text-light, var(--text-muted)); }
 .mobile-item-foot {
   display: flex;
   align-items: center;

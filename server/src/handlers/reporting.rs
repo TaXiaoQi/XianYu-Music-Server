@@ -80,12 +80,13 @@ pub async fn app_open(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "设备标识不能为空");
     }
     let result = sqlx::query(
-        "INSERT INTO app_open_log (device_id, app_version, os_version, device_model, ip, ciyuanxi_id, platform) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO app_open_log (device_id, app_version, os_version, device_model, device_name, ip, ciyuanxi_id, platform) VALUES (?,?,?,?,?,?,?,?)",
     )
     .bind(&device_id)
     .bind(str_of(&data, "app_version"))
     .bind(str_of(&data, "os_version"))
     .bind(str_of(&data, "device_model"))
+    .bind(str_of(&data, "device_name"))
     .bind(&ctx.client_ip)
     .bind(str_of(&data, "ciyuanxi_id"))
     .bind(str_of(&data, "platform"))

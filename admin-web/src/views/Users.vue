@@ -357,22 +357,31 @@
         <div v-else>
           <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;flex-wrap:wrap;">
             <span>弦予号: {{ deviceData.ciyuanxi_id || '-' }}</span>
-            <span v-if="deviceData.last_device_id">设备ID: {{ deviceData.last_device_id }}</span>
-            <span v-if="deviceData.is_banned" style="color:#e74c3c;font-weight:600;">设备已封禁</span>
           </div>
 
-          <div v-if="deviceData.last_device_id" style="margin-bottom:16px;">
-            <button
-              v-if="!deviceData.is_banned"
-              class="btn btn-danger btn-sm"
-              @click="banUserDevice(deviceData.last_device_id, deviceData.nickname || deviceData.username)"
-            >封禁此设备</button>
-            <button
-              v-else
-              class="btn btn-success btn-sm"
-              @click="unbanUserDevice(deviceData.last_device_id)"
-            >解封此设备</button>
+          <!-- 该账号的全部设备 -->
+          <div v-if="userDevices.length > 0" class="user-device-list">
+            <div v-for="dv in userDevices" :key="dv.device_id" class="user-device-item" :class="{ 'is-banned': dv.is_banned }">
+              <svg v-if="userDeviceIcon(dv) === 'mobile'" class="user-device-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+              <svg v-else-if="userDeviceIcon(dv) === 'watch'" class="user-device-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
+              <svg v-else class="user-device-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <div class="user-device-info">
+                <div class="user-device-name-row">
+                  <span class="user-device-model">{{ dv.device_model || '未知型号' }}</span>
+                  <span class="platform-badge" :class="`platform-${userDeviceIcon(dv)}`">{{ userDevicePlatformLabel(dv) }}</span>
+                  <span v-if="dv.is_last" class="user-device-current">当前设备</span>
+                  <span v-if="dv.is_banned" class="user-device-banned-badge">已封禁</span>
+                </div>
+                <span class="user-device-id">{{ dv.device_id }}</span>
+                <span class="user-device-meta">{{ userDeviceMeta(dv) }}</span>
+              </div>
+              <div class="user-device-actions">
+                <button v-if="!dv.is_banned" class="btn btn-danger btn-sm" @click="banUserDevice(dv.device_id, deviceData.nickname || deviceData.username)">封禁</button>
+                <button v-else class="btn btn-success btn-sm" @click="unbanUserDevice(dv.device_id)">解封</button>
+              </div>
+            </div>
           </div>
+          <div v-if="userDevices.length === 0" class="empty">该用户暂无设备记录</div>
 
           <div v-if="deviceData.login_logs && deviceData.login_logs.length > 0" style="margin-bottom:16px;">
             <h4 style="font-size:13px;margin-bottom:8px;">登录记录</h4>
@@ -406,8 +415,6 @@
               </table>
             </div>
           </div>
-
-          <div v-if="!deviceData.last_device_id" class="empty">该用户暂无设备记录</div>
         </div>
       </div>
     </div>
@@ -1044,6 +1051,26 @@ function isValidEmail(email: string): boolean {
 const showDeviceModal = ref(false)
 const deviceLoading = ref(false)
 const deviceData = ref<any>({})
+const userDevices = ref<any[]>([])
+
+/** 设备平台图标：desktop/mobile/watch（服务端已归一化，空值按系统版本兜底） */
+function userDeviceIcon(dv: any): 'desktop' | 'mobile' | 'watch' {
+  if (dv.platform === 'mobile' || dv.platform === 'watch' || dv.platform === 'desktop') return dv.platform
+  if (/windows/i.test(dv.os_version || '')) return 'desktop'
+  return 'mobile'
+}
+
+function userDevicePlatformLabel(dv: any): string {
+  return userDeviceIcon(dv) === 'desktop' ? '桌面端' : userDeviceIcon(dv) === 'watch' ? '腕上端' : '移动端'
+}
+
+function userDeviceMeta(dv: any): string {
+  const parts: string[] = []
+  if (dv.os_version) parts.push(dv.os_version)
+  if (dv.app_version) parts.push(`v${dv.app_version}`)
+  if (dv.last_active) parts.push(`最后活跃 ${fmtDateTime(dv.last_active)}`)
+  return parts.join(' · ') || '暂无活跃记录'
+}
 const showBannedModal = ref(false)
 const bannedLoading = ref(false)
 const bannedDevices = ref<any[]>([])
@@ -1054,9 +1081,11 @@ async function openDeviceModal(u: User) {
   showDeviceModal.value = true
   deviceLoading.value = true
   deviceData.value = { username: u.nickname || u.username, nickname: u.nickname || u.username }
+  userDevices.value = []
   const res = await adminApi('get_user_devices', { user_id: u.id })
   if (res.code === 200 && res.data) {
     deviceData.value = res.data
+    userDevices.value = res.data.devices || []
   } else {
     showToast(res.msg || '加载设备信息失败')
   }
@@ -1076,7 +1105,9 @@ async function banUserDevice(deviceId: string, username: string) {
   const res = await adminApi('ban_device', { device_id: deviceId, reason: reasonText })
   if (res.code === 200) {
     showToast('设备已封禁', 'success')
-    deviceData.value.is_banned = true
+    const it = userDevices.value.find(x => x.device_id === deviceId)
+    if (it) it.is_banned = true
+    if (deviceId === deviceData.value.last_device_id) deviceData.value.is_banned = true
   } else {
     showToast(res.msg || '操作失败')
   }
@@ -1086,7 +1117,9 @@ async function unbanUserDevice(deviceId: string) {
   const res = await adminApi('unban_device', { device_id: deviceId })
   if (res.code === 200) {
     showToast('设备已解封', 'success')
-    deviceData.value.is_banned = false
+    const it = userDevices.value.find(x => x.device_id === deviceId)
+    if (it) it.is_banned = false
+    if (deviceId === deviceData.value.last_device_id) deviceData.value.is_banned = false
   } else {
     showToast(res.msg || '操作失败')
   }
@@ -1604,4 +1637,66 @@ tbody tr.table-row { animation: rowIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* 用户设备信息弹窗：全部设备列表 */
+.user-device-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.user-device-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--card-solid, #fff);
+  transition: border-color 0.2s;
+}
+.user-device-item:hover { border-color: var(--accent, #e74c3c); }
+.user-device-item.is-banned { opacity: 0.75; }
+.user-device-icon { flex-shrink: 0; color: var(--text-light, #9ca3af); }
+.user-device-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.user-device-name-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.user-device-model { font-size: 13px; font-weight: 600; color: var(--text, #1f2937); }
+.platform-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.platform-desktop { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+.platform-mobile { background: rgba(59, 130, 246, 0.14); color: #2563eb; }
+.platform-watch { background: rgba(20, 184, 166, 0.14); color: #14b8a6; }
+.user-device-current {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(231, 76, 60, 0.12);
+  color: var(--accent, #e74c3c);
+}
+.user-device-banned-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(231, 76, 60, 0.16);
+  color: #e74c3c;
+}
+.user-device-id {
+  font-size: 11px;
+  color: var(--text-muted, #9ca3af);
+  word-break: break-all;
+}
+.user-device-meta { font-size: 11px; color: var(--text-light, #9ca3af); }
+.user-device-actions { flex-shrink: 0; }
 </style>
