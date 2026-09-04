@@ -300,6 +300,8 @@ pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str)
     HTML
         .replace("__SHARE_JSON__", &json_str)
         .replace("__TITLE__", &html_escape(&page_title))
+        // favicon 与官网/管理后台一致（static 目录下的 logo.png），走 https 绝对地址
+        .replace("__FAVICON__", &html_escape(&format!("{}/logo.png", base)))
         .replace("__OG_TITLE__", &html_escape(&og_title))
         .replace("__OG_DESC__", &html_escape(og_desc))
         .replace("__OG_IMAGE__", &html_escape(&og_image))
@@ -312,6 +314,9 @@ const HTML: &str = r#"<!DOCTYPE html>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>__TITLE__</title>
+<!-- 浏览器标签页 favicon：与官网一致使用站点 logo（绝对地址，避免 https 落地页混合内容） -->
+<link rel="icon" type="image/png" href="__FAVICON__">
+<link rel="apple-touch-icon" href="__FAVICON__">
 <meta name="description" content="__OG_DESC__">
 <!-- Open Graph：供微信 / 各大平台分享卡片抓取 -->
 <meta property="og:type" content="music.song">
