@@ -165,6 +165,21 @@ async fn handle_api(
         let secret = &state.config.api_secret;
         let tolerance = state.config.api_timestamp_tolerance;
         if !sign::verify(&timestamp, &nonce, &signature, &raw_body, secret, tolerance) {
+            // 403 观测日志：定位签名失败的用户群（动作/来源/客户端/时钟偏差/缺头情况）
+            let ua = headers
+                .get("user-agent")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("-");
+            tracing::warn!(
+                "sign verify failed: action={} ip={} ua={} ts={:?} skew_s={} body_len={} has_iv={}",
+                action,
+                admin::client_ip(&headers),
+                ua,
+                timestamp,
+                sign::now_ts() - timestamp.parse::<i64>().unwrap_or(0),
+                raw_body.len(),
+                headers.contains_key("x-encrypted-iv")
+            );
             return ctx.err(403, "签名验证失败");
         }
     }
@@ -518,7 +533,11 @@ async fn share_landing(
 fn share_404() -> Response {
     (
         StatusCode::NOT_FOUND,
-        [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        [
+            (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            // 404 是时效性结果（分享到期），禁止浏览器缓存，避免后续访问读到旧状态
+            (axum::http::header::CACHE_CONTROL, "no-store"),
+        ],
         Body::from("分享不存在或已过期"),
     )
         .into_response()
