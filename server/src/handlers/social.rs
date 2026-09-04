@@ -95,15 +95,17 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     if feedback_type.is_empty() {
         feedback_type = "problem".to_string();
     }
-    if feedback_type != "problem" && feedback_type != "suggestion" {
+    // 内测申请（beta）：与问题反馈/功能建议并列的第三种反馈类型，
+    // 同意后由后台把提交设备ID自动加入版本管理的内测名单
+    if feedback_type != "problem" && feedback_type != "suggestion" && feedback_type != "beta" {
         feedback_type = "problem".to_string();
     }
     // 标题为空时按反馈类型赋予默认标题
     if title.is_empty() {
-        title = if feedback_type == "suggestion" {
-            "功能建议".to_string()
-        } else {
-            "问题反馈".to_string()
+        title = match feedback_type.as_str() {
+            "suggestion" => "功能建议".to_string(),
+            "beta" => "内测申请".to_string(),
+            _ => "问题反馈".to_string(),
         };
     }
     let content = str_of(&data, "content").trim().to_string();
@@ -122,8 +124,8 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     .to_string();
     // 图片：功能建议支持上传图片，接收 base64 data URL 数组，压缩保存到 uploads/feedback/
     let raw_images = data.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    if feedback_type == "problem" && !raw_images.is_empty() {
-        return ctx.err(400, "问题反馈不支持上传图片");
+    if (feedback_type == "problem" || feedback_type == "beta") && !raw_images.is_empty() {
+        return ctx.err(400, "该反馈类型不支持上传图片");
     }
     if raw_images.len() > MAX_FEEDBACK_IMAGES {
         return ctx.err(400, &format!("最多上传 {} 张图片", MAX_FEEDBACK_IMAGES));
@@ -199,6 +201,29 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     let platform = str_of(&data, "platform").trim().to_string();
     let app_version = str_of(&data, "app_version").trim().to_string();
     let device_id = str_of(&data, "device_id").trim().chars().take(64).collect::<String>();
+    // 内测申请查重（与昵称/头像审核同思路）：同一设备存在待处理的内测申请时禁止重复提交，防止刷屏
+    if feedback_type == "beta" {
+        let pending_betas: i64 = if device_id.is_empty() {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM user_feedback WHERE ciyuanxi_id = ? AND feedback_type = 'beta' AND status IN ('pending', 'processing')",
+            )
+            .bind(&ciyuanxi_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0)
+        } else {
+            sqlx::query_scalar(
+                "SELECT COUNT(*) FROM user_feedback WHERE device_id = ? AND feedback_type = 'beta' AND status IN ('pending', 'processing')",
+            )
+            .bind(&device_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0)
+        };
+        if pending_betas > 0 {
+            return ctx.err(429, "已有内测申请正在审核中，请耐心等待审核结果");
+        }
+    }
     // 详细设备信息：厂商/型号/系统版本/架构/计算机名（移动端与桌面端上报，便于定位具体设备）
     let device_brand = str_of(&data, "device_brand").trim().chars().take(64).collect::<String>();
     let device_model = str_of(&data, "device_model").trim().chars().take(128).collect::<String>();

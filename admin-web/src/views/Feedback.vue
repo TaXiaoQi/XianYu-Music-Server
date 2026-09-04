@@ -78,6 +78,10 @@
         <button class="tool-btn" :class="{ active: typeFilter === 'all' }" @click="setTypeFilter('all')">全部类型</button>
         <button class="tool-btn" :class="{ active: typeFilter === 'problem' }" @click="setTypeFilter('problem')">问题反馈</button>
         <button class="tool-btn" :class="{ active: typeFilter === 'suggestion' }" @click="setTypeFilter('suggestion')">功能建议</button>
+        <button class="tool-btn" :class="{ active: typeFilter === 'beta' }" @click="setTypeFilter('beta')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align: -2px; margin-right: 3px;"><path d="M9 3h6M10 3v6.5L4.5 19a1.7 1.7 0 0 0 1.5 2.5h12a1.7 1.7 0 0 0 1.5-2.5L14 9.5V3"/></svg>
+          内测申请
+        </button>
         <button class="tool-btn" :class="{ active: typeFilter === 'appeal' }" @click="setTypeFilter('appeal')">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" style="vertical-align: -2px; margin-right: 3px;"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           封禁申诉
@@ -156,8 +160,9 @@
                   class="user-avatar avatar-img"
                   @click.stop="openImageViewer([item.avatar_url], 0)"
                 />
-                <div v-else class="user-avatar" :class="item.category === 'appeal' ? 'avatar-appeal' : (item.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem')">
+                <div v-else class="user-avatar" :class="item.category === 'appeal' ? 'avatar-appeal' : (item.feedback_type === 'beta' ? 'avatar-beta' : (item.feedback_type === 'suggestion' ? 'avatar-suggestion' : 'avatar-problem'))">
                   <svg v-if="item.category === 'appeal'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+                  <svg v-else-if="item.feedback_type === 'beta'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 3h6M10 3v6.5L4.5 19a1.7 1.7 0 0 0 1.5 2.5h12a1.7 1.7 0 0 0 1.5-2.5L14 9.5V3"/><path d="M6.5 14h11"/></svg>
                   <svg v-else-if="item.feedback_type === 'suggestion'" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                   <svg v-else width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                 </div>
@@ -172,6 +177,7 @@
               </div>
               <div class="card-top-right">
                 <span v-if="item.category === 'appeal'" class="type-badge type-appeal">封禁申诉</span>
+                <span v-else-if="item.feedback_type === 'beta'" class="type-badge type-beta">内测申请</span>
                 <span v-else-if="item.feedback_type" class="type-badge" :class="item.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
                   {{ item.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
                 </span>
@@ -187,14 +193,12 @@
             <!-- 主体：左内容，右图片（默认展开） -->
             <div class="card-body">
               <div class="card-main">
-                <p class="fb-content fb-content-main fb-content-click" title="点击查看完整留言" @click.stop="openContentModal(item)">{{ item.content || '无内容' }}</p>
+                <p class="fb-content fb-content-main">{{ item.content || '无内容' }}</p>
                 <div class="detail-more">
                   <div v-if="deviceInfoText(item)" class="device-info-row">
-                  <svg v-if="deviceIcon(item) === 'mobile'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                  <svg v-else-if="deviceIcon(item) === 'watch'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
-                  <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                  <span class="device-info-text">{{ deviceInfoText(item) }}</span>
-                </div>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    <span class="device-info-text">{{ deviceInfoText(item) }}</span>
+                  </div>
                   <div v-if="hasErrorLogs(item) || hasAllLogs(item)" class="log-summary">
                     <span v-if="hasErrorLogs(item)" class="log-chip">错误日志 {{ formatLogSize(item.error_logs_chars) }}</span>
                     <span v-if="hasAllLogs(item)" class="log-chip">全量日志 {{ formatLogSize(item.all_logs_chars) }}</span>
@@ -247,23 +251,27 @@
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/></svg>
                   日志
                 </button>
-                <button v-if="item.status === 'processing' && !isParticipant(item)" class="act-btn act-collab" @click="requestCollaborate(item)">
+                <button v-if="item.status === 'processing' && !isParticipant(item) && !isBeta(item)" class="act-btn act-collab" @click="requestCollaborate(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
                   协同
                 </button>
-                <button v-if="item.status === 'pending'" class="act-btn act-reject" @click="openRejectModal(item)">
+                <button v-if="isBeta(item) && (item.status === 'pending' || item.status === 'processing')" class="act-btn act-resolve" @click="openBetaApproveModal(item)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                  同意
+                </button>
+                <button v-if="item.status === 'pending' || (isBeta(item) && item.status === 'processing')" class="act-btn act-reject" @click="openRejectModal(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   拒绝
                 </button>
-                <button v-if="item.status === 'processing' && isParticipant(item)" class="act-btn act-abandon" @click="abandonFeedback(item.id)">
+                <button v-if="item.status === 'processing' && isParticipant(item) && !isBeta(item)" class="act-btn act-abandon" @click="abandonFeedback(item.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
                   放弃
                 </button>
-                <button v-if="item.status === 'processing' && isParticipant(item)" class="act-btn act-resolve" @click="openResolveModal(item)">
+                <button v-if="item.status === 'processing' && isParticipant(item) && !isBeta(item)" class="act-btn act-resolve" @click="openResolveModal(item)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   完成
                 </button>
-                <button v-if="item.status === 'pending' || (item.status === 'processing' && !isParticipant(item))" class="act-btn act-claim" :class="{ 'act-transfer': item.status === 'processing' && !isParticipant(item) }" @click="claimFeedback(item.id)">
+                <button v-if="(item.status === 'pending' || (item.status === 'processing' && !isParticipant(item))) && !isBeta(item)" class="act-btn act-claim" :class="{ 'act-transfer': item.status === 'processing' && !isParticipant(item) }" @click="claimFeedback(item.id)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
                   {{ item.status === 'processing' && !isParticipant(item) ? '转认' : '认领' }}
                 </button>
@@ -376,6 +384,51 @@
       </div>
     </Transition>
 
+    <!-- 同意内测申请弹窗（回执必填，同意后设备自动加入内测名单） -->
+    <Transition name="modal">
+      <div v-if="betaApproveModalVisible" class="modal-backdrop">
+        <div class="modal-dialog resolve-dialog">
+          <div class="modal-head">
+            <h3>同意内测申请</h3>
+            <button class="modal-close" @click="closeBetaApproveModal">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body">
+            <div v-if="betaApproveTarget" class="resolve-target-info">
+              <strong>{{ betaApproveTarget.title || '内测申请' }}</strong>
+              <span>{{ betaApproveTarget.nickname || '匿名用户' }} · {{ betaApproveTarget.ciyuanxi_id || '-' }}</span>
+            </div>
+            <div v-if="betaApproveTarget?.device_id" class="beta-device-info">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <span>同意后将把设备 <code>{{ betaApproveTarget.device_id }}</code> 自动加入版本管理的内测名单</span>
+            </div>
+            <div v-else class="beta-device-info beta-device-missing">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              <span>该申请未携带设备ID，同意后无法自动加入内测名单，请人工在版本管理中添加</span>
+            </div>
+            <label class="resolve-field">
+              <span class="resolve-field-label">回执 <em>*</em></span>
+              <textarea
+                v-model="betaApproveNote"
+                class="resolve-textarea"
+                rows="5"
+                maxlength="1000"
+                placeholder="请填写同意回执（必填），该回执将展示给申请人"
+              ></textarea>
+              <span class="resolve-count">{{ betaApproveNote.length }}/1000</span>
+            </label>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" :disabled="betaApproveSaving" @click="closeBetaApproveModal">取消</button>
+            <button class="btn-confirm" :disabled="betaApproveSaving || !betaApproveNote.trim()" @click="confirmBetaApprove">
+              {{ betaApproveSaving ? '提交中...' : '确认同意' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
     <!-- 日志弹窗 -->
     <Transition name="modal">
       <div v-if="logModalVisible" class="modal-backdrop">
@@ -417,52 +470,6 @@
           </div>
           <div class="modal-foot">
             <button class="btn-cancel" @click="closeLogModal">关闭</button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 留言详情弹窗 -->
-    <Transition name="modal">
-      <div v-if="contentModalVisible" class="modal-backdrop">
-        <div class="modal-dialog detail-dialog">
-          <div class="modal-head">
-            <h3>留言详情</h3>
-            <button class="modal-close" @click="closeContentModal">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
-          </div>
-          <div class="modal-body detail-body">
-            <template v-if="contentModalItem">
-              <div class="detail-user-row">
-                <strong class="detail-user-name">{{ contentModalItem.nickname || '匿名用户' }}</strong>
-                <span v-if="contentModalItem.platform && platformLabel(contentModalItem.platform)" class="platform-badge" :class="`platform-${contentModalItem.platform}`">{{ platformLabel(contentModalItem.platform) }}</span>
-                <span v-if="contentModalItem.app_version" class="platform-badge version-badge">{{ contentModalItem.app_version }}</span>
-                <span v-if="contentModalItem.category === 'appeal'" class="type-badge type-appeal">封禁申诉</span>
-                <span v-else-if="contentModalItem.feedback_type" class="type-badge" :class="contentModalItem.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
-                  {{ contentModalItem.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
-                </span>
-                <span class="status-badge" :class="`badge-${contentModalItem.status}`">{{ statusLabel(contentModalItem.status) }}</span>
-                <span class="detail-time">{{ fmtTime(contentModalItem.created_at) }}</span>
-              </div>
-              <div v-if="deviceInfoText(contentModalItem)" class="device-info-row">
-                <svg v-if="deviceIcon(contentModalItem) === 'mobile'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
-                <svg v-else-if="deviceIcon(contentModalItem) === 'watch'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
-                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-                <span class="device-info-text">{{ deviceInfoText(contentModalItem) }}</span>
-              </div>
-              <p class="detail-content">{{ contentModalItem.content || '无内容' }}</p>
-              <div v-if="itemImages(contentModalItem).length > 0" class="detail-imgs">
-                <img
-                  v-for="(img, i) in itemImages(contentModalItem)"
-                  :key="i"
-                  :src="img"
-                  class="detail-img"
-                  alt="反馈图片"
-                  @click.stop="openImageViewer(itemImages(contentModalItem), i)"
-                />
-              </div>
-            </template>
           </div>
         </div>
       </div>
@@ -636,6 +643,7 @@
                   <div class="recycle-item-title">{{ item.title || '无标题' }}</div>
                   <div class="recycle-item-meta">
                     <span v-if="item.category === 'appeal'" class="type-badge type-appeal small">封禁申诉</span>
+                    <span v-else-if="item.feedback_type === 'beta'" class="type-badge type-beta small">内测申请</span>
                     <span v-else-if="item.feedback_type === 'suggestion'" class="type-badge type-suggestion small">功能建议</span>
                     <span v-else class="type-badge type-problem small">问题反馈</span>
                     <span class="recycle-user">{{ item.nickname || '匿名' }}</span>
@@ -1290,20 +1298,6 @@ async function confirmResolve() {
   }
 }
 
-// ===== 留言详情弹窗 =====
-const contentModalVisible = ref(false)
-const contentModalItem = ref<Feedback | null>(null)
-
-function openContentModal(item: Feedback) {
-  contentModalItem.value = item
-  contentModalVisible.value = true
-}
-
-function closeContentModal() {
-  contentModalVisible.value = false
-  contentModalItem.value = null
-}
-
 // ===== 拒绝弹窗 =====
 const rejectModalVisible = ref(false)
 const rejectTarget = ref<Feedback | null>(null)
@@ -1378,11 +1372,46 @@ function deviceInfoText(item: Feedback): string {
   return parts.join(' ｜ ')
 }
 
-/** 按平台返回设备图标类型：桌面显示器 / 手机 / 手表 */
-function deviceIcon(item: Feedback): 'desktop' | 'mobile' | 'watch' {
-  if (item.platform === 'mobile') return 'mobile'
-  if (item.platform === 'watch') return 'watch'
-  return 'desktop'
+// ===== 内测申请（feedback_type='beta'）：仅有同意/拒绝两种处理 =====
+function isBeta(item: Feedback): boolean {
+  return item.category !== 'appeal' && item.feedback_type === 'beta'
+}
+
+// 同意弹窗
+const betaApproveModalVisible = ref(false)
+const betaApproveTarget = ref<Feedback | null>(null)
+const betaApproveNote = ref('')
+const betaApproveSaving = ref(false)
+
+function openBetaApproveModal(item: Feedback) {
+  betaApproveTarget.value = item
+  betaApproveNote.value = ''
+  betaApproveSaving.value = false
+  betaApproveModalVisible.value = true
+}
+
+function closeBetaApproveModal() {
+  if (betaApproveSaving.value) return
+  betaApproveModalVisible.value = false
+  betaApproveTarget.value = null
+  betaApproveNote.value = ''
+}
+
+async function confirmBetaApprove() {
+  if (!betaApproveTarget.value || !betaApproveNote.value.trim()) return
+  betaApproveSaving.value = true
+  const res = await adminApi('resolve_beta_application', {
+    id: betaApproveTarget.value.id,
+    note: betaApproveNote.value.trim(),
+  })
+  betaApproveSaving.value = false
+  if (res.code === 200) {
+    showToast(res.data?.device_added ? '已同意，设备已自动加入内测名单' : '已同意该内测申请', 'success')
+    closeBetaApproveModal()
+    await loadList()
+  } else {
+    showToast(res.msg || '操作失败')
+  }
 }
 
 const filteredList = computed(() => {
@@ -1392,6 +1421,8 @@ const filteredList = computed(() => {
   }
   if (typeFilter.value === 'appeal') {
     arr = arr.filter(f => f.category === 'appeal')
+  } else if (typeFilter.value === 'beta') {
+    arr = arr.filter(f => f.feedback_type === 'beta' && f.category !== 'appeal')
   } else if (typeFilter.value !== 'all') {
     arr = arr.filter(f => f.feedback_type === typeFilter.value && f.category !== 'appeal')
   }
@@ -2146,55 +2177,6 @@ onUnmounted(() => {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.fb-content-click {
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-.fb-content-click:hover { color: var(--accent); }
-.detail-dialog {
-  width: min(600px, calc(100vw - 48px));
-}
-.detail-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-height: 62vh;
-  overflow-y: auto;
-}
-.detail-user-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.detail-user-name { font-size: 14px; }
-.detail-time {
-  margin-left: auto;
-  font-size: 11px;
-  color: var(--text-muted);
-}
-.detail-content {
-  margin: 0;
-  font-size: 14px;
-  line-height: 1.8;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: var(--text);
-}
-.detail-imgs {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-}
-.detail-img {
-  width: 100%;
-  aspect-ratio: 1;
-  object-fit: cover;
-  border-radius: 8px;
-  cursor: zoom-in;
-  transition: opacity 0.15s ease;
-}
-.detail-img:hover { opacity: 0.85; }
 .log-summary {
   display: flex;
   flex-wrap: wrap;
@@ -2211,7 +2193,6 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 600;
 }
-
 .device-info-row {
   display: flex;
   align-items: center;
@@ -3100,6 +3081,40 @@ onUnmounted(() => {
 .type-appeal {
   background: rgba(245, 158, 11, 0.14) !important;
   color: #d97706 !important;
+}
+
+/* ===== 内测申请类型样式 ===== */
+.avatar-beta {
+  background: rgba(16, 185, 129, 0.16);
+  color: #059669;
+}
+.type-beta {
+  background: rgba(16, 185, 129, 0.14) !important;
+  color: #059669 !important;
+}
+.beta-device-info {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  color: #059669;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.beta-device-info svg { flex-shrink: 0; margin-top: 2px; }
+.beta-device-info code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+}
+.beta-device-info.beta-device-missing {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #d97706;
 }
 .type-badge.small {
   font-size: 10px;
