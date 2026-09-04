@@ -154,8 +154,14 @@
         <!-- 主体 -->
         <div class="mfb-main">
           <div class="mfb-left">
-            <p class="mfb-content mfb-content-main">{{ f.content || '无内容' }}</p>
+            <p class="mfb-content mfb-content-main mfb-content-click" title="点击查看完整留言" @click.stop="openContent(f)">{{ f.content || '无内容' }}</p>
             <div class="detail-more">
+              <div v-if="deviceInfoText(f)" class="device-info-row">
+                <svg v-if="deviceIcon(f) === 'mobile'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                <svg v-else-if="deviceIcon(f) === 'watch'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
+                <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span class="device-info-text">{{ deviceInfoText(f) }}</span>
+              </div>
               <div v-if="hasErrorLogs(f) || hasAllLogs(f)" class="log-summary">
                 <span v-if="hasErrorLogs(f)" class="log-chip">错误日志 {{ formatLogSize(f.error_logs_chars) }}</span>
                 <span v-if="hasAllLogs(f)" class="log-chip">全量日志 {{ formatLogSize(f.all_logs_chars) }}</span>
@@ -280,6 +286,48 @@
         <div class="mobile-dialog-actions">
           <button class="mobile-dialog-btn cancel" @click="closeReject">取消</button>
           <button class="mobile-dialog-btn confirm danger" :disabled="!rejectNote.trim()" @click="confirmReject">{{ rejectSaving ? '提交中...' : '确认拒绝' }}</button>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
+    <!-- 留言详情弹窗 -->
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
+    <div v-if="contentVisible" class="mobile-dialog-overlay" @click.self="closeContent">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:400px;max-height:82vh;">
+        <div class="mobile-dialog-title">留言详情</div>
+        <div class="detail-scroll" v-if="contentTarget">
+          <div class="detail-user-row">
+            <strong class="detail-user-name">{{ contentTarget.nickname || '匿名用户' }}</strong>
+            <span v-if="contentTarget.platform && platformLabel(contentTarget.platform)" class="platform-badge" :class="`platform-${contentTarget.platform}`">{{ platformLabel(contentTarget.platform) }}</span>
+            <span v-if="contentTarget.category === 'appeal'" class="type-badge type-appeal">封禁申诉</span>
+            <span v-else-if="contentTarget.feedback_type === 'beta'" class="type-badge type-beta">内测申请</span>
+            <span v-else-if="contentTarget.feedback_type" class="type-badge" :class="contentTarget.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
+              {{ contentTarget.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
+            </span>
+            <span class="status-badge" :class="`badge-${contentTarget.status}`">{{ statusLabel(contentTarget.status) }}</span>
+            <span class="detail-time">{{ fmtTime(contentTarget.created_at) }}</span>
+          </div>
+          <div v-if="deviceInfoText(contentTarget)" class="device-info-row">
+            <svg v-if="deviceIcon(contentTarget) === 'mobile'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            <svg v-else-if="deviceIcon(contentTarget) === 'watch'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
+            <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span class="device-info-text">{{ deviceInfoText(contentTarget) }}</span>
+          </div>
+          <p class="detail-content">{{ contentTarget.content || '无内容' }}</p>
+          <div v-if="imagesOf(contentTarget).length > 0" class="detail-imgs">
+            <img
+              v-for="(img, i) in imagesOf(contentTarget)"
+              :key="i"
+              :src="img"
+              class="detail-img"
+              alt="反馈图片"
+              @click.stop="openViewer(imagesOf(contentTarget), i)"
+            />
+          </div>
+        </div>
+        <div class="mobile-dialog-actions">
+          <button class="mobile-dialog-btn cancel" @click="closeContent">关闭</button>
         </div>
       </div>
     </div>
@@ -815,6 +863,12 @@ async function confirmResolve() {
   } else { showToast(res.msg || '操作失败') }
 }
 
+// ===== 留言详情弹窗 =====
+const contentVisible = ref(false)
+const contentTarget = ref<any>(null)
+function openContent(f: any) { contentTarget.value = f; contentVisible.value = true }
+function closeContent() { contentVisible.value = false; contentTarget.value = null }
+
 // ===== 拒绝弹窗 =====
 const rejectVisible = ref(false)
 const rejectTarget = ref<any>(null)
@@ -935,6 +989,28 @@ const platformMap: Record<string, string> = {
 }
 function platformLabel(p: string): string {
   return platformMap[p] || ''
+}
+/** 拼装设备信息展示文本：厂商 · 型号 · 系统版本（架构/计算机名） */
+function deviceInfoText(f: any): string {
+  const brand = f.device_brand || ''
+  const model = f.device_model || ''
+  const os = f.os_version || ''
+  const arch = f.architecture || ''
+  const machine = f.machine_name || ''
+  if (!brand && !model && !os && !arch && !machine) return ''
+  const parts: string[] = []
+  const dev = `${brand && model && brand !== model ? brand + ' · ' : ''}${model}`
+  if (dev.trim()) parts.push(dev.trim())
+  if (os) parts.push(os)
+  if (arch) parts.push(arch)
+  if (machine) parts.push('主机 ' + machine)
+  return parts.join(' ｜ ')
+}
+/** 按平台返回设备图标类型：桌面显示器 / 手机 / 手表 */
+function deviceIcon(f: any): 'desktop' | 'mobile' | 'watch' {
+  if (f.platform === 'mobile') return 'mobile'
+  if (f.platform === 'watch') return 'watch'
+  return 'desktop'
 }
 function openCreate() {
   createType.value = ''; createPlatform.value = ''
@@ -1310,7 +1386,41 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   color: var(--text);
   margin: 0 0 6px 0;
 }
+.mfb-content-click { cursor: pointer; transition: color 0.15s ease; }
+.mfb-content-click:active { color: var(--accent); }
+/* 留言详情弹窗：与标题 20px 水平内边距对齐，内容不顶满 */
+.detail-scroll {
+  display: flex; flex-direction: column; gap: 12px;
+  overflow-y: auto; padding: 14px 20px 8px;
+}
+.detail-user-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.detail-user-name { font-size: 13px; }
+.detail-time { margin-left: auto; font-size: 10px; color: var(--text-muted); }
+.detail-content {
+  margin: 0; font-size: 14px; line-height: 1.8;
+  white-space: pre-wrap; word-break: break-word; color: var(--text);
+}
+.detail-imgs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.detail-img {
+  width: 100%; aspect-ratio: 1; object-fit: cover;
+  border-radius: 8px; cursor: zoom-in;
+}
 .detail-more { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.device-info-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-light);
+}
+.device-info-row svg { flex-shrink: 0; }
+.device-info-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .log-summary { display: flex; gap: 6px; flex-wrap: wrap; }
 .log-chip {
   font-size: 10px; font-weight: 800;
