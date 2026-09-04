@@ -143,6 +143,19 @@ fn safe_file_ext(file_name: &str) -> String {
     if ext.is_empty() { "bin".to_string() } else { ext }
 }
 
+/// 提取上传文件名的安全主干（去路径、去扩展名），仅保留 ASCII 字母数字与 `. _ -`。
+/// 全部被净化为空时返回空串，由调用方回退到生成的文件名。
+fn safe_file_stem(file_name: &str) -> String {
+    let base = file_name.rsplit(|c| c == '/' || c == '\\').next().unwrap_or("");
+    let stem = base.rsplit_once('.').map(|(s, _)| s).unwrap_or(base);
+    let s: String = stem
+        .chars()
+        .take(80)
+        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    s.trim_matches(|c| c == '.' || c == '_' || c == '-').to_string()
+}
+
 /// 修改版本信息（不重新上传安装包）
 pub async fn update_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
@@ -290,6 +303,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if version.is_empty() {
         return err(400, "版本号不能为空");
     }
+    let mut list = read_desktop_versions();
     if !file_data.is_empty() {
         let file_bytes = match base64::engine::general_purpose::STANDARD.decode(&file_data) {
             Ok(b) => b,
@@ -304,7 +318,34 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         }
         let ext = safe_file_ext(&file_name);
         let ts = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
-        let new_filename = format!("{}_v{}_{}.{}", platform, safe_version_part(&version), ts, ext);
+        // 保留上传文件的原名（净化后），避免官网下载出现 platform_v版本_时间戳 这类不可读文件名。
+        // 同版本重复保存沿用已存文件名覆盖写入，保持下载地址稳定不失效；
+        // 仅当原名不可用或与其他版本的包重名时才回退到旧的时间戳命名。
+        let existing_pkg_name = list
+            .iter()
+            .find(|item| {
+                item_platform(item) == platform
+                    && item_channel(item) == channel
+                    && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
+            })
+            .and_then(|item| item.get("downloadUrl").and_then(|v| v.as_str()))
+            .and_then(|url| url.strip_prefix("/uploads/packages/"))
+            .filter(|name| !name.is_empty() && !name.contains('/') && !name.contains('\\'))
+            .map(|name| name.to_string());
+        let stem = safe_file_stem(&file_name);
+        let new_filename = if let Some(name) = existing_pkg_name {
+            name
+        } else if !stem.is_empty() {
+            let candidate = format!("{}.{}", stem, ext);
+            if upload_dir.join(&candidate).exists() {
+                // 同名文件已被其他版本的安装包占用，追加时间戳保护旧包不被覆盖
+                format!("{}_{}.{}", stem, ts, ext)
+            } else {
+                candidate
+            }
+        } else {
+            format!("{}_v{}_{}.{}", platform, safe_version_part(&version), ts, ext)
+        };
         let target_path = upload_dir.join(&new_filename);
         if std::fs::write(&target_path, &file_bytes).is_err() {
             return err(500, "安装包保存失败，请检查目录权限");
@@ -314,7 +355,6 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if enabled && download_url.is_empty() {
         return err(400, "启用更新时，请填写下载链接或上传安装包");
     }
-    let mut list = read_desktop_versions();
     // 新增版本号必须大于该平台同渠道已列出的最高版本，防止版本号回退
     // （正式版与测试版互不干扰：1.2.0-beta-1 允许与 1.2.0 正式版并存）
     let is_new = !list.iter().any(|item| {
