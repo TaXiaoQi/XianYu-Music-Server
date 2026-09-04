@@ -300,6 +300,12 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     let enabled = int_of(&data, "enabled") != 0;
     let file_data = str_of(&data, "file_data").trim().to_string();
     let file_name = str_of(&data, "file_name").trim().to_string();
+    // 商店分发（可选）：仅桌面端支持微软商店页链接，官网下载页据此展示「从微软商店获取」入口；
+    // 应用内更新链路（downloadUrl）不受影响——商店版 MSI 禁用自更新，更新由微软商店负责。
+    let mut store_url = str_of(&data, "store_url").trim().to_string();
+    if !store_url.is_empty() && !store_url.starts_with("https://") {
+        return err(400, "商店页链接必须以 https:// 开头");
+    }
     if version.is_empty() {
         return err(400, "版本号不能为空");
     }
@@ -393,6 +399,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         "downloadUrl": download_url,
         "updateContent": update_content,
         "enabled": enabled,
+        "storeUrl": store_url,
         "updated_at": now,
     });
     let mut replaced = false;

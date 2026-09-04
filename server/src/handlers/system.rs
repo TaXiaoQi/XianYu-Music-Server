@@ -401,6 +401,12 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         let version = item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        // 商店页链接（可选）：桌面端配置微软商店后，官网下载页展示「从微软商店获取」次要入口
+        let store_url = item
+            .get("storeUrl")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         return ctx.ok(
             "ok",
             json!({
@@ -409,6 +415,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 "version": version,
                 "content": content,
                 "download_url": url,
+                "store_url": store_url,
             }),
         );
     }
@@ -431,6 +438,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                     "version": version,
                     "content": "",
                     "download_url": url,
+                    "store_url": "",
                 }),
             )
         }

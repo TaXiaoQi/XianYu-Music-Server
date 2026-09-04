@@ -191,6 +191,23 @@
               </button>
             </div>
             <div class="field">
+              <label>商店分发</label>
+              <button v-if="desktopDraftPlatform === 'desktop'" type="button" class="channel-card" @click="openStoreModal">
+                <div>
+                  <strong>{{ storeCardLabel }}</strong>
+                  <p>{{ storeCardDesc }}</p>
+                </div>
+                <span>设置</span>
+              </button>
+              <button v-else type="button" class="channel-card channel-card-locked" disabled>
+                <div>
+                  <strong>预留</strong>
+                  <p>该平台商店渠道暂未开放</p>
+                </div>
+              </button>
+              <p class="field-hint">可选。配置后官网下载页会展示「从微软商店获取」入口，应用内更新不受影响。</p>
+            </div>
+            <div class="field">
               <label>更新内容</label>
               <textarea v-model="desktopDraft.updateContent" rows="18" placeholder="本次更新内容"></textarea>
             </div>
@@ -256,6 +273,41 @@
           <div class="modal-foot">
             <button class="btn-cancel" @click="closeDesktopChannelModal">取消</button>
             <button class="btn-save" @click="confirmDesktopChannel">确定</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 商店分发设置弹窗 -->
+    <Transition name="modal">
+      <div v-if="storeModalVisible" class="modal-backdrop">
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>商店分发设置</h3>
+            <button class="modal-close" @click="storeModalVisible = false">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-form">
+            <div class="channel-options">
+              <button type="button" class="channel-option" :class="{ active: !storeDraftEnabled }" @click="storeDraftEnabled = false">
+                <strong>不设置</strong>
+                <span>官网下载页不展示商店入口。</span>
+              </button>
+              <button type="button" class="channel-option" :class="{ active: storeDraftEnabled }" @click="storeDraftEnabled = true">
+                <strong>微软商店</strong>
+                <span>展示「从微软商店获取」入口，跳转商店详情页。</span>
+              </button>
+            </div>
+            <div v-if="storeDraftEnabled" class="field">
+              <label class="required">商店页链接</label>
+              <input v-model="storeDraftUrl" type="text" placeholder="https://apps.microsoft.com/detail/XXXXXXXX" />
+            </div>
+            <p class="field-hint">商店页链接在微软商店认证通过后从 Partner Center 获取（apps.microsoft.com 开头）。商店版安装包的更新由微软商店负责，应用内更新链路不受影响。</p>
+          </div>
+          <div class="modal-foot">
+            <button class="btn-cancel" @click="storeModalVisible = false">取消</button>
+            <button class="btn-save" @click="confirmStore">确定</button>
           </div>
         </div>
       </div>
@@ -362,7 +414,7 @@ async function loadDesktop() {
 
 // 版本配置弹窗
 const desktopModalVisible = ref(false)
-const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string }>({ version: '', updateContent: '', downloadUrl: '' })
+const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string; storeUrl: string }>({ version: '', updateContent: '', downloadUrl: '', storeUrl: '' })
 const desktopDraftEnabled = ref(false)
 const desktopDraftPlatform = ref<PlatformKey>('desktop')
 const desktopDraftChannel = ref<'stable' | 'beta'>('stable')
@@ -378,6 +430,23 @@ const desktopPackageFile = ref<File | null>(null)
 const desktopPackageFileDraft = ref<File | null>(null)
 const desktopPackageDraft = ref({ fileName: '', fileSize: 0, fileBase64: '' })
 const desktopPackageDragging = ref(false)
+
+// 商店分发设置弹窗
+const storeModalVisible = ref(false)
+const storeDraftEnabled = ref(false)
+const storeDraftUrl = ref('')
+
+const storeCardLabel = computed(() => {
+  if (storeModalVisible.value) return storeDraftEnabled.value ? '微软商店' : '未设置'
+  return desktopDraft.value.storeUrl ? '微软商店' : '未设置'
+})
+
+const storeCardDesc = computed(() => {
+  if (!storeCardLabel.value.startsWith('微软商店')) {
+    return desktopDraftPlatform.value === 'desktop' ? '点击设置商店分发渠道' : ''
+  }
+  return desktopDraft.value.storeUrl
+})
 
 const desktopChannelLabel = computed(() => {
   if (desktopPackageFile.value?.name) return '上传安装包'
@@ -415,6 +484,7 @@ function openDesktopModal(item?: any) {
       version: isBeta ? version.slice(0, betaIdx) : version,
       updateContent: item.updateContent || '',
       downloadUrl: item.downloadUrl || '',
+      storeUrl: item.storeUrl || '',
     }
     desktopDraftBetaNum.value = isBeta ? version.slice(betaIdx + '-beta-'.length) : ''
     desktopDraftEnabled.value = !!item.enabled
@@ -423,7 +493,7 @@ function openDesktopModal(item?: any) {
     desktopEditingChannel.value = 'stable'
     desktopDraftPlatform.value = platformFilter.value
     desktopDraftChannel.value = 'stable'
-    desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+    desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
     desktopDraftBetaNum.value = ''
     desktopDraftEnabled.value = false
   }
@@ -437,6 +507,27 @@ function openDesktopModal(item?: any) {
 function closeDesktopModal() {
   if (desktopSaving.value) return
   desktopModalVisible.value = false
+}
+
+function openStoreModal() {
+  const current = desktopDraft.value.storeUrl
+  storeDraftEnabled.value = !!current
+  storeDraftUrl.value = current
+  storeModalVisible.value = true
+}
+
+function confirmStore() {
+  const url = storeDraftUrl.value.trim()
+  if (storeDraftEnabled.value && !url) {
+    showToast('请填写商店页链接')
+    return
+  }
+  if (storeDraftEnabled.value && !url.startsWith('https://')) {
+    showToast('商店页链接必须以 https:// 开头')
+    return
+  }
+  desktopDraft.value.storeUrl = storeDraftEnabled.value ? url : ''
+  storeModalVisible.value = false
 }
 
 async function saveDesktop() {
@@ -469,6 +560,7 @@ async function saveDesktop() {
     download_url: desktopDraft.value.downloadUrl?.trim() || '',
     update_content: desktopDraft.value.updateContent.trim(),
     enabled: desktopDraftEnabled.value ? 1 : 0,
+    store_url: desktopDraft.value.storeUrl,
     file_name: desktopPackageFile.value?.name || '',
     file_data: fileData,
   })
@@ -484,7 +576,7 @@ async function saveDesktop() {
       showToast('保存成功，可继续新增版本', 'success')
       desktopEditingVersion.value = ''
       desktopEditingChannel.value = desktopDraftChannel.value
-      desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+      desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
       desktopDraftBetaNum.value = ''
       desktopDraftEnabled.value = false
       desktopPackageFile.value = null
@@ -506,6 +598,7 @@ async function toggleDesktop(e: Event, item: any) {
     download_url: item.downloadUrl || '',
     update_content: item.updateContent || '',
     enabled: enabled ? 1 : 0,
+    store_url: item.storeUrl || '',
     file_name: '',
     file_data: '',
   })
@@ -1022,6 +1115,8 @@ onMounted(() => {
 .badge-mobile { background: rgba(16, 185, 129, 0.12); color: #10b981; }
 .badge-watch { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 .badge-beta { background: rgba(245, 158, 11, 0.14); color: #d97706; }
+.badge-store { background: rgba(0, 122, 204, 0.14); color: #0078d4; }
+.channel-card-locked { opacity: 0.55; cursor: not-allowed; }
 .card-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .badge-normal { background: rgba(34, 197, 94, 0.14); color: #10b981; }
 .badge-update { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
