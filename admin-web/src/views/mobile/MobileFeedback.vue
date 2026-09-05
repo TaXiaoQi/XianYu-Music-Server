@@ -154,11 +154,17 @@
         <!-- 主体 -->
         <div class="mfb-main">
           <div class="mfb-left">
-            <p class="mfb-content mfb-content-main">{{ f.content || '无内容' }}</p>
+            <p class="mfb-content mfb-content-main fb-content-click" @click.stop="openContentDetail(f)">{{ f.content || '无内容' }}</p>
             <div class="detail-more">
               <div v-if="hasErrorLogs(f) || hasAllLogs(f)" class="log-summary">
                 <span v-if="hasErrorLogs(f)" class="log-chip">错误日志 {{ formatLogSize(f.error_logs_chars) }}</span>
                 <span v-if="hasAllLogs(f)" class="log-chip">全量日志 {{ formatLogSize(f.all_logs_chars) }}</span>
+              </div>
+              <div v-if="deviceInfoText(f)" class="device-info-row">
+                <svg v-if="deviceIcon(f) === 'mobile'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                <svg v-else-if="deviceIcon(f) === 'watch'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span class="device-info-text">{{ deviceInfoText(f) }}</span>
               </div>
               <div v-if="f.assignee" class="assignee-row">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -171,6 +177,10 @@
               <div v-if="f.status === 'resolved' && f.resolve_note" class="resolve-note">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                 <div class="resolve-text"><span class="resolve-label">完成说明</span><span>{{ f.resolve_note }}</span></div>
+              </div>
+              <div v-if="f.status === 'resolved' && resolveImagesOf(f).length > 0" class="resolve-imgs" @click.stop="openViewer(resolveImagesOf(f), 0)">
+                <img v-for="(img, i) in resolveImagesOf(f)" :key="i" :src="img" class="resolve-thumb" alt="完成图片" />
+                <span v-if="resolveImagesOf(f).length > 1" class="resolve-count-badge">{{ resolveImagesOf(f).length }}</span>
               </div>
               <div v-if="f.status === 'rejected' && f.reject_reason" class="resolve-note reject-note">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
@@ -465,6 +475,48 @@
       <div v-if="viewerList.length > 1" class="mfb-viewer-counter">{{ viewerIndex + 1 }} / {{ viewerList.length }}</div>
     </div>
     </Transition>
+
+    <!-- 留言详情弹窗 -->
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
+    <div v-if="contentDetailVisible" class="mobile-dialog-overlay" @click.self="closeContentDetail">
+      <div class="mobile-dialog mfb-detail-dialog" style="display:flex;flex-direction:column;max-width:400px;max-height:86vh;">
+        <div class="mobile-dialog-title">留言详情</div>
+        <div v-if="contentDetailItem" class="mfb-detail-body">
+          <div class="mfb-detail-user">
+            <strong class="mfb-detail-name">{{ contentDetailItem.nickname || '匿名用户' }}</strong>
+            <span v-if="contentDetailItem.platform && platformLabel(contentDetailItem.platform)" class="platform-badge" :class="`platform-${contentDetailItem.platform}`">{{ platformLabel(contentDetailItem.platform) }}</span>
+            <span v-if="contentDetailItem.app_version" class="platform-badge version-badge">{{ contentDetailItem.app_version }}</span>
+            <span v-if="contentDetailItem.category === 'appeal'" class="type-badge type-appeal">封禁申诉</span>
+            <span v-else-if="contentDetailItem.feedback_type" class="type-badge" :class="contentDetailItem.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
+              {{ contentDetailItem.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
+            </span>
+            <span class="status-badge" :class="`badge-${contentDetailItem.status}`">{{ statusLabel(contentDetailItem.status) }}</span>
+            <span class="mfb-detail-time">{{ fmtTime(contentDetailItem.created_at) }}</span>
+          </div>
+          <div v-if="deviceInfoText(contentDetailItem)" class="device-info-row">
+            <svg v-if="deviceIcon(contentDetailItem) === 'mobile'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+            <svg v-else-if="deviceIcon(contentDetailItem) === 'watch'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
+            <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <span class="device-info-text">{{ deviceInfoText(contentDetailItem) }}</span>
+          </div>
+          <p class="mfb-detail-content">{{ contentDetailItem.content || '无内容' }}</p>
+          <div v-if="imagesOf(contentDetailItem).length > 0" class="mfb-detail-imgs">
+            <img
+              v-for="(img, i) in imagesOf(contentDetailItem)"
+              :key="i"
+              :src="img"
+              class="mfb-detail-img"
+              alt="反馈图片"
+              @click.stop="openViewer(imagesOf(contentDetailItem), i)"
+            />
+          </div>
+        </div>
+        <div class="mobile-dialog-actions">
+          <button class="mobile-dialog-btn cancel" @click="closeContentDetail">关闭</button>
+        </div>
+      </div>
+    </div>
+    </Transition>
   </div>
 </template>
 
@@ -605,6 +657,34 @@ function stackThumbStyle(i: number, total: number): Record<string, string> {
   if (total <= 1) return {}
   const offset = Math.min(i, 3) * 5
   return { left: `${offset}px`, top: `${offset}px`, zIndex: String(total - i) }
+}
+function resolveImagesOf(f: any): string[] {
+  if (!f.resolve_images) return []
+  try {
+    const arr = JSON.parse(f.resolve_images)
+    return Array.isArray(arr) ? arr.filter((u: string) => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))).map(normalizeImgUrl) : []
+  } catch { return [] }
+}
+function deviceIcon(f: any): 'desktop' | 'mobile' | 'watch' {
+  if (f.platform === 'mobile') return 'mobile'
+  if (f.platform === 'watch') return 'watch'
+  return 'desktop'
+}
+/** 拼装设备信息展示文本：厂商 · 型号 · 系统版本（架构/计算机名） */
+function deviceInfoText(f: any): string {
+  const brand = f.device_brand || ''
+  const model = f.device_model || ''
+  const os = f.os_version || ''
+  const arch = f.architecture || ''
+  const machine = f.machine_name || ''
+  if (!brand && !model && !os && !arch && !machine) return ''
+  const parts: string[] = []
+  const dev = `${brand && model && brand !== model ? brand + ' · ' : ''}${model}`
+  if (dev.trim()) parts.push(dev.trim())
+  if (os) parts.push(os)
+  if (arch) parts.push(arch)
+  if (machine) parts.push('主机 ' + machine)
+  return parts.join(' ｜ ')
 }
 
 // ===== 日志 =====
@@ -1003,6 +1083,12 @@ const viewerIndex = ref(0)
 function openViewer(imgs: string[], i: number) { viewerList.value = imgs; viewerIndex.value = i; viewerVisible.value = true }
 function viewerPrev() { viewerIndex.value = (viewerIndex.value - 1 + viewerList.value.length) % viewerList.value.length }
 function viewerNext() { viewerIndex.value = (viewerIndex.value + 1) % viewerList.value.length }
+
+// ===== 留言详情弹窗 =====
+const contentDetailVisible = ref(false)
+const contentDetailItem = ref<any>(null)
+function openContentDetail(f: any) { contentDetailItem.value = f; contentDetailVisible.value = true }
+function closeContentDetail() { contentDetailVisible.value = false; contentDetailItem.value = null }
 
 onMounted(() => { loadLimit(); loadList(); alertPollTimer = setInterval(pollFeedbackAlerts, 8000) })
 onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPollTimer = null } })
@@ -1523,5 +1609,50 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
   padding: 5px 14px; border-radius: 999px;
   background: rgba(255, 255, 255, 0.16); color: #fff; font-size: 13px; font-weight: 800;
+}
+
+/* 留言详情弹窗 */
+.fb-content-click { cursor: pointer; }
+.fb-content-click:hover { opacity: 0.85; }
+.device-info-row { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); }
+.device-info-text { word-break: break-word; }
+.resolve-imgs {
+  position: relative; display: inline-flex; margin-top: 2px;
+  cursor: zoom-in;
+}
+.resolve-thumb {
+  width: 76px; height: 76px; object-fit: cover;
+  border-radius: 10px; border: 1px solid var(--border);
+  background: var(--control-bg);
+}
+.resolve-count-badge {
+  position: absolute; top: 5px; right: 5px;
+  min-width: 20px; height: 20px; padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6); color: #fff;
+  font-size: 11px; font-weight: 850;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 20;
+}
+.mfb-detail-dialog { overflow: hidden; }
+.mfb-detail-body {
+  padding: 10px 20px 14px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.mfb-detail-user { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mfb-detail-name {
+  font-size: 14px; font-weight: 850; color: var(--text);
+  margin-right: 2px;
+}
+.mfb-detail-time { font-size: 10px; color: var(--text-light); margin-left: auto; }
+.mfb-detail-content {
+  margin: 0; font-size: 13px; line-height: 1.7;
+  color: var(--text); word-break: break-word; white-space: pre-wrap;
+}
+.mfb-detail-imgs { display: flex; flex-wrap: wrap; gap: 8px; }
+.mfb-detail-img {
+  width: 84px; height: 84px; object-fit: cover;
+  border-radius: 10px; border: 1px solid var(--border);
+  cursor: zoom-in; background: var(--control-bg);
 }
 </style>
