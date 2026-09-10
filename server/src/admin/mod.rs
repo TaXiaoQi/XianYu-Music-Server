@@ -246,6 +246,7 @@ fn is_read_action(action: &str) -> bool {
             | "list_versions"
             | "get_desktop_version"
             | "list_beta_testers"
+            | "get_beta_tester_detail"
             | "list_wallpapers"
             | "get_wallpaper_upload_limit"
             | "list_wallpaper_account_limits"
@@ -442,8 +443,10 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "save_desktop_version" => version::save_desktop_version(body, &ctx, pool).await,
         "delete_desktop_version" => version::delete_desktop_version(body, &ctx, pool).await,
         "list_beta_testers" => version::list_beta_testers(body, &ctx, pool).await,
+        "get_beta_tester_detail" => version::get_beta_tester_detail(body, &ctx, pool).await,
         "add_beta_tester" => version::add_beta_tester(body, &ctx, pool).await,
         "delete_beta_tester" => version::delete_beta_tester(body, &ctx, pool).await,
+        "update_beta_tester_note" => version::update_beta_tester_note(body, &ctx, pool).await,
         "add_wallpaper" => wallpaper::add_wallpaper(body, &ctx, pool).await,
         "list_wallpapers" => wallpaper::list_wallpapers(body, &ctx, pool).await,
         "delete_wallpaper" => wallpaper::delete_wallpaper(body, &ctx, pool).await,

@@ -253,6 +253,8 @@ pub async fn resolve_beta_application(body: &str, ctx: &AdminCtx, pool: &MySqlPo
     let data = parse_body(body);
     let id = int_of(&data, "id");
     let note = str_of(&data, "note").trim().to_string();
+    // 设备备注（可选）：写入内测名单 note，便于管理员区分设备（名单里只有硬件ID分不清谁是谁）
+    let device_note = str_of(&data, "device_note").trim().to_string();
     if id <= 0 {
         return err(400, "参数错误");
     }
@@ -261,6 +263,9 @@ pub async fn resolve_beta_application(body: &str, ctx: &AdminCtx, pool: &MySqlPo
     }
     if note.chars().count() > 1000 {
         return err(400, "回执内容不能超过 1000 字");
+    }
+    if device_note.chars().count() > 255 {
+        return err(400, "设备备注不能超过 255 字");
     }
     let cur = sqlx::query_as::<_, (String, String, String)>(
         "SELECT status, COALESCE(feedback_type, ''), COALESCE(device_id, '') FROM user_feedback WHERE id = ?",
@@ -290,13 +295,18 @@ pub async fn resolve_beta_application(body: &str, ctx: &AdminCtx, pool: &MySqlPo
     .await;
     match upd {
         Ok(r) if r.rows_affected() > 0 => {
-            // 同意即自动把申请设备加入内测名单（重复设备由唯一键忽略）
+            // 同意即自动把申请设备加入内测名单（重复设备由唯一键忽略，已有备注不覆盖）
             let device_added = if device_id.is_empty() {
                 false
             } else {
+                let final_note = if device_note.is_empty() {
+                    format!("内测申请自动加入（反馈#{})", id)
+                } else {
+                    device_note.clone()
+                };
                 sqlx::query("INSERT IGNORE INTO beta_testers (device_id, note) VALUES (?, ?)")
                     .bind(&device_id)
-                    .bind(format!("内测申请自动加入（反馈#{})", id))
+                    .bind(final_note)
                     .execute(pool)
                     .await
                     .map(|r| r.rows_affected() > 0)
@@ -307,7 +317,13 @@ pub async fn resolve_beta_application(body: &str, ctx: &AdminCtx, pool: &MySqlPo
                 ctx,
                 "同意内测申请",
                 &format!("id={}", id),
-                &format!("设备={} 加入名单={} 操作人={}", device_id, device_added, ctx.username),
+                &format!(
+                    "设备={} 备注={} 加入名单={} 操作人={}",
+                    device_id,
+                    if device_note.is_empty() { "-" } else { &device_note },
+                    device_added,
+                    ctx.username
+                ),
             )
             .await;
             ok("已同意该内测申请", json!({ "id": id, "device_added": device_added }))

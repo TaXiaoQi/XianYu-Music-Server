@@ -361,6 +361,13 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if enabled && download_url.is_empty() {
         return err(400, "启用更新时，请填写下载链接或上传安装包");
     }
+    // 下载渠道误填商店页链接的防护：商店商品页是网页而非安装包直链，
+    // 应用内更新会把它当安装包地址下载，导致更新损坏。
+    // 商店页链接应配置到「商店分发」store_url 字段（详见 README「版本管理与商店分发」）。
+    let lower_url = download_url.to_lowercase();
+    if lower_url.contains("apps.microsoft.com") || lower_url.contains("ms-windows-store") {
+        return err(400, "下载渠道不能填微软商店页链接：请填安装包直链，商店页链接请配置到「商店分发」");
+    }
     // 新增版本号必须大于该平台同渠道已列出的最高版本，防止版本号回退
     // （正式版与测试版互不干扰：1.2.0-beta-1 允许与 1.2.0 正式版并存）
     let is_new = !list.iter().any(|item| {
@@ -532,4 +539,144 @@ pub async fn delete_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
         Ok(_) => err(404, "设备不在内测名单中"),
         Err(_) => err(500, "数据库错误"),
     }
+}
+
+/// 设置内测设备备注（名单里有备注的设备以备注展示，替代纯硬件ID便于辨识）
+pub async fn update_beta_tester_note(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    let note = str_of(&data, "note").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+    if note.chars().count() > 255 {
+        return err(400, "备注不能超过 255 字");
+    }
+    match sqlx::query("UPDATE beta_testers SET note = ? WHERE device_id = ?")
+        .bind(&note)
+        .bind(&device_id)
+        .execute(pool)
+        .await
+    {
+        Ok(r) if r.rows_affected() > 0 => {
+            log_operation(pool, ctx, "设置内测设备备注", &device_id, &note).await;
+            ok("已更新设备备注", json!({ "device_id": device_id, "note": note }))
+        }
+        Ok(_) => err(404, "设备不在内测名单中"),
+        Err(_) => err(500, "数据库错误"),
+    }
+}
+
+/// 内测设备详情：名单信息 + 最近上报的设备信息（厂商/型号/系统版本）+ 关联帐号。
+/// 设备信息优先取反馈表（字段最全），缺失时回退启动日志；关联帐号取启动日志去重 +
+/// 反馈提交账号合并，便于管理员识别硬件ID对应的真实用户。
+pub async fn get_beta_tester_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let device_id = str_of(&data, "device_id").trim().to_string();
+    if device_id.is_empty() {
+        return err(400, "设备ID不能为空");
+    }
+
+    // 名单信息（备注、加入时间）
+    let tester = sqlx::query("SELECT id, device_id, note, created_at FROM beta_testers WHERE device_id = ? LIMIT 1")
+        .bind(&device_id)
+        .fetch_optional(pool)
+        .await;
+    let tester_row = match tester {
+        Ok(Some(r)) => r,
+        Ok(None) => return err(404, "设备不在内测名单中"),
+        Err(_) => return err(500, "数据库错误"),
+    };
+
+    // 最近一次携带设备信息的反馈（厂商/型号/系统版本/架构/计算机名 + 提交账号）
+    let fb = sqlx::query(
+        "SELECT f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, \
+                f.device_brand, f.device_model, f.os_version, f.architecture, f.machine_name, f.app_version \
+         FROM user_feedback f LEFT JOIN app_users u ON u.ciyuanxi_id = f.ciyuanxi_id \
+         WHERE f.device_id = ? ORDER BY f.id DESC LIMIT 1",
+    )
+    .bind(&device_id)
+    .fetch_optional(pool)
+    .await;
+
+    // 最近一次启动日志（型号/系统版本兜底）
+    let open = sqlx::query(
+        "SELECT os_version, device_model, device_name, app_version FROM app_open_log WHERE device_id = ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(&device_id)
+    .fetch_optional(pool)
+    .await;
+
+    let str_col = |r: &sqlx::mysql::MySqlRow, col: &str| -> String {
+        r.try_get::<Option<String>, _>(col).ok().flatten().unwrap_or_default()
+    };
+
+    let device = match &fb {
+        Ok(Some(r)) => json!({
+            "brand": str_col(r, "device_brand"),
+            "model": str_col(r, "device_model"),
+            "os_version": str_col(r, "os_version"),
+            "architecture": str_col(r, "architecture"),
+            "machine_name": str_col(r, "machine_name"),
+            "app_version": str_col(r, "app_version"),
+        }),
+        _ => json!({}),
+    };
+    let mut device = device;
+    if let Ok(Some(r)) = &open {
+        // 反馈表缺失的字段用启动日志兜底
+        for (key, col) in [("os_version", "os_version"), ("model", "device_model"), ("app_version", "app_version")] {
+            if device.get(key).and_then(|v| v.as_str()).unwrap_or("").is_empty() {
+                let v = str_col(r, col);
+                if !v.is_empty() {
+                    device[key] = Value::String(v);
+                }
+            }
+        }
+    }
+
+    // 关联帐号：启动日志去重（按最近活跃排序）+ 反馈提交账号
+    let mut accounts: Vec<Value> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    if let Ok(rows) = sqlx::query(
+        "SELECT o.ciyuanxi_id, COALESCE(u.nickname, '') AS nickname \
+         FROM app_open_log o LEFT JOIN app_users u ON u.ciyuanxi_id = o.ciyuanxi_id \
+         WHERE o.device_id = ? AND o.ciyuanxi_id != '' ORDER BY o.id DESC LIMIT 100",
+    )
+    .bind(&device_id)
+    .fetch_all(pool)
+    .await
+    {
+        for r in rows {
+            let cid = str_col(&r, "ciyuanxi_id");
+            if cid.is_empty() || seen.contains(&cid) {
+                continue;
+            }
+            seen.push(cid.clone());
+            accounts.push(json!({
+                "ciyuanxi_id": cid,
+                "nickname": str_col(&r, "nickname"),
+                "source": "启动记录",
+            }));
+            if accounts.len() >= 10 {
+                break;
+            }
+        }
+    }
+    if let Ok(Some(r)) = &fb {
+        let cid = str_col(r, "ciyuanxi_id");
+        if !cid.is_empty() && !seen.contains(&cid) {
+            accounts.insert(0, json!({
+                "ciyuanxi_id": cid,
+                "nickname": str_col(r, "nickname"),
+                "source": "反馈提交",
+            }));
+        }
+    }
+
+    ok("ok", json!({
+        "tester": row_to_value(&tester_row),
+        "device": device,
+        "accounts": accounts,
+    }))
 }

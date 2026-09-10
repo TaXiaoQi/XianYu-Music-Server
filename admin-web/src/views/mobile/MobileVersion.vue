@@ -241,7 +241,7 @@
             </button>
           </div>
           <div class="modal-body">
-            <p class="field-hint">名单内的设备ID可收到「测试版」渠道的更新下发；正式版与官网下载对所有用户不变。设备ID可在设备管理或反馈详情中查询。</p>
+            <p class="field-hint">名单内的设备ID可收到「测试版」渠道的更新下发；正式版与官网下载对所有用户不变。点击设备可查看关联帐号与设备信息。</p>
             <div class="beta-add-row">
               <input v-model="betaDeviceIdDraft" type="text" placeholder="输入设备ID" />
               <input v-model="betaNoteDraft" type="text" placeholder="备注（可选）" class="beta-note-input" />
@@ -250,19 +250,97 @@
             <div v-if="betaLoading" class="ver-empty">加载中...</div>
             <div v-else-if="betaList.length === 0" class="ver-desktop-empty"><p>暂无内测设备</p></div>
             <div v-else class="beta-list">
-              <div v-for="t in betaList" :key="t.id" class="beta-item">
+              <div v-for="t in betaList" :key="t.id" class="beta-item clickable" @click="openBetaDetail(t)">
                 <div class="beta-item-main">
-                  <span class="beta-device-id">{{ t.device_id }}</span>
-                  <span v-if="t.note" class="beta-item-note">{{ t.note }}</span>
+                  <template v-if="t.note">
+                    <span class="beta-item-note" :title="t.note">{{ t.note }}</span>
+                    <span class="beta-device-id beta-device-id-sub" :title="t.device_id">{{ t.device_id }}</span>
+                  </template>
+                  <span v-else class="beta-device-id" :title="t.device_id">{{ t.device_id }}</span>
                 </div>
-                <button class="ver-icon-btn ver-icon-danger" title="移除" @click="removeBetaTester(t)">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                </button>
+                <div class="beta-item-actions">
+                  <button class="ver-icon-btn" title="查看详情" @click.stop="openBetaDetail(t)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  </button>
+                  <button class="ver-icon-btn ver-icon-danger" title="移除" @click.stop="removeBetaTester(t)">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
           <div class="modal-foot">
             <button class="modal-btn cancel" @click="betaModalVisible = false">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 内测设备详情弹窗（关联帐号 / 厂商 / 型号 / 系统版本） -->
+    <Transition name="modal" @before-leave="removeBackdropBlur">
+      <div v-if="betaDetailVisible" class="modal-backdrop beta-backdrop">
+        <div class="modal-dialog">
+          <div class="modal-head">
+            <h3>内测设备详情</h3>
+            <button class="modal-close" @click="closeBetaDetail">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+          </div>
+          <div class="modal-body beta-detail-body">
+            <div v-if="betaDetailLoading" class="ver-empty">加载中...</div>
+            <template v-else-if="betaDetail">
+              <div class="beta-detail-row full">
+                <span class="beta-detail-label">设备ID</span>
+                <code class="beta-detail-device-id">{{ betaDetail.tester?.device_id || '-' }}</code>
+              </div>
+              <div class="beta-detail-row full">
+                <span class="beta-detail-label">备注</span>
+                <div class="beta-note-edit">
+                  <input v-model="betaNoteEditDraft" type="text" maxlength="255" placeholder="给这台设备起个好认的备注名" @keyup.enter="saveBetaNote" />
+                  <button class="beta-note-save" :disabled="betaNoteSaving" @click="saveBetaNote">{{ betaNoteSaving ? '保存中' : '保存' }}</button>
+                </div>
+              </div>
+              <div class="beta-detail-row">
+                <span class="beta-detail-label">加入时间</span>
+                <span class="beta-detail-value">{{ betaDetail.tester?.created_at || '-' }}</span>
+              </div>
+
+              <div class="beta-detail-section">设备信息</div>
+              <template v-if="hasBetaDetailDevice">
+                <div class="beta-detail-row">
+                  <span class="beta-detail-label">厂商</span>
+                  <span class="beta-detail-value">{{ betaDetail.device?.brand || '-' }}</span>
+                </div>
+                <div class="beta-detail-row">
+                  <span class="beta-detail-label">型号</span>
+                  <span class="beta-detail-value">{{ betaDetail.device?.model || '-' }}</span>
+                </div>
+                <div class="beta-detail-row">
+                  <span class="beta-detail-label">系统版本</span>
+                  <span class="beta-detail-value">{{ formatOsVersion(betaDetail.device?.os_version) || '-' }}</span>
+                </div>
+                <div v-if="betaDetail.device?.app_version" class="beta-detail-row">
+                  <span class="beta-detail-label">应用版本</span>
+                  <span class="beta-detail-value">{{ betaDetail.device.app_version }}</span>
+                </div>
+              </template>
+              <p v-else class="beta-detail-empty">暂无该设备的上报数据（设备未反馈或未启动过）</p>
+
+              <div class="beta-detail-section">关联帐号</div>
+              <template v-if="betaDetail.accounts?.length">
+                <div v-for="(a, i) in betaDetail.accounts" :key="i" class="beta-detail-row">
+                  <span class="beta-detail-label">帐号{{ betaDetail.accounts.length > 1 ? i + 1 : '' }}</span>
+                  <span class="beta-detail-value">
+                    {{ a.nickname || '匿名用户' }}（{{ a.ciyuanxi_id }}）
+                    <em v-if="a.source" class="beta-detail-src">{{ a.source }}</em>
+                  </span>
+                </div>
+              </template>
+              <p v-else class="beta-detail-empty">未找到该设备关联的帐号</p>
+            </template>
+          </div>
+          <div class="modal-foot">
+            <button class="modal-btn cancel" @click="closeBetaDetail">关闭</button>
           </div>
         </div>
       </div>
@@ -277,6 +355,7 @@ import { adminApi, showToast } from '@/api/client'
 import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
 import { fmtDateTime } from '@/utils/time'
+import { formatOsVersion } from '@/utils/osVersion'
 
 type PlatformKey = 'desktop' | 'mobile' | 'watch'
 
@@ -581,6 +660,54 @@ async function removeBetaTester(t: any) {
   else showToast(res.msg || '移除失败')
 }
 
+// 内测设备详情（关联帐号 / 厂商 / 型号 / 系统版本）+ 备注编辑
+const betaDetailVisible = ref(false)
+const betaDetailLoading = ref(false)
+const betaDetail = ref<any>(null)
+const betaNoteEditDraft = ref('')
+const betaNoteSaving = ref(false)
+const hasBetaDetailDevice = computed(() => {
+  const d = betaDetail.value?.device || {}
+  return !!(d.brand || d.model || d.os_version || d.architecture || d.machine_name)
+})
+
+async function openBetaDetail(t: any) {
+  betaDetailVisible.value = true
+  betaDetail.value = null
+  betaDetailLoading.value = true
+  const res = await adminApi<any>('get_beta_tester_detail', { device_id: t.device_id })
+  betaDetailLoading.value = false
+  if (res.code === 200 && res.data) {
+    betaDetail.value = res.data
+    betaNoteEditDraft.value = res.data.tester?.note || ''
+  } else {
+    showToast(res.msg || '加载详情失败')
+    betaDetailVisible.value = false
+  }
+}
+
+async function saveBetaNote() {
+  const tester = betaDetail.value?.tester
+  if (!tester) return
+  const note = betaNoteEditDraft.value.trim()
+  betaNoteSaving.value = true
+  const res = await adminApi('update_beta_tester_note', { device_id: tester.device_id, note })
+  betaNoteSaving.value = false
+  if (res.code === 200) {
+    tester.note = note
+    showToast('已更新设备备注', 'success')
+    loadBeta()
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
+
+function closeBetaDetail() {
+  betaDetailVisible.value = false
+  betaDetail.value = null
+  betaNoteEditDraft.value = ''
+}
+
 onMounted(() => {
   loadDesktop()
 })
@@ -803,6 +930,45 @@ onMounted(() => {
   background: var(--border); padding: 2px 8px; border-radius: 999px;
   max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.beta-item-main .beta-item-note {
+  flex-shrink: 0; font-weight: 600; color: var(--text); font-size: 12px;
+  max-width: 150px; background: var(--track);
+}
+.beta-device-id-sub {
+  font-weight: 400; font-size: 10px; color: var(--text-muted); max-width: 90px;
+}
+.beta-note-edit { display: flex; gap: 8px; }
+.beta-note-edit input {
+  flex: 1; min-width: 0; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--control-bg); color: var(--text);
+  font-size: 13px; outline: none;
+}
+.beta-note-edit input:focus { border-color: var(--accent); }
+.beta-note-save {
+  padding: 0 16px; border: none; border-radius: 10px; background: #EC4141; color: #fff;
+  font-size: 13px; font-weight: 700; cursor: pointer; flex-shrink: 0;
+}
+.beta-note-save:disabled { opacity: 0.55; }
+.beta-item.clickable { cursor: pointer; }
+.beta-item.clickable:active { background: var(--border); }
+.beta-item-actions { display: flex; gap: 2px; flex-shrink: 0; }
+
+/* 内测设备详情弹窗 */
+.beta-detail-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.beta-detail-row { display: flex; gap: 12px; font-size: 13px; line-height: 1.6; }
+.beta-detail-row.full { flex-direction: column; gap: 4px; }
+.beta-detail-label { flex: 0 0 64px; color: var(--text-muted); }
+.beta-detail-value { color: var(--text); min-width: 0; word-break: break-all; }
+.beta-detail-device-id {
+  font-size: 12px; color: var(--text); background: var(--border);
+  padding: 3px 8px; border-radius: 6px; word-break: break-all;
+}
+.beta-detail-section {
+  font-size: 12px; font-weight: 700; color: var(--text-muted);
+  border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px;
+}
+.beta-detail-empty { font-size: 12px; color: var(--text-muted); }
+.beta-detail-src { font-style: normal; font-size: 11px; color: var(--text-muted); margin-left: 6px; }
 
 /* Toggle */
 .ver-toggle { position: relative; display: inline-block; width: 38px; height: 22px; cursor: pointer; flex-shrink: 0; }
