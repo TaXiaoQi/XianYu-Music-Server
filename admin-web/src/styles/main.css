@@ -394,7 +394,7 @@ tbody tr:hover { background: var(--table-row-hover); }
 
 /* ---------- Toast ---------- */
 .toast {
-    position: fixed; top: 20px; right: 20px; z-index: 9999;
+    position: fixed; top: 20px; right: 20px; z-index: 12000;
     padding: 12px 20px; border-radius: 14px; font-size: 13px; color: var(--white);
     transition: opacity 0.3s, transform 0.3s var(--motion);
     box-shadow: 0 16px 36px rgba(15,23,42,0.18);

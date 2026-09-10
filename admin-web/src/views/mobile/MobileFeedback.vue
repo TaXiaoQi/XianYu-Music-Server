@@ -310,6 +310,7 @@
         <div v-else class="beta-device-info beta-device-missing">
           <span>该申请未携带设备ID，同意后无法自动加入内测名单，请人工在版本管理中添加</span>
         </div>
+        <input v-model="betaApproveDeviceNote" class="mobile-dialog-input" type="text" maxlength="255" placeholder="设备备注（可选），便于区分设备（如：张三的小米15）" />
         <textarea v-model="betaApproveNote" class="mobile-dialog-input" rows="4" placeholder="请填写同意回执（必填）" style="min-height:90px;resize:vertical;"></textarea>
         <div class="mobile-dialog-actions">
           <button class="mobile-dialog-btn cancel" @click="closeBetaApprove">取消</button>
@@ -525,6 +526,7 @@ import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { adminApi, showToast, getAdminUser } from '@/api/client'
 import { mobileConfirm, mobileActionMenu, mobileInfo, removeBackdropBlur } from '@/utils/mobileDialog'
 import { fmtTime } from '@/utils/time'
+import { formatOsVersion } from '@/utils/osVersion'
 import './MobilePage.css'
 
 // 当前登录管理员用户名（用于判断反馈是否由本人认领）
@@ -681,7 +683,7 @@ function deviceInfoText(f: any): string {
   const parts: string[] = []
   const dev = `${brand && model && brand !== model ? brand + ' · ' : ''}${model}`
   if (dev.trim()) parts.push(dev.trim())
-  if (os) parts.push(os)
+  if (os) parts.push(formatOsVersion(os))
   if (arch) parts.push(arch)
   if (machine) parts.push('主机 ' + machine)
   return parts.join(' ｜ ')
@@ -924,13 +926,14 @@ function isBeta(f: any): boolean {
 const betaApproveVisible = ref(false)
 const betaApproveTarget = ref<any>(null)
 const betaApproveNote = ref('')
+const betaApproveDeviceNote = ref('')
 const betaApproveSaving = ref(false)
-function openBetaApprove(f: any) { betaApproveTarget.value = f; betaApproveNote.value = ''; betaApproveSaving.value = false; betaApproveVisible.value = true }
-function closeBetaApprove() { if (!betaApproveSaving.value) { betaApproveVisible.value = false; betaApproveTarget.value = null } }
+function openBetaApprove(f: any) { betaApproveTarget.value = f; betaApproveNote.value = ''; betaApproveDeviceNote.value = ''; betaApproveSaving.value = false; betaApproveVisible.value = true }
+function closeBetaApprove() { if (!betaApproveSaving.value) { betaApproveVisible.value = false; betaApproveTarget.value = null; betaApproveNote.value = ''; betaApproveDeviceNote.value = '' } }
 async function confirmBetaApprove() {
   if (!betaApproveTarget.value || !betaApproveNote.value.trim()) return
   betaApproveSaving.value = true
-  const res = await adminApi('resolve_beta_application', { id: betaApproveTarget.value.id, note: betaApproveNote.value.trim() })
+  const res = await adminApi('resolve_beta_application', { id: betaApproveTarget.value.id, note: betaApproveNote.value.trim(), device_note: betaApproveDeviceNote.value.trim() })
   betaApproveSaving.value = false
   if (res.code === 200) {
     betaApproveTarget.value.status = 'resolved'
@@ -1587,7 +1590,10 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .c-pending { color: #f59e0b; }
 
 /* 图片查看器 */
-.mfb-viewer { background: rgba(0, 0, 0, 0.9) !important; padding: 0; }
+/* z-index 11000：必须高于 .mobile-dialog-overlay（10000）——查看器常从留言详情弹窗内
+   打开，而两者复用同一 overlay 类且查看器在模板中位于详情弹窗之前，同层级时 DOM 靠后
+   的详情弹窗会盖住查看器，图片无法查看 */
+.mfb-viewer { z-index: 11000; background: rgba(0, 0, 0, 0.9) !important; padding: 0; }
 .mfb-viewer-img { max-width: 92vw; max-height: 88vh; object-fit: contain; border-radius: 8px; }
 .mfb-viewer-close {
   position: absolute; top: 18px; right: 18px;
