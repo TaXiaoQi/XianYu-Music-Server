@@ -127,12 +127,13 @@ fn has_prerelease(v: &str) -> bool {
     v.contains('-')
 }
 
-/// 提取预发布后缀中的数字：`1.0.1-beta7` → 7；`beta`（无数字）→ 0。
+/// 提取预发布后缀中的数字：`1.0.1-beta7` → 7；`1.0.1-beta.5` → 5（点分隔）；
+/// `1.0.1-beta-2` → 2；`beta`（无数字）→ 0。
 fn prerelease_number(v: &str) -> Option<i64> {
     let idx = v.find('-')?;
     let tail = &v[idx + 1..];
     tail.chars()
-        .skip_while(|c| c.is_ascii_alphabetic() || c.is_ascii_whitespace())
+        .skip_while(|c| !c.is_ascii_digit())
         .take_while(|c| c.is_ascii_digit())
         .collect::<String>()
         .parse()
@@ -190,4 +191,30 @@ pub fn random_int(min: i64, max: i64) -> i64 {
 /// 管理员账号已去除邮箱，统一返回 member
 pub async fn resolve_role_by_email(_pool: &MySqlPool, _email: &str) -> String {
     "member".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::compare_version_code as cmp;
+
+    #[test]
+    fn prerelease_dot_separated_numbers_are_ordered() {
+        // 回归：`beta.5` / `beta.6`（点分隔后缀）曾因数字提取失败被判相等
+        assert_eq!(cmp("2.0.1-beta.6", "2.0.1-beta.5"), 1);
+        assert_eq!(cmp("2.0.1-beta.5", "2.0.1-beta.6"), -1);
+    }
+
+    #[test]
+    fn prerelease_number_separated_variants_are_ordered() {
+        // 紧凑与横杠分隔的后缀同样按数字比较
+        assert_eq!(cmp("2.0.1-beta6", "2.0.1-beta5"), 1);
+        assert_eq!(cmp("2.0.1-beta-2", "2.0.1-beta-1"), 1);
+    }
+
+    #[test]
+    fn stable_beats_prerelease_and_newer_patch_wins() {
+        assert_eq!(cmp("2.0.1", "2.0.1-beta.9"), 1);
+        assert_eq!(cmp("2.0.2", "2.0.1"), 1);
+        assert_eq!(cmp("2.0.1-beta.5", "2.0.1-beta.5"), 0);
+    }
 }
