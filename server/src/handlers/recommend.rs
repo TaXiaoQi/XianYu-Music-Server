@@ -18,6 +18,8 @@ const TARGET_COUNT: i64 = 30;
 const PROFILE_WINDOW_DAYS: i32 = 90;
 /// 排除窗口（天）：近 N 天听过的歌曲不再推荐
 const EXCLUDE_WINDOW_DAYS: i32 = 14;
+/// 正反馈权重：收藏/添加到歌单记 1 次 ≈ 听 N 次（强偏好信号）
+const LIKE_WEIGHT: i64 = 5;
 
 struct AlgoCacheEntry {
     date: String,
@@ -48,6 +50,15 @@ fn cache_put(ciyuanxi_id: String, date: String, algo: Value) {
             guard.clear();
         }
         guard.insert(ciyuanxi_id, AlgoCacheEntry { date, algo, at: Instant::now() });
+    }
+}
+
+/// 负反馈上报后移除该用户当日算法缓存，使排除项变更即时生效
+fn cache_remove(ciyuanxi_id: &str) {
+    if let Some(cache) = ALGO_CACHE.get() {
+        if let Ok(mut guard) = cache.lock() {
+            guard.remove(ciyuanxi_id);
+        }
     }
 }
 
@@ -184,6 +195,62 @@ pub async fn get_daily_recommend(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         })
         .collect();
 
+    // ── 正反馈并入画像：收藏 / 添加到歌单 = 「喜欢这类歌」 ─────────
+    // 与播放历史同键聚合，按 LIKE_WEIGHT 加权后重排取前 15。
+    let like_artist_rows = sqlx::query(
+        "SELECT singer, COUNT(*) AS c FROM daily_like \
+         WHERE ciyuanxi_id = ? AND singer <> '' \
+         AND created_at >= (NOW() + INTERVAL 8 HOUR) - INTERVAL ? DAY \
+         GROUP BY singer",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(PROFILE_WINDOW_DAYS)
+    .fetch_all(pool)
+    .await;
+    let mut artist_scores: std::collections::HashMap<String, i64> = HashMap::new();
+    for (s, c) in &top_artists {
+        *artist_scores.entry(s.clone()).or_insert(0) += *c;
+    }
+    for r in like_artist_rows.unwrap_or_default() {
+        let singer: String = r.try_get("singer").unwrap_or_default();
+        let c: i64 = r.try_get::<i64, _>("c").unwrap_or(0);
+        if !singer.is_empty() {
+            *artist_scores.entry(singer).or_insert(0) += c * LIKE_WEIGHT;
+        }
+    }
+    let mut top_artists: Vec<(String, i64)> = artist_scores.into_iter().collect();
+    top_artists.sort_by(|a, b| b.1.cmp(&a.1));
+    top_artists.truncate(15);
+
+    let like_song_rows = sqlx::query(
+        "SELECT song_name, singer, COUNT(*) AS c FROM daily_like \
+         WHERE ciyuanxi_id = ? AND song_name <> '' \
+         AND created_at >= (NOW() + INTERVAL 8 HOUR) - INTERVAL ? DAY \
+         GROUP BY song_name, singer",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(PROFILE_WINDOW_DAYS)
+    .fetch_all(pool)
+    .await;
+    let mut song_scores: std::collections::HashMap<(String, String), i64> = HashMap::new();
+    for (n, s, c) in &top_songs {
+        *song_scores.entry((n.clone(), s.clone())).or_insert(0) += *c;
+    }
+    for r in like_song_rows.unwrap_or_default() {
+        let name: String = r.try_get("song_name").unwrap_or_default();
+        let singer: String = r.try_get("singer").unwrap_or_default();
+        let c: i64 = r.try_get::<i64, _>("c").unwrap_or(0);
+        if !name.is_empty() {
+            *song_scores.entry((name, singer)).or_insert(0) += c * LIKE_WEIGHT;
+        }
+    }
+    let mut top_songs: Vec<(String, String, i64)> = song_scores
+        .into_iter()
+        .map(|((n, s), c)| (n, s, c))
+        .collect();
+    top_songs.sort_by(|a, b| b.2.cmp(&a.2));
+    top_songs.truncate(15);
+
     // ── 收听规模（决定策略权重） ─────────────────────────────────
     let overview = sqlx::query(
         "SELECT COUNT(*) AS total, COUNT(DISTINCT DATE(played_at)) AS days FROM play_history \
@@ -223,6 +290,26 @@ pub async fn get_daily_recommend(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
             })
         })
         .collect();
+
+    // ── 负反馈：用户「不喜欢」上报的歌曲并入排除项（近 90 天有效） ─
+    let dislike_rows = sqlx::query(
+        "SELECT song_name, singer FROM daily_dislike \
+         WHERE ciyuanxi_id = ? AND song_name <> '' \
+         AND created_at >= (NOW() + INTERVAL 8 HOUR) - INTERVAL ? DAY",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(PROFILE_WINDOW_DAYS)
+    .fetch_all(pool)
+    .await;
+    let mut exclusions = exclusions;
+    for r in dislike_rows.unwrap_or_default() {
+        let name: String = r.try_get("song_name").unwrap_or_default();
+        let singer: String = r.try_get("singer").unwrap_or_default();
+        if name.is_empty() {
+            continue;
+        }
+        exclusions.push(json!({"title": name, "artist": singer}));
+    }
 
     // ── 每日种子与查询词轮换 ─────────────────────────────────────
     let seed = (fnv1a(&format!("{}-{}", ciyuanxi_id, today)) % 900_000_000 + 100_000_000) as i64;
@@ -317,4 +404,85 @@ pub async fn get_daily_recommend(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
 
     cache_put(ciyuanxi_id.clone(), today, algo.clone());
     ctx.ok("ok", algo)
+}
+
+/// report_daily_dislike 每日推荐负反馈上报
+///
+/// 用户在播放页对日推歌曲点「不喜欢」时上报（歌名 + 歌手）：
+/// 写入 daily_dislike 表（同用户同曲去重），并清除该用户当日算法缓存，
+/// 下次生成日推时负反馈立即并入 exclusions 排除项，实现算法自调整。
+pub async fn report_daily_dislike(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(401, "请先登录后使用每日推荐");
+    }
+    let song_name = str_of(&data, "song_name");
+    let singer = str_of(&data, "singer");
+    if song_name.is_empty() {
+        return ctx.err(400, "缺少歌曲信息");
+    }
+    let _ = sqlx::query(
+        "INSERT IGNORE INTO daily_dislike (ciyuanxi_id, song_name, singer) VALUES (?, ?, ?)",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(&song_name)
+    .bind(&singer)
+    .execute(pool)
+    .await;
+    // 负反馈即时生效：清掉当日缓存，下次请求重新生成算法。
+    cache_remove(&ciyuanxi_id);
+    ctx.ok("ok", json!({}))
+}
+
+/// report_daily_like 日推正反馈上报
+///
+/// 收藏 / 添加到歌单代表「喜欢这类歌」：批量写入 daily_like
+/// （同用户同曲去重，signal_type 记录信号来源），并清除该用户当日算法缓存，
+/// 下次生成日推时正反馈按 LIKE_WEIGHT 加权并入画像（top_artists / top_songs）。
+pub async fn report_daily_like(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(401, "请先登录后使用每日推荐");
+    }
+    let songs = match data.get("songs").and_then(|v| v.as_array()) {
+        Some(a) => a.clone(),
+        None => return ctx.err(400, "缺少歌曲列表"),
+    };
+    if songs.is_empty() || songs.len() > 200 {
+        return ctx.err(400, "歌曲列表为空或超限");
+    }
+    let signal_type = str_of(&data, "signal_type");
+    let mut saved = 0i64;
+    for s in &songs {
+        let song_name = s.get("song_name").and_then(|v| v.as_str()).unwrap_or("");
+        let singer = s.get("singer").and_then(|v| v.as_str()).unwrap_or("");
+        let song_name = clip(song_name.trim(), 200);
+        let singer = clip(singer.trim(), 200);
+        if song_name.is_empty() {
+            continue;
+        }
+        let res = sqlx::query(
+            "INSERT IGNORE INTO daily_like (ciyuanxi_id, song_name, singer, signal_type) \
+             VALUES (?, ?, ?, ?)",
+        )
+        .bind(&ciyuanxi_id)
+        .bind(&song_name)
+        .bind(&singer)
+        .bind(&signal_type)
+        .execute(pool)
+        .await;
+        if res.is_ok() {
+            saved += 1;
+        }
+    }
+    // 正反馈即时生效：清掉当日缓存，下次请求重新生成算法。
+    cache_remove(&ciyuanxi_id);
+    ctx.ok("ok", json!({ "saved": saved }))
+}
+
+/// 按 UTF-8 字符边界安全截断到 max_chars 字符（数据库列宽保护）
+fn clip(s: &str, max_chars: usize) -> String {
+    s.chars().take(max_chars).collect()
 }
