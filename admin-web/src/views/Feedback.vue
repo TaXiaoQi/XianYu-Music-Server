@@ -408,6 +408,16 @@
               <span>该申请未携带设备ID，同意后无法自动加入内测名单，请人工在版本管理中添加</span>
             </div>
             <label class="resolve-field">
+              <span class="resolve-field-label">设备备注</span>
+              <input
+                v-model="betaApproveDeviceNote"
+                class="resolve-input"
+                type="text"
+                maxlength="255"
+                placeholder="可选，便于在内测名单中区分设备（如：张三的小米15）"
+              />
+            </label>
+            <label class="resolve-field">
               <span class="resolve-field-label">回执 <em>*</em></span>
               <textarea
                 v-model="betaApproveNote"
@@ -778,6 +788,7 @@ import { adminApi, showToast, getAdminUser } from '@/api/client'
 import { webConfirm, webInfo } from '@/utils/webDialog'
 import { webActionMenu } from '@/utils/webDialog'
 import { fmtTime } from '@/utils/time'
+import { formatOsVersion } from '@/utils/osVersion'
 
 // 当前登录管理员用户名（用于判断反馈是否由本人认领）
 const currentAdminName = getAdminUser()?.username || ''
@@ -1433,7 +1444,7 @@ function deviceInfoText(item: Feedback): string {
   const parts: string[] = []
   const dev = `${brand && model && brand !== model ? brand + ' · ' : ''}${model}`
   if (dev.trim()) parts.push(dev.trim())
-  if (os) parts.push(os)
+  if (os) parts.push(formatOsVersion(os))
   if (arch) parts.push(arch)
   if (machine) parts.push('主机 ' + machine)
   return parts.join(' ｜ ')
@@ -1448,11 +1459,13 @@ function isBeta(item: Feedback): boolean {
 const betaApproveModalVisible = ref(false)
 const betaApproveTarget = ref<Feedback | null>(null)
 const betaApproveNote = ref('')
+const betaApproveDeviceNote = ref('')
 const betaApproveSaving = ref(false)
 
 function openBetaApproveModal(item: Feedback) {
   betaApproveTarget.value = item
   betaApproveNote.value = ''
+  betaApproveDeviceNote.value = ''
   betaApproveSaving.value = false
   betaApproveModalVisible.value = true
 }
@@ -1462,6 +1475,7 @@ function closeBetaApproveModal() {
   betaApproveModalVisible.value = false
   betaApproveTarget.value = null
   betaApproveNote.value = ''
+  betaApproveDeviceNote.value = ''
 }
 
 async function confirmBetaApprove() {
@@ -1470,6 +1484,7 @@ async function confirmBetaApprove() {
   const res = await adminApi('resolve_beta_application', {
     id: betaApproveTarget.value.id,
     note: betaApproveNote.value.trim(),
+    device_note: betaApproveDeviceNote.value.trim(),
   })
   betaApproveSaving.value = false
   if (res.code === 200) {
@@ -2480,6 +2495,23 @@ onUnmounted(() => {
   margin-bottom: 8px;
 }
 .resolve-field-label em { color: #dc2626; font-style: normal; }
+.resolve-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+  background: var(--card-solid);
+  color: var(--text);
+}
+.resolve-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(26, 26, 26, 0.08);
+}
 .resolve-textarea {
   width: 100%;
   border: 1px solid var(--border);

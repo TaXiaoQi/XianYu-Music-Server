@@ -473,6 +473,7 @@ import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm, webPrompt, webActionMenu, webInfo } from '@/utils/webDialog'
 import { fmtDateTime } from '@/utils/time'
+import { formatOsVersion } from '@/utils/osVersion'
 import { useAuthStore } from '@/stores/auth'
 
 // ===== 类型定义 =====
@@ -1066,7 +1067,7 @@ function userDevicePlatformLabel(dv: any): string {
 
 function userDeviceMeta(dv: any): string {
   const parts: string[] = []
-  if (dv.os_version) parts.push(dv.os_version)
+  if (dv.os_version) parts.push(formatOsVersion(dv.os_version))
   if (dv.app_version) parts.push(`v${dv.app_version}`)
   if (dv.last_active) parts.push(`最后活跃 ${fmtDateTime(dv.last_active)}`)
   return parts.join(' · ') || '暂无活跃记录'

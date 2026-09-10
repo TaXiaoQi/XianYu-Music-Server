@@ -72,7 +72,7 @@
               <td>{{ row.device_model || '-' }}</td>
               <td>{{ row.device_brand || '-' }}</td>
               <td>{{ row.platform || '-' }}</td>
-              <td>{{ row.os_version || '-' }}</td>
+              <td>{{ formatOsVersion(row.os_version) || '-' }}</td>
               <td>{{ row.app_version || '-' }}</td>
               <td><span class="badge badge-error">{{ row.error_type || '-' }}</span></td>
               <td class="ellipsis" :title="row.error_message">{{ row.error_message || '-' }}</td>
@@ -118,7 +118,7 @@
               <div class="detail-field"><span class="detail-label">设备型号</span><div>{{ detailData.device_model || '-' }}</div></div>
               <div class="detail-field"><span class="detail-label">手机品牌</span><div>{{ detailData.device_brand || '-' }}</div></div>
               <div class="detail-field"><span class="detail-label">出错平台</span><div>{{ detailData.platform || '-' }}</div></div>
-              <div class="detail-field"><span class="detail-label">系统版本</span><div>{{ detailData.os_version || '-' }}</div></div>
+              <div class="detail-field"><span class="detail-label">系统版本</span><div>{{ formatOsVersion(detailData.os_version) || '-' }}</div></div>
               <div class="detail-field"><span class="detail-label">APP版本</span><div>{{ detailData.app_version || '-' }}</div></div>
               <div class="detail-field"><span class="detail-label">错误类型</span><div>{{ detailData.error_type || '-' }}</div></div>
               <div class="detail-field"><span class="detail-label">页面</span><div>{{ detailData.page || '-' }}</div></div>
@@ -150,6 +150,7 @@ import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 import { fmtDateTime } from '@/utils/time'
+import { formatOsVersion } from '@/utils/osVersion'
 
 interface ErrorLog {
   id: number

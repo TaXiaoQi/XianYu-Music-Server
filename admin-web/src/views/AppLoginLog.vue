@@ -147,7 +147,7 @@
             <div class="device-id" :title="row.device_id">{{ truncate(row.device_id, 16) }}</div>
           </div>
           <div class="col col-ver">{{ row.app_version || '-' }}</div>
-          <div class="col col-os">{{ row.os_version || '-' }}</div>
+          <div class="col col-os">{{ formatOsVersion(row.os_version) || '-' }}</div>
           <div class="col col-status">
             <span class="status-badge" :class="row.status == 1 ? 'badge-success' : 'badge-failed'">
               <svg v-if="row.status == 1" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
@@ -184,6 +184,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { adminApi } from '@/api/client'
 import { fmtDateTime } from '@/utils/time'
+import { formatOsVersion } from '@/utils/osVersion'
 
 interface LoginLog {
   id: number
