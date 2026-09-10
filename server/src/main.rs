@@ -74,6 +74,10 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/", get(handle_api).post(handle_api))
         .route("/s/:share_id", get(share_landing))
         .route("/s/:share_id/", get(share_landing))
+        .route(
+            "/.well-known/apple-app-site-association",
+            get(serve_apple_app_site_association),
+        )
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
         .route("/admin/api/", get(handle_admin_api).post(handle_admin_api))
         .route("/uploads/covers/:filename", get(serve_cover))
@@ -319,6 +323,21 @@ async fn handle_admin_api(
         return debug::handle_admin_api(&action);
     }
     admin::dispatch(&action, &raw_body, ctx, &state.pool).await
+}
+
+/// Apple App Site Association（AASA）：iOS QQ 分享 Universal Link 关联域验证。
+/// 编译期内嵌 JSON（路径固定 src/apple-app-site-association.json），
+/// 返回 application/json；Apple CDN 会拉取 https://api.xianyumusic.cn/.well-known/...
+/// 验证 applinks 关联。Team ID 占位 "TEAMID"，正式签名后替换为 Apple Developer
+/// 后台 10 位 Team ID 并重新编译部署即可。
+async fn serve_apple_app_site_association() -> Response {
+    static AASA: &str = include_str!("apple-app-site-association.json");
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        AASA,
+    )
+        .into_response()
 }
 
 /// SPA 静态资源 fallback：
