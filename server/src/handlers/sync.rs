@@ -127,7 +127,131 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
         existing_arr.extend(new_arr);
         entry["songs"] = json!(existing_arr);
     }
-    let merged: Vec<Value> = map.into_values().collect();
+    let mut merged: Vec<Value> = map.into_values().collect();
+    // merge 模式（新客户端）：按 cloudId 逐条 upsert 到已有快照、保留其他设备新增、
+    // 并按 delete_cloud_ids 删除，防止整包重建把其他设备新增的歌单抹掉。
+    // 旧客户端不带 merge 时保持原有整包覆盖（向后兼容）。
+    let do_merge = matches!(data.get("merge"), Some(Value::Bool(true)));
+    // 云端歌单统一使用「字符串 cloudId」作为稳定键：
+    // 上传端回传 [ {id: 本地id, cloudId: 云端id} ]，使上传端能写回本地、跨设备稳定定位。
+    let mut id_map: Vec<Value> = Vec::new();
+    if do_merge {
+        let existing: Vec<Value> = read_snapshot(&ciyuanxi_id, "playlists.json")
+            .ok()
+            .and_then(|v| v.get("playlists").cloned())
+            .and_then(|x| x.as_array().cloned())
+            .unwrap_or_default();
+        let mut by_cloud: Vec<(Option<String>, Value)> = existing
+            .into_iter()
+            .map(|it| {
+                let k = it
+                    .get("cloudId")
+                    .and_then(|c| c.as_str())
+                    .map(|s| s.to_string())
+                    .filter(|s| !s.is_empty());
+                (k, it)
+            })
+            .collect();
+        let mut probe: i64 = 0;
+        for mut pl in merged {
+            let local_id = pl.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            // 同本地 id 的行视为同一歌单：合并后无需保留旧行，并继承其已有云端 id（若有）
+            let mut inherited: Option<String> = None;
+            // 已有行的歌曲级删除墓碑（歌单内移除单曲），合并时保留
+            let mut prev_deleted: std::collections::HashSet<String> = std::collections::HashSet::new();
+            by_cloud.retain(|(k, r)| {
+                if r.get("id").and_then(|v| v.as_str()) == Some(local_id.as_str()) {
+                    if let Some(ck) = k {
+                        inherited = Some(ck.clone());
+                    }
+                    if let Some(Value::Array(dl)) = r.get("deletedSongPaths") {
+                        for d in dl {
+                            if let Some(s) = d.as_str() {
+                                prev_deleted.insert(s.to_string());
+                            }
+                        }
+                    }
+                    false
+                } else {
+                    true
+                }
+            });
+            // cloudId 统一为字符串稳定键：已有则沿用；否则为本地上传歌单分配新云端 id，
+            // 并写入快照行，回传给上传端写回本地（保证同歌单再次上传可定位到同一份）。
+            let mut key = pl
+                .get("cloudId")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string())
+                .filter(|s| !s.is_empty());
+            if key.is_none() {
+                key = inherited;
+            }
+            if key.is_none() {
+                key = Some(format!("c{}{}", now_ts(), probe));
+                probe += 1;
+            }
+            if let Some(k) = &key {
+                pl["cloudId"] = json!(k);
+            }
+            // 歌曲级删除墓碑合并（歌单内移除单曲的全端传播）：
+            // deleted = 已有墓碑 ∪ 本次上报 − 本次实际上传的歌曲 path（重新添加自动解除删除）；
+            // songs 按删除集裁剪，避免其他端下载时已删歌曲回流；随快照存储并在下载响应带出。
+            let client_deleted: std::collections::HashSet<String> = pl
+                .get("deletedSongPaths")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str())
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let uploaded_paths: std::collections::HashSet<String> = pl
+                .get("songs")
+                .and_then(|s| s.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|it| it.get("path").and_then(|p| p.as_str()))
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let mut deleted: Vec<String> = prev_deleted
+                .union(&client_deleted)
+                .filter(|p| !uploaded_paths.contains(*p))
+                .cloned()
+                .collect();
+            deleted.sort();
+            deleted.dedup();
+            if !deleted.is_empty() {
+                if let Some(songs) = pl.get_mut("songs").and_then(|s| s.as_array_mut()) {
+                    songs.retain(|it| {
+                        it.get("path")
+                            .and_then(|p| p.as_str())
+                            .map(|p| !deleted.contains(&p.to_string()))
+                            .unwrap_or(true)
+                    });
+                }
+                pl["deletedSongPaths"] = json!(deleted);
+            } else if let Some(obj) = pl.as_object_mut() {
+                obj.remove("deletedSongPaths");
+            }
+            by_cloud.push((key.clone(), pl));
+            id_map.push(json!({ "id": local_id, "cloudId": key }));
+        }
+        if let Some(Value::Array(del)) = data.get("delete_cloud_ids") {
+            let delset: std::collections::HashSet<String> = del
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect();
+            by_cloud.retain(|(k, _)| match k {
+                Some(c) => !delset.contains(c),
+                None => true,
+            });
+        }
+        merged = by_cloud.into_iter().map(|(_, it)| it).collect();
+    }
     let song_total: i64 = merged
         .iter()
         .map(|pl| pl.get("songs").and_then(|s| s.as_array()).map(|a| a.len() as i64).unwrap_or(0))
@@ -153,9 +277,12 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
     });
     let _ = std::fs::write(dir.join("meta.json"), serde_json::to_string(&meta).unwrap_or_default());
     if ok {
+        // 回传 id_map：本地 id → 云端字符串 cloudId，供上传端写回本地，
+        // 保证同歌单再次上传可定位到同一份、跨设备稳定定位。
         ctx.ok("同步成功", json!({
             "playlist_count": merged.len(),
-            "song_total": song_total
+            "song_total": song_total,
+            "id_map": id_map
         }))
     } else {
         ctx.err(500, "写入文件失败")
@@ -179,10 +306,113 @@ pub async fn file_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
     match std::fs::read_to_string(&file) {
         Ok(content) => match serde_json::from_str::<Value>(&content) {
-            Ok(v) => ctx.ok("获取成功", v),
+            Ok(v) => {
+                // 自愈：给缺失 cloudId 的云端歌单分配稳定字符串 id 并回写，
+                // 保证修复前的历史快照下载后也能稳定定位、删除范围选项可用。
+                let (fixed_snapshot, changed) = ensure_cloud_ids(v);
+                if changed {
+                    let _ = write_snapshot(&ciyuanxi_id, "playlists.json", &fixed_snapshot);
+                }
+                ctx.ok("获取成功", fixed_snapshot)
+            }
             Err(_) => ctx.ok("数据读取失败", json!({ "playlists": [] })),
         },
         Err(_) => ctx.ok("数据读取失败", json!({ "playlists": [] })),
+    }
+}
+
+/// 给快照中缺少 cloudId 的歌单分配稳定字符串云端 id（复用上传端相同格式），返回（新快照，是否变更）。
+fn ensure_cloud_ids(snapshot: Value) -> (Value, bool) {
+    let mut changed = false;
+    let Some(playlists) = snapshot.get("playlists").cloned() else {
+        return (snapshot, changed);
+    };
+    let Some(playlists) = playlists.as_array() else {
+        return (snapshot, changed);
+    };
+    let mut probe: i64 = 0;
+    let mut out = Vec::with_capacity(playlists.len());
+    for mut pl in playlists.clone() {
+        let has_cloud_id = pl
+            .get("cloudId")
+            .and_then(|c| c.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        if !has_cloud_id {
+            pl["cloudId"] = json!(format!("c{}{}", now_ts(), probe));
+            probe += 1;
+            changed = true;
+        }
+        out.push(pl);
+    }
+    let mut s = snapshot.clone();
+    if let Some(arr) = s["playlists"].as_array_mut() {
+        *arr = out;
+    }
+    (s, changed)
+}
+
+/// 从文件存储快照中按云端字符串 cloudId 删除歌单（「删除全部/仅保留本地」的云端落盘操作）。
+/// 仅删除，不重建；保留其余歌单与其他端新增。传空列表时为无操作。
+pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let delset: std::collections::HashSet<String> = data
+        .get("cloud_ids")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    if delset.is_empty() {
+        return ctx.ok("删除成功", json!({ "deleted": 0 }));
+    }
+    let existing = read_snapshot(&ciyuanxi_id, "playlists.json").ok().unwrap_or_else(|| json!({ "playlists": [] }));
+    let last_ts = existing.get("timestamp").and_then(|v| v.as_i64()).unwrap_or_else(now_ts);
+    let playlists = existing
+        .get("playlists")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let before = playlists.len();
+    let kept: Vec<Value> = playlists
+        .into_iter()
+        .filter(|pl| {
+            let c = pl.get("cloudId").and_then(|v| v.as_str()).unwrap_or("");
+            !delset.contains(c)
+        })
+        .collect();
+    let deleted = before - kept.len();
+    let song_total: i64 = kept
+        .iter()
+        .map(|pl| {
+            pl.get("songs")
+                .and_then(|s| s.as_array())
+                .map(|a| a.len() as i64)
+                .unwrap_or(0)
+        })
+        .sum();
+    let save = json!({
+        "version": 4,
+        "uploaded_at": now_str(),
+        "timestamp": last_ts,
+        "stats": {
+            "playlist_count": kept.len(),
+            "song_total": song_total
+        },
+        "playlists": kept
+    });
+    let ok = write_snapshot(&ciyuanxi_id, "playlists.json", &save);
+    if ok {
+        ctx.ok("删除成功", json!({ "deleted": deleted }))
+    } else {
+        ctx.err(500, "写入文件失败")
     }
 }
 
@@ -281,11 +511,20 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
     let mut found = false;
     if !plugin_empty {
         for p in plugins.iter_mut() {
-            if p.get("id").cloned().unwrap_or(Value::Null) == pid {
-                *p = plugin.clone();
-                found = true;
-                break;
+            if p.get("id").cloned().unwrap_or(Value::Null) != pid {
+                continue;
             }
+            // 旧客户端可能不带用户变量加密块：合并时保留已存的密文，
+            // 避免新端上传的加密变量被无字段的上传覆盖丢失（服务端仅存密文，不解密）。
+            let mut merged = plugin.clone();
+            if merged.get("userVariablesEncrypted").is_none() {
+                if let Some(old_enc) = p.get("userVariablesEncrypted").cloned() {
+                    merged["userVariablesEncrypted"] = old_enc;
+                }
+            }
+            *p = merged;
+            found = true;
+            break;
         }
         if !found {
             plugins.push(plugin.clone());
@@ -318,6 +557,58 @@ pub async fn plugin_sync_download(body: &str, ctx: ReqCtx) -> Response {
         Ok(v) => ctx.ok("获取成功", v),
         Err(_) => ctx.ok("暂无同步数据", json!({ "plugins": [] })),
     }
+}
+
+/// 按 id 从云端插件快照中删除插件（「删除全部/仅保留本地/仅删云端」的云端落盘操作）。
+/// 仅删除指定 id，不影响其余插件与订阅列表。传空列表时为无操作。
+pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let delset: std::collections::HashSet<String> = data
+        .get("plugin_ids")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    if delset.is_empty() {
+        return ctx.ok("删除成功", json!({ "deleted": 0, "plugin_count": 0 }));
+    }
+    let existing = read_snapshot(&ciyuanxi_id, "plugins.json").ok().unwrap_or_else(|| {
+        json!({
+            "version": 1, "uploaded_at": now_str(), "timestamp": now_ts(),
+            "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
+        })
+    });
+    let plugins = existing
+        .get("plugins")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let before = plugins.len();
+    let kept: Vec<Value> = plugins
+        .into_iter()
+        .filter(|p| {
+            let pid = p.get("id").and_then(|v| v.as_str()).unwrap_or("");
+            !delset.contains(pid)
+        })
+        .collect();
+    let deleted = before - kept.len();
+    let mut save = existing;
+    save["plugins"] = json!(kept);
+    save["stats"]["plugin_count"] = json!(kept.len() as i64);
+    save["uploaded_at"] = json!(now_str());
+    save["timestamp"] = json!(now_ts());
+    if !write_snapshot(&ciyuanxi_id, "plugins.json", &save) {
+        return ctx.err(500, "文件写入失败");
+    }
+    ctx.ok("删除成功", json!({ "deleted": deleted, "plugin_count": kept.len() as i64 }))
 }
 
 /// 平台标识对应的快照文件名：desktop / mobile 设置结构不同，分开存储互不覆盖。
@@ -376,23 +667,76 @@ pub async fn settings_sync_download(body: &str, ctx: ReqCtx) -> Response {
 }
 
 /// 上传当前用户收藏歌曲列表（文件快照：data/sync/{id}/favorites.json）
+///
+/// 合并模式（merge: true）：逐条按 path upsert + delete_paths 删除，保留未涉及条目，
+/// 供客户端实现收藏按键合并，避免整包覆盖把其他设备新增的收藏抹掉。
+/// 旧客户端不带 merge 时不走合并，保持整包覆盖语义（向后兼容）。
 pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
+    let merge = matches!(data.get("merge"), Some(Value::Bool(true)));
     let favorites = data.get("favorites").cloned().unwrap_or_else(|| json!([]));
     if !favorites.is_array() {
         return ctx.err(400, "favorites 格式错误");
     }
-    let count = favorites.as_array().map(|a| a.len() as i64).unwrap_or(0);
+
+    let final_list: Vec<Value>;
+    let count: i64;
+    if merge {
+        let existing: Vec<Value> = read_snapshot(&ciyuanxi_id, "favorites.json")
+            .ok()
+            .and_then(|v| v.get("favorites").cloned())
+            .and_then(|x| x.as_array().cloned())
+            .unwrap_or_default();
+        let mut by_path: Vec<(Option<String>, Value)> = existing
+            .into_iter()
+            .map(|it| {
+                let p = it.get("path").and_then(|x| x.as_str()).map(|s| s.to_string());
+                (p, it)
+            })
+            .collect();
+        // upsert：同 path 覆盖，新 path 追加
+        for it in favorites.as_array().cloned().unwrap_or_default() {
+            let item = it;
+            let p = item.get("path").and_then(|x| x.as_str()).map(|s| s.to_string());
+            if let Some(ref pk) = p {
+                if let Some(pos) = by_path.iter().position(|(k, _)| k.as_ref().map(|s| s == pk).unwrap_or(false)) {
+                    by_path[pos].1 = item;
+                } else {
+                    by_path.push((p, item));
+                }
+            } else {
+                by_path.push((None, item));
+            }
+        }
+        // delete_paths：删除指定 path 的收藏
+        if let Some(Value::Array(del)) = data.get("delete_paths") {
+            let delset: std::collections::HashSet<String> = del
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.to_string())
+                .collect();
+            by_path.retain(|(k, _)| match k {
+                Some(p) => !delset.contains(p),
+                None => true,
+            });
+        }
+        final_list = by_path.into_iter().map(|(_, it)| it).collect();
+        count = final_list.len() as i64;
+    } else {
+        final_list = favorites.as_array().cloned().unwrap_or_default();
+        count = final_list.len() as i64;
+    }
+
     let save = json!({
         "version": 1,
         "uploaded_at": now_str(),
         "timestamp": now_ts(),
         "stats": { "song_count": count },
-        "favorites": favorites
+        "favorites": final_list
     });
     if !write_snapshot(&ciyuanxi_id, "favorites.json", &save) {
         return ctx.err(500, "文件写入失败");
