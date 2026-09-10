@@ -91,7 +91,7 @@
             </div>
             <div class="mobile-item-sub monospace">{{ d.device_id }}</div>
             <div class="mobile-item-sub">
-              <template v-if="d.os_version">{{ d.os_version }}<template v-if="d.app_version"> · v{{ d.app_version }}</template></template>
+              <template v-if="d.os_version">{{ formatOsVersion(d.os_version) }}<template v-if="d.app_version"> · v{{ d.app_version }}</template></template>
               <template v-else-if="d.app_version">v{{ d.app_version }}</template>
               <template v-else>-</template>
             </div>
@@ -135,7 +135,7 @@
                   <div class="detail-item"><span class="detail-label">设备ID</span><span class="detail-value mono">{{ detailData.device_id }}</span></div>
                   <template v-if="detailData.device_info">
                     <div class="detail-item"><span class="detail-label">型号</span><span class="detail-value">{{ detailData.device_info.device_model || '-' }}</span></div>
-                    <div class="detail-item"><span class="detail-label">系统</span><span class="detail-value">{{ detailData.device_info.os_version || '-' }}</span></div>
+                    <div class="detail-item"><span class="detail-label">系统</span><span class="detail-value">{{ formatOsVersion(detailData.device_info.os_version) || '-' }}</span></div>
                     <div class="detail-item"><span class="detail-label">应用版本</span><span class="detail-value">{{ detailData.device_info.app_version || '-' }}</span></div>
                     <div class="detail-item"><span class="detail-label">IP</span><span class="detail-value mono">{{ detailData.device_info.ip || '-' }}</span></div>
                     <div class="detail-item"><span class="detail-label">最后活跃</span><span class="detail-value">{{ fmtDateTime(detailData.device_info.created_at) || '-' }}</span></div>
@@ -229,6 +229,7 @@ import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { mobileConfirm, mobilePrompt, mobileActionMenu, mobileInfo, removeBackdropBlur } from '@/utils/mobileDialog'
 import { fmtDateTime } from '@/utils/time'
+import { formatOsVersion } from '@/utils/osVersion'
 import { useAuthStore } from '@/stores/auth'
 import './MobilePage.css'
 
@@ -246,6 +247,7 @@ interface Device {
   account_count?: number
   platform?: string
   device_name?: string
+  device_brand?: string
   [key: string]: any
 }
 
@@ -501,10 +503,13 @@ function platformLabel(d: Device): string {
   const map: Record<string, string> = { desktop: '桌面端', mobile: '移动端', watch: '腕上端' }
   return map[platformKey(d)] || ''
 }
-// 展示名：设备名（市场名，如「小米16」）优先，型号作括注；无名字才纯展示型号
+// 展示名：厂商为主（如 HONOR）+ 型号，与反馈条一致；无厂商回退市场名/型号（旧数据兼容）
 function deviceDisplayName(d: Device): string {
-  const name = (d.device_name || '').trim()
+  const brand = (d.device_brand || '').trim()
   const model = (d.device_model || '').trim()
+  if (brand && model && brand !== model) return `${brand} · ${model}`
+  if (brand) return brand
+  const name = (d.device_name || '').trim()
   if (name && model && name !== model) return `${name}（${model}）`
   return name || model || '未知设备'
 }

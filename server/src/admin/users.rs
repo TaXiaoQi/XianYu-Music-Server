@@ -675,6 +675,7 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         SELECT
             a.device_id,
             a.device_name,
+            a.device_brand,
             a.device_model,
             a.os_version,
             a.app_version,
@@ -921,7 +922,7 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     let mut devices: Vec<Value> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let device_rows = sqlx::query(
-        "SELECT a.device_id, a.device_name, a.device_model, a.os_version, a.app_version, a.platform, a.created_at, \
+        "SELECT a.device_id, a.device_name, a.device_brand, a.device_model, a.os_version, a.app_version, a.platform, a.created_at, \
                 (b.id IS NOT NULL) AS is_banned \
          FROM app_open_log a \
          INNER JOIN (SELECT device_id, MAX(id) AS max_id FROM app_open_log WHERE ciyuanxi_id = ? GROUP BY device_id) l \
@@ -944,6 +945,7 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         devices.push(json!({
             "device_id": device_id,
             "device_name": r.try_get::<String, _>("device_name").unwrap_or_default(),
+            "device_brand": r.try_get::<String, _>("device_brand").unwrap_or_default(),
             "device_model": r.try_get::<String, _>("device_model").unwrap_or_default(),
             "os_version": os_version,
             "app_version": r.try_get::<String, _>("app_version").unwrap_or_default(),
@@ -956,7 +958,7 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     // last_device_id 可能没有该账号的启动记录（只在登录表），单独补一条
     if !last_device_id.is_empty() && seen.insert(last_device_id.clone()) {
         let extra = sqlx::query(
-            "SELECT a.device_id, a.device_name, a.device_model, a.os_version, a.app_version, a.platform, a.created_at, \
+            "SELECT a.device_id, a.device_name, a.device_brand, a.device_model, a.os_version, a.app_version, a.platform, a.created_at, \
                     (b.id IS NOT NULL) AS is_banned \
              FROM app_open_log a \
              LEFT JOIN banned_devices b ON b.device_id = a.device_id \
@@ -974,6 +976,7 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             devices.push(json!({
                 "device_id": last_device_id,
                 "device_name": r.try_get::<String, _>("device_name").unwrap_or_default(),
+                "device_brand": r.try_get::<String, _>("device_brand").unwrap_or_default(),
                 "device_model": r.try_get::<String, _>("device_model").unwrap_or_default(),
                 "os_version": os_version,
                 "app_version": r.try_get::<String, _>("app_version").unwrap_or_default(),
