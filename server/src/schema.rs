@@ -16,8 +16,16 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     }
     ensure_feedback_log_columns(pool).await;
     ensure_column(pool, "app_open_log", "platform", "varchar(16) NOT NULL DEFAULT ''").await;
+    // os_version 需容纳「Android xx (API xx) · ROM名」格式（如 MagicOS 10），
+    // 旧列宽 32/64 不够，严格模式下超长插入会整体失败，存量库平滑加宽
+    ensure_varchar_width(pool, "user_feedback", "os_version", 96).await;
+    ensure_varchar_width(pool, "error_log", "os_version", 96).await;
+    ensure_varchar_width(pool, "app_open_log", "os_version", 96).await;
+    ensure_varchar_width(pool, "admin_app_login_log", "os_version", 96).await;
     // 设备市场名（如「小米16」），客户端上报；展示名优先用它，无则回退型号
     ensure_column(pool, "app_open_log", "device_name", "varchar(128) NOT NULL DEFAULT ''").await;
+    // 设备厂商（如 HONOR、Xiaomi），客户端上报；后台设备条主名称按「厂商 · 型号」展示
+    ensure_column(pool, "app_open_log", "device_brand", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "email_verified", "tinyint(1) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "ciyuanxi_id", "varchar(32) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "avatar_url", "LONGTEXT NULL").await;
@@ -111,6 +119,31 @@ async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: 
     }
 }
 
+/// varchar 列宽不足时平滑加宽（MODIFY 保留数据），用于上报格式变长后的兜底迁移
+async fn ensure_varchar_width(pool: &MySqlPool, table: &str, column: &str, target: u32) {
+    let cur: i64 = sqlx::query(
+        "SELECT COALESCE(CHARACTER_MAXIMUM_LENGTH, 0) AS len FROM information_schema.columns \
+         WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?",
+    )
+    .bind(table)
+    .bind(column)
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get("len"))
+    // 表不存在（新装库建表已是目标宽度）视为无需迁移
+    .unwrap_or(target as i64);
+    if cur >= target as i64 {
+        return;
+    }
+    let sql = format!(
+        "ALTER TABLE `{}` MODIFY `{}` VARCHAR({}) NOT NULL DEFAULT ''",
+        table, column, target
+    );
+    if let Err(e) = sqlx::query(&sql).execute(pool).await {
+        warn!("schema widen failed: {} -> {}", sql, e);
+    }
+}
+
 async fn ensure_index(pool: &MySqlPool, table: &str, index_name: &str, columns: &str) {
     let exists: i64 = sqlx::query(
         "SELECT COUNT(*) AS cnt FROM information_schema.statistics WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?",
@@ -168,7 +201,7 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     // 详细设备信息：厂商/型号/系统版本/架构/计算机名，反馈 bug 时一眼识别具体设备
     ensure_column(pool, "user_feedback", "device_brand", "VARCHAR(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "device_model", "VARCHAR(128) NOT NULL DEFAULT ''").await;
-    ensure_column(pool, "user_feedback", "os_version", "VARCHAR(64) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "user_feedback", "os_version", "VARCHAR(96) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "architecture", "VARCHAR(32) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "machine_name", "VARCHAR(64) NOT NULL DEFAULT ''").await;
 }
@@ -261,7 +294,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `ip` varchar(45) NOT NULL DEFAULT '',
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `app_version` varchar(32) NOT NULL DEFAULT '',
-            `os_version` varchar(32) NOT NULL DEFAULT '',
+            `os_version` varchar(96) NOT NULL DEFAULT '',
             `device_model` varchar(64) NOT NULL DEFAULT '',
             `device_brand` varchar(64) NOT NULL DEFAULT '',
             `error_type` varchar(64) NOT NULL DEFAULT '',
@@ -819,6 +852,27 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_played_at` (`played_at`),
             KEY `idx_ciyuanxi_played` (`ciyuanxi_id`, `played_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `daily_dislike` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `song_name` varchar(200) NOT NULL DEFAULT '',
+            `singer` varchar(200) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uniq_user_song` (`ciyuanxi_id`, `song_name`, `singer`),
+            KEY `idx_ciyuanxi_created` (`ciyuanxi_id`, `created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `daily_like` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `song_name` varchar(200) NOT NULL DEFAULT '',
+            `singer` varchar(200) NOT NULL DEFAULT '',
+            `signal_type` varchar(16) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uniq_user_song` (`ciyuanxi_id`, `song_name`, `singer`),
+            KEY `idx_ciyuanxi_created` (`ciyuanxi_id`, `created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `admin_app_login_log` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `admin_id` bigint(20) NOT NULL DEFAULT 0,
@@ -828,7 +882,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `device_model` varchar(64) NOT NULL DEFAULT '',
             `app_version` varchar(32) NOT NULL DEFAULT '',
-            `os_version` varchar(32) NOT NULL DEFAULT '',
+            `os_version` varchar(96) NOT NULL DEFAULT '',
             `status` tinyint(1) NOT NULL DEFAULT 1,
             `extra` varchar(255) NOT NULL DEFAULT '',
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -841,7 +895,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `device_id` varchar(128) NOT NULL DEFAULT '',
             `app_version` varchar(32) NOT NULL DEFAULT '',
-            `os_version` varchar(32) NOT NULL DEFAULT '',
+            `os_version` varchar(96) NOT NULL DEFAULT '',
             `device_model` varchar(64) NOT NULL DEFAULT '',
             `ip` varchar(45) NOT NULL DEFAULT '',
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
