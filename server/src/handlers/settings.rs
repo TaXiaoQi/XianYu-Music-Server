@@ -42,7 +42,7 @@ pub async fn get_user_info(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     let Some(user) = user else {
         return ctx.err(404, "用户不存在");
     };
-    let email: String = user.get("email");
+    let email: String = user.try_get("email").unwrap_or_default();
     let role = crate::handlers::helpers::resolve_role_by_email(pool, &email).await;
     let payload = json!({
         "user_id": user.get::<i64,_>("id"),
@@ -592,7 +592,7 @@ pub async fn bind_email(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let Some(user) = user else {
         return ctx.err(404, "用户不存在");
     };
-    let current_email: String = user.get("email");
+    let current_email: String = user.try_get("email").unwrap_or_default();
     if !current_email.is_empty() {
         return ctx.err(400, "当前账号已绑定邮箱");
     }

@@ -263,14 +263,19 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         Ok(h) => h,
         Err(_) => return err(500, "加密失败"),
     };
-    let _ = sqlx::query("INSERT INTO app_users (nickname, password, email, email_verified, status, ciyuanxi_id, master_quota) VALUES (?,?,?,1,1,?,?)")
+    // 留空邮箱写 NULL（未绑定），避免空串 '' 之间撞 uk_email 唯一键
+    let email_bind: Option<&str> = if email.is_empty() { None } else { Some(email.as_str()) };
+    let inserted = sqlx::query("INSERT INTO app_users (nickname, password, email, email_verified, status, ciyuanxi_id, master_quota) VALUES (?,?,?,1,1,?,?)")
         .bind(&username)
         .bind(hashed)
-        .bind(&email)
+        .bind(email_bind)
         .bind(&ciyuanxi_id)
         .bind(master_quota)
         .execute(pool)
         .await;
+    if let Err(e) = inserted {
+        return err(500, &format!("添加失败: {}", e));
+    }
     log_operation(pool, ctx, "添加用户", &format!("昵称:{}", username), &format!("弦予号:{} 额度:{}", ciyuanxi_id, master_quota)).await;
     ok("添加成功", json!({ "ciyuanxi_id": ciyuanxi_id }))
 }

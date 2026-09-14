@@ -45,6 +45,9 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "listen_daily_stats", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;
     // 账号系统重构：app_users.username 改为 nickname（仅改应用用户表，不动管理员/日志表）
     ensure_app_users_username_to_nickname(pool).await;
+    // email 列可空化：NULL 表示未绑定邮箱（唯一键不拦 NULL），
+    // 修复后台留空邮箱添加用户时与既有 '' 撞 uk_email 唯一键导致插入静默失败的问题
+    ensure_app_users_email_nullable(pool).await;
     // 管理员头像：平滑补列
     ensure_column(pool, "admin_users", "avatar_url", "varchar(512) NOT NULL DEFAULT ''").await;
     // 管理员账号邮箱：用于后台通知接收与快捷导入外部通知
@@ -250,6 +253,38 @@ async fn ensure_app_users_username_to_nickname(pool: &MySqlPool) {
     }
 }
 
+/// email 列可空化迁移：存量库 email 为 NOT NULL 时改为可空，并把历史 '' 归一为 NULL。
+/// NULL 表示未绑定邮箱；uk_email 唯一键允许多个 NULL，允许多个无邮箱账号共存。
+async fn ensure_app_users_email_nullable(pool: &MySqlPool) {
+    let not_nullable: i64 = sqlx::query(
+        "SELECT COUNT(*) AS cnt FROM information_schema.columns \
+         WHERE table_schema = DATABASE() AND table_name = 'app_users' \
+         AND column_name = 'email' AND is_nullable = 'NO'",
+    )
+    .fetch_one(pool)
+    .await
+    .map(|r| r.get("cnt"))
+    .unwrap_or(0);
+    if not_nullable > 0 {
+        if let Err(e) =
+            sqlx::query("ALTER TABLE `app_users` MODIFY `email` varchar(128) NULL DEFAULT ''")
+                .execute(pool)
+                .await
+        {
+            warn!("schema make app_users.email nullable failed: {}", e);
+        } else {
+            warn!("schema migrated: app_users.email -> nullable");
+        }
+    }
+    // 历史 '' 占用唯一键坑位，归一为 NULL（幂等，无 '' 时影响 0 行）
+    if let Err(e) = sqlx::query("UPDATE `app_users` SET `email` = NULL WHERE `email` = ''")
+        .execute(pool)
+        .await
+    {
+        warn!("schema normalize empty app_users.email to NULL failed: {}", e);
+    }
+}
+
 static TABLE_STATEMENTS: &[&str] = &[
         "CREATE TABLE IF NOT EXISTS `source_call_log` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
@@ -315,7 +350,7 @@ static TABLE_STATEMENTS: &[&str] = &[
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `nickname` varchar(64) NOT NULL DEFAULT '',
             `password` varchar(255) NOT NULL DEFAULT '',
-            `email` varchar(128) NOT NULL DEFAULT '',
+            `email` varchar(128) NULL DEFAULT '',
             `email_verified` tinyint(1) NOT NULL DEFAULT 0,
             `status` tinyint(1) NOT NULL DEFAULT 1,
             `ban_reason` varchar(255) NOT NULL DEFAULT '',

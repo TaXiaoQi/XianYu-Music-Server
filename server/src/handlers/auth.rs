@@ -692,7 +692,7 @@ pub async fn poll_tv_login_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     if user_status == 0 {
         return ctx.err(403, "账号已被禁用");
     }
-    let email: String = user.get("email");
+    let email: String = user.try_get("email").unwrap_or_default();
     let role = resolve_role(pool, &email).await;
     let user_id: i64 = user.get("id");
     let uname: String = user.try_get::<String, _>("nickname").unwrap_or_default();

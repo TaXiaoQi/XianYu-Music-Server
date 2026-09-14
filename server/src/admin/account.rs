@@ -246,12 +246,17 @@ pub async fn change_user_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     let Some(user) = user else {
         return err(404, "用户不存在");
     };
-    let old_email: String = user.get("email");
-    let _ = sqlx::query("UPDATE app_users SET email = ? WHERE id = ?")
-        .bind(&new_email)
+    let old_email: String = user.try_get("email").unwrap_or_default();
+    // 清空邮箱写 NULL（未绑定），避免空串 '' 占用 uk_email 唯一键坑位
+    let email_bind: Option<&str> = if new_email.is_empty() { None } else { Some(new_email.as_str()) };
+    let updated = sqlx::query("UPDATE app_users SET email = ? WHERE id = ?")
+        .bind(email_bind)
         .bind(user_id)
         .execute(pool)
         .await;
+    if let Err(e) = updated {
+        return err(500, &format!("修改失败: {}", e));
+    }
     let detail = format!("user_id={} {} -> {}", user_id, old_email, new_email);
     log_operation(pool, ctx, "修改用户邮箱", &detail, "").await;
     ok("修改成功", serde_json::json!({ "role": "普通成员" }))
