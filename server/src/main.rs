@@ -8,6 +8,7 @@ mod rate_limit;
 mod response;
 mod schema;
 mod sign;
+mod watch_relay;
 
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
@@ -80,6 +81,8 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
         .route("/admin/api/", get(handle_admin_api).post(handle_admin_api))
+        // 腕上端云端兜底通道（P4）：手机/手表 WS 中继
+        .route("/watch-relay", get(watch_relay::watch_relay_handler))
         .route("/uploads/covers/:filename", get(serve_cover))
         .nest_service("/uploads", ServeDir::new("uploads"))
         .fallback(spa_fallback)
