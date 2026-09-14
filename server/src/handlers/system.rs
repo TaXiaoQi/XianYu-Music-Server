@@ -217,9 +217,40 @@ pub async fn get_version_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     }
 }
 
-/// 读取指定平台指定渠道（stable/beta）的最新已启用版本配置。
-/// 旧数据（无 platform/channel 字段）视为正式版配置，保证分平台/分渠道上线前的数据继续生效。
-fn latest_enabled_platform_version(platform: &str, channel: &str) -> Option<serde_json::Value> {
+/// 平台默认系统：桌面 Windows、移动 Android、腕上端无系统细分（""）。
+/// 无 system 字段的遗留记录与未携带 system 的在用客户端按此默认系统处理，保证不回归。
+fn default_system(platform: &str) -> &'static str {
+    match platform {
+        "mobile" => "android",
+        "watch" => "",
+        _ => "windows",
+    }
+}
+
+/// 配置项的有效系统：优先读 system 字段；无 system 字段的遗留记录视为平台默认系统。
+fn item_system<'a>(item: &'a serde_json::Value, platform: &str) -> &'a str {
+    let raw = item.get("system").and_then(|v| v.as_str()).unwrap_or("");
+    if raw.is_empty() {
+        default_system(platform)
+    } else {
+        raw
+    }
+}
+
+fn system_label(platform: &str, system: &str) -> &'static str {
+    match (platform, system) {
+        ("mobile", "harmonyos") => "鸿蒙 HarmonyOS",
+        ("mobile", "ios") => "iOS",
+        ("mobile", _) => "Android",
+        (_, "linux") => "Linux",
+        (_, "macos") => "macOS",
+        _ => "Windows",
+    }
+}
+
+/// 读取指定平台指定系统指定渠道（stable/beta）的最新已启用版本配置。
+/// system 为空时按平台默认系统解析（遗留无 system 记录匹配默认系统，保证在用客户端不回归）。
+fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str) -> Option<serde_json::Value> {
     let path = std::path::Path::new("api").join("version.json");
     let content = std::fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -229,6 +260,7 @@ fn latest_enabled_platform_version(platform: &str, channel: &str) -> Option<serd
         "watch" => "watch",
         _ => "desktop",
     };
+    let effective_system = if system.is_empty() { default_system(platform) } else { system };
     let mut best: Option<serde_json::Value> = None;
     for item in arr {
         let item_platform = item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop");
@@ -242,6 +274,10 @@ fn latest_enabled_platform_version(platform: &str, channel: &str) -> Option<serd
         }
         let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
         if !enabled {
+            continue;
+        }
+        // 系统过滤：仅匹配有效系统相同的记录；遗留无 system 记录按平台默认系统匹配
+        if item_system(item, platform) != effective_system {
             continue;
         }
         let item_ver = item.get("version").and_then(|v| v.as_str()).unwrap_or("");
@@ -297,14 +333,16 @@ pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
 pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let raw = parse_body(body);
     let platform = str_of(&raw, "platform").trim().to_string();
+    let system = str_of(&raw, "system").trim().to_string();
     let device_id = str_of(&raw, "device_id").trim().to_string();
 
     // 渠道细分：普通设备只拉正式版；内测名单中的设备额外参与测试版比价，
     // 测试版版本号更高时才下发（正式版发布后高于测试版则自然回正）。
+    // system 客户端可选携带；未携带则按平台默认系统推送（兼容在用客户端），只匹配同系统与遗留无 system 记录。
     let mut selected: Option<serde_json::Value> =
-        latest_enabled_platform_version(&platform, "stable");
+        latest_enabled_platform_version(&platform, "stable", &system);
     if beta_device_allowed(pool, &device_id).await {
-        if let Some(beta) = latest_enabled_platform_version(&platform, "beta") {
+        if let Some(beta) = latest_enabled_platform_version(&platform, "beta", &system) {
             let beta_newer = match &selected {
                 Some(stable) => {
                     let bv = beta.get("version").and_then(|v| v.as_str()).unwrap_or("");
@@ -382,6 +420,8 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
 
 /// 分享落地页「去下载」用的免签接口：返回指定平台服务器发布的最新版本下载信息。
 /// 与官网对齐——下载来源统一取服务器发布的版本（version.json → app_versions 兜底）。
+/// 返回按系统细分的下载列表 systems，供官网按系统渲染下载入口；顶层字段保留第一个可用系统，
+/// 兼容分享落地页等旧消费方。
 pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let raw = parse_body(body);
     let req_platform = str_of(&raw, "platform");
@@ -396,26 +436,48 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         _ => "弦予音乐桌面端",
     };
 
-    // 优先：分平台 version.json 中已启用且版本号最大的正式版（下载页/分享页不对内测渠道开放）
-    if let Some(item) = latest_enabled_platform_version(&platform, "stable") {
-        let version = item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        // 商店页链接（可选）：桌面端配置微软商店后，官网下载页展示「从微软商店获取」次要入口
-        let store_url = item
-            .get("storeUrl")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+    // 各系统的正式版下载（下载页/分享页不对内测渠道开放）
+    let system_keys: Vec<&str> = match platform.as_str() {
+        "mobile" => vec!["android", "harmonyos", "ios"],
+        "watch" => vec![""],
+        _ => vec!["windows", "linux", "macos"],
+    };
+    let mut systems: Vec<serde_json::Value> = Vec::new();
+    let mut first: Option<serde_json::Value> = None;
+    for sys_key in &system_keys {
+        if let Some(item) = latest_enabled_platform_version(&platform, "stable", sys_key) {
+            let sys = if sys_key.is_empty() {
+                app_name.to_string()
+            } else {
+                system_label(&platform, sys_key).to_string()
+            };
+            let entry = json!({
+                "system": sys_key,
+                "label": sys,
+                "version": item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                "content": item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                "download_url": item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                "store_url": item.get("storeUrl").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+            });
+            if first.is_none() {
+                first = Some(entry.clone());
+            }
+            systems.push(entry);
+        }
+    }
+
+    // 顶层字段兼容旧消费方（分享落地页等），取第一个可用系统
+    if let Some(f) = first {
         return ctx.ok(
             "ok",
             json!({
                 "platform": platform,
                 "app_name": app_name,
-                "version": version,
-                "content": content,
-                "download_url": url,
-                "store_url": store_url,
+                "systems": systems,
+                "version": f.get("version").cloned().unwrap_or(Value::String(String::new())),
+                "content": f.get("content").cloned().unwrap_or(Value::Null),
+                "download_url": f.get("download_url").cloned().unwrap_or(Value::Null),
+                "store_url": f.get("store_url").cloned().unwrap_or(Value::Null),
             }),
         );
     }
@@ -435,6 +497,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 json!({
                     "platform": platform,
                     "app_name": app_name,
+                    "systems": [],
                     "version": version,
                     "content": "",
                     "download_url": url,

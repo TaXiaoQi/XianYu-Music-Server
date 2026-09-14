@@ -288,12 +288,61 @@ fn normalize_channel(raw: &str) -> String {
     }
 }
 
-/// 保存版本更新配置。按「平台 + 渠道 + 版本号」upsert：同平台同渠道版本号已存在则替换该条，
-/// 否则新增；各平台/渠道版本号独立比较，互不影响。
+/// 平台默认系统：桌面为 Windows、移动为 Android、腕上端无系统细分。
+/// 无 system 字段的遗留记录与未携带 system 的在用客户端按此默认系统处理。
+fn default_system(platform: &str) -> String {
+    match platform {
+        "mobile" => "android".to_string(),
+        "watch" => "".to_string(),
+        _ => "windows".to_string(),
+    }
+}
+
+/// 系统白名单：桌面 windows/linux/macos；移动 android/harmonyos/ios；腕上端无细分。
+/// 非法或缺省值回退平台默认系统。
+fn normalize_system(platform: &str, raw: &str) -> String {
+    let allowed: &[&str] = match platform {
+        "mobile" => &["android", "harmonyos", "ios"],
+        _ => &["windows", "linux", "macos"],
+    };
+    let r = raw.trim();
+    if allowed.contains(&r) {
+        r.to_string()
+    } else {
+        default_system(platform)
+    }
+}
+
+/// 配置项的有效系统；无 system 字段的遗留记录视为平台默认系统（迁移期兼容）。
+fn item_system(item: &Value) -> String {
+    let raw = item.get("system").and_then(|v| v.as_str()).unwrap_or("").trim();
+    let platform = item_platform(item);
+    if raw.is_empty() {
+        default_system(&platform)
+    } else {
+        normalize_system(&platform, raw)
+    }
+}
+
+/// 系统展示标签
+fn system_label(platform: &str, system: &str) -> &'static str {
+    match (platform, system) {
+        ("mobile", "harmonyos") => "鸿蒙 HarmonyOS",
+        ("mobile", "ios") => "iOS",
+        ("mobile", _) => "Android",
+        (_, "linux") => "Linux",
+        (_, "macos") => "macOS",
+        _ => "Windows",
+    }
+}
+
+/// 保存版本更新配置。按「平台 + 系统 + 渠道 + 版本号」upsert：同平台同系统同渠道版本号已存在则
+/// 替换该条，否则新增；各平台/系统/渠道版本号独立比较，互不影响。
 pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let version = str_of(&data, "version").trim().to_string();
     let platform = normalize_platform(str_of(&data, "platform").trim());
+    let system = normalize_system(&platform, str_of(&data, "system").trim());
     let channel = normalize_channel(str_of(&data, "channel").trim());
     let mut download_url = str_of(&data, "download_url").trim().to_string();
     let update_content = str_of(&data, "update_content").trim().to_string();
@@ -331,6 +380,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
             .iter()
             .find(|item| {
                 item_platform(item) == platform
+                    && item_system(item) == system
                     && item_channel(item) == channel
                     && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
             })
@@ -368,17 +418,18 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if lower_url.contains("apps.microsoft.com") || lower_url.contains("ms-windows-store") {
         return err(400, "下载渠道不能填微软商店页链接：请填安装包直链，商店页链接请配置到「商店分发」");
     }
-    // 新增版本号必须大于该平台同渠道已列出的最高版本，防止版本号回退
-    // （正式版与测试版互不干扰：1.2.0-beta-1 允许与 1.2.0 正式版并存）
+    // 新增版本号必须大于同平台同系统同渠道已列出的最高版本，防止版本号回退；
+    // 各系统版本独立比较（windows 与 linux/macos 可各自发布不同进度），正式版与测试版互不干扰。
     let is_new = !list.iter().any(|item| {
         item_platform(item) == platform
+            && item_system(item) == system
             && item_channel(item) == channel
             && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
     });
     if is_new {
         let mut max_ver: Option<&str> = None;
         for item in &list {
-            if item_platform(item) != platform || item_channel(item) != channel {
+            if item_platform(item) != platform || item_system(item) != system || item_channel(item) != channel {
                 continue;
             }
             let ver = item.get("version").and_then(|v| v.as_str()).unwrap_or("");
@@ -394,13 +445,15 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         if let Some(mv) = max_ver {
             if compare_version_code(&version, mv) <= 0 {
                 let channel_label = if channel == "beta" { "测试版" } else { "正式版" };
-                return err(400, &format!("新版本 {} 必须大于该平台{}已有的最高版本 {}", version, channel_label, mv));
+                let sys_label = system_label(&platform, &system);
+                return err(400, &format!("新版本 {} 必须大于{}{}已有的最高版本 {}", version, sys_label, channel_label, mv));
             }
         }
     }
     let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
     let new_item = json!({
         "platform": platform.clone(),
+        "system": system.clone(),
         "channel": channel.clone(),
         "version": version.clone(),
         "downloadUrl": download_url,
@@ -412,6 +465,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     let mut replaced = false;
     for item in list.iter_mut() {
         if item_platform(item) == platform
+            && item_system(item) == system
             && item_channel(item) == channel
             && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
         {
@@ -427,14 +481,15 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         return err(500, "写入文件失败，请检查 api 目录权限");
     }
     let platform_label = platform_label(&platform);
+    let sys_label = system_label(&platform, &system);
     let channel_label = if channel == "beta" { "测试版" } else { "正式版" };
     let action_label = if replaced {
-        format!("修改{}{}更新配置", platform_label, channel_label)
+        format!("修改{}{}{}更新配置", sys_label, platform_label, channel_label)
     } else {
-        format!("新增{}{}更新配置", platform_label, channel_label)
+        format!("新增{}{}{}更新配置", sys_label, platform_label, channel_label)
     };
     log_operation(pool, ctx, &action_label, &version, if enabled { "启用" } else { "禁用" }).await;
-    ok("保存成功", json!({ "version": version, "platform": platform, "channel": channel }))
+    ok("保存成功", json!({ "version": version, "platform": platform, "system": system, "channel": channel }))
 }
 
 /// 配置项的渠道标签；旧数据（分渠道上线前保存的）视为正式版。
@@ -450,18 +505,26 @@ fn platform_label(platform: &str) -> &'static str {
     }
 }
 
-/// 删除版本更新配置（按平台 + 版本号匹配）
+/// 删除版本更新配置（按平台 + 系统 + 版本号匹配；缺省系统按平台默认系统匹配，兼容遗留无 system 数据）
 pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let version = str_of(&data, "version").trim().to_string();
     let platform = normalize_platform(str_of(&data, "platform").trim());
+    let raw_system = str_of(&data, "system").trim().to_string();
+    let system = if raw_system.is_empty() {
+        default_system(&platform)
+    } else {
+        normalize_system(&platform, &raw_system)
+    };
     if version.is_empty() {
         return err(400, "版本号不能为空");
     }
     let mut list = read_desktop_versions();
     let before = list.len();
     list.retain(|item| {
-        !(item_platform(item) == platform && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()))
+        !(item_platform(item) == platform
+            && item_system(item) == system
+            && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()))
     });
     if list.len() == before {
         return err(404, "版本不存在");
@@ -469,7 +532,7 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     if !write_desktop_versions(&list) {
         return err(500, "写入文件失败，请检查 api 目录权限");
     }
-    log_operation(pool, ctx, &format!("删除{}更新配置", platform_label(&platform)), &version, "").await;
+    log_operation(pool, ctx, &format!("删除{}{}更新配置", system_label(&platform, &system), platform_label(&platform)), &version, "").await;
     ok("删除成功", Value::Null)
 }
 

@@ -26,6 +26,22 @@
       >{{ p.label }}</button>
     </div>
 
+    <!-- 系统切换（当前平台细分，如桌面 → Windows/Linux/macOS） -->
+    <div v-if="systemList.length" class="platform-tabs system-tabs">
+      <button
+        class="platform-tab"
+        :class="{ active: systemFilter === '' }"
+        @click="switchSystem('')"
+      >全部</button>
+      <button
+        v-for="s in systemList"
+        :key="s.key"
+        class="platform-tab"
+        :class="{ active: systemFilter === s.key }"
+        @click="switchSystem(s.key)"
+      >{{ s.label }}</button>
+    </div>
+
     <!-- 统计卡片 -->
     <div class="mobile-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
       <div class="mobile-stat">
@@ -33,7 +49,7 @@
           <span class="stat-icon stat-icon-total">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </span>
-          <strong>{{ platformList.length }}</strong>
+          <strong>{{ filteredList.length }}</strong>
         </div>
         <span class="stat-label">全部</span>
       </div>
@@ -51,7 +67,7 @@
           <span class="stat-icon stat-icon-off">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
           </span>
-          <strong>{{ platformList.length - enabledCount }}</strong>
+          <strong>{{ filteredList.length - enabledCount }}</strong>
         </div>
         <span class="stat-label">已禁用</span>
       </div>
@@ -66,15 +82,15 @@
 
       <div v-if="desktopLoading" class="ver-empty">加载中...</div>
 
-      <div v-else-if="platformList.length === 0" class="ver-desktop-empty">
-        <p>暂未配置{{ currentPlatformLabel }}更新版本</p>
+      <div v-else-if="filteredList.length === 0" class="ver-desktop-empty">
+        <p>暂未配置{{ currentSubLabel }}更新版本</p>
         <button class="mobile-btn outline" @click="openDesktopModal()">+ 新增配置</button>
       </div>
 
       <div v-else class="ver-card-list">
         <div
-          v-for="item in platformList"
-          :key="`${platformOf(item)}-${item.version}`"
+          v-for="item in filteredList"
+          :key="`${platformOf(item)}-${systemOf(item)}-${item.version}`"
           class="ver-card"
           :class="{ disabled: !item.enabled }"
         >
@@ -83,6 +99,7 @@
             <div class="ver-card-top">
               <div class="ver-badges">
                 <span class="ver-badge" :class="`badge-${platformOf(item)}`">{{ platformLabelOf(item) }}</span>
+                <span v-if="SYSTEM_META[platformOf(item)]?.length" class="ver-badge" :class="`badge-${systemOf(item)}`">{{ systemLabelOf(item) }}</span>
                 <span v-if="channelOf(item) === 'beta'" class="ver-badge badge-beta">测试版</span>
               </div>
               <label class="ver-toggle" :title="item.enabled ? '点击禁用' : '点击启用'">
@@ -134,7 +151,7 @@
                     class="enable-btn platform-btn"
                     :class="{ on: desktopDraftPlatform === p.key, locked: !!desktopEditingVersion }"
                     :disabled="!!desktopEditingVersion"
-                    @click="desktopDraftPlatform = p.key"
+                    @click="switchDraftPlatform(p.key)"
                   >{{ p.label }}</button>
                 </div>
               </div>
@@ -145,6 +162,21 @@
                   <button type="button" class="enable-btn channel-beta" :class="{ on: desktopDraftChannel === 'beta' }" @click="desktopDraftChannel = 'beta'">测试版</button>
                 </div>
                 <p v-if="desktopDraftChannel === 'beta'" class="field-hint">测试版仅对「内测名单」中的设备ID下发，普通用户检测更新与官网下载均不受影响。</p>
+              </div>
+              <div v-if="SYSTEM_META[desktopDraftPlatform]?.length" class="field">
+                <span class="required">目标系统</span>
+                <div class="enable-row system-row">
+                  <button
+                    v-for="s in SYSTEM_META[desktopDraftPlatform]"
+                    :key="s.key"
+                    type="button"
+                    class="enable-btn system-btn"
+                    :class="{ on: desktopDraftSystem === s.key, locked: !!desktopEditingVersion }"
+                    :disabled="!!desktopEditingVersion"
+                    @click="desktopDraftSystem = s.key"
+                  >{{ s.label }}</button>
+                </div>
+                <p class="field-hint">{{ desktopDraftPlatform === 'desktop' ? '各系统可独立配置版本与下载渠道。' : '移动端按系统分发（Android / 鸿蒙 / iOS）。' }}</p>
               </div>
               <label class="field">
                 <span class="required">版本号</span>
@@ -382,6 +414,42 @@ function platformLabelOf(item: any): string {
   return platformLabelKey(platformOf(item))
 }
 
+// 各平台可发布的系统细分：桌面分 Windows/Linux/macOS，移动分 Android/鸿蒙/iOS，腕上端暂不细分
+const SYSTEM_META: Record<PlatformKey, { key: string; label: string }[]> = {
+  desktop: [
+    { key: 'windows', label: 'Windows' },
+    { key: 'linux', label: 'Linux' },
+    { key: 'macos', label: 'macOS' },
+  ],
+  mobile: [
+    { key: 'android', label: 'Android' },
+    { key: 'harmonyos', label: '鸿蒙' },
+    { key: 'ios', label: 'iOS' },
+  ],
+  watch: [],
+}
+
+/** 平台默认系统：桌面→windows、移动→android、腕上端→''；无 system 字段的遗留记录按此展示 */
+function defaultSystem(platform: PlatformKey): string {
+  if (platform === 'mobile') return 'android'
+  if (platform === 'watch') return ''
+  return 'windows'
+}
+
+/** 配置项的有效系统（遗留无 system 记录按平台默认） */
+function systemOf(item: any): string {
+  const s = item?.system
+  return s || defaultSystem(platformOf(item))
+}
+
+function systemLabelKey(platform: PlatformKey, system: string): string {
+  return SYSTEM_META[platform]?.find(s => s.key === system)?.label || '默认'
+}
+
+function systemLabelOf(item: any): string {
+  return systemLabelKey(platformOf(item), systemOf(item))
+}
+
 function formatFileSize(bytes: number): string {
   if (!bytes) return '-'
   if (bytes < 1024) return bytes + ' B'
@@ -397,13 +465,30 @@ function openUrl(url: string) {
 const desktopList = ref<any[]>([])
 const desktopLoading = ref(true)
 const platformFilter = ref<PlatformKey>('desktop')
+const systemFilter = ref<string>('')
+const systemList = computed(() => SYSTEM_META[platformFilter.value] || [])
 const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
+const currentSubLabel = computed(() =>
+  systemFilter.value
+    ? `${systemLabelKey(platformFilter.value, systemFilter.value)}${currentPlatformLabel.value}`
+    : currentPlatformLabel.value
+)
 const platformList = computed(() => desktopList.value.filter(v => platformOf(v) === platformFilter.value))
-const enabledCount = computed(() => platformList.value.filter(v => v.enabled).length)
+const filteredList = computed(() => {
+  if (!systemFilter.value) return platformList.value
+  return platformList.value.filter(v => systemOf(v) === systemFilter.value)
+})
+const enabledCount = computed(() => filteredList.value.filter(v => v.enabled).length)
 
 function switchPlatform(key: PlatformKey) {
   if (platformFilter.value === key || desktopSaving.value) return
   platformFilter.value = key
+  systemFilter.value = ''
+}
+
+function switchSystem(key: string) {
+  if (desktopSaving.value) return
+  systemFilter.value = key
 }
 
 async function loadDesktop() {
@@ -420,6 +505,7 @@ const desktopModalVisible = ref(false)
 const desktopDraft = ref({ version: '', updateContent: '', downloadUrl: '' })
 const desktopDraftEnabled = ref(false)
 const desktopDraftPlatform = ref<PlatformKey>('desktop')
+const desktopDraftSystem = ref<string>('windows')
 const desktopDraftChannel = ref<'stable' | 'beta'>('stable')
 const desktopDraftBetaNum = ref('')
 const desktopEditingVersion = ref('')
@@ -463,6 +549,7 @@ function openDesktopModal(item?: any) {
     desktopEditingVersion.value = version
     desktopEditingChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraftPlatform.value = platformOf(item)
+    desktopDraftSystem.value = systemOf(item)
     desktopDraftChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraft.value = {
       version: isBeta ? version.slice(0, betaIdx) : version,
@@ -475,6 +562,7 @@ function openDesktopModal(item?: any) {
     desktopEditingVersion.value = ''
     desktopEditingChannel.value = 'stable'
     desktopDraftPlatform.value = platformFilter.value
+    desktopDraftSystem.value = systemFilter.value || defaultSystem(platformFilter.value)
     desktopDraftChannel.value = 'stable'
     desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
     desktopDraftBetaNum.value = ''
@@ -483,6 +571,15 @@ function openDesktopModal(item?: any) {
   desktopPackageFile.value = null
   desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
   desktopModalVisible.value = true
+}
+
+/** 新建弹窗内切换平台时，同步将目标系统重置为所选平台的有效默认值 */
+function switchDraftPlatform(key: PlatformKey) {
+  if (desktopEditingVersion.value) return
+  desktopDraftPlatform.value = key
+  if (!SYSTEM_META[key]?.some(s => s.key === desktopDraftSystem.value)) {
+    desktopDraftSystem.value = defaultSystem(key)
+  }
 }
 
 function closeDesktopModal() {
@@ -510,6 +607,7 @@ async function saveDesktop() {
   }
   const res = await adminApi('save_desktop_version', {
     platform: desktopDraftPlatform.value,
+    system: desktopDraftSystem.value,
     channel: desktopDraftChannel.value,
     version,
     download_url: desktopDraft.value.downloadUrl?.trim() || '',
@@ -532,6 +630,7 @@ async function toggleDesktop(e: Event, item: any) {
   const enabled = (e.target as HTMLInputElement).checked
   const res = await adminApi('save_desktop_version', {
     platform: platformOf(item),
+    system: systemOf(item),
     channel: channelOf(item),
     version: item.version,
     download_url: item.downloadUrl || '',
@@ -549,9 +648,9 @@ async function toggleDesktop(e: Event, item: any) {
 }
 
 async function deleteDesktop(item: any) {
-  const ok = await mobileConfirm(`确认删除${platformLabelOf(item)} v${item.version} 的更新配置？`, { title: '删除配置', confirmText: '确认删除', danger: true })
+  const ok = await mobileConfirm(`确认删除${platformLabelOf(item)}${systemLabelOf(item)} v${item.version} 的更新配置？`, { title: '删除配置', confirmText: '确认删除', danger: true })
   if (!ok) return
-  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), version: item.version })
+  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), system: systemOf(item), version: item.version })
   if (res.code === 200) { showToast('删除成功', 'success'); loadDesktop() }
   else showToast(res.msg || '删除失败')
 }
@@ -772,6 +871,16 @@ onMounted(() => {
   color: var(--accent);
 }
 
+/* 系统切换次级标签栏 */
+.system-tabs {
+  margin-bottom: 14px;
+  margin-top: -6px;
+}
+.system-tabs .platform-tab {
+  padding: 6px 14px;
+  font-size: 11px;
+}
+
 /* 统计栏 */
 .ver-stats { display: flex; gap: 10px; margin-bottom: 20px; }
 .ver-stat {
@@ -869,6 +978,12 @@ onMounted(() => {
 .badge-desktop { background: #eff6ff; color: #3b82f6; }
 .badge-mobile { background: #ecfdf5; color: #10b981; }
 .badge-watch { background: #f5f3ff; color: #8b5cf6; }
+.badge-windows { background: rgba(0, 122, 204, 0.14); color: #0078d4; }
+.badge-linux { background: rgba(249, 115, 22, 0.14); color: #f97316; }
+.badge-macos { background: rgba(148, 163, 184, 0.16); color: #64748b; }
+.badge-android { background: rgba(26, 188, 156, 0.14); color: #1abc9c; }
+.badge-harmonyos { background: rgba(59, 130, 246, 0.12); color: #2563eb; }
+.badge-ios { background: rgba(99, 102, 241, 0.13); color: #6366f1; }
 .badge-normal { background: #ecfdf5; color: #10b981; }
 .badge-update { background: #eff6ff; color: #3b82f6; }
 .badge-force { background: rgba(245, 158, 11, 0.14); color: #f59e0b; }
