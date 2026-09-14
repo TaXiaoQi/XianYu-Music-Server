@@ -318,7 +318,6 @@ fn profile_for_action(action: &str) -> RateProfile {
         | "email_reset_password"
         | "email_get_profile"
         | "generate_tv_login_code"
-        | "poll_tv_login_status"
         | "scan_tv_login"
         | "confirm_tv_login"
         | "admin_login" => RateProfile {
@@ -330,6 +329,19 @@ fn profile_for_action(action: &str) -> RateProfile {
             block_after_violations: 3,
             block_seconds: 3600,
             allow_temp_block: true,
+        },
+        // 扫码登录状态轮询：桌面端/手表端均 2s 一次（≈30 次/分），只读
+        // 状态检查。单独走宽松档且不累计封禁——此前套用 auth 档（10 次/分）
+        // 必然在二维码存活期内被打断，表现为「一扫码就提示已过期」。
+        "poll_tv_login_status" => RateProfile {
+            name: "poll",
+            window_seconds: 60,
+            warn_threshold: 40,
+            limit_threshold: 60,
+            cooldown_seconds: 0,
+            block_after_violations: 0,
+            block_seconds: 0,
+            allow_temp_block: false,
         },
         "file_sync_upload_start"
         | "file_sync_upload_chunk"
