@@ -761,6 +761,14 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         .unwrap_or(0)
         .max(0);
 
+    // ===== 增量上报模式（stats_mode = "delta"）=====
+    // 新客户端（桌面/移动/腕上统一）只上报自上次成功上报后的增量，
+    // 服务端做合计，成为多端累计/今日/本周时长的唯一真源。
+    // 旧客户端不带 stats_mode，继续走下方 GREATEST 兼容路径。
+    if data.get("stats_mode").and_then(|v| v.as_str()) == Some("delta") {
+        return report_listen_stats_delta(&data, &ciyuanxi_id, ctx, pool).await;
+    }
+
     // 检查是否存在待处理的听歌统计重置信号
     let row = sqlx::query(
         "SELECT listen_stats_reset_at, listen_duration_offset, unique_songs_offset FROM app_users WHERE ciyuanxi_id = ?",
@@ -854,10 +862,149 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     }
 }
 
-/// get_listen_stats 查询账号累计听歌时长（秒）
+/// 增量听歌统计上报（stats_mode = "delta"）
 ///
-/// 客户端登录后调用，把服务端记录的账号总时长合并进本地统计，
-/// 实现桌面端 / 移动端总播放时长跨端同步。
+/// 请求字段（均为秒，允许数字或字符串）：
+/// - delta_duration:       自上次成功上报后的累计增量
+/// - delta_daily_duration: 当日增量（跨天由客户端归零基线）
+/// - delta_songs:          新增「计入播放次数」的歌曲数（可选）
+/// 响应字段：server_total_duration / server_daily_duration / server_weekly_duration，
+/// 客户端显示统一以服务端值为准（多端一致）。
+async fn report_listen_stats_delta(
+    data: &serde_json::Value,
+    ciyuanxi_id: &str,
+    ctx: ReqCtx,
+    pool: &MySqlPool,
+) -> Response {
+    use serde_json::json;
+
+    let parse_sec = |key: &str| -> i64 {
+        data.get(key)
+            .and_then(|v| v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok())))
+            .unwrap_or(0.0)
+            .max(0.0) as i64
+    };
+    let delta_total = parse_sec("delta_duration");
+    let delta_daily = parse_sec("delta_daily_duration");
+    let delta_songs = data
+        .get("delta_songs")
+        .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .unwrap_or(0)
+        .max(0);
+
+    // 检查重置信号：增量语义下直接清零并要求客户端清本地基线重新累计
+    let reset_row = sqlx::query(
+        "SELECT listen_stats_reset_at FROM app_users WHERE ciyuanxi_id = ?",
+    )
+    .bind(ciyuanxi_id)
+    .fetch_optional(pool)
+    .await;
+
+    if let Ok(Some(r)) = reset_row {
+        use sqlx::Row;
+        let reset: Option<String> = r.try_get("listen_stats_reset_at").unwrap_or(None);
+        if let Some(ts) = reset {
+            let _ = sqlx::query(
+                "UPDATE app_users SET listen_stats_reset_at = NULL, listen_duration = 0, unique_songs_count = 0, listen_duration_offset = 0, unique_songs_offset = 0 WHERE ciyuanxi_id = ?",
+            )
+            .bind(ciyuanxi_id)
+            .execute(pool)
+            .await;
+            let _ = sqlx::query("DELETE FROM listen_daily_stats WHERE ciyuanxi_id = ?")
+                .bind(ciyuanxi_id)
+                .execute(pool)
+                .await;
+            let _ = sqlx::query("DELETE FROM play_history WHERE ciyuanxi_id = ?")
+                .bind(ciyuanxi_id)
+                .execute(pool)
+                .await;
+            return ctx.ok("ok", Some(json!({ "reset_at": ts })));
+        }
+    } else {
+        return ctx.err(404, "用户不存在");
+    }
+
+    if delta_total <= 0 && delta_daily <= 0 && delta_songs <= 0 {
+        // 零增量也回传服务端现值，方便客户端对齐显示
+        return read_listen_stats_snapshot(ciyuanxi_id, ctx, pool).await;
+    }
+
+    let result = sqlx::query(
+        "UPDATE app_users \
+         SET listen_duration = listen_duration + ?, \
+             unique_songs_count = unique_songs_count + ? \
+         WHERE ciyuanxi_id = ?",
+    )
+    .bind(delta_total)
+    .bind(delta_songs)
+    .bind(ciyuanxi_id)
+    .execute(pool)
+    .await;
+
+    // 当日统计按增量累加（日榜/周榜数据源）
+    let _ = sqlx::query(
+        "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
+         VALUES (?, DATE(NOW() + INTERVAL 8 HOUR), ?, ?) \
+         ON DUPLICATE KEY UPDATE \
+             listen_duration = listen_duration + VALUES(listen_duration), \
+             unique_songs_count = unique_songs_count + VALUES(unique_songs_count)",
+    )
+    .bind(ciyuanxi_id)
+    .bind(delta_daily)
+    .bind(delta_songs)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(r) if r.rows_affected() > 0 => {
+            read_listen_stats_snapshot(ciyuanxi_id, ctx, pool).await
+        }
+        Ok(_) => ctx.err(404, "用户不存在"),
+        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+    }
+}
+
+/// 读取服务端累计/当日/本周听歌统计快照（增量模式的统一回传格式）
+async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    use serde_json::json;
+    let total: i64 = sqlx::query_scalar(
+        "SELECT listen_duration FROM app_users WHERE ciyuanxi_id = ?",
+    )
+    .bind(ciyuanxi_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    let daily: i64 = sqlx::query_scalar(
+        "SELECT listen_duration FROM listen_daily_stats \
+         WHERE ciyuanxi_id = ? AND stat_date = DATE(NOW() + INTERVAL 8 HOUR)",
+    )
+    .bind(ciyuanxi_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    let weekly: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(listen_duration), 0) FROM listen_daily_stats \
+         WHERE ciyuanxi_id = ? \
+           AND stat_date >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 6 DAY",
+    )
+    .bind(ciyuanxi_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+
+    ctx.ok(
+        "ok",
+        Some(json!({
+            "server_total_duration": total.max(0),
+            "server_daily_duration": daily.max(0),
+            "server_weekly_duration": weekly.max(0),
+        })),
+    )
+}
+
+/// get_listen_stats 查询账号累计听歌时长（秒）
 pub async fn get_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = extract_id(&data);
