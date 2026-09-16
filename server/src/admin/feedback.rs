@@ -4,7 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use super::{err, log_operation, ok, row_to_value, AdminCtx};
-use crate::handlers::helpers::{int_of, parse_body, str_of};
+use crate::handlers::helpers::{bool_of, int_of, parse_body, str_of};
 
 const DEFAULT_FEEDBACK_DAILY_LIMIT: i64 = 20;
 const MAX_ADMIN_FEEDBACK_IMAGES: usize = 6;
@@ -1074,6 +1074,25 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
         Err(_) => return err(500, "服务器错误"),
     };
     log_operation(pool, ctx, "后台新增反馈", &format!("id={}", new_id), &format!("类型:{}", feedback_type)).await;
+    // 勾选「发送外部通知」时，与用户端提交一致地通知开启反馈板块通知的邮箱（内部自行校验全局开关与单邮箱开关）
+    if bool_of(&data, "notify_external") {
+        let type_label = match feedback_type.as_str() {
+            "suggestion" => "功能建议",
+            "appeal" => "账号申诉",
+            _ => "问题反馈",
+        };
+        let image = image_urls.first().map(|s| s.as_str()).unwrap_or("");
+        crate::admin::email::notify_external_emails_for_module(
+            pool,
+            &ctx.config,
+            &ctx.ip,
+            "feedback",
+            "【弦予后台】新反馈待处理",
+            &format!("管理员 {} 后台新建了{}「{}」，请及时处理。", ctx.username, type_label, title),
+            image,
+            &ctx.base_url,
+        ).await;
+    }
     ok("创建成功", json!({ "id": new_id }))
 }
 

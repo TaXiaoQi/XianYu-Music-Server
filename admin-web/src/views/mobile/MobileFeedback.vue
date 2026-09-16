@@ -358,6 +358,10 @@
             <button class="mfb-type-btn" :class="{ active: createType === 'suggestion' }" @click="createType = 'suggestion'">功能建议</button>
           </div>
           <textarea v-model="createContent" class="mobile-dialog-input" rows="4" placeholder="请输入内容描述（最多 1000 字）" maxlength="1000" style="min-height:90px;resize:vertical;"></textarea>
+          <label class="mfb-create-notify">
+            <input v-model="createNotify" type="checkbox" />
+            <span>发送外部通知</span>
+          </label>
           <div class="mfb-dropzone" :class="{ dragging: createDragging, has: createImages.length > 0 }" @dragover.prevent="createDragging = true" @dragleave.prevent="createDragging = false" @drop.prevent="onDrop" @click="fileInput?.click()">
             <input ref="fileInput" type="file" accept="image/*" multiple hidden @change="onFileChange" />
             <div class="mfb-dropzone-text">
@@ -1008,6 +1012,7 @@ const createContent = ref('')
 const createImages = ref<string[]>([])
 const createDragging = ref(false)
 const createSaving = ref(false)
+const createNotify = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 
 // 平台版本标签文案
@@ -1023,6 +1028,7 @@ function openCreate() {
   createType.value = ''; createPlatform.value = ''
   createContent.value = ''
   createImages.value = []; createDragging.value = false; createSaving.value = false
+  createNotify.value = false
   createVisible.value = true
 }
 function closeCreate() { if (!createSaving.value) createVisible.value = false }
@@ -1058,6 +1064,7 @@ async function submitCreate() {
     title: createType.value === 'suggestion' ? '功能建议' : '问题反馈',
     content: createContent.value.trim(),
     images: createImages.value,
+    notify_external: createNotify.value ? 1 : 0,
   })
   createSaving.value = false
   if (res.code === 200) { showToast('创建成功', 'success'); closeCreate(); loadList() } else { showToast(res.msg || '创建失败') }
@@ -1155,7 +1162,7 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 }
 .fb-search-send:hover { opacity: 0.92; }
 .fb-search-send:active { transform: scale(0.96); }
-.mfb-limit-body { padding: 4px 2px 2px; }
+.mfb-limit-body { padding: 4px 20px 14px; }
 .mfb-limit-desc {
   font-size: 12px;
   color: var(--text-muted);
@@ -1532,6 +1539,18 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 }
 .mfb-type-label em { color: #EC4141; font-style: normal; margin-left: 1px; }
 .mfb-create-gap { height: 4px; }
+.mfb-create-notify {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.mfb-create-notify input { width: 16px; height: 16px; accent-color: #EC4141; cursor: pointer; }
 .mfb-type-btn {
   flex: 1;
   border: 1px solid var(--border);
@@ -1561,6 +1580,14 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   background: #dc2626; color: #fff; font-size: 14px; line-height: 1;
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
+
+/* 完成弹窗 */
+.mfb-resolve-images {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 0 20px 14px;
+}
+.mfb-resolve-opt { font-size: 12px; font-weight: 700; color: var(--text-muted); }
+.mfb-resolve-dropzone { padding: 14px; }
 
 /* 统计弹窗 */
 .mfb-stats-body { padding: 10px 20px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }

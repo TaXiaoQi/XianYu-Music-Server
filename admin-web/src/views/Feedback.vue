@@ -601,6 +601,13 @@
                 </div>
               </div>
             </div>
+            <label class="create-notify">
+              <input v-model="createNotify" type="checkbox" />
+              <span class="create-notify-text">
+                <strong>发送外部通知</strong>
+                <span>勾选后向已配置的外部通知邮箱推送新反馈提醒</span>
+              </span>
+            </label>
           </div>
           <div class="modal-foot">
             <button class="btn-cancel" :disabled="createSaving" @click="closeCreateModal">取消</button>
@@ -1072,6 +1079,7 @@ const createContent = ref('')
 const createImages = ref<string[]>([])
 const createDragging = ref(false)
 const createSaving = ref(false)
+const createNotify = ref(false)
 const createFileInput = ref<HTMLInputElement | null>(null)
 
 function openCreateModal() {
@@ -1081,6 +1089,7 @@ function openCreateModal() {
   createImages.value = []
   createSaving.value = false
   createDragging.value = false
+  createNotify.value = false
   createModalVisible.value = true
 }
 function closeCreateModal() {
@@ -1147,6 +1156,7 @@ async function submitCreate() {
     title: createTitle.value.trim(),
     content: createContent.value.trim(),
     images: createImages.value,
+    notify_external: createNotify.value ? 1 : 0,
   })
   createSaving.value = false
   if (res.code === 200) {
@@ -2714,6 +2724,22 @@ onUnmounted(() => {
 }
 
 /* ===== 新建事项弹窗 ===== */
+.create-notify {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.create-notify:hover { border-color: var(--accent); }
+.create-notify input { width: 16px; height: 16px; margin-top: 2px; accent-color: var(--accent); cursor: pointer; }
+.create-notify-text { display: flex; flex-direction: column; gap: 2px; }
+.create-notify-text strong { font-size: 14px; color: var(--text); }
+.create-notify-text span { font-size: 12px; color: var(--text-muted); }
+
 .create-dialog {
   max-width: 520px;
   max-height: calc(100vh - 40px);

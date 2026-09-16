@@ -255,7 +255,25 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         .execute(pool)
         .await;
     match result {
-        Ok(r) => ctx.json(200, "提交成功", Some(json!({ "id": r.last_insert_id() }))),
+        Ok(r) => {
+            // 与壁纸/头像/昵称审核通知同思路：提交后邮件通知开启反馈板块通知的管理员
+            let type_label = match feedback_type.as_str() {
+                "suggestion" => "功能建议",
+                "beta" => "内测申请",
+                _ => "问题反馈",
+            };
+            crate::admin::email::notify_external_emails_for_module(
+                pool,
+                &ctx.config,
+                &ctx.client_ip,
+                "feedback",
+                "【弦予后台】新反馈待处理",
+                &format!("用户 {}（{}）提交了{}「{}」，请及时处理。", nickname, ciyuanxi_id, type_label, title),
+                if image_urls.is_empty() { "" } else { &image_urls[0] },
+                &ctx.base_url,
+            ).await;
+            ctx.json(200, "提交成功", Some(json!({ "id": r.last_insert_id() })))
+        }
         Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
     }
 }
