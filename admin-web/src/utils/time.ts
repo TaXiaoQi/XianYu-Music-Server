@@ -1,6 +1,3 @@
-// 数据库统一存 UTC，后台展示统一转北京时间（UTC+8，无夏令时）
-
-/** 解析数据库时间字符串（如 2026-08-18 07:30:00 / 2026-08-18T07:30:00）为 UTC 毫秒时间戳 */
 function parseUtcMs(v: any): number | null {
   if (!v) return null
   const s = String(v).trim()
@@ -10,7 +7,6 @@ function parseUtcMs(v: any): number | null {
   return Date.UTC(y, (mo || 1) - 1, d || 1, h || 0, mi || 0, sec || 0)
 }
 
-/** 北京时间格式化：2026年8月18日 15时30分 */
 export function fmtTime(v: any): string {
   const ms = parseUtcMs(v)
   if (ms === null) return v ? String(v) : ''
@@ -23,7 +19,6 @@ export function fmtTime(v: any): string {
   return `${y}年${mo}月${d}日 ${h}时${String(mi).padStart(2, '0')}分`
 }
 
-/** 北京时间完整格式化：2026-08-18 15:30:00 */
 export function fmtDateTime(v: any): string {
   const ms = parseUtcMs(v)
   if (ms === null) return v ? String(v) : ''
@@ -37,7 +32,6 @@ export function fmtDateTime(v: any): string {
   return `${y}-${mo}-${d} ${h}:${mi}:${sec}`
 }
 
-/** 北京时间日期：2026年8月18日 */
 export function fmtDate(v: any): string {
   const ms = parseUtcMs(v)
   if (ms === null) return v ? String(v) : ''

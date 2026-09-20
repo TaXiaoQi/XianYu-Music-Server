@@ -5,10 +5,8 @@ use sqlx::MySqlPool;
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{parse_body, str_of};
 
-/// 站点 logo 在 server_settings 表中的 key
 const SITE_LOGO_KEY: &str = "site_logo_url";
 
-/// logo 存储目录与固定文件名（统一覆盖，保证 URL 稳定）
 fn logo_dir() -> std::path::PathBuf {
     std::path::Path::new("uploads").join("logos")
 }
@@ -17,7 +15,6 @@ fn logo_relative_url() -> String {
     "/uploads/logos/logo.png".to_string()
 }
 
-/// 读取当前站点 logo URL（未配置返回空串）
 pub async fn read_site_logo(pool: &MySqlPool) -> String {
     sqlx::query_scalar::<_, Option<String>>(
         "SELECT setting_value FROM server_settings WHERE setting_key = ? LIMIT 1",
@@ -31,7 +28,6 @@ pub async fn read_site_logo(pool: &MySqlPool) -> String {
     .unwrap_or_default()
 }
 
-/// 将相对路径拼接为完整 URL（优先 base_url，其次 config_public_base_url）
 fn full_url(base_url: &str, config_public_base_url: &str, url: &str) -> String {
     if url.is_empty() {
         return String::new();
@@ -49,7 +45,6 @@ fn full_url(base_url: &str, config_public_base_url: &str, url: &str) -> String {
     format!("{}{}", base.trim_end_matches('/'), url)
 }
 
-/// 保存 logo 为 PNG（含透明通道，限制最大边长 512）
 fn save_logo_png(bytes: &[u8], target: &std::path::Path) -> bool {
     use image::GenericImageView;
     let img = match image::load_from_memory(bytes) {
@@ -74,21 +69,18 @@ fn save_logo_png(bytes: &[u8], target: &std::path::Path) -> bool {
         .is_ok()
 }
 
-/// 获取站点 logo（后台）
 pub async fn get_site_logo(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let stored = read_site_logo(pool).await;
     let url = if stored.is_empty() { "" } else { &stored };
     ok("ok", json!({ "logo_url": url }))
 }
 
-/// 上传并更新站点 logo（覆盖旧图片）
 pub async fn upload_site_logo(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let image_b64 = str_of(&data, "image").to_string();
     if image_b64.is_empty() {
         return err(400, "请选择 logo 图片");
     }
-    // 兼容 data URL 前缀
     let b64 = if let Some(idx) = image_b64.find(',') {
         if image_b64.starts_with("data:") {
             &image_b64[idx + 1..]

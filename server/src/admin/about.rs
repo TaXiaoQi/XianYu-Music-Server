@@ -9,8 +9,6 @@ fn about_config_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("about_config.json")
 }
 
-/// 平台专属配置文件：desktop / mobile 分开存储，互不覆盖；
-/// 不带 platform（旧后台）沿用默认 about_config.json。
 fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
     match platform {
         "desktop" => Some(std::path::Path::new("api").join("about_config_desktop.json")),
@@ -50,8 +48,6 @@ fn read_about_config() -> Value {
     Value::Object(merged)
 }
 
-/// 平台感知默认值：移动端开源地址指向移动端仓库、参考项目指向桌面端仓库，
-/// 与客户端 get_about_config 的下发逻辑保持一致。
 fn default_about_config_for(platform: &str) -> Value {
     let mut config = default_about_config();
     if platform == "mobile" {
@@ -60,8 +56,6 @@ fn default_about_config_for(platform: &str) -> Value {
     config
 }
 
-/// 读取平台专属配置；无存档时回退共享配置并叠加平台默认覆盖，
-/// 保证后台展示与客户端实际收到的配置一致。
 fn read_platform_about_config(platform: &str) -> Value {
     let mut config = read_about_config();
     if platform == "mobile" {
@@ -105,8 +99,6 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let reference_project_url = str_of(&data, "referenceProjectUrl").trim().to_string();
     let join_group_url = str_of(&data, "joinGroupUrl").trim().to_string();
 
-    // 只下发链接，不覆盖按钮显示文字（由各端客户端多语言本地化）。
-    // 名单：payload 未携带（旧后台/移动后台页）时沿用现有存档，避免丢名单。
     let acknowledgements: Vec<Value> = match data.get("acknowledgements") {
         Some(Value::Array(arr)) => arr
             .iter()

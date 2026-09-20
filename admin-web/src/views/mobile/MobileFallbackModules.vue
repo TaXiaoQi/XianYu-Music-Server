@@ -336,7 +336,6 @@ onMounted(loadList)
 .fb-title { font-size: 18px; font-weight: 850; margin: 0 0 4px; color: var(--text); }
 .fb-desc { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0; }
 
-/* 模块列表 */
 .fb-list { display: flex; flex-direction: column; gap: 12px; }
 .fb-card {
   border: 1px solid var(--border);
@@ -365,7 +364,6 @@ onMounted(loadList)
   color: var(--text-light);
 }
 
-/* 开关 */
 .switch { position: relative; display: inline-flex; flex-shrink: 0; cursor: pointer; }
 .switch.switch-off { opacity: 0.45; cursor: not-allowed; }
 .switch input { display: none; }
@@ -391,7 +389,6 @@ onMounted(loadList)
 .switch input:checked + .track { background: #EC4141; }
 .switch input:checked + .track .thumb { transform: translateX(18px); }
 
-/* 元信息 */
 .fb-meta {
   display: flex;
   flex-wrap: wrap;
@@ -414,7 +411,6 @@ onMounted(loadList)
 .fb-size { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, 'SF Mono', Consolas, monospace; }
 .fb-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
-/* 弹窗 */
 .modal-backdrop {
   position: fixed;
   inset: 0;

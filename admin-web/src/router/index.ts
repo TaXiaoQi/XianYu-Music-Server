@@ -10,7 +10,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Login.vue'),
     meta: { public: true },
   },
-  // 邮箱注册登录测试模块（独立于后台管理系统）
   {
     path: '/email',
     redirect: '/email/login',
@@ -328,7 +327,6 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/ApiTest.vue'),
         meta: { title: '接口测试', sensitive: true },
       },
-      // 兜底：未匹配的子路由
       {
         path: ':pathMatch(.*)*',
         name: 'NotFound',
@@ -344,7 +342,6 @@ const router = createRouter({
   routes,
 })
 
-// 路由守卫：未登录跳转 login
 router.beforeEach((to, _from, next) => {
   const isPublic = to.meta.public === true
   const hasToken = !!getToken()

@@ -7,12 +7,6 @@ use sqlx::Row;
 use super::{err, log_operation, ok, row_to_value, AdminCtx};
 use crate::handlers::helpers::{compare_version_code, int_of, parse_body, str_of};
 
-/// 新增 APP 版本（接收 base64 编码的 APK 文件数据）
-/// 入参（JSON）：
-///   app_name: 软件名称
-///   version_code: 版本号
-///   update_content: 更新内容
-///   file_data: base64 编码的 APK 文件内容
 pub async fn add_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let app_name = str_of(&data, "app_name").trim().to_string();
@@ -27,7 +21,6 @@ pub async fn add_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
         return err(400, "请上传安装包");
     }
 
-    // 解码 base64 文件数据
     let file_bytes = match base64::engine::general_purpose::STANDARD.decode(&file_data) {
         Ok(b) => b,
         Err(_) => return err(400, "文件数据解码失败"),
@@ -38,10 +31,9 @@ pub async fn add_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
 
     let upload_dir = std::path::Path::new("uploads").join("apk");
     if let Err(e) = std::fs::create_dir_all(&upload_dir) {
-        return err(500, &format!("无法创建上传目录: {}", e));
+        { tracing::error!("无法创建上传目录: {e}"); return err(500, "无法创建上传目录"); }
     }
 
-    // 先插入记录获取 ID，再保存文件
     let insert = sqlx::query(
         "INSERT INTO app_versions (app_name, version_code, download_url, update_content, status, file_size) VALUES (?, ?, '', ?, 'normal', ?)",
     )
@@ -54,7 +46,7 @@ pub async fn add_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
 
     let version_id = match insert {
         Ok(r) => r.last_insert_id() as i64,
-        Err(e) => return err(500, &format!("数据库错误: {}", e)),
+        Err(e) => return { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     };
 
     let new_filename = format!("app_v{}.apk", version_id);
@@ -82,7 +74,6 @@ pub async fn add_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
     }))
 }
 
-/// 获取 APP 版本列表（分页）
 pub async fn list_versions(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page").max(1);
@@ -115,7 +106,7 @@ pub async fn list_versions(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
                 "list": list,
             }))
         }
-        Err(e) => err(500, &format!("查询失败: {}", e)),
+        Err(e) => { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     }
 }
 
@@ -143,8 +134,6 @@ fn safe_file_ext(file_name: &str) -> String {
     if ext.is_empty() { "bin".to_string() } else { ext }
 }
 
-/// 提取上传文件名的安全主干（去路径、去扩展名），仅保留 ASCII 字母数字与 `. _ -`。
-/// 全部被净化为空时返回空串，由调用方回退到生成的文件名。
 fn safe_file_stem(file_name: &str) -> String {
     let base = file_name.rsplit(|c| c == '/' || c == '\\').next().unwrap_or("");
     let stem = base.rsplit_once('.').map(|(s, _)| s).unwrap_or(base);
@@ -156,7 +145,6 @@ fn safe_file_stem(file_name: &str) -> String {
     s.trim_matches(|c| c == '.' || c == '_' || c == '-').to_string()
 }
 
-/// 修改版本信息（不重新上传安装包）
 pub async fn update_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -181,11 +169,10 @@ pub async fn update_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
             ok("修改成功", Value::Null)
         }
         Ok(_) => err(404, "版本不存在"),
-        Err(e) => err(500, &format!("数据库错误: {}", e)),
+        Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     }
 }
 
-/// 修改版本状态
 pub async fn change_version_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -210,7 +197,6 @@ pub async fn change_version_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     }
 }
 
-/// 删除版本（同时删除 APK 文件）
 pub async fn delete_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -249,7 +235,6 @@ fn read_desktop_versions() -> Vec<Value> {
     Vec::new()
 }
 
-/// 平台白名单：desktop / mobile / watch（腕上端预留）。未携带或非法值回退 desktop。
 fn normalize_platform(raw: &str) -> String {
     match raw {
         "mobile" => "mobile".to_string(),
@@ -258,7 +243,6 @@ fn normalize_platform(raw: &str) -> String {
     }
 }
 
-/// 配置项的平台标签；旧数据（分平台上线前保存的）视为 desktop。
 fn item_platform(item: &Value) -> String {
     normalize_platform(item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop").trim())
 }
@@ -273,14 +257,12 @@ fn write_desktop_versions(list: &[Value]) -> bool {
     std::fs::write(&tmp, json_str).is_ok() && std::fs::rename(&tmp, &path).is_ok()
 }
 
-/// 获取桌面端版本配置（多版本列表）
 pub async fn get_desktop_version(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let list = read_desktop_versions();
     log_operation(pool, ctx, "读取桌面端更新配置", "", "").await;
     ok("", json!({ "list": list }))
 }
 
-/// 渠道白名单：stable（正式版）/ beta（测试版，仅对内测名单设备下发）。非法值回退 stable。
 fn normalize_channel(raw: &str) -> String {
     match raw {
         "beta" => "beta".to_string(),
@@ -288,8 +270,6 @@ fn normalize_channel(raw: &str) -> String {
     }
 }
 
-/// 平台默认系统：桌面为 Windows、移动为 Android、腕上端无系统细分。
-/// 无 system 字段的遗留记录与未携带 system 的在用客户端按此默认系统处理。
 fn default_system(platform: &str) -> String {
     match platform {
         "mobile" => "android".to_string(),
@@ -298,8 +278,6 @@ fn default_system(platform: &str) -> String {
     }
 }
 
-/// 系统白名单：桌面 windows/linux/macos；移动 android/harmonyos/ios；腕上端无细分。
-/// 非法或缺省值回退平台默认系统。
 fn normalize_system(platform: &str, raw: &str) -> String {
     let allowed: &[&str] = match platform {
         "mobile" => &["android", "harmonyos", "ios"],
@@ -313,7 +291,6 @@ fn normalize_system(platform: &str, raw: &str) -> String {
     }
 }
 
-/// 配置项的有效系统；无 system 字段的遗留记录视为平台默认系统（迁移期兼容）。
 fn item_system(item: &Value) -> String {
     let raw = item.get("system").and_then(|v| v.as_str()).unwrap_or("").trim();
     let platform = item_platform(item);
@@ -324,7 +301,6 @@ fn item_system(item: &Value) -> String {
     }
 }
 
-/// 系统展示标签
 fn system_label(platform: &str, system: &str) -> &'static str {
     match (platform, system) {
         ("mobile", "harmonyos") => "鸿蒙 HarmonyOS",
@@ -336,8 +312,6 @@ fn system_label(platform: &str, system: &str) -> &'static str {
     }
 }
 
-/// 保存版本更新配置。按「平台 + 系统 + 渠道 + 版本号」upsert：同平台同系统同渠道版本号已存在则
-/// 替换该条，否则新增；各平台/系统/渠道版本号独立比较，互不影响。
 pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let version = str_of(&data, "version").trim().to_string();
@@ -349,9 +323,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     let enabled = int_of(&data, "enabled") != 0;
     let file_data = str_of(&data, "file_data").trim().to_string();
     let file_name = str_of(&data, "file_name").trim().to_string();
-    // 商店分发（可选）：仅桌面端支持微软商店页链接，官网下载页据此展示「从微软商店获取」入口；
-    // 应用内更新链路（downloadUrl）不受影响——商店版 MSI 禁用自更新，更新由微软商店负责。
-    let mut store_url = str_of(&data, "store_url").trim().to_string();
+    let store_url = str_of(&data, "store_url").trim().to_string();
     if !store_url.is_empty() && !store_url.starts_with("https://") {
         return err(400, "商店页链接必须以 https:// 开头");
     }
@@ -369,13 +341,10 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         }
         let upload_dir = std::path::Path::new("uploads").join("packages");
         if let Err(e) = std::fs::create_dir_all(&upload_dir) {
-            return err(500, &format!("无法创建安装包目录: {}", e));
+            { tracing::error!("无法创建安装包目录: {e}"); return err(500, "无法创建安装包目录"); }
         }
         let ext = safe_file_ext(&file_name);
         let ts = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
-        // 保留上传文件的原名（净化后），避免官网下载出现 platform_v版本_时间戳 这类不可读文件名。
-        // 同版本重复保存沿用已存文件名覆盖写入，保持下载地址稳定不失效；
-        // 仅当原名不可用或与其他版本的包重名时才回退到旧的时间戳命名。
         let existing_pkg_name = list
             .iter()
             .find(|item| {
@@ -394,7 +363,6 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         } else if !stem.is_empty() {
             let candidate = format!("{}.{}", stem, ext);
             if upload_dir.join(&candidate).exists() {
-                // 同名文件已被其他版本的安装包占用，追加时间戳保护旧包不被覆盖
                 format!("{}_{}.{}", stem, ts, ext)
             } else {
                 candidate
@@ -411,15 +379,10 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if enabled && download_url.is_empty() {
         return err(400, "启用更新时，请填写下载链接或上传安装包");
     }
-    // 下载渠道误填商店页链接的防护：商店商品页是网页而非安装包直链，
-    // 应用内更新会把它当安装包地址下载，导致更新损坏。
-    // 商店页链接应配置到「商店分发」store_url 字段（详见 README「版本管理与商店分发」）。
     let lower_url = download_url.to_lowercase();
     if lower_url.contains("apps.microsoft.com") || lower_url.contains("ms-windows-store") {
         return err(400, "下载渠道不能填微软商店页链接：请填安装包直链，商店页链接请配置到「商店分发」");
     }
-    // 新增版本号必须大于同平台同系统同渠道已列出的最高版本，防止版本号回退；
-    // 各系统版本独立比较（windows 与 linux/macos 可各自发布不同进度），正式版与测试版互不干扰。
     let is_new = !list.iter().any(|item| {
         item_platform(item) == platform
             && item_system(item) == system
@@ -492,7 +455,6 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     ok("保存成功", json!({ "version": version, "platform": platform, "system": system, "channel": channel }))
 }
 
-/// 配置项的渠道标签；旧数据（分渠道上线前保存的）视为正式版。
 fn item_channel(item: &Value) -> String {
     normalize_channel(item.get("channel").and_then(|v| v.as_str()).unwrap_or("stable").trim())
 }
@@ -505,7 +467,6 @@ fn platform_label(platform: &str) -> &'static str {
     }
 }
 
-/// 删除版本更新配置（按平台 + 系统 + 版本号匹配；缺省系统按平台默认系统匹配，兼容遗留无 system 数据）
 pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let version = str_of(&data, "version").trim().to_string();
@@ -536,7 +497,6 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     ok("删除成功", Value::Null)
 }
 
-/// 获取内测名单（beta_testers 全量列表，按添加时间倒序）
 pub async fn list_beta_testers(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     match sqlx::query("SELECT id, device_id, note, created_at FROM beta_testers ORDER BY id DESC")
         .fetch_all(pool)
@@ -546,11 +506,10 @@ pub async fn list_beta_testers(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
             let list: Vec<Value> = rows.iter().map(row_to_value).collect();
             ok("ok", json!({ "list": list }))
         }
-        Err(e) => err(500, &format!("查询失败: {}", e)),
+        Err(e) => { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     }
 }
 
-/// 添加内测设备（device_id 唯一，可选备注）
 pub async fn add_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -579,11 +538,10 @@ pub async fn add_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
             log_operation(pool, ctx, "添加内测设备", &device_id, &note).await;
             ok("添加成功", Value::Null)
         }
-        Err(e) => err(500, &format!("数据库错误: {}", e)),
+        Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     }
 }
 
-/// 从内测名单移除设备
 pub async fn delete_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -604,7 +562,6 @@ pub async fn delete_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     }
 }
 
-/// 设置内测设备备注（名单里有备注的设备以备注展示，替代纯硬件ID便于辨识）
 pub async fn update_beta_tester_note(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -630,9 +587,6 @@ pub async fn update_beta_tester_note(body: &str, ctx: &AdminCtx, pool: &MySqlPoo
     }
 }
 
-/// 内测设备详情：名单信息 + 最近上报的设备信息（厂商/型号/系统版本）+ 关联帐号。
-/// 设备信息优先取反馈表（字段最全），缺失时回退启动日志；关联帐号取启动日志去重 +
-/// 反馈提交账号合并，便于管理员识别硬件ID对应的真实用户。
 pub async fn get_beta_tester_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -640,7 +594,6 @@ pub async fn get_beta_tester_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPoo
         return err(400, "设备ID不能为空");
     }
 
-    // 名单信息（备注、加入时间）
     let tester = sqlx::query("SELECT id, device_id, note, created_at FROM beta_testers WHERE device_id = ? LIMIT 1")
         .bind(&device_id)
         .fetch_optional(pool)
@@ -651,7 +604,6 @@ pub async fn get_beta_tester_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPoo
         Err(_) => return err(500, "数据库错误"),
     };
 
-    // 最近一次携带设备信息的反馈（厂商/型号/系统版本/架构/计算机名 + 提交账号）
     let fb = sqlx::query(
         "SELECT f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, \
                 f.device_brand, f.device_model, f.os_version, f.architecture, f.machine_name, f.app_version \
@@ -662,7 +614,6 @@ pub async fn get_beta_tester_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPoo
     .fetch_optional(pool)
     .await;
 
-    // 最近一次启动日志（型号/系统版本兜底）
     let open = sqlx::query(
         "SELECT os_version, device_model, device_name, app_version FROM app_open_log WHERE device_id = ? ORDER BY id DESC LIMIT 1",
     )
@@ -687,7 +638,6 @@ pub async fn get_beta_tester_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPoo
     };
     let mut device = device;
     if let Ok(Some(r)) = &open {
-        // 反馈表缺失的字段用启动日志兜底
         for (key, col) in [("os_version", "os_version"), ("model", "device_model"), ("app_version", "app_version")] {
             if device.get(key).and_then(|v| v.as_str()).unwrap_or("").is_empty() {
                 let v = str_col(r, col);
@@ -698,7 +648,6 @@ pub async fn get_beta_tester_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPoo
         }
     }
 
-    // 关联帐号：启动日志去重（按最近活跃排序）+ 反馈提交账号
     let mut accounts: Vec<Value> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     if let Ok(rows) = sqlx::query(

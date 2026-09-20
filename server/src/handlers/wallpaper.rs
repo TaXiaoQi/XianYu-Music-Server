@@ -12,7 +12,6 @@ fn wallpaper_dir() -> std::path::PathBuf {
     std::path::Path::new("uploads").join("wallpapers")
 }
 
-/// 平台白名单：desktop / mobile / watch（腕上端预留）。未携带或非法值回退 desktop。
 fn normalize_platform(raw: &str) -> String {
     match raw {
         "mobile" => "mobile".to_string(),
@@ -99,12 +98,20 @@ fn row_to_wallpaper(ctx: &ReqCtx, row: &sqlx::mysql::MySqlRow) -> Value {
     });
     let image_url = public_url(ctx, row.try_get::<String, _>("image_url").unwrap_or_default());
     let thumbnail_url = public_url(ctx, row.try_get::<String, _>("thumbnail_url").unwrap_or_default());
+    let video_url = public_url(ctx, row.try_get::<String, _>("video_url").unwrap_or_default());
+    let video_poster = public_url(ctx, row.try_get::<String, _>("video_poster").unwrap_or_default());
     json!({
         "id": id,
         "title": row.try_get::<String, _>("title").unwrap_or_default(),
         "description": row.try_get::<String, _>("description").unwrap_or_default(),
+        "mediaType": row.try_get::<String, _>("media_type").unwrap_or_default(),
         "imageUrl": image_url,
         "thumbnailUrl": thumbnail_url,
+        "videoUrl": video_url,
+        "videoPoster": video_poster,
+        "videoDuration": row.try_get::<i64, _>("video_duration").unwrap_or_else(|_| row.try_get::<i32, _>("video_duration").unwrap_or(0) as i64),
+        "videoSize": row.try_get::<i64, _>("video_size").unwrap_or_else(|_| row.try_get::<u32, _>("video_size").unwrap_or(0) as i64),
+        "videoSha256": row.try_get::<String, _>("video_sha256").unwrap_or_default(),
         "category": row.try_get::<String, _>("category").unwrap_or_default(),
         "platform": row.try_get::<String, _>("platform").unwrap_or_else(|_| "desktop".to_string()),
         "uploaderId": row.try_get::<String, _>("uploaded_by").unwrap_or_default(),
@@ -117,13 +124,25 @@ fn row_to_wallpaper(ctx: &ReqCtx, row: &sqlx::mysql::MySqlRow) -> Value {
 }
 
 pub async fn list_wallpapers(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let platform = normalize_platform(str_of(&parse_body(body), "platform").trim());
-    let rows = sqlx::query(
-        "SELECT * FROM wallpapers WHERE status = 'normal' AND platform = ? ORDER BY sort_order DESC, id DESC",
-    )
-    .bind(&platform)
-    .fetch_all(pool)
-    .await;
+    let data = parse_body(body);
+    let platform = normalize_platform(str_of(&data, "platform").trim());
+    let media_type = str_of(&data, "media_type").trim();
+    let rows = if media_type == "image" || media_type == "video" {
+        sqlx::query(
+            "SELECT * FROM wallpapers WHERE status = 'normal' AND platform = ? AND media_type = ? ORDER BY sort_order DESC, id DESC",
+        )
+        .bind(&platform)
+        .bind(media_type)
+        .fetch_all(pool)
+        .await
+    } else {
+        sqlx::query(
+            "SELECT * FROM wallpapers WHERE status = 'normal' AND platform = ? ORDER BY sort_order DESC, id DESC",
+        )
+        .bind(&platform)
+        .fetch_all(pool)
+        .await
+    };
     match rows {
         Ok(rows) => {
             let list: Vec<Value> = rows.iter().map(|r| row_to_wallpaper(&ctx, r)).collect();
@@ -209,6 +228,9 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     let Some(bytes) = data_url_to_bytes(&image_data) else {
         return ctx.err(400, "无效的图片数据");
     };
+    if bytes.len() > 8 * 1024 * 1024 {
+        return ctx.err(400, "图片过大，请控制在 8MB 以内");
+    }
     let valid_ext = image::guess_format(&bytes)
         .map(|f| matches!(f, image::ImageFormat::Jpeg | image::ImageFormat::Png | image::ImageFormat::WebP | image::ImageFormat::Gif))
         .unwrap_or(false);

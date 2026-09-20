@@ -7,6 +7,7 @@ use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
 const DEFAULT_WALLPAPER_UPLOAD_LIMIT: i64 = 20;
+const DEFAULT_WALLPAPER_VIDEO_MAX_MB: i64 = 50;
 
 async fn ensure_wallpapers_table(pool: &MySqlPool) {
     if let Some(stmt) = crate::schema::table_statements().iter().find(|s| s.contains("`wallpapers`")) {
@@ -44,11 +45,24 @@ async fn read_global_wallpaper_upload_limit(pool: &MySqlPool) -> i64 {
     .unwrap_or(DEFAULT_WALLPAPER_UPLOAD_LIMIT)
 }
 
+async fn read_global_wallpaper_video_max(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar::<_, Option<String>>(
+        "SELECT setting_value FROM server_settings WHERE setting_key = 'wallpaper_video_max_mb' LIMIT 1",
+    )
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .flatten()
+    .and_then(|v| v.trim().parse::<i64>().ok())
+    .filter(|v| *v > 0)
+    .unwrap_or(DEFAULT_WALLPAPER_VIDEO_MAX_MB)
+}
+
 fn wallpaper_dir() -> std::path::PathBuf {
     std::path::Path::new("uploads").join("wallpapers")
 }
 
-/// 平台白名单：desktop / mobile / watch（腕上端预留）。未携带或非法值回退 desktop。
 fn normalize_platform(raw: &str) -> String {
     match raw {
         "mobile" => "mobile".to_string(),
@@ -57,8 +71,6 @@ fn normalize_platform(raw: &str) -> String {
     }
 }
 
-/// 将相对路径拼接为完整 URL（与 handlers::wallpaper::public_url 逻辑一致）
-/// 优先使用 base_url（从请求头构造），其次使用 config_public_base_url（配置兜底）
 fn full_url(base_url: &str, config_public_base_url: &str, url: &str) -> String {
     if url.is_empty() {
         return String::new();
@@ -76,7 +88,6 @@ fn full_url(base_url: &str, config_public_base_url: &str, url: &str) -> String {
     format!("{}{}", base.trim_end_matches('/'), url)
 }
 
-/// 保存压缩图片：统一转 JPG，最大宽度 max_w，质量 quality
 fn compress_and_save_image(bytes: &[u8], target: &std::path::Path, max_w: u32, quality: u32) -> bool {
     use image::GenericImageView;
     let img = match image::load_from_memory(bytes) {
@@ -100,9 +111,7 @@ fn compress_and_save_image(bytes: &[u8], target: &std::path::Path, max_w: u32, q
         .is_ok()
 }
 
-/// 新增壁纸（图片上传 + 压缩原图 + 缩略图）
 pub async fn add_wallpaper(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    // 兼容 multipart 或 JSON base64 两种传入方式
     let data = parse_body(body);
     let title = str_of(&data, "title").trim().to_string();
     let description = str_of(&data, "description").trim().to_string();
@@ -111,10 +120,17 @@ pub async fn add_wallpaper(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Resp
         category = "默认".into();
     }
     let platform = normalize_platform(str_of(&data, "platform").trim());
+    let media_type = str_of(&data, "media_type");
+    let media_type = if media_type.trim() == "video" { "video" } else { "image" };
     if title.is_empty() {
         return err(400, "请填写壁纸标题");
     }
     let image_b64 = str_of(&data, "image").to_string();
+
+    if media_type == "video" {
+        return add_video_wallpaper(&data, title, description, category, platform, ctx, pool, &image_b64).await;
+    }
+
     if image_b64.is_empty() {
         return err(400, "请上传壁纸图片");
     }
@@ -164,6 +180,110 @@ pub async fn add_wallpaper(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Resp
     ok("上传成功", json!({ "id": wp_id }))
 }
 
+async fn add_video_wallpaper(
+    data: &Value,
+    title: String,
+    description: String,
+    category: String,
+    platform: String,
+    ctx: &AdminCtx,
+    pool: &MySqlPool,
+    image_b64: &str,
+) -> Response {
+    // 视频首帧封面（图片）在 image 字段，与公开上传保持一致
+    use base64::Engine;
+    let video_b64 = str_of(data, "video").to_string();
+    if video_b64.is_empty() {
+        return err(400, "请上传视频文件");
+    }
+    let video_bytes = match base64::engine::general_purpose::STANDARD.decode(&video_b64) {
+        Ok(b) => b,
+        Err(_) => return err(400, "无效的视频数据"),
+    };
+    let max_mb = read_global_wallpaper_video_max(pool).await;
+    if (video_bytes.len() as i64) > max_mb * 1024 * 1024 {
+        return err(400, &format!("视频过大，请控制在 {}MB 以内", max_mb));
+    }
+    if !is_mp4(&video_bytes) {
+        return err(400, "仅支持 MP4 视频");
+    }
+    let poster_bytes = if image_b64.is_empty() {
+        None
+    } else {
+        base64::engine::general_purpose::STANDARD
+            .decode(image_b64)
+            .ok()
+            .filter(|b| image::guess_format(b).map(|f| matches!(f, image::ImageFormat::Jpeg | image::ImageFormat::Png | image::ImageFormat::WebP)).unwrap_or(false))
+    };
+    let video_duration = int_of(data, "video_duration");
+    if video_duration < 0 || video_duration > 86400 {
+        return err(400, "视频时长无效");
+    }
+    let video_sha256 = sha256_hex(&video_bytes);
+
+    ensure_wallpapers_table(pool).await;
+    let dir = wallpaper_dir();
+    if let Err(_) = std::fs::create_dir_all(&dir) {
+        return err(500, "无法创建上传目录");
+    }
+    let ins = sqlx::query(
+        "INSERT INTO wallpapers (title, description, category, platform, media_type, video_url, video_poster, video_duration, video_size, video_sha256, status, uploaded_by, uploaded_by_nickname, reviewed_at, reviewed_by) VALUES (?, ?, ?, ?, 'video', '', '', ?, ?, ?, 'normal', 'admin', ?, NOW(), ?)",
+    )
+    .bind(&title)
+    .bind(&description)
+    .bind(&category)
+    .bind(&platform)
+    .bind(video_duration)
+    .bind(video_bytes.len() as i64)
+    .bind(&video_sha256)
+    .bind(&ctx.username)
+    .bind(&ctx.username)
+    .execute(pool)
+    .await;
+    let wp_id = match ins {
+        Ok(r) => r.last_insert_id() as i64,
+        Err(_) => return err(500, "数据库错误"),
+    };
+    let video_path = dir.join(format!("wallpaper_{}.mp4", wp_id));
+    if std::fs::write(&video_path, &video_bytes).is_err() {
+        let _ = sqlx::query("DELETE FROM wallpapers WHERE id = ?").bind(wp_id).execute(pool).await;
+        return err(500, "视频保存失败，请检查目录权限");
+    }
+    let video_url = format!("/uploads/wallpapers/wallpaper_{}.mp4", wp_id);
+    let mut poster_url = String::new();
+    if let Some(pb) = poster_bytes {
+        let poster_path = dir.join(format!("poster_{}.jpg", wp_id));
+        let thumb_path = dir.join(format!("thumb_{}.jpg", wp_id));
+        if compress_and_save_image(&pb, &poster_path, 1920, 82) {
+            poster_url = format!("/uploads/wallpapers/poster_{}.jpg", wp_id);
+            compress_and_save_image(&pb, &thumb_path, 480, 72);
+        }
+    }
+    let _ = sqlx::query("UPDATE wallpapers SET video_url = ?, video_poster = ? WHERE id = ?")
+        .bind(&video_url).bind(&poster_url).bind(wp_id).execute(pool).await;
+    log_operation(pool, ctx, &format!("新增{}视频壁纸", platform_label(&platform)), &title, &format!("ID:{}", wp_id)).await;
+    ok("上传成功", json!({ "id": wp_id }))
+}
+
+fn is_mp4(bytes: &[u8]) -> bool {
+    if bytes.len() < 16 || &bytes[4..8] != b"ftyp" {
+        return false;
+    }
+    let brand = &bytes[8..12];
+    brand == b"isom"
+        || brand == b"mp42"
+        || brand == b"avc1"
+        || brand == b"mp41"
+        || brand == b"dash"
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    hex::encode(hasher.finalize())
+}
+
 fn platform_label(platform: &str) -> &'static str {
     match platform {
         "mobile" => "移动端",
@@ -172,7 +292,6 @@ fn platform_label(platform: &str) -> &'static str {
     }
 }
 
-/// 壁纸列表
 pub async fn list_wallpapers(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     ensure_wallpapers_table(pool).await;
@@ -184,7 +303,6 @@ pub async fn list_wallpapers(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
             let config_url = &ctx.config.public_base_url;
             let arr: Vec<Value> = rows.iter().map(|r| {
                 let mut v = crate::admin::row_to_value(r);
-                // 将 image_url / thumbnail_url 从相对路径转为完整 URL
                 if let Some(obj) = v.as_object_mut() {
                     if let Some(url) = obj.get("image_url").and_then(|v| v.as_str()) {
                         obj.insert("image_url".to_string(), Value::String(full_url(base_url, config_url, url)));
@@ -202,19 +320,18 @@ pub async fn list_wallpapers(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     }
 }
 
-/// 删除壁纸
 pub async fn delete_wallpaper(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
     if id <= 0 {
         return err(400, "无效的壁纸ID");
     }
-    let wp = sqlx::query("SELECT image_url, thumbnail_url FROM wallpapers WHERE id = ?").bind(id).fetch_optional(pool).await.ok().flatten();
+    let wp = sqlx::query("SELECT image_url, thumbnail_url, video_url, video_poster FROM wallpapers WHERE id = ?").bind(id).fetch_optional(pool).await.ok().flatten();
     let Some(wp) = wp else {
         return err(404, "壁纸不存在");
     };
     let dir = wallpaper_dir();
-    for f in ["image_url", "thumbnail_url"] {
+    for f in ["image_url", "thumbnail_url", "video_url", "video_poster"] {
         let rel: String = wp.try_get(f).unwrap_or_default();
         if !rel.is_empty() {
             let name = rel.rsplit('/').next().unwrap_or("").to_string();
@@ -229,7 +346,6 @@ pub async fn delete_wallpaper(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     ok("删除成功", Value::Null)
 }
 
-/// 修改壁纸状态
 pub async fn change_wallpaper_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -267,13 +383,11 @@ pub async fn change_wallpaper_status(body: &str, ctx: &AdminCtx, pool: &MySqlPoo
     }
 }
 
-/// 获取桌面端用户壁纸上传总数上限；0 表示不限制
 pub async fn get_wallpaper_upload_limit(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let limit = read_global_wallpaper_upload_limit(pool).await;
     ok("ok", json!({ "wallpaper_upload_limit": limit }))
 }
 
-/// 修改桌面端用户壁纸上传总数上限；0 表示不限制
 pub async fn update_wallpaper_upload_limit(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let limit = int_of(&data, "wallpaper_upload_limit");
@@ -305,7 +419,6 @@ pub async fn update_wallpaper_upload_limit(body: &str, ctx: &AdminCtx, pool: &My
     }
 }
 
-/// 获取账号级壁纸上传限制列表
 pub async fn list_wallpaper_account_limits(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     ensure_wallpaper_upload_limits_table(pool).await;
     let rows = sqlx::query(
@@ -338,7 +451,6 @@ pub async fn list_wallpaper_account_limits(_body: &str, _ctx: &AdminCtx, pool: &
     }
 }
 
-/// 保存账号级壁纸上传限制；0 表示该账号无限制
 pub async fn save_wallpaper_account_limit(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     ensure_wallpaper_upload_limits_table(pool).await;
     let data = parse_body(body);
@@ -397,7 +509,6 @@ pub async fn save_wallpaper_account_limit(body: &str, ctx: &AdminCtx, pool: &MyS
     }
 }
 
-/// 删除账号级壁纸上传限制，恢复使用全局默认
 pub async fn delete_wallpaper_account_limit(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     ensure_wallpaper_upload_limits_table(pool).await;
     let data = parse_body(body);

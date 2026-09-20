@@ -16,8 +16,6 @@
 </template>
 
 <script setup lang="ts">
-// 访客账号访问涉密页面时的统一占位内容。
-// 页面外壳与路由切换动效仍正常展示，仅数据区替换为本提示。
 </script>
 
 <style scoped>

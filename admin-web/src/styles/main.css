@@ -85,12 +85,8 @@ button, input, textarea, select { font-family: inherit; }
 /* ---------- 布局 ---------- */
 .layout {
     display: flex;
-    /* 锁定为视口高度：内容在 .main 内滚动，body 恒为 100vh，
-       使 body 上的百分比渐变背景不会随页面长度被拉长，所有页面背景一致 */
     height: 100vh;
     overflow: hidden;
-    /* 用 backwards 而非 both：动画结束后不保留 translateY(0)，避免残留 transform
-       使 .layout 内 position:fixed 弹窗按整页而非视口居中 */
     animation: pageFadeIn 0.42s var(--motion) backwards;
 }
 .overlay {
@@ -120,7 +116,6 @@ button, input, textarea, select { font-family: inherit; }
     box-shadow: 10px 0 36px rgba(15, 23, 42, 0.05);
     display: flex;
     flex-direction: column;
-    /* 固定宽度侧边栏：任何子项都不允许横向溢出，禁止出现左右滚动条 */
     overflow-x: hidden;
     min-width: 0;
 }
@@ -157,11 +152,8 @@ button, input, textarea, select { font-family: inherit; }
     overflow-x: hidden;
     min-height: 0;
     min-width: 0;
-    /* 预留滚动条空间：内容超高出现滚动条时，选中态红色背景不与滚动条轨道贴边 */
     scrollbar-gutter: stable;
 }
-/* 侧边栏菜单项与滚动条保持间距，避免选中态红色背景被滚动条"吃掉"右侧
-   （active 项有 translateX(3px) 右移，故 padding 需略大于滚动条宽度） */
 .sidebar-menu > li {
     padding-right: 10px;
 }
@@ -776,7 +768,6 @@ html[data-theme='dark'] .toast {
 }
 
 /* ---------- 后台统一弹窗（替代浏览器 confirm/prompt） ---------- */
-/* 弹窗打开时锁定 body 滚动（CSS :has() 自动检测） */
 body:has(.modal-overlay, .modal-backdrop, .web-dialog-overlay, .mobile-dialog-overlay, .viewer-backdrop) {
     overflow: hidden;
 }
@@ -841,7 +832,6 @@ body:has(.modal-overlay, .modal-backdrop, .web-dialog-overlay, .mobile-dialog-ov
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-soft);
 }
-/* 操作菜单弹窗：垂直操作项列表 */
 .web-dialog-actions-list {
     display: flex;
     flex-direction: column;

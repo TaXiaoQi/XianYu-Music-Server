@@ -32,6 +32,15 @@ pub struct AppState {
     pub rate_limiter: Arc<rate_limit::ApiRateLimiter>,
 }
 
+fn service_unavailable() -> Response {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        [("content-type", "application/json; charset=utf-8")],
+        Body::from(r#"{"code":503,"msg":"数据库不可用，请稍后重试","data":null}"#),
+    )
+        .into_response()
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
@@ -64,9 +73,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cors = CorsLayer::permissive();
     let pool = state.pool.clone();
-    let static_dir = config.static_dir.clone();
 
-    // 确保 uploads 目录及子目录存在
     let _ = std::fs::create_dir_all("uploads/wallpapers");
     let _ = std::fs::create_dir_all("uploads/covers");
 
@@ -81,7 +88,6 @@ async fn main() -> anyhow::Result<()> {
         )
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
         .route("/admin/api/", get(handle_admin_api).post(handle_admin_api))
-        // 腕上端云端兜底通道（P4）：手机/手表 WS 中继
         .route("/watch-relay", get(watch_relay::watch_relay_handler))
         .route("/uploads/covers/:filename", get(serve_cover))
         .nest_service("/uploads", ServeDir::new("uploads"))
@@ -98,22 +104,18 @@ async fn main() -> anyhow::Result<()> {
     if !db_ready {
         tracing::warn!("database is not ready: use local cache mode and skip schema initialization");
     } else {
-        // 启动后台保证核心表存在（不阻塞 / 不等数据库就绪）
         tokio::spawn(async move {
             db::ping(&cfg, &pool2).await;
             schema::ensure_schema(&pool2).await;
         });
-        // 启动后台自动备份调度任务
         let auto_pool = pool.clone();
         tokio::spawn(async move {
             admin::db::auto_backup_loop(&auto_pool).await;
         });
-        // 启动通信工具服务调度任务（HTTP/SSE/WebSocket，按配置动态启停）
         let comm_pool = pool.clone();
         tokio::spawn(async move {
             admin::commtool::comm_server_loop(comm_pool).await;
         });
-        // 启动 WS 客户端自动重连调度任务
         let ws_pool = pool.clone();
         tokio::spawn(async move {
             admin::commtool::ws_client_loop(ws_pool).await;
@@ -140,7 +142,6 @@ async fn handle_api(
             .into_response();
     }
 
-    // 读取原始请求体
     let body_bytes = match axum::body::to_bytes(req.into_body(), 128 * 1024 * 1024).await {
         Ok(b) => b.to_vec(),
         Err(_) => Vec::new(),
@@ -149,10 +150,9 @@ async fn handle_api(
 
     let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
 
-    // 签名验证（免签操作放行）
-    let no_sign: [&str; 20] = [
+    let no_sign: [&str; 19] = [
         "install", "check", "get_source_status", "upload_avatar",
-        "debug_sign", "deduct_master_quota", "get_master_quota_usage",
+        "deduct_master_quota", "get_master_quota_usage",
         "get_captcha", "verify_captcha", "email_send_code", "email_get_captcha_config", "email_get_turnstile_config", "email_register", "email_login", "email_reset_password", "email_get_profile",
         "open", "get_user_agreement", "get_site_logo", "share_download",
     ];
@@ -172,7 +172,6 @@ async fn handle_api(
         let secret = &state.config.api_secret;
         let tolerance = state.config.api_timestamp_tolerance;
         if !sign::verify(&timestamp, &nonce, &signature, &raw_body, secret, tolerance) {
-            // 403 观测日志：定位签名失败的用户群（动作/来源/客户端/时钟偏差/缺头情况）
             let ua = headers
                 .get("user-agent")
                 .and_then(|v| v.to_str().ok())
@@ -191,7 +190,6 @@ async fn handle_api(
         }
     }
 
-    // 解密请求体
     let body = if let Some(iv) = headers
         .get("x-encrypted-iv")
         .map(|v| v.to_str().unwrap_or("").to_string())
@@ -202,6 +200,9 @@ async fn handle_api(
     };
 
     if !state.db_ready {
+        if !state.config.local_debug_no_db {
+            return service_unavailable();
+        }
         if let Some(resp) = rate_limit::check_api_rate_limit(
             &state.rate_limiter,
             None,
@@ -231,8 +232,6 @@ async fn handle_api(
     handlers::dispatch(&action, &body, ctx, &state.pool).await
 }
 
-/// 从请求头构造 base_url，用于后台拼接完整图片 URL
-/// 优先使用请求头中的 Host，若无法获取则使用 config.public_base_url 兜底
 fn build_base_url(headers: &HeaderMap, config: &Config) -> String {
     let host = headers
         .get("x-forwarded-host")
@@ -252,7 +251,6 @@ fn build_base_url(headers: &HeaderMap, config: &Config) -> String {
     format!("{}://{}", scheme, host)
 }
 
-/// 后台接口统一入口：`admin_login` 免鉴权，其余需 Bearer JWT
 async fn handle_admin_api(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -264,7 +262,6 @@ async fn handle_admin_api(
         return admin::err(404, "未知操作");
     }
 
-    // 读取原始请求体（后台请求体不加密，直接按 JSON 表单解析）
     let body_bytes = match axum::body::to_bytes(req.into_body(), 384 * 1024 * 1024).await {
         Ok(b) => b.to_vec(),
         Err(_) => Vec::new(),
@@ -272,7 +269,6 @@ async fn handle_admin_api(
     let raw_body = String::from_utf8_lossy(&body_bytes).into_owned();
     let ip = admin::client_ip(&headers);
 
-    // 登录接口免鉴权，但必须限流（IP + 用户名双维度），防暴力破解
     if action == "admin_login" {
         let req_ctx = response::ReqCtx::new((*state.config).clone(), &headers);
         let pool = if state.db_ready { Some(&state.pool) } else { None };
@@ -282,36 +278,47 @@ async fn handle_admin_api(
             return resp;
         }
         if !state.db_ready {
-            return debug::handle_admin_login(&raw_body, &state.config);
+            if state.config.local_debug_no_db {
+                return debug::handle_admin_login(&raw_body, &state.config);
+            }
+            return service_unavailable();
         }
         return admin::auth::admin_login(&raw_body, &state.config, &state.pool, &ip).await;
     }
 
-    // 其余全部要求 Bearer JWT
     let auth_header = headers
         .get(axum::http::header::AUTHORIZATION)
         .and_then(|v| v.to_str().ok())
         .map(|v| v.to_string());
-    let claims = match admin::verify_token(&state.config, auth_header.as_deref()) {
+    let claims = match admin::verify_token(
+        &state.config,
+        auth_header.as_deref(),
+        if state.db_ready { Some(&state.pool) } else { None },
+    )
+    .await
+    {
         Some(c) => c,
         None => return admin::err(401, "未登录或登录已过期"),
     };
     if !state.db_ready {
-        let base_url = build_base_url(&headers, &state.config);
-        let config_ctx = admin::AdminCtx {
-            id: claims.sub,
-            username: claims.username,
-            role: claims.role,
-            ip: ip.clone(),
-            config: (*state.config).clone(),
-            base_url,
-        };
-        return match action.as_str() {
-            "get_server_config_file" => admin::config_file::get_no_db(&raw_body, &config_ctx).await,
-            "save_server_config_file" => admin::config_file::save_no_db(&raw_body, &config_ctx).await,
-            "migrate_local_cache_to_database" => admin::config_file::migrate_local_cache_to_database(&raw_body, &config_ctx).await,
-            _ => debug::handle_admin_api(&action),
-        };
+        if state.config.local_debug_no_db {
+            let base_url = build_base_url(&headers, &state.config);
+            let config_ctx = admin::AdminCtx {
+                id: claims.sub,
+                username: claims.username,
+                role: claims.role,
+                ip: ip.clone(),
+                config: (*state.config).clone(),
+                base_url,
+            };
+            return match action.as_str() {
+                "get_server_config_file" => admin::config_file::get_no_db(&raw_body, &config_ctx).await,
+                "save_server_config_file" => admin::config_file::save_no_db(&raw_body, &config_ctx).await,
+                "migrate_local_cache_to_database" => admin::config_file::migrate_local_cache_to_database(&raw_body, &config_ctx).await,
+                _ => debug::handle_admin_api(&action),
+            };
+        }
+        return service_unavailable();
     }
     let base_url = build_base_url(&headers, &state.config);
     let ctx = admin::AdminCtx {
@@ -328,11 +335,6 @@ async fn handle_admin_api(
     admin::dispatch(&action, &raw_body, ctx, &state.pool).await
 }
 
-/// Apple App Site Association（AASA）：iOS QQ 分享 Universal Link 关联域验证。
-/// 编译期内嵌 JSON（路径固定 src/apple-app-site-association.json），
-/// 返回 application/json；Apple CDN 会拉取 https://api.xianyumusic.cn/.well-known/...
-/// 验证 applinks 关联。Team ID 占位 "TEAMID"，正式签名后替换为 Apple Developer
-/// 后台 10 位 Team ID 并重新编译部署即可。
 async fn serve_apple_app_site_association() -> Response {
     static AASA: &str = include_str!("apple-app-site-association.json");
     (
@@ -343,10 +345,6 @@ async fn serve_apple_app_site_association() -> Response {
         .into_response()
 }
 
-/// SPA 静态资源 fallback：
-/// - 已存在的静态文件（/assets/*、/logo.png 等）正常返回
-/// - 其余路径（SPA 深层路由，如 /dashboard、/m/dashboard）返回 index.html 且状态码 200，
-///   避免前端 history 路由刷新时 404
 async fn spa_fallback(State(state): State<AppState>, req: Request<Body>) -> Response {
     let static_dir = state.config.static_dir.clone();
     let index_file = format!(
@@ -356,7 +354,6 @@ async fn spa_fallback(State(state): State<AppState>, req: Request<Body>) -> Resp
 
     let path = req.uri().path().trim_start_matches('/');
     let file_path = if path.contains('.') {
-        // 有扩展名的资源路径：映射到 static_dir 下，防路径穿越
         let mut base = static_dir.trim_end_matches(|c| c == '/' || c == '\\').to_string();
         for seg in path.split('/') {
             if seg.is_empty() || seg == "." {
@@ -375,7 +372,6 @@ async fn spa_fallback(State(state): State<AppState>, req: Request<Body>) -> Resp
         }
         base
     } else {
-        // 无扩展名：SPA 深层路由，返回 index.html
         index_file.clone()
     };
 
@@ -391,17 +387,14 @@ async fn spa_fallback(State(state): State<AppState>, req: Request<Body>) -> Resp
             hm.insert(
                 axum::http::header::CACHE_CONTROL,
                 axum::http::HeaderValue::from_static(if is_html {
-                    // index.html / SPA 路由始终 no-cache，发版后浏览器即时拿到新 chunk 引用
                     "no-cache"
                 } else {
-                    // 带内容 hash 的静态资源可永久缓存
                     "public, max-age=31536000, immutable"
                 }),
             );
             (StatusCode::OK, hm, bytes).into_response()
         }
         Err(_) => {
-            // 资源不存在时仍回退 index.html（200），保证 SPA 可用
             match tokio::fs::read(&index_file).await {
                 Ok(bytes) => (
                     StatusCode::OK,
@@ -449,8 +442,6 @@ fn mime_of(path: &str) -> &'static str {
     }
 }
 
-/// 分享页封面资源：支持 `?w=N` 按宽度等比缩小输出 JPEG，
-/// 供落地页“先展示缩略图、高清图就绪后无缝替换”的渐进加载；不含 `w` 时原样返回。
 async fn serve_cover(
     Path(filename): Path<String>,
     Query(params): Query<HashMap<String, String>>,
@@ -499,7 +490,6 @@ async fn serve_cover(
     (StatusCode::OK, [(axum::http::header::CONTENT_TYPE, mime)], bytes).into_response()
 }
 
-/// 分享落地页：/s/{share_id} 服务端渲染，自增浏览量，注入 __SHARE_DATA__
 async fn share_landing(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -508,7 +498,6 @@ async fn share_landing(
     if !state.db_ready {
         return share_404();
     }
-    // 分享链接带有效时长：过期的分享记录直接丢弃（落地页与客户端均打不开）
     let row = sqlx::query("SELECT * FROM share_log WHERE share_id = ? AND expired_at > NOW()")
         .bind(&share_id)
         .fetch_optional(&state.pool)
@@ -519,13 +508,11 @@ async fn share_landing(
         return share_404();
     };
 
-    // 浏览量自增（失败不阻塞渲染）
     let _ = sqlx::query("UPDATE share_log SET view_count = view_count + 1 WHERE share_id = ?")
         .bind(&share_id)
         .execute(&state.pool)
         .await;
 
-    // 按次记录浏览时间戳，供仪表台统计今日/昨日浏览（fire-and-forget，失败不阻塞渲染）
     let _ = sqlx::query("INSERT INTO share_views (share_id) VALUES (?)")
         .bind(&share_id)
         .execute(&state.pool)
@@ -557,7 +544,6 @@ fn share_404() -> Response {
         StatusCode::NOT_FOUND,
         [
             (axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8"),
-            // 404 是时效性结果（分享到期），禁止浏览器缓存，避免后续访问读到旧状态
             (axum::http::header::CACHE_CONTROL, "no-store"),
         ],
         Body::from("分享不存在或已过期"),

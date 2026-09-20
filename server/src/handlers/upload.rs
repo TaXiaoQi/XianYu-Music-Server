@@ -6,14 +6,12 @@ use crate::audit_policy::{self, AuditDecision};
 use crate::handlers::helpers::{parse_body, random_hex, str_of};
 use crate::response::ReqCtx;
 
-/// 解码 base64 data URL（data:image/xxx;base64,...）为原始字节
 fn data_url_to_bytes(data_url: &str) -> Option<Vec<u8>> {
     let raw = data_url.split_once(',').map(|(_, v)| v).unwrap_or(data_url);
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.decode(raw).ok()
 }
 
-/// 压缩并保存为 JPEG（等比缩放到 max_w 宽度内），失败返回 false
 fn compress_and_save_image(bytes: &[u8], target: &std::path::Path, max_w: u32, quality: u32) -> bool {
     use image::GenericImageView;
     let img = match image::load_from_memory(bytes) {
@@ -37,7 +35,6 @@ fn compress_and_save_image(bytes: &[u8], target: &std::path::Path, max_w: u32, q
         .is_ok()
 }
 
-/// 相对路径补全为绝对 URL（http(s) 原样返回，其余拼 base_url）
 fn public_url(ctx: &ReqCtx, url: String) -> String {
     if url.starts_with("http://") || url.starts_with("https://") {
         return url;
@@ -52,8 +49,6 @@ fn public_url(ctx: &ReqCtx, url: String) -> String {
     format!("{}{}", base.trim_end_matches('/'), url)
 }
 
-/// 通用图片上传（分享封面等）：base64 data URL -> uploads/covers/{id}.jpg，返回绝对 URL。
-/// 与头像/壁纸一致走 base64 JSON 模式；封面仅校验格式与大小，不进入人工审核。
 pub async fn upload_cover(body: &str, ctx: ReqCtx, _pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let image_data = str_of(&data, "image_data").to_string();
@@ -96,7 +91,6 @@ pub async fn upload_cover(body: &str, ctx: ReqCtx, _pool: &MySqlPool) -> Respons
     ctx.ok("ok", json!({ "cover_url": public_url(&ctx, url) }))
 }
 
-/// 校验用户存在且启用，返回是否通过
 async fn user_active(pool: &MySqlPool, ciyuanxi_id: &str) -> bool {
     sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? AND status = 1")
         .bind(ciyuanxi_id)
@@ -123,8 +117,6 @@ async fn avatar_submit_block_message(pool: &MySqlPool, ciyuanxi_id: &str) -> Opt
     }
 }
 
-/// 头像上传（JSON base64 模式，与 PHP 模式1对应）
-/// 入参：ciyuanxi_id/user_id, avatar_data(data:image/xxx;base64,...)
 pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let mut ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
@@ -147,7 +139,6 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     if let Some(msg) = avatar_submit_block_message(pool, &ciyuanxi_id).await {
         return ctx.err(429, msg);
     }
-    // 快照提交前的旧头像，供后台「当前头像」对比（批准后 avatar_url 会被覆盖）
     let old_avatar: String = sqlx::query_scalar("SELECT COALESCE(avatar_url, '') FROM app_users WHERE ciyuanxi_id = ?")
         .bind(&ciyuanxi_id)
         .fetch_one(pool)
@@ -218,6 +209,6 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
             ).await;
             ctx.ok("头像已上传，等待管理员审核", json!({ "status": "pending" }))
         }
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }

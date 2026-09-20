@@ -175,7 +175,6 @@ interface StatsItem {
   count: number
 }
 
-// 列表数据
 const logs = ref<ErrorLog[]>([])
 const loading = ref(true)
 const loadError = ref('')
@@ -184,7 +183,6 @@ const pageSize = 20
 const total = ref(0)
 const totalPages = ref(0)
 
-// 筛选
 const filterType = ref('')
 const filterPlatform = ref('')
 const filterBrand = ref('')
@@ -192,15 +190,12 @@ const filterKeyword = ref('')
 
 const hasFilter = computed(() => filterType.value || filterPlatform.value || filterBrand.value || filterKeyword.value)
 
-// 统计
 const statsData = ref<{ stats: StatsItem[]; total: number }>({ stats: [], total: 0 })
 
-// 详情弹窗
 const showDetailModal = ref(false)
 const detailLoading = ref(false)
 const detailData = ref<ErrorLog | null>(null)
 
-// 分页页码
 const pageNumbers = computed(() => {
   const max = 7
   const pages: number[] = []
@@ -215,7 +210,6 @@ const pageNumbers = computed(() => {
   return pages
 })
 
-// 加载列表
 async function loadList() {
   loading.value = true
   loadError.value = ''
@@ -238,7 +232,6 @@ async function loadList() {
   loading.value = false
 }
 
-// 加载统计
 async function loadStats() {
   const res = await adminApi<{ stats: StatsItem[]; total: number }>('get_error_stats')
   if (res.code === 200 && res.data) {
@@ -272,7 +265,6 @@ function goPage(p: number) {
   loadList()
 }
 
-// 查看详情
 async function viewDetail(id: number) {
   showDetailModal.value = true
   detailLoading.value = true
@@ -287,7 +279,6 @@ async function viewDetail(id: number) {
   }
 }
 
-// 删除单条
 async function deleteRow(id: number) {
   const ok = await webConfirm('确定删除这条崩溃日志吗？', { title: '删除日志', confirmText: '确认删除' })
   if (!ok) return
@@ -301,7 +292,6 @@ async function deleteRow(id: number) {
   }
 }
 
-// 清空全部
 async function clearAll() {
   const ok = await webConfirm('确定清空所有崩溃日志吗？此操作不可恢复！', { title: '清空日志', confirmText: '确认清空' })
   if (!ok) return
@@ -328,7 +318,6 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-/* 统计栏 */
 .stats-bar {
   margin-bottom: 16px;
 }
@@ -361,7 +350,6 @@ onMounted(() => {
   padding: 4px 12px;
 }
 
-/* 筛选区 */
 .filters {
   display: flex;
   gap: 12px;
@@ -385,7 +373,6 @@ onMounted(() => {
   color: var(--text-muted);
 }
 
-/* 表格 */
 .table-wrapper {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -399,7 +386,6 @@ onMounted(() => {
 .nowrap { white-space: nowrap; }
 .nowrap-time { white-space: nowrap; font-size: 12px; }
 
-/* 分页 */
 .pagination {
   display: flex;
   justify-content: center;
@@ -426,7 +412,6 @@ onMounted(() => {
 }
 .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* 详情弹窗 */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -478,7 +463,6 @@ onMounted(() => {
   min-width: 0;
 }
 
-/* 详情内容 */
 .detail-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -543,7 +527,6 @@ onMounted(() => {
   .detail-grid { grid-template-columns: 1fr; }
 }
 
-/* 表格行逐条加载动画（与数据库管理页一致） */
 tr.table-row {
   animation: rowIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -552,13 +535,11 @@ tr.table-row {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 页面进入过渡动画 */
 .fade-down-enter-active, .fade-down-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
 .fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-up-enter-from { opacity: 0; transform: translateY(12px); }
 
-/* 弹窗淡进淡出 */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-active .modal, .modal-leave-active .modal {

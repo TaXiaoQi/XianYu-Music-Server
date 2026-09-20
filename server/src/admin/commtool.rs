@@ -22,20 +22,13 @@ use crate::handlers::helpers::{int_of, parse_body, str_of};
 
 #[derive(Clone)]
 pub struct CommState {
-    /// HTTP 服务器收到的请求日志（最新在前）
     pub http_logs: Arc<Mutex<VecDeque<Value>>>,
-    /// SSE 订阅连接（每连接独立 channel + 订阅事件集合）
     pub sse_clients: Arc<Mutex<HashMap<String, SseClient>>>,
-    /// WS 服务器连接列表
     pub ws_server_clients: Arc<Mutex<HashMap<String, WsServerClient>>>,
-    /// WS 客户端（连接外部服务）
     pub ws_client: Arc<Mutex<Option<WsClientHandle>>>,
-    /// WS 客户端收到的消息日志
     pub ws_client_logs: Arc<Mutex<VecDeque<Value>>>,
-    /// 通信工具服务是否正在运行
     pub server_running: Arc<Mutex<bool>>,
     pub server_port: Arc<Mutex<u16>>,
-    /// 连接鉴权令牌（空 = 不开启鉴权）
     pub token: Arc<Mutex<String>>,
 }
 
@@ -43,15 +36,11 @@ pub struct WsServerClient {
     pub id: String,
     pub addr: String,
     pub connected_at: String,
-    /// 订阅的事件类型（空集合 = 订阅全部事件）
     pub events: HashSet<String>,
     pub tx: mpsc::Sender<WsMessage>,
 }
 
 pub struct SseClient {
-    pub id: String,
-    pub connected_at: String,
-    /// 订阅的事件类型（空集合 = 订阅全部事件）
     pub events: HashSet<String>,
     pub tx: mpsc::Sender<String>,
 }
@@ -79,20 +68,16 @@ pub fn comm_state() -> &'static CommState {
     })
 }
 
-/// 连接鉴权：校验 token。token 为空表示不开启鉴权。
-/// 支持 query 参数 `token`、请求头 `Authorization: Bearer <token>`、请求头 `X-Token`。
 fn check_token(query: &HashMap<String, String>, headers: &HeaderMap) -> bool {
     let expected = comm_state().token.lock().unwrap().clone();
     if expected.is_empty() {
         return true;
     }
-    // query ?token=
     if let Some(t) = query.get("token") {
         if t == &expected {
             return true;
         }
     }
-    // Authorization: Bearer xxx
     if let Some(v) = headers.get(axum::http::header::AUTHORIZATION) {
         if let Ok(s) = v.to_str() {
             if let Some(bearer) = s.strip_prefix("Bearer ") {
@@ -102,7 +87,6 @@ fn check_token(query: &HashMap<String, String>, headers: &HeaderMap) -> bool {
             }
         }
     }
-    // X-Token
     if let Some(v) = headers.get("x-token") {
         if let Ok(s) = v.to_str() {
             if s == expected {
@@ -113,7 +97,6 @@ fn check_token(query: &HashMap<String, String>, headers: &HeaderMap) -> bool {
     false
 }
 
-/// 解析事件订阅列表（query 参数 events，逗号分隔；空 = 订阅全部）
 fn parse_events(query: &HashMap<String, String>) -> HashSet<String> {
     let mut set = HashSet::new();
     if let Some(ev) = query.get("events") {
@@ -141,7 +124,6 @@ fn push_log(queue: &Mutex<VecDeque<Value>>, entry: Value, max: usize) {
 
 // ===================== 通信工具服务（独立端口） =====================
 
-/// 后台循环：每 10s 检查 server_settings 配置，动态启停通信工具服务并同步鉴权令牌
 pub async fn comm_server_loop(pool: MySqlPool) {
     let mut running = false;
     let mut abort: Option<tokio::task::JoinHandle<()>> = None;
@@ -152,7 +134,6 @@ pub async fn comm_server_loop(pool: MySqlPool) {
             .await
             .parse::<u16>()
             .unwrap_or(8090);
-        // 同步连接鉴权令牌
         let token = read_setting(&pool, "commtool_token").await;
         *comm_state().token.lock().unwrap() = token;
         if enabled && !running {
@@ -173,8 +154,6 @@ pub async fn comm_server_loop(pool: MySqlPool) {
     }
 }
 
-/// 后台循环：WS 客户端自动重连（参考 napcat 反向 WS）。
-/// 每 reconnect_interval 秒检查一次：配置了 url 且开启自动重连且当前未连接，则自动连接。
 pub async fn ws_client_loop(pool: MySqlPool) {
     loop {
         tokio::time::sleep(Duration::from_secs(10)).await;
@@ -229,13 +208,11 @@ async fn run_comm_server(port: u16) {
     if let Err(e) = axum::serve(listener, app).await {
         tracing::warn!("通信工具服务退出: {}", e);
     }
-    // 服务退出时清空连接与状态
     comm_state().sse_clients.lock().unwrap().clear();
     comm_state().ws_server_clients.lock().unwrap().clear();
     *comm_state().server_running.lock().unwrap() = false;
 }
 
-/// 解析 query 字符串为键值对（简单解码，支持 token/events）
 fn parse_query_str(q: &str) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for pair in q.split('&') {
@@ -266,7 +243,6 @@ fn url_decode(s: &str) -> Option<String> {
     String::from_utf8(out).ok()
 }
 
-/// HTTP 服务器：校验鉴权后记录所有收到的请求
 async fn http_server_handler(
     headers: HeaderMap,
     method: Method,
@@ -312,7 +288,6 @@ async fn http_server_handler(
         .into_response()
 }
 
-/// SSE 服务器：校验鉴权，按订阅事件类型接收广播
 async fn sse_handler(
     headers: HeaderMap,
     Query(query): Query<HashMap<String, String>>,
@@ -322,12 +297,10 @@ async fn sse_handler(
     }
     let events = parse_events(&query);
     let id = uuid::Uuid::new_v4().simple().to_string();
-    let (tx, mut rx) = mpsc::channel::<String>(200);
+    let (tx, rx) = mpsc::channel::<String>(200);
     comm_state().sse_clients.lock().unwrap().insert(
         id.clone(),
         SseClient {
-            id: id.clone(),
-            connected_at: now_str(),
             events,
             tx,
         },
@@ -349,7 +322,6 @@ async fn sse_handler(
     Sse::new(stream).keep_alive(KeepAlive::default()).into_response()
 }
 
-/// WebSocket 服务器：校验鉴权，支持事件订阅
 async fn ws_server_handler(
     headers: HeaderMap,
     Query(query): Query<HashMap<String, String>>,
@@ -430,7 +402,6 @@ async fn handle_ws_server(socket: WebSocket, events: HashSet<String>) {
 
 // ===================== Admin API =====================
 
-/// 获取通信工具状态
 pub async fn comm_get_status(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let st = comm_state();
     let running = *st.server_running.lock().unwrap();
@@ -438,12 +409,10 @@ pub async fn comm_get_status(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     let ws_count = st.ws_server_clients.lock().unwrap().len();
     let sse_count = st.sse_clients.lock().unwrap().len();
     let token_enabled = !st.token.lock().unwrap().is_empty();
-    // 提前提取 ws_client 信息，避免 MutexGuard 跨 await 点
     let ws_client = {
         let g = st.ws_client.lock().unwrap();
         g.as_ref().map(|c| (c.url.clone(), c.connected_at.clone()))
     };
-    // 读取配置（await）
     let cfg_enabled = read_setting(pool, "commtool_enabled").await == "1";
     let cfg_port = read_setting(pool, "commtool_port").await.parse::<u16>().unwrap_or(8090);
     let cfg_url = read_setting(pool, "ws_client_url").await;
@@ -474,7 +443,6 @@ pub async fn comm_get_status(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     )
 }
 
-/// 保存通信工具服务配置（启用状态 + 监听端口）
 pub async fn comm_service_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let enabled = data.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -485,7 +453,6 @@ pub async fn comm_service_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     ok("已保存", Value::Null)
 }
 
-/// 获取 HTTP 服务器收到的请求日志
 pub async fn comm_http_logs(body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let limit = int_of(&data, "limit");
@@ -495,14 +462,12 @@ pub async fn comm_http_logs(body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> R
     ok("", json!(arr))
 }
 
-/// 清空 HTTP 服务器日志
 pub async fn comm_http_clear(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     comm_state().http_logs.lock().unwrap().clear();
     super::log_operation(pool, ctx, "清空通信工具HTTP日志", "", "").await;
     ok("已清空", Value::Null)
 }
 
-/// HTTP 客户端：发送 HTTP 请求
 pub async fn comm_http_client(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let url = str_of(&data, "url").trim().to_string();
@@ -520,7 +485,6 @@ pub async fn comm_http_client(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         .unwrap_or_default();
     let mut req = client.request(reqwest::Method::from_bytes(method.as_bytes()).unwrap_or(reqwest::Method::GET), &url);
 
-    // 解析 headers（每行 "Key: Value"）
     for line in headers_raw.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -558,11 +522,10 @@ pub async fn comm_http_client(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
                 }),
             )
         }
-        Err(e) => err(500, &format!("请求失败: {}", e)),
+        Err(e) => { tracing::error!("请求失败: {e}"); err(500, "请求失败") },
     }
 }
 
-/// SSE 推送（手动广播给所有 SSE 连接）
 pub async fn comm_sse_push(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let msg = str_of(&data, "message");
@@ -574,7 +537,6 @@ pub async fn comm_sse_push(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Resp
     ok("已推送", Value::Null)
 }
 
-/// 向所有 SSE 连接推送消息
 fn push_sse_all(msg: &str) {
     let targets: Vec<mpsc::Sender<String>> = {
         let clients = comm_state().sse_clients.lock().unwrap();
@@ -585,7 +547,6 @@ fn push_sse_all(msg: &str) {
     }
 }
 
-/// WS 服务器连接列表
 pub async fn comm_ws_server_list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     let clients = comm_state().ws_server_clients.lock().unwrap();
     let arr: Vec<Value> = clients
@@ -604,7 +565,6 @@ pub async fn comm_ws_server_list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool
     ok("", json!(arr))
 }
 
-/// WS 服务器向指定连接发送消息
 pub async fn comm_ws_server_send(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = str_of(&data, "id");
@@ -635,7 +595,6 @@ pub async fn comm_ws_server_send(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     ok("已发送", Value::Null)
 }
 
-/// WS 服务器广播
 pub async fn comm_ws_server_broadcast(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let msg = str_of(&data, "message");
@@ -667,7 +626,6 @@ pub async fn comm_ws_server_broadcast(body: &str, ctx: &AdminCtx, pool: &MySqlPo
     ok(&format!("已广播到 {} 个连接", sent), Value::Null)
 }
 
-/// WS 客户端：连接外部服务（可复用，供手动连接与自动重连共用）
 async fn ws_client_connect_impl(url: String, heartbeat_secs: u64) -> Result<(), String> {
     let (ws_stream, _) = tokio_tungstenite::connect_async(&url)
         .await
@@ -675,7 +633,6 @@ async fn ws_client_connect_impl(url: String, heartbeat_secs: u64) -> Result<(), 
     let (mut write, mut read) = ws_stream.split();
     let (tx, mut rx) = mpsc::channel::<tokio_tungstenite::tungstenite::Message>(100);
 
-    // 发送任务（含心跳保活）
     let send_task = tokio::spawn(async move {
         let mut hb = tokio::time::interval(Duration::from_secs(heartbeat_secs.max(1)));
         hb.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -700,7 +657,6 @@ async fn ws_client_connect_impl(url: String, heartbeat_secs: u64) -> Result<(), 
         }
     });
 
-    // 接收任务（记录消息，响应 Ping，断线清理状态）
     let recv_tx = tx.clone();
     let recv_task = tokio::spawn(async move {
         while let Some(Ok(msg)) = read.next().await {
@@ -752,7 +708,6 @@ async fn ws_client_connect_impl(url: String, heartbeat_secs: u64) -> Result<(), 
     Ok(())
 }
 
-/// WS 客户端：连接外部服务（手动）
 pub async fn comm_ws_client_connect(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let url = str_of(&data, "url").trim().to_string();
@@ -778,7 +733,6 @@ pub async fn comm_ws_client_connect(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     }
 }
 
-/// WS 客户端：发送消息
 pub async fn comm_ws_client_send(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let msg = str_of(&data, "message");
@@ -810,7 +764,6 @@ pub async fn comm_ws_client_send(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     ok("已发送", Value::Null)
 }
 
-/// WS 客户端：断开连接
 pub async fn comm_ws_client_disconnect(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let had = {
         let mut guard = comm_state().ws_client.lock().unwrap();
@@ -828,7 +781,6 @@ pub async fn comm_ws_client_disconnect(_body: &str, ctx: &AdminCtx, pool: &MySql
     ok("已断开", Value::Null)
 }
 
-/// WS 客户端消息日志
 pub async fn comm_ws_client_logs(body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let limit = int_of(&data, "limit");
@@ -838,7 +790,6 @@ pub async fn comm_ws_client_logs(body: &str, _ctx: &AdminCtx, _pool: &MySqlPool)
     ok("", json!(arr))
 }
 
-/// 清空 WS 消息日志
 pub async fn comm_ws_clear(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     comm_state().ws_client_logs.lock().unwrap().clear();
     super::log_operation(pool, ctx, "清空通信工具WS日志", "", "").await;
@@ -854,7 +805,6 @@ const WH_KEY_HEADERS: &str = "webhook_headers";
 const WH_KEY_BODY_TEMPLATE: &str = "webhook_body_template";
 const WH_KEY_MODULES: &str = "webhook_modules";
 
-/// 获取 Webhook 配置
 pub async fn get_webhook_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let enabled = read_setting(pool, WH_KEY_ENABLED).await == "1";
     let url = read_setting(pool, WH_KEY_URL).await;
@@ -883,7 +833,6 @@ pub async fn get_webhook_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     )
 }
 
-/// 保存 Webhook 配置
 pub async fn save_webhook_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let enabled = data.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
@@ -927,7 +876,6 @@ async fn upsert_setting(pool: &MySqlPool, key: &str, value: &str, desc: &str) {
     .await;
 }
 
-/// 测试 Webhook：发送一条测试通知
 pub async fn test_webhook(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let url = str_of(&data, "url").trim().to_string();
@@ -976,11 +924,10 @@ pub async fn test_webhook(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
             super::log_operation(pool, ctx, "测试Webhook", &url, &format!("{} {}", status, resp_body)).await;
             ok("", json!({ "status": status, "body": resp_body }))
         }
-        Err(e) => err(500, &format!("请求失败: {}", e)),
+        Err(e) => { tracing::error!("请求失败: {e}"); err(500, "请求失败") },
     }
 }
 
-/// 渲染 Webhook 请求体模板（替换占位符）
 pub fn render_template(template: &str, event: &str, title: &str, detail: &str, image_url: &str, link: &str) -> String {
     let mut s = template.to_string();
     let map = [
@@ -997,7 +944,6 @@ pub fn render_template(template: &str, event: &str, title: &str, detail: &str, i
     s
 }
 
-/// 触发 Webhook 通知（供审核/反馈等事件调用）
 pub async fn notify_webhook(
     pool: &MySqlPool,
     module: &str,
@@ -1059,11 +1005,6 @@ pub async fn notify_webhook(
 
 // ===================== 统一事件广播（参考 napcat 事件分发） =====================
 
-/// 统一事件入口：将内部事件同时分发到多个通道。
-/// 1. Webhook（HTTP 上报）
-/// 2. WS 服务器已订阅该事件的连接
-/// 3. SSE 已订阅该事件的连接
-/// `module` 为事件类型（如 wallpaper/avatar/nickname/feedback）。
 pub async fn broadcast_event(
     pool: &MySqlPool,
     module: &str,
@@ -1072,10 +1013,8 @@ pub async fn broadcast_event(
     image_url: &str,
     link: &str,
 ) {
-    // 1. Webhook
     notify_webhook(pool, module, title, detail, image_url, link).await;
 
-    // 2. WS 服务器订阅者
     let payload = json!({
         "event": module,
         "title": title,
@@ -1098,7 +1037,6 @@ pub async fn broadcast_event(
         let _ = tx.send(WsMessage::Text(payload.clone().into())).await;
     }
 
-    // 3. SSE 订阅者
     let sse_targets: Vec<mpsc::Sender<String>> = {
         let clients = comm_state().sse_clients.lock().unwrap();
         clients
@@ -1114,7 +1052,6 @@ pub async fn broadcast_event(
 
 // ===================== WS 客户端自动重连配置 =====================
 
-/// 获取 WS 客户端配置
 pub async fn comm_ws_client_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     ok(
         "",
@@ -1127,7 +1064,6 @@ pub async fn comm_ws_client_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPoo
     )
 }
 
-/// 保存 WS 客户端配置
 pub async fn comm_ws_client_save_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let url = str_of(&data, "url").trim().to_string();
@@ -1154,7 +1090,6 @@ pub async fn comm_ws_client_save_config(body: &str, ctx: &AdminCtx, pool: &MySql
 
 // ===================== 连接鉴权 Token =====================
 
-/// 获取连接鉴权配置
 pub async fn comm_auth_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let token = read_setting(pool, "commtool_token").await;
     ok(
@@ -1166,7 +1101,6 @@ pub async fn comm_auth_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     )
 }
 
-/// 保存连接鉴权配置（token 为空 = 关闭鉴权）
 pub async fn comm_auth_save_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let token = str_of(&data, "token").trim().to_string();
@@ -1178,7 +1112,6 @@ pub async fn comm_auth_save_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
 
 // ===================== 外部客户端管理 =====================
 
-/// 获取已添加的外部客户端列表
 pub async fn comm_client_list(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let rows = sqlx::query("SELECT id, name, type, url, events, enabled, created_at FROM comm_clients ORDER BY id DESC")
         .fetch_all(pool)
@@ -1201,11 +1134,10 @@ pub async fn comm_client_list(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
                 .collect();
             ok("", json!(arr))
         }
-        Err(e) => err(500, &format!("数据库错误: {}", e)),
+        Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     }
 }
 
-/// 添加外部客户端
 pub async fn comm_client_add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let name = str_of(&data, "name").trim().to_string();
@@ -1230,7 +1162,6 @@ pub async fn comm_client_add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     match res {
         Ok(_) => {
             super::log_operation(pool, ctx, "添加通信客户端", &name, &format!("类型:{} 地址:{}", client_type, url)).await;
-            // WS 类型客户端：同步为当前 WS 客户端配置并尝试连接
             if client_type == "ws" {
                 upsert_setting(pool, "ws_client_url", &url, "WS客户端连接地址").await;
                 upsert_setting(pool, "ws_client_auto_reconnect", "1", "WS客户端自动重连开关").await;
@@ -1242,11 +1173,10 @@ pub async fn comm_client_add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
             }
             ok("添加成功", Value::Null)
         }
-        Err(e) => err(500, &format!("数据库错误: {}", e)),
+        Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     }
 }
 
-/// 删除外部客户端
 pub async fn comm_client_delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -1262,11 +1192,10 @@ pub async fn comm_client_delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
             super::log_operation(pool, ctx, "删除通信客户端", &format!("#{}", id), "").await;
             ok("已删除", Value::Null)
         }
-        Err(e) => err(500, &format!("数据库错误: {}", e)),
+        Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     }
 }
 
-/// 启用/停用外部客户端
 pub async fn comm_client_toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -1284,6 +1213,6 @@ pub async fn comm_client_toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
             super::log_operation(pool, ctx, if enabled { "启用通信客户端" } else { "停用通信客户端" }, &format!("#{}", id), "").await;
             ok("已更新", Value::Null)
         }
-        Err(e) => err(500, &format!("数据库错误: {}", e)),
+        Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     }
 }

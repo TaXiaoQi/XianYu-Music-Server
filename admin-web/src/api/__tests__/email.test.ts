@@ -1,6 +1,3 @@
-/**
- * 邮箱模块 API 客户端测试
- */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import {
   sendCode,
@@ -15,11 +12,9 @@ import {
   setEmailUser,
 } from '../email'
 
-// mock fetch
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
 
-// mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {}
   return {

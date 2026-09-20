@@ -10,7 +10,6 @@ export default defineConfig({
     },
   },
   build: {
-    // 每次构建清空 dist，避免旧 hash 的 js/css 残留不断堆积、破坏缓存并占满服务器空间
     emptyOutDir: true,
   },
   server: {

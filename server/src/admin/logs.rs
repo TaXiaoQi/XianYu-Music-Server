@@ -5,7 +5,6 @@ use sqlx::{MySqlPool, Row};
 use super::{err, log_operation, ok, row_to_value, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
-/// 获取报错日志列表（分页 + 多条件筛选）
 pub async fn list_error_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page").max(1);
@@ -19,7 +18,6 @@ pub async fn list_error_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> R
     let keyword = str_of(&data, "keyword").trim().to_string();
     let offset = (page - 1) * page_size;
 
-    // 构建条件
     let mut conditions: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
     if !error_type.is_empty() {
@@ -47,7 +45,6 @@ pub async fn list_error_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> R
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    // 查询总数
     let count_sql = format!("SELECT COUNT(*) FROM error_log {}", where_clause);
     let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
     for b in &binds {
@@ -55,7 +52,6 @@ pub async fn list_error_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> R
     }
     let total = count_query.fetch_one(pool).await.unwrap_or(0);
 
-    // 查询列表
     let list_sql = format!(
         "SELECT * FROM error_log {} ORDER BY error_time DESC LIMIT ? OFFSET ?",
         where_clause
@@ -78,13 +74,11 @@ pub async fn list_error_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> R
                 "list": list,
             }))
         }
-        Err(e) => err(500, &format!("查询失败: {}", e)),
+        Err(e) => { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     }
 }
 
-/// 获取报错日志统计（按 error_type 分组 + 总计）
 pub async fn get_error_stats(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    // 按类型分组统计
     let rows = sqlx::query("SELECT error_type, COUNT(*) as cnt FROM error_log GROUP BY error_type ORDER BY cnt DESC")
         .fetch_all(pool)
         .await;
@@ -109,7 +103,6 @@ pub async fn get_error_stats(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     ok("ok", json!({ "stats": stats, "total": total }))
 }
 
-/// 获取单条崩溃日志详情
 pub async fn get_error_detail(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -122,11 +115,10 @@ pub async fn get_error_detail(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
             ok("", crate::admin::row_to_value(&row))
         }
         Ok(None) => err(404, "记录不存在"),
-        Err(e) => err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); err(500, "服务器错误") },
     }
 }
 
-/// 删除单条崩溃日志
 pub async fn delete_error(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -138,7 +130,6 @@ pub async fn delete_error(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
     ok("删除成功", Value::Null)
 }
 
-/// 获取APP登录日志列表（分页 + 搜索 + 筛选 + 统计）
 pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page").max(1);
@@ -150,7 +141,6 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     let status_filter = str_of(&data, "status_filter").trim().to_string();
     let offset = (page - 1) * page_size;
 
-    // 构建条件（列名带 l. 前缀，便于与兜底左连接一起使用）
     let mut conditions: Vec<String> = Vec::new();
     let mut binds: Vec<String> = Vec::new();
     if !keyword.is_empty() {
@@ -172,7 +162,6 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
         format!("WHERE {}", conditions.join(" AND "))
     };
 
-    // 查询总数
     let count_sql = format!("SELECT COUNT(*) FROM admin_app_login_log l {}", where_clause);
     let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
     for b in &binds {
@@ -180,8 +169,6 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     }
     let filtered_total = count_query.fetch_one(pool).await.unwrap_or(0);
 
-    // 查询列表：若某条日志的 device_model / app_version / os_version 为空，
-    // 则从 app_open_log 取该设备最近一次记录的设备信息兜底补全（与设备管理页一致）：
     let list_sql = format!(
         "SELECT l.*, \
          COALESCE(NULLIF(l.device_model, ''), ao.device_model, '') AS device_model, \
@@ -201,10 +188,9 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
 
     let list: Vec<Value> = match list_query.fetch_all(pool).await {
         Ok(rows) => rows.iter().map(row_to_value).collect(),
-        Err(e) => return err(500, &format!("查询失败: {}", e)),
+        Err(e) => return { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     };
 
-    // 统计数据
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log")
         .fetch_one(pool).await.unwrap_or(0);
     let today_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_app_login_log WHERE DATE(created_at) = DATE(NOW() + INTERVAL 8 HOUR)")
@@ -246,7 +232,6 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     }))
 }
 
-/// 清空所有崩溃日志
 pub async fn clear_all_errors(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     sqlx::query("TRUNCATE TABLE error_log").execute(pool).await.unwrap_or_default();
@@ -254,7 +239,6 @@ pub async fn clear_all_errors(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     ok("已清空所有崩溃日志", Value::Null)
 }
 
-/// 后台操作日志列表（分页 + 搜索）
 pub async fn list_operation_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page").max(1);
@@ -300,7 +284,7 @@ pub async fn list_operation_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
 
     let list: Vec<Value> = match list_query.fetch_all(pool).await {
         Ok(rows) => rows.iter().map(row_to_value).collect(),
-        Err(e) => return err(500, &format!("查询失败: {}", e)),
+        Err(e) => return { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     };
 
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
@@ -313,7 +297,6 @@ pub async fn list_operation_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     }))
 }
 
-/// 后台登录日志列表（分页 + 搜索）
 pub async fn list_admin_login_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page").max(1);
@@ -363,7 +346,7 @@ pub async fn list_admin_login_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool
 
     let list: Vec<Value> = match list_query.fetch_all(pool).await {
         Ok(rows) => rows.iter().map(row_to_value).collect(),
-        Err(e) => return err(500, &format!("查询失败: {}", e)),
+        Err(e) => return { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     };
 
     let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;

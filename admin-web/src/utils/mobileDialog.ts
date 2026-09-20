@@ -1,13 +1,3 @@
-/**
- * 移动端统一弹窗工具
- * 替代浏览器原生 confirm() / prompt()
- * 样式：毛玻璃 + 圆角 + 阴影 + 居中
- */
-
-/**
- * Vue Transition @before-leave 钩子：在淡出动画开始前立即移除 backdrop-filter，
- * 让浏览器先卸载模糊层，避免遮罩在 opacity 过渡期间残留。
- */
 export function removeBackdropBlur(el: Element) {
   const htmlEl = el as HTMLElement
   htmlEl.style.backdropFilter = 'none'
@@ -18,7 +8,6 @@ export interface MobileConfirmOptions {
   title?: string
   confirmText?: string
   cancelText?: string
-  /** 危险操作时使用红色确认按钮 */
   danger?: boolean
 }
 
@@ -42,7 +31,6 @@ function createDialog(): HTMLDivElement {
 }
 
 function animateIn(overlay: HTMLDivElement, dialog: HTMLDivElement) {
-  // 初始不可见状态
   overlay.style.opacity = '0'
   dialog.style.opacity = '0'
   dialog.style.transform = 'scale(0.94)'
@@ -50,10 +38,8 @@ function animateIn(overlay: HTMLDivElement, dialog: HTMLDivElement) {
   document.body.appendChild(overlay)
   overlay.appendChild(dialog)
 
-  // 强制 reflow 确保初始状态已渲染
   void overlay.offsetHeight
 
-  // 设置过渡并触发动画到最终状态
   overlay.style.transition = 'opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1)'
   dialog.style.transition = 'transform 0.24s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s'
   overlay.style.opacity = '1'
@@ -63,10 +49,8 @@ function animateIn(overlay: HTMLDivElement, dialog: HTMLDivElement) {
 
 function closeDialog(overlay: HTMLDivElement) {
   const dialog = overlay.querySelector('.mobile-dialog') as HTMLDivElement | null
-  // 立即移除 backdrop-filter，避免模糊效果在 opacity 透明后残留
   overlay.style.setProperty('backdrop-filter', 'none')
   overlay.style.setProperty('-webkit-backdrop-filter', 'none')
-  // 等待一帧让浏览器先卸载模糊层，再开始淡出，避免遮罩残留
   requestAnimationFrame(() => {
     overlay.style.opacity = '0'
     if (dialog) {

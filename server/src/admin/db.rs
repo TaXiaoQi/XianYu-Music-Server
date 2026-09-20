@@ -7,7 +7,6 @@ use std::collections::HashMap;
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
-/// 备份文件目录（与 serve 根平级的 beifen，与原 PHP 保持一致）
 fn backup_dir() -> std::path::PathBuf {
     std::path::Path::new("beifen").to_path_buf()
 }
@@ -22,7 +21,6 @@ const KEY_MODE: &str = "auto_backup_mode";
 const KEY_LAST_RUN: &str = "auto_backup_last_run";
 const KEY_SNAPSHOT: &str = "auto_backup_snapshot";
 
-/// 读取 server_settings 单个 key（空字符串视为未设置）
 pub async fn read_setting(pool: &MySqlPool, key: &str) -> String {
     sqlx::query("SELECT setting_value FROM server_settings WHERE setting_key = ? LIMIT 1")
         .bind(key)
@@ -35,7 +33,6 @@ pub async fn read_setting(pool: &MySqlPool, key: &str) -> String {
         .unwrap_or_default()
 }
 
-/// 写入或更新 server_settings 值
 pub async fn upsert_setting(pool: &MySqlPool, key: &str, value: &str, desc: &str) {
     let _ = sqlx::query(
         "INSERT INTO server_settings (setting_key, setting_value, description) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), description = VALUES(description)",
@@ -55,21 +52,17 @@ fn sanitize_filename(name: &str) -> bool {
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
-/// 从 CREATE TABLE 语句中提取表名（如 `CREATE TABLE IF NOT EXISTS \`listen_daily_stats\` ( ...` → `listen_daily_stats`）
 fn extract_table_name(stmt: &str) -> String {
     let first_line = stmt.lines().next().unwrap_or("");
-    // 移除 "CREATE TABLE IF NOT EXISTS" 前缀
     let after_prefix = first_line
         .trim()
         .trim_start_matches("CREATE TABLE IF NOT EXISTS")
         .trim();
-    // 提取反引号中的表名
     if let Some(start) = after_prefix.find('`') {
         if let Some(end) = after_prefix[start + 1..].find('`') {
             return after_prefix[start + 1..start + 1 + end].to_string();
         }
     }
-    // 回退：移除反引号并截断到第一个空格或括号
     after_prefix
         .trim_matches('`')
         .split(|c: char| c.is_whitespace() || c == '(')
@@ -78,7 +71,6 @@ fn extract_table_name(stmt: &str) -> String {
         .to_string()
 }
 
-/// 数据库表状态检查
 pub async fn list_tables(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let schema_tables = crate::schema::table_statements();
     let mut result: Vec<Value> = Vec::new();
@@ -86,7 +78,7 @@ pub async fn list_tables(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
     for stmt in schema_tables {
         let name = extract_table_name(stmt);
         if name.is_empty() || name.starts_with("INSERT") || name.starts_with("VALUES") {
-            continue; // 跳过非 CREATE TABLE 语句（如 server_settings 的 INSERT）
+            continue;
         }
         let exists: bool = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
@@ -114,7 +106,6 @@ pub async fn list_tables(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
     ok("ok", json!({ "tables": result }))
 }
 
-/// 备份文件列表
 pub async fn list_backups(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     let dir = backup_dir();
     let mut backups: Vec<Value> = Vec::new();
@@ -156,7 +147,6 @@ pub async fn list_backups(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Re
     ok("ok", json!({ "backups": backups, "total": backups.len() }))
 }
 
-/// 数据库修复：执行全部建表语句
 pub async fn repair_database(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let mut created: Vec<String> = Vec::new();
     let mut errors: Vec<Value> = Vec::new();
@@ -167,7 +157,6 @@ pub async fn repair_database(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
             Err(e) => errors.push(json!({ "table": name, "msg": e.to_string() })),
         }
     }
-    // 同时执行 ensure_schema 以补充缺失列和默认数据
     crate::schema::ensure_schema(pool).await;
     log_operation(pool, ctx, "修复数据库", "", &format!("created={} errors={}", created.len(), errors.len())).await;
     ok("修复完成", json!({
@@ -180,7 +169,6 @@ pub async fn repair_database(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     }))
 }
 
-/// 查看表内容（分页，每页 100 行）
 pub async fn view_table(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let table_name = str_of(&data, "table_name").trim().to_string();
@@ -238,21 +226,6 @@ pub async fn view_table(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respons
     }))
 }
 
-/// 将一个单元格转为 SQL 插入字面量（数值不加引号，文本转义）
-#[allow(dead_code)]
-fn sql_literal(v: &Value) -> String {
-    match v {
-        Value::Null => "NULL".to_string(),
-        Value::Number(n) => n.to_string(),
-        Value::Bool(b) => if *b { "1".to_string() } else { "0".to_string() },
-        other => {
-            let s = other.as_str().unwrap_or("").to_string();
-            format!("'{}'", s.replace('\\', "\\\\").replace('\'', "\\'"))
-        }
-    }
-}
-
-/// 备份整个数据库，写入 beifen/backup_YYYYmmdd_HHMMSS.sql
 pub async fn backup_db(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     match perform_backup(pool, "full").await {
         Ok(outcome) => {
@@ -272,11 +245,10 @@ pub async fn backup_db(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respons
                 "mode": "full"
             }))
         }
-        Err(e) => err(500, &format!("备份失败: {}", e)),
+        Err(e) => { tracing::error!("备份失败: {e}"); err(500, "备份失败") },
     }
 }
 
-/// 备份结果
 pub struct BackupOutcome {
     pub filename: String,
     pub filepath: std::path::PathBuf,
@@ -285,10 +257,12 @@ pub struct BackupOutcome {
     pub skipped: bool,
 }
 
-/// 备份核心逻辑（可被手动备份与自动备份复用）。
-/// mode：`full` 全量备份所有表；`incremental` 增量备份——基于上次备份时的行数快照，
-/// 仅导出行数发生变化或有新增的表，并更新行数快照。若增量模式下无任何表变化，
-/// 则不生成文件，返回 skipped=true。
+fn write_sql(file: &mut std::fs::File, s: &str) -> Result<(), String> {
+    use std::io::Write;
+    file.write_all(s.as_bytes())
+        .map_err(|e| format!("写入备份文件失败: {}", e))
+}
+
 pub async fn perform_backup(pool: &MySqlPool, mode: &str) -> Result<BackupOutcome, String> {
     let dir = backup_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建备份目录: {}", e))?;
@@ -311,7 +285,6 @@ pub async fn perform_backup(pool: &MySqlPool, mode: &str) -> Result<BackupOutcom
         })
         .map_err(|e| format!("读取表列表失败: {}", e))?;
 
-    // 增量模式：读取上次行数快照，决定本次需要备份的表
     let mut backup_tables: std::collections::HashSet<String> = tables.clone().into_iter().collect();
     if mode == "incremental" {
         let snapshot = read_setting(pool, KEY_SNAPSHOT).await;
@@ -328,7 +301,6 @@ pub async fn perform_backup(pool: &MySqlPool, mode: &str) -> Result<BackupOutcom
                 .unwrap_or(0);
             current.insert(table.clone(), count.max(0) as u64);
         }
-        // 仅保留行数变化的表（首轮快照为空时全部视为变化）
         backup_tables = tables
             .iter()
             .filter(|t| current.get(*t) != prev.get(*t))
@@ -348,48 +320,65 @@ pub async fn perform_backup(pool: &MySqlPool, mode: &str) -> Result<BackupOutcom
         }
     }
 
-    let mut out = String::new();
-    out.push_str(&format!(
+    let mut file = std::fs::File::create(&filepath).map_err(|e| format!("创建备份文件失败: {}", e))?;
+    write_sql(&mut file, &format!(
         "-- XiaYu Database Backup\n-- Generated: {}\n-- Mode: {}\n",
         now.format("%Y-%m-%d %H:%M:%S"),
         mode
-    ));
-    out.push_str("SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n\n");
+    ))?;
+    write_sql(&mut file, "SET NAMES utf8mb4;\nSET FOREIGN_KEY_CHECKS=0;\n\n")?;
 
+    const BATCH: usize = 1000;
     let mut table_count = 0;
     for table in &tables {
         if !backup_tables.contains(table) {
             continue;
         }
         table_count += 1;
-        out.push_str(&format!("DROP TABLE IF EXISTS `{}`;\n", table));
+        write_sql(&mut file, &format!("DROP TABLE IF EXISTS `{}`;\n", table))?;
         if let Ok(create) = sqlx::query_scalar::<_, String>(&format!("SHOW CREATE TABLE `{}`", table))
             .fetch_one(pool)
             .await
         {
-            out.push_str(&create);
-            out.push_str(";\n");
+            write_sql(&mut file, &create)?;
+            write_sql(&mut file, ";\n")?;
         }
-        if let Ok(rows) = sqlx::query(&format!("SELECT * FROM `{}`", table)).fetch_all(pool).await {
+        let mut offset: usize = 0;
+        loop {
+            let rows = sqlx::query(&format!(
+                "SELECT * FROM `{}` ORDER BY 1 LIMIT {} OFFSET {}",
+                table, BATCH, offset
+            ))
+            .fetch_all(pool)
+            .await
+            .map_err(|e| format!("读取表 `{}` 失败: {}", table, e))?;
+            let got = rows.len();
             for row in &rows {
                 let obj = crate::admin::row_to_value(row);
                 if let Value::Object(map) = &obj {
                     let cols: Vec<String> = map.keys().map(|k| format!("`{}`", k)).collect();
                     let vals: Vec<String> = map.values().map(sql_to_literal).collect();
-                    out.push_str(&format!(
-                        "INSERT INTO `{}` ({}) VALUES ({});\n",
-                        table,
-                        cols.join(","),
-                        vals.join(",")
-                    ));
+                    write_sql(
+                        &mut file,
+                        &format!(
+                            "INSERT INTO `{}` ({}) VALUES ({});\n",
+                            table,
+                            cols.join(","),
+                            vals.join(",")
+                        ),
+                    )?;
                 }
             }
+            if got < BATCH {
+                break;
+            }
+            offset += BATCH;
         }
-        out.push('\n');
+        write_sql(&mut file, "\n")?;
     }
-    out.push_str("SET FOREIGN_KEY_CHECKS=1;\n");
+    write_sql(&mut file, "SET FOREIGN_KEY_CHECKS=1;\n")?;
+    drop(file);
 
-    std::fs::write(&filepath, &out).map_err(|e| format!("写入备份文件失败: {}", e))?;
     let size = std::fs::metadata(&filepath).map(|m| m.len()).unwrap_or(0);
     let size_str = if size >= 1024 * 1024 {
         format!("{:.2} MB", size as f64 / 1048576.0)
@@ -405,11 +394,10 @@ pub async fn perform_backup(pool: &MySqlPool, mode: &str) -> Result<BackupOutcom
     })
 }
 
-/// 自动备份配置
 pub async fn get_auto_backup_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let enabled = read_setting(pool, KEY_ENABLED).await == "1";
     let interval = read_setting(pool, KEY_INTERVAL).await;
-    let interval: i64 = interval.parse().unwrap_or(24 * 60); // 默认每天
+    let interval: i64 = interval.parse().unwrap_or(24 * 60);
     let max_count = read_setting(pool, KEY_MAX_COUNT).await;
     let max_count: i64 = max_count.parse().unwrap_or(20);
     let mode = read_setting(pool, KEY_MODE).await;
@@ -424,7 +412,6 @@ pub async fn get_auto_backup_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPo
     }))
 }
 
-/// 保存自动备份配置
 pub async fn save_auto_backup_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let enabled = int_of(&data, "enabled") == 1;
@@ -451,7 +438,6 @@ pub async fn save_auto_backup_config(body: &str, ctx: &AdminCtx, pool: &MySqlPoo
     }))
 }
 
-/// 整理备份文件：仅保留最近 max_count 个 backup_*.sql（删除更旧的）
 pub async fn enforce_backup_retention(max_count: i64) {
     let dir = backup_dir();
     let mut names: Vec<String> = Vec::new();
@@ -463,7 +449,7 @@ pub async fn enforce_backup_retention(max_count: i64) {
             }
         }
     }
-    names.sort(); // 文件名按时间戳字典序即时间先后
+    names.sort();
     while names.len() > max_count.max(1) as usize {
         let oldest = names.remove(0);
         let _ = std::fs::remove_file(dir.join(&oldest));
@@ -471,11 +457,8 @@ pub async fn enforce_backup_retention(max_count: i64) {
     }
 }
 
-/// 后台自动备份循环：每 60s 检查一次配置，若启用且距上次备份超过间隔则执行备份。
-/// 备份完成后整理保留数量，并记录上次执行时间。
 pub async fn auto_backup_loop(pool: &MySqlPool) {
     let mut ticker = tokio::time::interval(std::time::Duration::from_secs(60));
-    // 首次立即执行一次，便于启动后很快校验
     ticker.tick().await;
     loop {
         ticker.tick().await;
@@ -487,7 +470,6 @@ pub async fn auto_backup_loop(pool: &MySqlPool) {
         let mode = read_setting(pool, KEY_MODE).await;
         let mode = if mode == "incremental" { "incremental" } else { "full" };
 
-        // 距上次执行是否已到间隔
         let last_run_raw = read_setting(pool, KEY_LAST_RUN).await;
         let due = if last_run_raw.is_empty() {
             true
@@ -516,7 +498,6 @@ pub async fn auto_backup_loop(pool: &MySqlPool) {
                         mode
                     );
                 }
-                // 整理保留数量（仅统计实际生成的备份文件）
                 enforce_backup_retention(max_count).await;
             }
             Err(e) => {
@@ -536,7 +517,6 @@ fn sql_to_literal(v: &Value) -> String {
     }
 }
 
-/// 查看备份文件内容
 pub async fn view_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let filename = str_of(&data, "filename").trim().to_string();
@@ -553,7 +533,6 @@ pub async fn view_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
     }
 }
 
-/// 恢复备份
 pub async fn restore_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if ctx.role != "super_admin" {
         return err(403, "仅超级管理员可执行恢复备份");
@@ -591,7 +570,6 @@ pub async fn restore_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     }
 }
 
-/// 导入数据库：从前端上传的 SQL 文本执行导入（覆盖式，与恢复备份一致）
 pub async fn import_db(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if ctx.role != "super_admin" {
         return err(403, "仅超级管理员可执行导入数据库");
@@ -604,7 +582,6 @@ pub async fn import_db(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
     if content.len() > 256 * 1024 * 1024 {
         return err(400, "导入文件过大");
     }
-    // 记录导入文件到 beifen/import_*.sql（命名带 import_ 前缀，不进入备份列表）
     let dir = backup_dir();
     let _ = std::fs::create_dir_all(&dir);
     let now = chrono::Local::now();
@@ -639,7 +616,6 @@ pub async fn import_db(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
     }
 }
 
-/// 去掉 mysqldump 常见的注释前缀（`--`、`#`、`/*!40000 ... */`），便于识别语句类型
 fn sql_statement_head(stmt: &str) -> &str {
     let mut s = stmt.trim_start();
     loop {
@@ -655,9 +631,6 @@ fn sql_statement_head(stmt: &str) -> &str {
     }
 }
 
-/// SQL 语句安全检测：返回 Some(原因) 表示该语句必须跳过。
-/// 白名单只放行备份恢复所需的数据/结构操作语句，防止借导入通道执行
-/// 文件系统读写、账号权限变更等危险操作。
 fn unsafe_sql_reason(stmt: &str) -> Option<&'static str> {
     let head = sql_statement_head(stmt);
     if head.is_empty() {
@@ -683,7 +656,6 @@ fn unsafe_sql_reason(stmt: &str) -> Option<&'static str> {
     None
 }
 
-/// 删除备份文件
 pub async fn delete_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let filename = str_of(&data, "filename").trim().to_string();
@@ -703,7 +675,6 @@ pub async fn delete_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Resp
     }
 }
 
-/// 下载备份文件（返回 application/sql 文件流，带 Content-Disposition）
 pub async fn download_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let filename = str_of(&data, "filename").trim().to_string();

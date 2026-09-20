@@ -83,7 +83,6 @@
           :class="[item.type, item.status]"
           :style="{ animationDelay: `${Math.min(idx, 12) * 50}ms` }"
         >
-          <!-- 卡片顶部：类型 + 用户信息 -->
           <div class="audit-card-top">
             <span class="audit-type-badge" :class="'t-' + item.type">{{ item.type === 'avatar' ? '头像' : '改名' }}</span>
             <div class="audit-user">
@@ -93,7 +92,6 @@
             <span class="audit-time">{{ fmtDateTime(item.created_at) || '-' }}</span>
           </div>
 
-          <!-- 卡片主体：内容对比 -->
           <div class="audit-body">
             <!-- 头像对比 -->
             <div v-if="item.type === 'avatar'" class="avatar-compare">
@@ -122,7 +120,6 @@
             </div>
           </div>
 
-          <!-- 卡片底部：操作 / 状态 -->
           <div class="audit-card-foot">
             <template v-if="item.status === 'pending'">
               <button class="act-btn act-approve" @click="handleApprove(item)">
@@ -222,7 +219,6 @@ function switchTab(tab: TabKey) {
 
 async function loadAll(silent = false) {
   if (!silent) loading.value = true
-  // 待审核 + 统计始终刷新；历史标签按需加载
   await loadTab('pending', true)
   if (loadedTabs.approved) await loadTab('approved', true)
   if (loadedTabs.rejected) await loadTab('rejected', true)
@@ -271,13 +267,13 @@ function onImgError(e: Event) {
 }
 
 // ===== 自动刷新 =====
-const POLL_INTERVAL = 30000 // 30秒
+const POLL_INTERVAL = 30000
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 function startPolling() {
   stopPolling()
   pollTimer = setInterval(() => {
-    loadAll(true) // 静默刷新，不显示 loading
+    loadAll(true)
   }, POLL_INTERVAL)
 }
 
@@ -515,10 +511,8 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-/* 卡片主体 */
 .audit-body { margin-bottom: 14px; }
 
-/* 头像对比 */
 .avatar-compare {
   display: flex;
   align-items: center;
@@ -565,7 +559,6 @@ onUnmounted(() => {
 .label-new { background: #eff6ff; color: #2563eb; }
 .label-old { background: #f5f5f5; color: #999; }
 
-/* 改名对比 */
 .nick-names {
   display: flex;
   align-items: center;
@@ -576,7 +569,6 @@ onUnmounted(() => {
 .nick-arrow { color: #ccc; flex-shrink: 0; }
 .nick-new { font-size: 15px; font-weight: 700; color: #16a34a; }
 
-/* 卡片底部 */
 .audit-card-foot {
   display: flex;
   align-items: center;

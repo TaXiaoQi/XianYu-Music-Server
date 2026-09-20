@@ -10,7 +10,6 @@ const DEFAULT_FEEDBACK_DAILY_LIMIT: i64 = 20;
 const MAX_ADMIN_FEEDBACK_IMAGES: usize = 6;
 const MAX_ADMIN_FEEDBACK_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 
-/// 解析 collaborators JSON 数组（不含 assignee 的额外协作者）
 fn parse_collaborators(v: Option<&str>) -> Vec<String> {
     let s = v.unwrap_or("").trim();
     if s.is_empty() || s == "[]" {
@@ -19,7 +18,6 @@ fn parse_collaborators(v: Option<&str>) -> Vec<String> {
     serde_json::from_str::<Vec<String>>(s).unwrap_or_default()
 }
 
-/// 解析 completed_by JSON 数组（[{admin, note}]）
 fn parse_completed_by(v: Option<&str>) -> Vec<Value> {
     let s = v.unwrap_or("").trim();
     if s.is_empty() || s == "[]" {
@@ -28,7 +26,6 @@ fn parse_completed_by(v: Option<&str>) -> Vec<Value> {
     serde_json::from_str::<Vec<Value>>(s).unwrap_or_default()
 }
 
-/// 反馈参与人列表（assignee + 协作者，去重）
 fn participants(assignee: &str, collaborators: &[String]) -> Vec<String> {
     let mut list: Vec<String> = Vec::new();
     if !assignee.is_empty() {
@@ -42,7 +39,6 @@ fn participants(assignee: &str, collaborators: &[String]) -> Vec<String> {
     list
 }
 
-/// 写入一条管理员通知
 async fn push_admin_notification(pool: &MySqlPool, feedback_id: i64, to_admin: &str, from_admin: &str, ntype: &str, content: &str) {
     let _ = sqlx::query(
         "INSERT INTO feedback_admin_notifications (feedback_id, to_admin, from_admin, type, content) VALUES (?, ?, ?, ?, ?)",
@@ -61,13 +57,11 @@ fn admin_feedback_img_dir() -> std::path::PathBuf {
 }
 
 fn admin_data_url_to_bytes(data_url: &str) -> Option<Vec<u8>> {
-    // 兼容 data:image/xxx;base64,... 前缀
     let raw = data_url.split_once(',').map(|(_, v)| v).unwrap_or(data_url);
     use base64::Engine;
     base64::engine::general_purpose::STANDARD.decode(raw).ok()
 }
 
-/// 后台创建反馈用的图片压缩保存逻辑（复用与 APP 端一致的 uploads/feedback/ 目录）
 fn compress_and_save_admin_feedback_image(bytes: &[u8], name: &str, max_w: u32, quality: u32) -> Option<String> {
     use image::GenericImageView;
     let img = image::load_from_memory(bytes).ok()?;
@@ -108,8 +102,6 @@ fn admin_feedback_img_url(ctx: &AdminCtx, url: String) -> String {
     format!("{}{}", base.trim_end_matches('/'), url)
 }
 
-/// 解析完成弹窗传入的图片数组（base64 data URL 或已保存的 URL），压缩保存并返回 JSON 数组字符串。
-/// 与 create_feedback 的图片处理保持一致。
 fn save_admin_resolve_images(data: &Value, ctx: &AdminCtx) -> String {
     let arr = data.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     if arr.is_empty() {
@@ -128,7 +120,6 @@ fn save_admin_resolve_images(data: &Value, ctx: &AdminCtx) -> String {
         if data_url.is_empty() {
             continue;
         }
-        // 已是 http/https 或相对路径的已保存图片，直接保留
         if data_url.starts_with("http://") || data_url.starts_with("https://") || data_url.starts_with('/') {
             urls.push(data_url);
             continue;
@@ -162,11 +153,9 @@ async fn read_feedback_daily_limit(pool: &MySqlPool) -> i64 {
     .unwrap_or(DEFAULT_FEEDBACK_DAILY_LIMIT)
 }
 
-/// 反馈列表 + 统计
 pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let status_filter = str_of(&data, "status_filter").trim().to_string();
-    // 排序：post_time_desc（按提交时间倒序，默认）/ post_time_asc / update_desc
     let sort = str_of(&data, "sort").trim().to_string();
     let order_sql = match sort.as_str() {
         "post_time_asc" => "ORDER BY created_at ASC",
@@ -174,14 +163,12 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
         _ => "ORDER BY created_at DESC",
     };
 
-    // 排除已软删除的记录
     let (where_clause, binds): (String, Vec<String>) = if status_filter.is_empty() || status_filter == "all" {
         ("WHERE f.deleted_at IS NULL".to_string(), Vec::new())
     } else {
         ("WHERE f.deleted_at IS NULL AND f.status = ?".to_string(), vec![status_filter.clone()])
     };
 
-    // 查询列表：不直接返回 LONGTEXT 日志正文，避免列表页过大
     let list_sql = format!(
         "SELECT f.id, f.ciyuanxi_id, COALESCE(u.nickname, f.nickname) AS nickname, f.title, f.content, f.status, f.category, f.feedback_type, f.platform, f.app_version, f.images, f.admin_reply, f.replied_at, f.replied_by, f.assignee, f.collaborators, f.completed_by, f.resolve_note, f.resolve_images, f.reject_reason, f.ip, f.created_at, f.updated_at, f.claimed_at, f.resolved_at,
                 f.log_meta,
@@ -203,7 +190,6 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
         Err(_) => return err(500, "数据库错误"),
     };
 
-    // 统计各状态数量（排除已软删除的记录）
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL")
         .fetch_one(pool).await.unwrap_or(0);
     let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL AND status = 'pending'")
@@ -227,7 +213,6 @@ pub async fn list_feedback(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Res
     }))
 }
 
-/// 反馈详情（包含日志正文）
 pub async fn get_feedback_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -247,13 +232,10 @@ pub async fn get_feedback_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     }
 }
 
-/// 同意内测申请：填写回执（必填），并把申请提交设备ID自动加入版本管理的内测名单。
-/// 与普通反馈的「完成」解耦：无需认领，待处理/处理中均可直接同意，终态不可变更。
 pub async fn resolve_beta_application(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
     let note = str_of(&data, "note").trim().to_string();
-    // 设备备注（可选）：写入内测名单 note，便于管理员区分设备（名单里只有硬件ID分不清谁是谁）
     let device_note = str_of(&data, "device_note").trim().to_string();
     if id <= 0 {
         return err(400, "参数错误");
@@ -295,7 +277,6 @@ pub async fn resolve_beta_application(body: &str, ctx: &AdminCtx, pool: &MySqlPo
     .await;
     match upd {
         Ok(r) if r.rows_affected() > 0 => {
-            // 同意即自动把申请设备加入内测名单（重复设备由唯一键忽略，已有备注不覆盖）
             let device_added = if device_id.is_empty() {
                 false
             } else {
@@ -329,11 +310,10 @@ pub async fn resolve_beta_application(body: &str, ctx: &AdminCtx, pool: &MySqlPo
             ok("已同意该内测申请", json!({ "id": id, "device_added": device_added }))
         }
         Ok(_) => err(409, "该申请状态已变化，请刷新后重试"),
-        Err(e) => err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); err(500, "服务器错误") },
     }
 }
 
-/// 更新反馈状态
 pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -343,10 +323,7 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     if id <= 0 || !valid.contains(&status.as_str()) {
         return err(400, "参数错误");
     }
-    // 拒绝时记录操作人（与认领一致，打上 assignee 和 replied_by）
-    // 归属校验：仅认领人可拒绝自己的反馈；未认领的（空认领人）任意管理员可拒绝
     if status == "rejected" {
-        // 拒绝理由必填（与完成说明保持一致），并作为拒绝通知展示给用户
         if reason.is_empty() {
             return err(400, "拒绝理由不能为空");
         }
@@ -364,7 +341,6 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
                 if !assignee.is_empty() && assignee != ctx.username {
                     return err(403, &format!("该反馈由 {} 认领，仅认领人可拒绝", assignee));
                 }
-                // 终态不可再变更
                 if cur_status == "resolved" || cur_status == "rejected" {
                     return err(409, "该反馈已处于终态，无法变更");
                 }
@@ -412,13 +388,11 @@ pub async fn update_feedback_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     }
 }
 
-/// 获取反馈每日提交上限
 pub async fn get_feedback_limit(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let limit = read_feedback_daily_limit(pool).await;
     ok("ok", json!({ "feedback_daily_limit": limit }))
 }
 
-/// 更新反馈每日提交上限
 pub async fn update_feedback_limit(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let limit = int_of(&data, "feedback_daily_limit");
@@ -450,16 +424,12 @@ pub async fn update_feedback_limit(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     }
 }
 
-/// 认领反馈：将 pending 状态的反馈归属到当前管理员并置为 processing。
-/// 仅待处理状态可认领，且只能由发起请求的管理员本人认领。
-/// 处理中且当前认领人不是自己时，可"转认领"到自己名下，并通知原认领人。
 pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
     if id <= 0 {
         return err(400, "参数错误");
     }
-    // 先查当前状态与认领人，判断是否转认
     let cur = sqlx::query_as::<_, (String, String, String)>(
         "SELECT status, COALESCE(assignee, ''), COALESCE(title, '') FROM user_feedback WHERE id = ?",
     )
@@ -471,7 +441,6 @@ pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
         Ok(None) => return err(404, "反馈不存在"),
         Err(_) => return err(500, "服务器错误"),
     };
-    // 认领：pending 状态可直接认领；processing 且当前认领人不是自己时，可"转认领"到自己名下
     let upd = sqlx::query(
         "UPDATE user_feedback SET status = 'processing', assignee = ?, replied_by = ?, replied_at = NOW(), claimed_at = NOW(), collaborators = '', completed_by = '', updated_at = NOW()
          WHERE id = ? AND (status = 'pending' OR (status = 'processing' AND assignee != ?))",
@@ -487,7 +456,6 @@ pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
             if r.rows_affected() == 0 {
                 return err(409, "该反馈不存在、已被认领或当前不可认领，请刷新后重试");
             }
-            // 转认时通知原认领人
             if is_transfer && !old_assignee.is_empty() {
                 push_admin_notification(
                     pool,
@@ -506,10 +474,6 @@ pub async fn claim_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     }
 }
 
-/// 放弃认领反馈：仅放弃当前管理员自己的账号。
-/// - 唯一认领人放弃：回归未认领（pending）状态，清空认领人、认领时间。
-/// - 认领人放弃但仍有协作者：认领权移交给第一位协作者。
-/// - 协作者放弃：仅将自己从协作者列表移除。
 pub async fn abandon_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -537,7 +501,6 @@ pub async fn abandon_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     if !is_assignee && !is_collab {
         return err(403, "您未参与该反馈，无法放弃");
     }
-    // 从已完成列表中移除自己
     let completed_filtered: Vec<Value> = completed
         .into_iter()
         .filter(|v| v.get("admin").and_then(|a| a.as_str()).unwrap_or("") != ctx.username)
@@ -545,7 +508,6 @@ pub async fn abandon_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     let new_completed_json = json!(completed_filtered).to_string();
     if is_assignee {
         if collabs.is_empty() {
-            // 唯一认领人放弃，回归未认领
             let upd = sqlx::query(
                 "UPDATE user_feedback SET status = 'pending', assignee = '', replied_by = '', replied_at = NULL, claimed_at = NULL, collaborators = '', completed_by = '', updated_at = NOW() WHERE id = ? AND status = 'processing'",
             )
@@ -563,7 +525,6 @@ pub async fn abandon_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
                 Err(_) => err(500, "服务器错误"),
             }
         } else {
-            // 认领人放弃但仍有协作者：认领权移交给第一位协作者
             let new_assignee = collabs.remove(0);
             let new_collab_json = json!(collabs).to_string();
             let upd = sqlx::query(
@@ -584,7 +545,6 @@ pub async fn abandon_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
             }
         }
     } else {
-        // 协作者放弃：仅移除自己
         collabs.retain(|c| c != &ctx.username);
         let new_collab_json = json!(collabs).to_string();
         let upd = sqlx::query(
@@ -605,8 +565,6 @@ pub async fn abandon_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     }
 }
 
-/// 完成反馈：必填完成说明，将 processing 状态反馈置为 resolved 并记录说明，
-/// 同时清空 notified_at 以便用户端拉取到该反馈的完成通知。
 pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -620,9 +578,7 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     if note.chars().count() > 1000 {
         return err(400, "完成说明不能超过 1000 字");
     }
-    // 完成时附带的可选图片（base64 data URL 数组）
     let resolve_images_json = save_admin_resolve_images(&data, ctx);
-    // 仅认领人可完成该反馈
     let cur = sqlx::query_as::<_, (String, String)>(
         "SELECT status, COALESCE(assignee, '') FROM user_feedback WHERE id = ?",
     )
@@ -663,8 +619,6 @@ pub async fn resolve_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     }
 }
 
-/// 发起协同：当前管理员请求加入某已认领反馈的协同处理。
-/// 需先由认领人（assignee）弹窗同意，同意后才正式加入协作者列表。
 pub async fn add_collaborator(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -724,7 +678,6 @@ pub async fn add_collaborator(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     }
 }
 
-/// 轮询待处理的协同请求（当前管理员作为认领人收到的请求）
 pub async fn poll_collab_requests(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let rows = sqlx::query(
         "SELECT id, feedback_id, feedback_title, requester, created_at FROM feedback_collab_requests WHERE assignee = ? AND status = 'pending' ORDER BY created_at DESC LIMIT 50",
@@ -741,7 +694,6 @@ pub async fn poll_collab_requests(_body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     }
 }
 
-/// 处理协同请求：认领人同意/拒绝。同意后 requester 加入协作者列表。
 pub async fn respond_collab_request(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let request_id = int_of(&data, "request_id");
@@ -836,7 +788,6 @@ pub async fn respond_collab_request(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     }
 }
 
-/// 轮询当前管理员未读通知（转认告知 / 协同结果 / 协同完成）
 pub async fn poll_admin_notifications(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let rows = sqlx::query(
         "SELECT id, feedback_id, from_admin, type, content, created_at FROM feedback_admin_notifications WHERE to_admin = ? AND read_at IS NULL ORDER BY created_at DESC LIMIT 50",
@@ -853,7 +804,6 @@ pub async fn poll_admin_notifications(_body: &str, ctx: &AdminCtx, pool: &MySqlP
     }
 }
 
-/// 标记通知为已读
 pub async fn mark_notifications_read(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ids: Vec<i64> = data
@@ -879,9 +829,6 @@ pub async fn mark_notifications_read(body: &str, ctx: &AdminCtx, pool: &MySqlPoo
     }
 }
 
-/// 协同完成确认：当前参与人点击"完成"，记录其完成状态与说明。
-/// 当所有参与人（认领人 + 协作者）都确认完成后，反馈才真正置为已解决，
-/// 并给所有仍在参与的账号 +1 统计（统计由 feedback_admin_stats 动态计算）。
 pub async fn collaborator_complete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -947,7 +894,6 @@ pub async fn collaborator_complete(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
                 if r.rows_affected() == 0 {
                     return err(409, "该反馈不是处理中状态，无法完成，请刷新后重试");
                 }
-                // 通知其他参与人协同已完成
                 for p in &all_participants {
                     if p == &ctx.username {
                         continue;
@@ -986,19 +932,15 @@ pub async fn collaborator_complete(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     }
 }
 
-/// 后台新增反馈/建议事项（由管理员发起，非用户提交）
-    /// 入参：feedback_type（problem/suggestion）、platform（desktop/mobile/watch）、title、content、images（base64 data URL 数组）
-    /// 支持问题反馈与功能建议两种类型，类型与平台均为必填，由管理员自行选择，无默认值。
 pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
-    let mut feedback_type = str_of(&data, "feedback_type").trim().to_string();
+    let feedback_type = str_of(&data, "feedback_type").trim().to_string();
     if feedback_type.is_empty() {
         return err(400, "请选择反馈类型");
     }
     if feedback_type != "problem" && feedback_type != "suggestion" && feedback_type != "appeal" {
         return err(400, "反馈类型不正确");
     }
-    // 平台版本必填：desktop（桌面版）/ mobile（移动版）/ watch（腕上版，预留）
     let mut platform = str_of(&data, "platform").trim().to_string();
     if platform.is_empty() {
         return err(400, "请选择平台版本");
@@ -1007,11 +949,9 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
         return err(400, "平台版本不正确");
     }
     if feedback_type == "appeal" {
-        // 封禁申诉场景不带平台版本，全部归属桌面版
         platform = "desktop".to_string();
     }
     let app_version = str_of(&data, "app_version").trim().to_string();
-    // 封禁申诉类型使用 category='appeal'，其余使用 category='feedback'
     let category = if feedback_type == "appeal" { "appeal" } else { "feedback" };
     let title = str_of(&data, "title").trim().to_string();
     let content = str_of(&data, "content").trim().to_string();
@@ -1027,7 +967,6 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     if content.chars().count() > 1000 {
         return err(400, "内容不能超过 1000 字");
     }
-    // 处理图片（base64 data URL 数组）
     let raw_images = data.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     if raw_images.len() > MAX_ADMIN_FEEDBACK_IMAGES {
         return err(400, &format!("最多上传 {} 张图片", MAX_ADMIN_FEEDBACK_IMAGES));
@@ -1054,7 +993,6 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
         }
     }
     let images_json = json!(image_urls).to_string();
-    // 后台创建：昵称显示为发起的管理员，ciyuanxi_id 留空标识为后台创建
     let result = sqlx::query(
         "INSERT INTO user_feedback (ciyuanxi_id, nickname, title, content, feedback_type, platform, app_version, images, status, category, ip) VALUES ('', ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)",
     )
@@ -1074,7 +1012,6 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
         Err(_) => return err(500, "服务器错误"),
     };
     log_operation(pool, ctx, "后台新增反馈", &format!("id={}", new_id), &format!("类型:{}", feedback_type)).await;
-    // 勾选「发送外部通知」时，与用户端提交一致地通知开启反馈板块通知的邮箱（内部自行校验全局开关与单邮箱开关）
     if bool_of(&data, "notify_external") {
         let type_label = match feedback_type.as_str() {
             "suggestion" => "功能建议",
@@ -1096,9 +1033,6 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     ok("创建成功", json!({ "id": new_id }))
 }
 
-/// 各管理账号处理反馈量统计
-/// 统计每个管理员（认领人 assignee + 协作者）处理了多少反馈，及其处理结果分布。
-/// 协同反馈完成时，所有仍在参与的账号都会 +1。
 pub async fn feedback_admin_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let rows = sqlx::query(
         "SELECT COALESCE(assignee, '') AS assignee, COALESCE(collaborators, '') AS collaborators, status FROM user_feedback WHERE deleted_at IS NULL",
@@ -1161,7 +1095,6 @@ pub async fn feedback_admin_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool)
             .unwrap_or(0)
             .cmp(&a.get("total").and_then(|t| t.as_i64()).unwrap_or(0))
     });
-    // 未认领统计
     let unclaimed_total: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM user_feedback WHERE deleted_at IS NULL AND assignee = '' AND (collaborators IS NULL OR collaborators = '' OR collaborators = '[]')",
     )
@@ -1191,8 +1124,6 @@ pub async fn feedback_admin_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     ok("ok", json!({ "list": list, "grand_total": grand_total }))
 }
 
-/// 批量软删除反馈记录（移入回收站，14天后自动过期）
-/// 入参：ids（数组）
 pub async fn batch_delete_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ids: Vec<i64> = data
@@ -1208,7 +1139,6 @@ pub async fn batch_delete_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     if ids.is_empty() {
         return err(400, "请选择要删除的记录");
     }
-    // 构建占位符
     let placeholders: Vec<&str> = ids.iter().map(|_| "?").collect();
     let sql = format!(
         "UPDATE user_feedback SET deleted_at = NOW(), deleted_by = ? WHERE id IN ({}) AND deleted_at IS NULL",
@@ -1228,7 +1158,6 @@ pub async fn batch_delete_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     }
 }
 
-/// 回收站列表：展示已软删除的记录（14天内可恢复）
 pub async fn list_recycle_bin(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let list_sql = "SELECT id, ciyuanxi_id, nickname, title, content, status, category, feedback_type, platform,
                            assignee, deleted_at, deleted_by, created_at,
@@ -1240,7 +1169,6 @@ pub async fn list_recycle_bin(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         Ok(rows) => rows.iter().map(row_to_value).collect(),
         Err(_) => return err(500, "数据库错误"),
     };
-    // 计算每条记录的剩余可恢复小时数
     let items: Vec<Value> = list
         .iter()
         .map(|v| {
@@ -1256,8 +1184,6 @@ pub async fn list_recycle_bin(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     ok("ok", json!({ "list": items }))
 }
 
-/// 从回收站恢复反馈记录
-/// 入参：id
 pub async fn restore_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");

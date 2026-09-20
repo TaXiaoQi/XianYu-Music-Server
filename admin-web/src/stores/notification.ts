@@ -14,13 +14,9 @@ export interface NotifyModuleMap {
 }
 
 interface PersistedState {
-  /** 是否启用浏览器通知 */
   enabled: boolean
-  /** 各模块开关 */
   modules: NotifyModuleMap
-  /** 最近一次轮询到的各模块待处理数量（用于比对增量） */
   totals: Record<string, number>
-  /** 是否已完成首次基线（避免开启瞬间批量弹通知） */
   baseline: boolean
 }
 
@@ -38,10 +34,6 @@ export const MODULE_META: { key: keyof NotifyModuleMap; label: string; desc: str
   { key: 'nickname', label: '新名称', desc: '改名申请待审核' },
 ]
 
-/** window.NativeBridge：web-to-app 原生桥接接口（仅作兜底与增强）。
-    正常路径优先使用标准 Web Notification API——web-to-app 的 polyfill 会把
-    window.Notification 桥接成安卓系统通知，因此网页代码无需直接依赖原生方法；
-    仅当标准 API 不可用，或需要"打开系统设置"等原生能力时，才降级使用本接口。 */
 interface NativeBridgeApi {
   getNotificationPermissionState(): string
   requestNotificationPermission(): string
@@ -61,8 +53,6 @@ function isSupported(): boolean {
 
 function readPermission(): NotifyPermission {
   if (!isSupported()) return 'unsupported'
-  // 优先标准 Web Notification API：web-to-app 的 polyfill 会把 Notification.permission
-  // 桥接成安卓系统通知权限状态，因此直接读 window.Notification 即可感知原生授权结果
   if ('Notification' in window) {
     try {
       const p = Notification.permission
@@ -70,7 +60,6 @@ function readPermission(): NotifyPermission {
       if (p === 'denied') return 'denied'
       return 'default'
     } catch {
-      /* 标准 API 不可用时回退到原生桥接 */
     }
   }
   const bridge = nativeBridge()
@@ -113,7 +102,6 @@ function persist(state: PersistedState) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch {
-    /* 忽略存储失败 */
   }
 }
 
@@ -128,12 +116,10 @@ export const useNotificationStore = defineStore('notification', () => {
   const nativeBridgeAvailable = computed(() => !!nativeBridge())
   const supportedByBrowser = computed(() => isSupported())
 
-  /** 铃铛角标：最近一次轮询到的待处理总数 */
   const pendingTotal = computed(() =>
     Object.values(state.value.totals).reduce((sum, n) => sum + Number(n || 0), 0),
   )
 
-  /** 各模块待处理数量（供铃铛消息通知列表展示） */
   const totals = computed(() => ({ ...state.value.totals }))
 
   const permissionLabel = computed(() => {
@@ -154,8 +140,6 @@ export const useNotificationStore = defineStore('notification', () => {
       permission.value = 'unsupported'
       return 'unsupported'
     }
-    // 标准 Web Notification API：web-to-app 的 polyfill 会把 Notification.requestPermission()
-    // 转发到原生，拉起安卓系统授权弹窗（实现了"网页通知 → 系统通知"的联动）
     if ('Notification' in window && typeof Notification.requestPermission === 'function') {
       try {
         const p = await Notification.requestPermission()
@@ -163,7 +147,6 @@ export const useNotificationStore = defineStore('notification', () => {
           ? p
           : readPermission()) as NotifyPermission
         if (permission.value !== 'default') return permission.value
-        // Android 13+ 系统权限弹窗为异步结果，轮询等待用户响应
         for (let i = 0; i < 10; i++) {
           await new Promise((r) => setTimeout(r, 500))
           permission.value = readPermission()
@@ -171,7 +154,6 @@ export const useNotificationStore = defineStore('notification', () => {
         }
         return permission.value
       } catch {
-        /* 标准 API 失败时回退到原生桥接 */
       }
     }
     const bridge = nativeBridge()
@@ -179,7 +161,6 @@ export const useNotificationStore = defineStore('notification', () => {
       try {
         bridge.requestNotificationPermission()
       } catch {
-        /* 忽略 */
       }
       for (let i = 0; i < 10; i++) {
         await new Promise((r) => setTimeout(r, 500))
@@ -222,8 +203,6 @@ export const useNotificationStore = defineStore('notification', () => {
   }
 
   function showNotification(title: string, options: NotificationOptions = {}) {
-    // 标准 Web Notification API：web-to-app 的 polyfill 会把 new Notification() 路由到
-    // 安卓系统通知，从而实现"网页审核通知 → 系统通知"
     if ('Notification' in window && Notification.permission === 'granted') {
       try {
         const n = new Notification(title, {
@@ -237,7 +216,6 @@ export const useNotificationStore = defineStore('notification', () => {
         }
         return true
       } catch {
-        /* 标准 API 失败时回退到原生桥接 */
       }
     }
     const bridge = nativeBridge()
@@ -258,9 +236,7 @@ export const useNotificationStore = defineStore('notification', () => {
     })
   }
 
-  /** 依据 dashboard_stats 的 pending_* 字段，比对增量并弹通知 */
   function checkStats(stats: any) {
-    // 主开关未开启则不弹通知（但仍更新计数，供铃铛角标展示）
     const notifying = state.value.enabled
 
     const mapping: Record<string, number> = {
@@ -270,7 +246,6 @@ export const useNotificationStore = defineStore('notification', () => {
       nickname: Number(stats?.pending_nicknames ?? 0),
     }
 
-    // 首次轮询建立基线，不弹通知，避免开启瞬间批量弹出
     if (!state.value.baseline) {
       state.value.totals = { ...mapping }
       state.value.baseline = true

@@ -12,7 +12,6 @@ const LOGIN_LOCK_THRESHOLD: i64 = 5;
 const LOGIN_LOCK_MINUTES: i64 = 15;
 const LOGIN_FAILURE_WINDOW_MINUTES: i64 = 30;
 
-/// 检查设备是否被封禁，返回 Some(错误响应) 表示已封禁
 async fn check_device_ban(device_id: &str, ctx: &ReqCtx, pool: &MySqlPool) -> Option<Response> {
     if device_id.trim().is_empty() {
         return None;
@@ -34,14 +33,11 @@ async fn check_device_ban(device_id: &str, ctx: &ReqCtx, pool: &MySqlPool) -> Op
     None
 }
 
-/// 客户端心跳接口：检查账号/设备是否被封禁。
-/// 返回 code=200 + data.banned，避免客户端 requestAction 抛错。
 pub async fn check_ban_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
     let device_id = str_of(&data, "device_id").trim().to_string();
 
-    // 账号封禁
     if !ciyuanxi_id.is_empty() {
         if let Ok(Some(row)) = sqlx::query("SELECT status, ban_reason FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
             .bind(&ciyuanxi_id)
@@ -56,7 +52,6 @@ pub async fn check_ban_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         }
     }
 
-    // 设备封禁
     if !device_id.is_empty() {
         if let Ok(Some(row)) = sqlx::query("SELECT reason FROM banned_devices WHERE device_id = ? LIMIT 1")
             .bind(&device_id)
@@ -71,12 +66,10 @@ pub async fn check_ban_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     ctx.ok("ok", json!({ "banned": false }))
 }
 
-/// 根据邮箱判定角色（管理员已去除邮箱，统一返回 member）
 async fn resolve_role(_pool: &MySqlPool, _email: &str) -> String {
     "member".to_string()
 }
 
-/// 构建登录用户返回 payload
 fn build_user_payload(
     user_id: i64,
     nickname: &str,
@@ -124,8 +117,6 @@ pub async fn get_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response 
         .execute(pool)
         .await;
 
-    // 九九乘法表型人机验证：操作数取值 1~9，加减乘除随机一种，结果恒为非负整数。
-    // 定义「除」保证整除（被除数=两因数之积，商=因数），「减」保证 a>b（结果≥1）。
     let ops = ['+', '-', '×', '÷'];
     let op = ops[crate::handlers::helpers::random_int(0, 3) as usize];
     let (left, right, answer) = match op {
@@ -135,7 +126,6 @@ pub async fn get_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response 
             (a, b, a + b)
         }
         '-' => {
-            // 令 a>b，结果最小为 1，避免出现负号
             let a = crate::handlers::helpers::random_int(2, 9);
             let b = crate::handlers::helpers::random_int(1, a - 1);
             (a, b, a - b)
@@ -146,8 +136,8 @@ pub async fn get_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response 
             (a, b, a * b)
         }
         '÷' => {
-            let a = crate::handlers::helpers::random_int(1, 9); // 商
-            let b = crate::handlers::helpers::random_int(1, 9); // 除数
+            let a = crate::handlers::helpers::random_int(1, 9);
+            let b = crate::handlers::helpers::random_int(1, 9);
             (a * b, b, a)
         }
         _ => unreachable!(),
@@ -176,7 +166,7 @@ pub async fn get_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response 
                 "expire_seconds": CAPTCHA_TTL_MINUTES * 60,
             }),
         ),
-        Err(e) => ctx.err(500, &format!("验证码生成失败: {}", e)),
+        Err(e) => { tracing::error!("验证码生成失败: {e}"); ctx.err(500, "验证码生成失败") },
     }
 }
 
@@ -357,11 +347,9 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let verify_code = str_of(&data, "verify_code").trim().to_string();
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
 
-    // 弦予号必填 + 微信号规则校验
     if let Err(msg) = validate_ciyuanxi_id(&ciyuanxi_id) {
         return ctx.err(400, msg);
     }
-    // 昵称可选，留空默认"弦予+号"
     if nickname.is_empty() {
         nickname = default_nickname(&ciyuanxi_id);
     }
@@ -372,7 +360,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if let Err(msg) = validate_nickname(&nickname, 2, 32) {
         return ctx.err(400, msg);
     }
-    // 检查昵称是否与管理员用户名冲突（大小写不敏感）
     {
         let admin_conflict = sqlx::query("SELECT id FROM admin_users WHERE LOWER(username) = LOWER(?) LIMIT 1")
             .bind(&nickname)
@@ -398,7 +385,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return resp;
     }
 
-    // 检查设备是否被封禁
     let reg_device_id = str_of(&data, "device_id").trim().to_string();
     if let Some(resp) = check_device_ban(&reg_device_id, &ctx, pool).await {
         return resp;
@@ -406,7 +392,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
 
     let _ip = ctx.client_ip.clone();
 
-    // 验证邮箱验证码
     let code_row = sqlx::query(
         "SELECT * FROM email_verify_codes WHERE email = ? AND code = ? AND type = 'register' AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
     )
@@ -425,7 +410,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         .execute(pool)
         .await;
 
-    // 检查邮箱是否已注册
     let email_user = sqlx::query("SELECT id FROM app_users WHERE email = ?")
         .bind(&email)
         .fetch_optional(pool)
@@ -437,7 +421,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "该邮箱已注册");
     }
 
-    // 弦予号唯一性校验（普通用户表 + 靓号表）
     let id_dup = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
@@ -489,7 +472,7 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
             );
             ctx.json(200, "注册成功", Some(payload))
         },
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
@@ -498,7 +481,6 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if data.is_null() {
         return ctx.err(400, "参数错误");
     }
-    // 支持弦予号或邮箱登录（参考微信号设计：邮箱登录时大小写不敏感）
     let account_input = str_of(&data, "ciyuanxi_id").trim().to_string();
     let password = str_of(&data, "password");
     if account_input.is_empty() || password.is_empty() {
@@ -577,7 +559,6 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let token = token::issue(pool, &ciyuanxi_id, &login_device_id).await;
     clear_login_failures(&matched, &ctx, pool).await;
 
-    // 记录 APP 登录日志（若请求未携带设备信息，则从 app_open_log 按 device_id 兜底补全）
     let mut log_device_model = str_of(&data, "device_model").trim().to_string();
     let mut log_app_version = str_of(&data, "app_version").trim().to_string();
     let mut log_os_version = str_of(&data, "os_version").trim().to_string();
@@ -617,7 +598,6 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     .execute(pool)
     .await;
 
-    // 更新用户最后登录设备ID
     if !login_device_id.is_empty() {
         let _ = sqlx::query("UPDATE app_users SET last_device_id = ? WHERE id = ?")
             .bind(&login_device_id)
@@ -652,7 +632,7 @@ pub async fn generate_tv_login_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         .await;
     match result {
         Ok(_) => ctx.json(200, "ok", Some(json!({ "code": code, "expire_seconds": 300, "location": location }))),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
@@ -795,7 +775,6 @@ pub async fn confirm_tv_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     if u_status == 0 {
         return ctx.err(403, "账号已被禁用");
     }
-    // TV 端设备标识取自二维码生成时绑定的 device_id
     let tv_device_id: String = row.try_get::<String, _>("device_id").unwrap_or_default();
     let token = token::issue(pool, &ciyuanxi_id, &tv_device_id).await;
     let res = sqlx::query("UPDATE tv_login_codes SET status = 'logged_in', token = ?, logged_in_at = NOW() WHERE code = ? AND status = 'scanned'")
@@ -880,7 +859,6 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         return resp;
     }
 
-    // 注册/绑定邮箱类型：发码前预检查邮箱唯一性（注册还需检查弦予号唯一性）
     if typ == "register" || typ == "bind" {
         let email_bound = sqlx::query("SELECT id FROM app_users WHERE email = ? LIMIT 1")
             .bind(&email)
@@ -944,7 +922,6 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         .execute(pool)
         .await;
 
-    // 根据 type 构造邮件标题和正文
     let type_label = match typ.as_str() {
         "login" => "登录",
         "reset_password" => "找回密码",
@@ -959,7 +936,6 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     );
     let html = crate::admin::email::build_verify_code_email_html(&type_label, &code);
 
-    // 调用外部邮箱 API 真正发送邮件（HTML 卡片 + 纯文本兜底）
     let send_result = crate::handlers::email_auth::call_email_api_html(
         &ctx.config,
         pool,
@@ -970,7 +946,6 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     )
     .await;
 
-    // 记录发送日志（status: 1=成功, 0=失败）
     let (status_val, error_msg) = match &send_result {
         Ok(()) => (1i64, String::new()),
         Err(e) => {
@@ -1051,7 +1026,6 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         .bind(&email)
         .execute(pool)
         .await;
-    // 密码被重置后撤销该账号全部已签发 token，强制所有设备重新登录
     if let Ok(rows) = sqlx::query("SELECT ciyuanxi_id FROM app_users WHERE email = ?")
         .bind(&email)
         .fetch_all(pool)
@@ -1102,7 +1076,6 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         return ctx.err(400, "邮箱与当前账号不匹配");
     }
 
-    // 验证登录密码（双重验证：密码 + 邮箱验证码）
     let stored_password: String = user.try_get("password").unwrap_or_default();
     if !stored_password.is_empty() && !bcrypt::verify(&password, &stored_password).unwrap_or(false) {
         return ctx.err(400, "登录密码错误");
@@ -1192,7 +1165,6 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         .bind(&registered_email)
         .execute(pool)
         .await;
-    // 注销后撤销全部 token
     token::revoke_user(pool, &ciyuanxi_id).await;
     let result = sqlx::query("DELETE FROM app_users WHERE id = ?")
         .bind(user_id)
@@ -1201,12 +1173,10 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
 
     match result {
         Ok(_) => ctx.ok_empty("账号已注销"),
-        Err(e) => ctx.err(500, &format!("注销失败: {}", e)),
+        Err(e) => { tracing::error!("注销失败: {e}"); ctx.err(500, "注销失败") },
     }
 }
 
-/// 预验证注销凭据（密码 + 邮箱验证码），仅校验不执行实际注销。
-/// 用于客户端弹出二级确认弹窗时提前验证，减少用户确认后的等待时间。
 pub async fn preverify_delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
@@ -1242,13 +1212,11 @@ pub async fn preverify_delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool)
         return ctx.err(400, "邮箱与当前账号不匹配");
     }
 
-    // 验证登录密码
     let stored_password: String = user.try_get("password").unwrap_or_default();
     if !stored_password.is_empty() && !bcrypt::verify(&password, &stored_password).unwrap_or(false) {
         return ctx.err(400, "登录密码错误");
     }
 
-    // 验证邮箱验证码（仅校验，不标记为已使用，留给实际注销接口标记）
     let code_row = sqlx::query(
         "SELECT id FROM email_verify_codes WHERE email = ? AND code = ? AND type = 'delete_account' AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
     )

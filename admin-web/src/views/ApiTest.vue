@@ -123,21 +123,18 @@ interface TestResult {
 
 // ===== 接口定义（与 Rust 服务器 handlers/mod.rs dispatch 完全对齐） =====
 const mainApis: ApiConfig[] = [
-  // 系统自检
   { name: 'check', method: 'GET', sign: false, desc: '服务器自检/数据库连接检查', body: {} },
   { name: 'install', method: 'GET', sign: false, desc: '数据库安装', body: {} },
   { name: 'get_source_status', method: 'GET', sign: false, desc: '获取音源状态', body: {} },
   { name: 'get_server_load', method: 'GET', sign: true, desc: '获取服务器负载', body: {} },
   { name: 'get_captcha', method: 'GET', sign: false, desc: '获取人机验证配置', body: {} },
   { name: 'get_user_agreement', method: 'GET', sign: false, desc: '获取用户协议', body: {} },
-  // 版本与公告
   { name: 'get_version_status', method: 'POST', sign: true, desc: '获取版本状态', body: { version: '1.0.0' } },
   { name: 'get_latest_version', method: 'POST', sign: true, desc: '获取最新版本', body: {} },
   { name: 'get_announcement', method: 'GET', sign: true, desc: '获取公告', body: {} },
   { name: 'get_about_config', method: 'GET', sign: true, desc: '获取关于页配置', body: {} },
   { name: 'get_site_logo', method: 'GET', sign: true, desc: '获取站点Logo', body: {} },
   { name: 'get_leaderboard', method: 'GET', sign: true, desc: '获取排行榜', body: {} },
-  // 用户认证
   { name: 'register', method: 'POST', sign: true, desc: '用户注册', body: { username: 'test_check_user', password: 'test123456', email: 'test@example.com', verify_code: '000000' } },
   { name: 'user_login', method: 'POST', sign: true, desc: '用户登录', body: { username: 'test_nonexist', password: 'test123456' } },
   { name: 'login_by_code', method: 'POST', sign: true, desc: '验证码登录', body: { email: 'test@example.com', verify_code: '000000' } },
@@ -146,21 +143,16 @@ const mainApis: ApiConfig[] = [
   { name: 'verify_captcha', method: 'POST', sign: false, desc: '验证人机验证', body: { token: 'test' } },
   { name: 'check_ban_status', method: 'POST', sign: true, desc: '检查封禁状态', body: { device_id: 'test_device_001' } },
   { name: 'delete_account', method: 'POST', sign: true, desc: '删除账号', body: { ciyuanxi_id: 'test', password: 'test123456' } },
-  // 用户信息
   { name: 'get_user_info', method: 'POST', sign: true, desc: '获取用户信息', body: { ciyuanxi_id: 'test' } },
   { name: 'get_user_settings', method: 'POST', sign: true, desc: '获取用户设置', body: { ciyuanxi_id: 'test' } },
   { name: 'check_username', method: 'POST', sign: true, desc: '检查弦予号可用性', body: { username: 'test_check_user' } },
   { name: 'report_listen_stats', method: 'POST', sign: true, desc: '上报听歌统计', body: { ciyuanxi_id: 'test', listen_duration: 100 } },
-  // 反馈与社交
   { name: 'submit_feedback', method: 'POST', sign: true, desc: '提交反馈', body: { ciyuanxi_id: 'test', content: '测试反馈', feedback_type: 'problem' } },
   { name: 'submit_appeal', method: 'POST', sign: true, desc: '提交申诉', body: { ciyuanxi_id: 'test', content: '测试申诉', device_id: 'test_device_001' } },
   { name: 'list_my_feedback', method: 'POST', sign: true, desc: '获取我的反馈列表', body: { ciyuanxi_id: 'test' } },
-  // 壁纸
   { name: 'list_wallpapers', method: 'GET', sign: false, desc: '获取壁纸列表', body: {} },
-  // 上报
   { name: 'error', method: 'POST', sign: true, desc: '错误上报', body: { device_id: 'test_device_001', app_version: '1.0.0', os_version: '13', device_model: 'TestDevice', error_type: 'TestError', error_message: '测试错误', error_stack: '', page: 'test' } },
   { name: 'open', method: 'POST', sign: false, desc: 'APP启动上报', body: { device_id: 'test_device_001', app_version: '1.0.0', os_version: '13', device_model: 'TestDevice' } },
-  // 邮箱认证
   { name: 'email_get_captcha_config', method: 'GET', sign: false, desc: '获取验证码配置', body: {} },
   { name: 'email_get_turnstile_config', method: 'GET', sign: false, desc: '获取Turnstile配置', body: {} },
   { name: 'email_send_code', method: 'POST', sign: false, desc: '发送邮箱验证码', body: { email: 'test@example.com', type: 'register' } },
@@ -170,7 +162,6 @@ const mainApis: ApiConfig[] = [
   { name: 'email_get_profile', method: 'POST', sign: false, desc: '获取邮箱用户资料', body: { token: 'test' } },
 ]
 
-// 预期可接受的错误码（接口正常工作但业务参数不合法时的返回）
 const MAIN_EXPECTED: Record<string, number[]> = {
   user_login: [401],
   register: [400, 401],
@@ -366,7 +357,6 @@ function clearMain() {
 .data-table tbody tr.row-failed { background: rgba(236, 65, 65, 0.05); }
 .data-table tbody tr.row-failed:hover { background: rgba(236, 65, 65, 0.08); }
 
-/* 表格行逐条加载动画（与数据库管理页一致） */
 .data-table tbody tr.row-anim {
   animation: rowIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }

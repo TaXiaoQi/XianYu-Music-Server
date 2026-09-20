@@ -186,7 +186,6 @@ const sourceItems = computed(() => {
   }))
 })
 
-// 统计卡片配置（支持动态值）
 const statCards = [
   {
     label: '今日用户',
@@ -215,13 +214,11 @@ const statCards = [
   },
 ]
 
-// ─── SVG 圆环分段 ───────────────────────────────────────────
 const DONUT_R = 84
 const DONUT_C = 2 * Math.PI * DONUT_R
 const activeIndex = ref(-1)
 const legendRef = ref<HTMLElement | null>(null)
 
-/** 悬停/点击联动：设置高亮并滚动列表项到可见位置 */
 function onLegendHover(index: number) {
   activeIndex.value = index
   const container = legendRef.value
@@ -308,11 +305,10 @@ async function copyText(text: string, successMessage: string) {
 }
 
 onMounted(async () => {
-  publicApiUrl.value = resolvePublicApiUrl() // 先给兜底值，避免首帧空白
+  publicApiUrl.value = resolvePublicApiUrl()
   const res = await adminApi<DashboardStats>('dashboard_stats')
   if (res.code === 200 && res.data) {
     stats.value = res.data
-    // 优先用服务端权威地址（基于请求 Host / public_base_url），兜底时才用窗口猜测
     if (stats.value.public_api_url) publicApiUrl.value = stats.value.public_api_url
   } else {
     loadError.value = res.msg || '数据加载失败（数据库可能未连接）'
@@ -327,7 +323,6 @@ onMounted(async () => {
   margin: 0 auto;
 }
 
-/* 标题区 */
 .dsh-head {
   display: flex;
   justify-content: space-between;

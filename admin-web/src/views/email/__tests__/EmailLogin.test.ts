@@ -1,19 +1,14 @@
-/**
- * EmailLogin 组件测试
- */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import EmailLogin from '../EmailLogin.vue'
 import * as emailApi from '@/api/email'
 
-// mock vue-router
 const mockPush = vi.fn()
 const mockReplace = vi.fn()
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
 }))
 
-// mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {}
   return {
@@ -25,7 +20,6 @@ const localStorageMock = (() => {
 })()
 vi.stubGlobal('localStorage', localStorageMock)
 
-// RouterLink stub - renders as <a> tag
 const RouterLinkStub = {
   template: '<a :href="to"><slot /></a>',
   props: ['to'],
@@ -113,14 +107,12 @@ describe('EmailLogin.vue', () => {
     await wrapper.find('form').trigger('submit.prevent')
     await flushPromises()
 
-    // 不应跳转
     expect(mockPush).not.toHaveBeenCalled()
-    // 不应存储 token
     expect(localStorageMock.getItem('email_token')).toBeNull()
   })
 
   it('loading 状态应禁用按钮', async () => {
-    vi.spyOn(emailApi, 'emailLogin').mockReturnValue(new Promise(() => {})) // 永不 resolve
+    vi.spyOn(emailApi, 'emailLogin').mockReturnValue(new Promise(() => {}))
     vi.spyOn(emailApi, 'getEmailToken').mockReturnValue(null)
 
     const wrapper = mountComponent()

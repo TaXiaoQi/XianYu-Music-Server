@@ -5,7 +5,6 @@ use sqlx::MySqlPool;
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
-/// 公告 JSON 文件路径（相对 serve 根，兼容原 PHP api 目录）
 fn announcements_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("announcement.json")
 }
@@ -49,7 +48,6 @@ fn valid_type(t: &str) -> &str {
     }
 }
 
-/// 公告所属平台（如版本/壁纸）：旧数据无 platform 字段视为 desktop（桌面端）。
 fn valid_platform(p: &str) -> &str {
     if p == "mobile" || p == "watch" {
         p
@@ -58,7 +56,6 @@ fn valid_platform(p: &str) -> &str {
     }
 }
 
-/// 获取公告列表（按创建时间倒序）
 pub async fn list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     let mut list = read_announcements();
     list.sort_by(|a, b| {
@@ -69,7 +66,6 @@ pub async fn list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     ok("ok", Value::Array(list))
 }
 
-/// 新增公告
 pub async fn add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let title = str_of(&data, "title").trim().to_string();
@@ -100,7 +96,6 @@ pub async fn add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     ok("添加成功", Value::Null)
 }
 
-/// 编辑公告
 pub async fn update(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = str_of(&data, "id").trim().to_string();
@@ -137,7 +132,6 @@ pub async fn update(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     ok("修改成功", Value::Null)
 }
 
-/// 删除公告
 pub async fn delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = str_of(&data, "id").trim().to_string();
@@ -164,7 +158,6 @@ pub async fn delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     ok("删除成功", Value::Null)
 }
 
-/// 切换公告状态
 pub async fn toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = str_of(&data, "id").trim().to_string();

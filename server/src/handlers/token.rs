@@ -7,19 +7,11 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::response::ReqCtx;
 
-/// token 有效期（天）
 const TOKEN_TTL_DAYS: i64 = 30;
-/// 剩余有效期低于该天数时滑动续期
 const TOKEN_RENEW_THRESHOLD_DAYS: i64 = 15;
-/// 单用户最多保留的 token 数（多设备），超出删除最旧
 const MAX_TOKENS_PER_USER: i64 = 10;
-/// token 属主校验内存缓存有效期（秒）：命中时跳过数据库查询。
-/// 撤销 token（改密/注销）最多延迟该秒数生效
 const TOKEN_CACHE_TTL_SECONDS: i64 = 15;
-/// last_used_at 落库节流间隔（秒）：活跃 token 无需每次请求都写库，
-/// 也避免分片同步等并发请求对同一行反复加锁
 const TOKEN_TOUCH_INTERVAL_SECONDS: i64 = 300;
-/// token 缓存容量上限，超出时清理已过期条目
 const TOKEN_CACHE_MAX_ENTRIES: usize = 4096;
 
 #[derive(Clone)]
@@ -41,7 +33,6 @@ fn now_unix() -> i64 {
         .unwrap_or(0)
 }
 
-/// 需要校验 token 属主的 action（请求体含 ciyuanxi_id / user_id 的用户资源操作）
 const USER_BOUND_ACTIONS: &[&str] = &[
     // settings
     "get_user_info",
@@ -97,15 +88,11 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "watch_phone_query",
 ];
 
-/// 查看他人公开数据的只读 action（排行榜"查看"用户详情）。
-/// 这些接口必须携带有效 token（记录访问者），但属主不必与目标 user_id 一致，
-/// 否则用本人 token 查看他人数据会被属主校验误判为"登录状态与账号不匹配"。
 const VIEW_OTHER_ACTIONS: &[&str] = &[
     "favorites_sync_download",
     "file_sync_download",
 ];
 
-/// 签发用户 token 并落库；同设备旧 token 立即失效
 pub async fn issue(pool: &MySqlPool, ciyuanxi_id: &str, device_id: &str) -> String {
     let token = crate::handlers::helpers::random_hex(32);
     let _ = sqlx::query("DELETE FROM user_tokens WHERE ciyuanxi_id = ? AND device_id = ?")
@@ -126,7 +113,6 @@ pub async fn issue(pool: &MySqlPool, ciyuanxi_id: &str, device_id: &str) -> Stri
     token
 }
 
-/// 撤销用户全部 token（改密 / 重置密码 / 改弦予号 / 注销后调用，已签发 token 全部失效）
 pub async fn revoke_user(pool: &MySqlPool, ciyuanxi_id: &str) {
     let _ = sqlx::query("DELETE FROM user_tokens WHERE ciyuanxi_id = ?")
         .bind(ciyuanxi_id)
@@ -134,7 +120,6 @@ pub async fn revoke_user(pool: &MySqlPool, ciyuanxi_id: &str) {
         .await;
 }
 
-/// 清理该用户过期与超量的 token
 async fn prune(pool: &MySqlPool, ciyuanxi_id: &str) {
     let _ = sqlx::query("DELETE FROM user_tokens WHERE expires_at < NOW()")
         .execute(pool)
@@ -154,19 +139,14 @@ async fn prune(pool: &MySqlPool, ciyuanxi_id: &str) {
 }
 
 enum OwnerState {
-    /// token 有效且属主匹配（已滑动续期）
     Valid,
-    /// token 存在但已过期
     Expired,
-    /// token 有效但属主与请求身份不符（token 被挪用/伪造）
     Mismatch,
-    /// token 不在库中（旧版服务端签发的遗留 token 或伪造值）
     Unknown,
 }
 
 async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerState {
     let now = now_unix();
-    // 快路径：命中缓存直接判定，跳过数据库往返（token 撤销最多延迟 TTL 秒生效）
     if let Some(cached) = token_cache().lock().unwrap().get(token).cloned() {
         if now - cached.cached_at < TOKEN_CACHE_TTL_SECONDS {
             if cached.expires_unix <= now {
@@ -202,7 +182,6 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
         let need_renew: i64 = row.try_get("need_renew").unwrap_or(0);
         let should_touch: i64 = row.try_get("should_touch").unwrap_or(1);
         if need_renew == 1 {
-            // 剩余有效期不足一半时滑动续期，避免活跃用户被登出
             let _ = sqlx::query(
                 "UPDATE user_tokens SET last_used_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE token = ?",
             )
@@ -211,7 +190,6 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
             .execute(pool)
             .await;
         } else if should_touch == 1 {
-            // last_used_at 落库节流：仅距上次使用超过阈值才写库
             let _ = sqlx::query("UPDATE user_tokens SET last_used_at = NOW() WHERE token = ?")
                 .bind(token)
                 .execute(pool)
@@ -245,13 +223,6 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
     }
 }
 
-/// dispatch 层统一鉴权：用户资源操作必须由 token 属主本人发起。
-///
-/// - 请求携带 token：严格校验属主与有效期，不匹配立即 401
-/// - 请求未携带 token：
-///   - 软模式（require_user_token=false，默认）：放行，兼容未携带 token 的存量客户端
-///   - 硬模式（require_user_token=true）：拒绝，要求更新客户端
-/// - 软模式下库中不存在的 token（旧版服务端签发、未落库）放行，避免存量用户被误杀
 pub async fn check_dispatch_auth(
     action: &str,
     body: &str,
@@ -262,7 +233,6 @@ pub async fn check_dispatch_auth(
         return None;
     }
     let data: Value = serde_json::from_str(body).unwrap_or(Value::Null);
-    // 身份字段：不同 action 使用 ciyuanxi_id 或 user_id（可能为数字），取先出现且非空者
     let identity = ["ciyuanxi_id", "user_id"]
         .iter()
         .map(|k| match data.get(*k) {
@@ -271,7 +241,6 @@ pub async fn check_dispatch_auth(
             _ => String::new(),
         })
         .find(|v| !v.is_empty());
-    // 无身份字段：交给各 handler 自行报"请先登录"
     let identity = identity?;
     let token = data
         .get("token")
@@ -287,7 +256,6 @@ pub async fn check_dispatch_auth(
     }
     match verify_owner(pool, &token, &identity).await {
         OwnerState::Valid => None,
-        // 查看他人公开数据：token 有效即可，属主不必与目标 user_id 一致，但必须记录访问
         OwnerState::Mismatch if VIEW_OTHER_ACTIONS.contains(&action) => {
             record_view_access(pool, &token, &identity, action).await;
             None
@@ -304,8 +272,6 @@ pub async fn check_dispatch_auth(
     }
 }
 
-/// 记录"查看他人数据"访问：访问者（token 属主）+ 目标 user_id + action + 时间。
-/// 写入失败不影响主流程（只读接口，审计尽力而为）。
 async fn record_view_access(pool: &MySqlPool, token: &str, target: &str, action: &str) {
     let viewer: Option<String> = sqlx::query_scalar(
         "SELECT ciyuanxi_id FROM user_tokens WHERE token = ? LIMIT 1",

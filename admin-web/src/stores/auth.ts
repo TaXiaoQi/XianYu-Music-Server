@@ -17,7 +17,6 @@ export const useAuthStore = defineStore('auth', () => {
   const isLoggedIn = computed(() => !!token.value)
   const isSuper = computed(() => user.value?.role === 'super_admin')
   const isGuest = computed(() => user.value?.role === 'guest')
-  /** 是否具备写操作权限（访客为 false） */
   const canWrite = computed(() => user.value?.role !== 'guest')
   const roleLabel = computed(() => {
     switch (user.value?.role) {
@@ -59,7 +58,6 @@ export const useAuthStore = defineStore('auth', () => {
     clearAdminActivity()
   }
 
-  /** 本地更新当前登录账号信息（如转让超管后降级），并同步持久化到 localStorage */
   function updateUser(patch: Partial<AdminUser> & { id: number }): void {
     if (!user.value) return
     user.value = { ...user.value, ...patch }

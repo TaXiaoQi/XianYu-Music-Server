@@ -68,7 +68,6 @@ const sendingCode = ref(false)
 const countdown = ref(0)
 
 onMounted(async () => {
-  // 运行时从后端获取人机验证配置
   try {
     const res = await getCaptchaConfig()
     if (res.code === 200 && res.data?.enabled && res.data.site_key) {
@@ -77,7 +76,6 @@ onMounted(async () => {
       renderCaptcha()
     }
   } catch {
-    // 获取失败时静默跳过，不影响正常流程
   }
 })
 

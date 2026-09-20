@@ -618,7 +618,7 @@ function triggerImport() {
 async function onImportFile(e: Event) {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
-  input.value = '' // 允许再次选择同一文件
+  input.value = ''
   if (!file) return
   if (!/\.sql$/i.test(file.name)) {
     showToast('请选择 .sql 备份文件')
@@ -1080,7 +1080,6 @@ onMounted(() => {
 .muted { color: var(--text-muted); }
 .nowrap-time { white-space: nowrap; font-size: 12px; color: var(--text-light); }
 
-/* 徽标 */
 .badge {
   display: inline-flex;
   padding: 3px 10px;
@@ -1091,14 +1090,12 @@ onMounted(() => {
 .badge-success { background: rgba(34, 197, 94, 0.14); color: #16a34a; }
 .badge-error { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 
-/* 行操作 */
 .row-actions {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-/* 表内容元信息 */
 .table-meta {
   font-size: 12px;
   color: var(--text-muted);
@@ -1126,7 +1123,6 @@ onMounted(() => {
 }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
-/* 行进入动画 */
 .row-anim {
   animation: rowIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -1218,7 +1214,6 @@ onMounted(() => {
 }
 .btn-cancel:hover { background: var(--track); }
 
-/* SQL 内容 */
 .sql-pre {
   background: #1e1e2e;
   color: #e0e0e8;
@@ -1235,7 +1230,6 @@ onMounted(() => {
   overflow-y: auto;
 }
 
-/* 自动备份表单 */
 .form-row {
   display: flex;
   align-items: center;
@@ -1326,7 +1320,6 @@ onMounted(() => {
 }
 .form-desc p:last-child { margin-bottom: 0; }
 .form-desc-muted { color: var(--text-muted) !important; }
-/* 开关 */
 .toggle {
   position: relative;
   display: inline-block;
@@ -1358,7 +1351,6 @@ onMounted(() => {
 .toggle input:checked + .toggle-slider { background: var(--accent); }
 .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
 
-/* 分页 */
 .pagination {
   display: flex;
   align-items: center;

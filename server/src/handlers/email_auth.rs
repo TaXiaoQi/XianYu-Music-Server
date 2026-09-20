@@ -4,10 +4,9 @@ use serde_json::{json, Value};
 use sqlx::MySqlPool;
 use sqlx::Row;
 
-use crate::handlers::helpers::{parse_body, random_int, str_of};
+use crate::handlers::helpers::{is_valid_email, parse_body, random_int, str_of};
 use crate::response::ReqCtx;
 
-/// JWT 载荷：邮箱注册用户身份
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmailClaims {
     pub sub: i64,
@@ -15,7 +14,6 @@ pub struct EmailClaims {
     pub exp: usize,
 }
 
-/// 签发邮箱用户 JWT（7 天时效）
 fn sign_email_token(config: &crate::config::Config, user_id: i64, email: &str) -> String {
     let exp = (std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -35,7 +33,6 @@ fn sign_email_token(config: &crate::config::Config, user_id: i64, email: &str) -
     .unwrap_or_default()
 }
 
-/// 解析邮箱用户 JWT
 pub fn verify_email_token(config: &crate::config::Config, token: &str) -> Option<EmailClaims> {
     jsonwebtoken::decode::<EmailClaims>(
         token,
@@ -46,28 +43,11 @@ pub fn verify_email_token(config: &crate::config::Config, token: &str) -> Option
     .map(|d| d.claims)
 }
 
-fn is_valid_email(email: &str) -> bool {
-    let email = email.trim();
-    if email.is_empty() || !email.contains('@') || email.contains(' ') {
-        return false;
-    }
-    let mut parts = email.split('@');
-    let local = parts.next().unwrap_or("");
-    let domain = parts.next().unwrap_or("");
-    let rest = parts.next();
-    !local.is_empty()
-        && !domain.is_empty()
-        && domain.contains('.')
-        && !domain.starts_with('.')
-        && rest.is_none()
-}
-
 #[derive(Debug, Deserialize)]
 struct CaptchaVerifyResponse {
     success: bool,
 }
 
-/// 人机验证运行时配置（优先从数据库读取，兼容旧 Turnstile 配置，最后回退到环境变量）
 pub struct CaptchaConfig {
     pub enabled: bool,
     pub provider: String,
@@ -95,7 +75,6 @@ fn fallback_captcha_secret(provider: &str, fallback: &crate::config::Config) -> 
     }
 }
 
-/// 从 `server_settings` 表读取通用人机验证配置，兼容旧 `turnstile_*` 配置。
 pub async fn load_captcha_config(
     pool: &MySqlPool,
     fallback: &crate::config::Config,
@@ -156,7 +135,6 @@ pub async fn load_captcha_config(
     }
 }
 
-/// 校验通用人机验证。未启用或未配置密钥时跳过。
 pub async fn verify_captcha_token(config: &CaptchaConfig, token: &str, remote_ip: &str) -> Result<bool, String> {
     if !config.enabled || config.secret.trim().is_empty() {
         return Ok(true);
@@ -199,7 +177,6 @@ pub async fn verify_captcha_token(config: &CaptchaConfig, token: &str, remote_ip
     Ok(body.success)
 }
 
-/// 公开接口：获取人机验证前端配置（仅返回 enabled、provider 和 site_key，不返回 secret）
 pub async fn get_captcha_config(_body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let captcha_config = load_captcha_config(pool, &ctx.config).await;
     let enabled = captcha_config.enabled
@@ -212,12 +189,10 @@ pub async fn get_captcha_config(_body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     }))
 }
 
-/// 兼容旧前端 action 名称。
 pub async fn get_turnstile_config(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     get_captcha_config(body, ctx, pool).await
 }
 
-/// SMTP 账号池条目。内置邮箱机可配置多个发件账号，发送时按顺序轮换。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmtpAccount {
     #[serde(default)]
@@ -246,7 +221,6 @@ fn default_true() -> bool {
 
 impl SmtpAccount {
     fn is_usable(&self) -> bool {
-        // host 为空时会在发送前按发件邮箱域名自动识别，因此不强制要求 host
         self.enabled
             && !self.sender.trim().is_empty()
             && !self.username.trim().is_empty()
@@ -254,8 +228,6 @@ impl SmtpAccount {
     }
 }
 
-/// 根据发件邮箱域名自动识别常见邮箱服务商的 SMTP 服务器地址和端口。
-/// 返回 (host, port)。未命中的域名回退为 `smtp.<domain>:465`，无法解析时 host 为空。
 fn resolve_smtp_endpoint(sender: &str) -> (String, u16) {
     let domain = sender
         .split('@')
@@ -300,20 +272,15 @@ fn resolve_smtp_endpoint(sender: &str) -> (String, u16) {
     (host.to_string(), port)
 }
 
-/// 邮箱运行时配置（优先从数据库读取，回退到环境变量）
 pub struct EmailRuntimeConfig {
-    pub provider: String, // "builtin"、"http_api" 或 "smtp"（保留用于兼容，实际发送统一走内置通道逻辑）
-    // 通道开关
-    pub channel_general: bool, // 通用配置（发件邮箱 + 授权码）作为 SMTP 通道
-    pub channel_api: bool,     // 外部 HTTP API 通道
-    pub channel_pool: bool,    // SMTP 账号池通道
-    // HTTP API 模式
+    pub provider: String,
+    pub channel_general: bool,
+    pub channel_api: bool,
+    pub channel_pool: bool,
     pub api_primary: String,
     pub api_backup: String,
-    // 通用
     pub sender: String,
     pub password: String,
-    // SMTP 模式
     pub smtp_host: String,
     pub smtp_port: u16,
     pub smtp_username: String,
@@ -321,7 +288,6 @@ pub struct EmailRuntimeConfig {
     pub smtp_accounts: Vec<SmtpAccount>,
 }
 
-/// 从 `server_settings` 表读取邮箱配置，留空的字段回退到环境变量默认值。
 pub async fn load_email_config(
     pool: &MySqlPool,
     fallback: &crate::config::Config,
@@ -341,7 +307,6 @@ pub async fn load_email_config(
         .await
         .unwrap_or_else(|| "builtin".to_string());
 
-    // 通道开关：默认开启通用配置与账号池，外部 API 默认关闭
     let channel_general = read_setting(pool, "email_channel_general")
         .await
         .map(|s| s == "1" || s.eq_ignore_ascii_case("true"))
@@ -403,14 +368,13 @@ pub async fn load_email_config(
     }
 }
 
-/// 通用配置通道：用「发件邮箱 + 通用授权码」作为单一 SMTP 投递账号，SMTP 地址按域名自动识别。
 fn general_smtp_account(cfg: &EmailRuntimeConfig) -> Option<SmtpAccount> {
     if cfg.sender.trim().is_empty() || cfg.password.trim().is_empty() {
         return None;
     }
     Some(SmtpAccount {
         sender: cfg.sender.clone(),
-        host: String::new(), // 空 host 触发按域名自动识别
+        host: String::new(),
         port: 465,
         username: cfg.sender.clone(),
         password: cfg.password.clone(),
@@ -419,7 +383,6 @@ fn general_smtp_account(cfg: &EmailRuntimeConfig) -> Option<SmtpAccount> {
     })
 }
 
-/// 通过 HTTP API 发送邮件（主地址失败回退备用地址）
 async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, plain: &str, html_opts: Option<&str>, recipient: &str) -> Result<(), String> {
     if cfg.api_primary.is_empty() && cfg.api_backup.is_empty() {
         return Err("外部邮箱机 API 地址未配置".to_string());
@@ -433,7 +396,6 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, plain: &str, h
         Err(e) => return Err(format!("HTTP 客户端构建失败: {e}")),
     };
 
-    // 有 HTML 时发送 HTML 内容，否则发送纯文本
     let context = html_opts.unwrap_or(plain);
 
     let params = [
@@ -469,7 +431,6 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, plain: &str, h
         }
     };
 
-    // 根据返回内容判断是否成功
     let ok_signals = ["success", "ok", "true", "1", "200", "发送成功"];
     let lower = body.to_lowercase();
     if ok_signals.iter().any(|s| lower.contains(s)) || !body.is_empty() {
@@ -479,8 +440,6 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, plain: &str, h
     }
 }
 
-/// 通过标准 SMTP 发送邮件
-/// 通过指定 SMTP 账号发送邮件
 async fn send_via_smtp_account(account: &SmtpAccount, title: &str, plain: &str, html_opts: Option<&str>, recipient: &str) -> Result<(), String> {
     use lettre::message::header::ContentType;
     use lettre::message::{Mailbox, MultiPart, SinglePart};
@@ -491,7 +450,6 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, plain: &str, 
         return Err("发件邮箱地址未配置".to_string());
     }
 
-    // host 为空时按发件邮箱域名自动识别 SMTP 地址和端口
     let (host, port) = if account.host.trim().is_empty() {
         let (h, p) = resolve_smtp_endpoint(&account.sender);
         if h.is_empty() {
@@ -511,7 +469,6 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, plain: &str, 
     );
     let to_mailbox = Mailbox::new(None, recipient.parse().map_err(|e| format!("收件邮箱地址格式错误: {e}"))?);
 
-    // 构建邮件：有 HTML 时使用 multipart/alternative（纯文本 + HTML），否则纯文本
     let builder = Message::builder()
         .from(from_mailbox)
         .to(to_mailbox)
@@ -545,9 +502,6 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, plain: &str, 
             .map_err(|e| format!("邮件构建失败: {e}"))?
     };
 
-    // 根据端口选择 TLS 模式
-    // 465 → 隐式 TLS (Ssl)
-    // 587/25 → STARTTLS
     let transport = if port == 465 {
         AsyncSmtpTransport::<Tokio1Executor>::relay(&host)
             .map_err(|e| format!("SMTP 连接构建失败: {e}"))?
@@ -575,19 +529,15 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, plain: &str, 
         .map_err(|e| format!("SMTP 发送失败: {e}"))
 }
 
-/// 内置邮箱机的投递通道：SMTP 账号或外部 HTTP API
 enum MailChannel {
     Smtp(SmtpAccount),
     Api,
 }
 
-/// 根据通道开关构建投递通道列表，顺序为：通用配置 → 外部 API → SMTP 账号池。
-/// 返回 (通道列表, 未启用/未配置的说明)。
 fn build_mail_channels(cfg: &EmailRuntimeConfig) -> (Vec<MailChannel>, Vec<String>) {
     let mut channels = Vec::new();
     let mut notes = Vec::new();
 
-    // 1. 通用配置（发件邮箱 + 授权码 → 单一 SMTP 通道）
     if cfg.channel_general {
         match general_smtp_account(cfg) {
             Some(acc) => channels.push(MailChannel::Smtp(acc)),
@@ -597,7 +547,6 @@ fn build_mail_channels(cfg: &EmailRuntimeConfig) -> (Vec<MailChannel>, Vec<Strin
         notes.push("通用配置通道未开启".to_string());
     }
 
-    // 2. 外部 HTTP API
     if cfg.channel_api {
         if !cfg.api_primary.is_empty() || !cfg.api_backup.is_empty() {
             channels.push(MailChannel::Api);
@@ -608,7 +557,6 @@ fn build_mail_channels(cfg: &EmailRuntimeConfig) -> (Vec<MailChannel>, Vec<Strin
         notes.push("外部 API 通道未开启".to_string());
     }
 
-    // 3. SMTP 账号池（每个可用账号独立成通道，参与轮换）
     if cfg.channel_pool {
         let usable: Vec<SmtpAccount> = cfg
             .smtp_accounts
@@ -654,7 +602,6 @@ async fn update_builtin_mail_log(pool: &MySqlPool, id: Option<u64>, status: i32,
     }
 }
 
-/// 服务端内置邮箱机：按通道开关构建投递通道列表，依次尝试直到成功，并按成功发送次数轮换起始通道。
 async fn send_via_builtin_mailer(
     cfg: &EmailRuntimeConfig,
     pool: &MySqlPool,
@@ -677,7 +624,6 @@ async fn send_via_builtin_mailer(
         return Err(format!("内置邮箱机投递失败: {}", reason));
     }
 
-    // 按「成功发送次数」轮换起始通道，实现发送成功即依次轮换
     let sent_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log WHERE ip = 'builtin' AND status = 1")
         .fetch_one(pool)
         .await
@@ -719,10 +665,6 @@ async fn send_via_builtin_mailer(
     Err(format!("内置邮箱机投递失败: {}", reason))
 }
 
-/// 统一邮件发送入口：始终走内置邮箱机，按各通道开关依次尝试并轮换。
-///
-/// 邮箱配置优先从数据库 `server_settings` 表读取，留空字段回退到环境变量默认值。
-/// 返回 `Ok(())` 表示发送成功，返回 `Err(reason)` 表示失败并附带原因。
 pub async fn call_email_api(
     config: &crate::config::Config,
     pool: &MySqlPool,
@@ -734,8 +676,6 @@ pub async fn call_email_api(
     send_via_builtin_mailer(&cfg, pool, title, context, None, recipient).await
 }
 
-/// 统一邮件发送入口（HTML 卡片版）：正文使用 HTML 渲染，同时附带纯文本兜底。
-/// 各通道发送 HTML 内容；若通道不支持 HTML 会退化到纯文本（multipart/alternative 兜底）。
 pub async fn call_email_api_html(
     config: &crate::config::Config,
     pool: &MySqlPool,
@@ -748,7 +688,6 @@ pub async fn call_email_api_html(
     send_via_builtin_mailer(&cfg, pool, title, plain, Some(html), recipient).await
 }
 
-/// 写操作日志
 async fn log_action(pool: &MySqlPool, user_id: i64, email: &str, action: &str, ip: &str) {
     let _ = sqlx::query(
         "INSERT INTO email_test_logs (user_id, email, action, detail) VALUES (?, ?, ?, ?)",
@@ -761,7 +700,6 @@ async fn log_action(pool: &MySqlPool, user_id: i64, email: &str, action: &str, i
     .await;
 }
 
-/// 发送邮箱验证码
 pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
@@ -788,7 +726,6 @@ pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         }
     }
 
-    // 频率限制：60 秒内只能发一次
     let recent = sqlx::query(
         "SELECT id FROM email_test_codes WHERE email = ? AND created_at > DATE_SUB(NOW(), INTERVAL 60 SECOND) ORDER BY id DESC LIMIT 1",
     )
@@ -802,10 +739,8 @@ pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "发送过于频繁，请 60 秒后再试");
     }
 
-    // 生成 6 位验证码
     let code = format!("{:06}", random_int(0, 999999));
 
-    // 写入数据库
     let _ = sqlx::query(
         "INSERT INTO email_test_codes (email, code, type, expired_at) VALUES (?, ?, 'register', DATE_ADD(NOW(), INTERVAL 5 MINUTE))",
     )
@@ -814,7 +749,6 @@ pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     .execute(pool)
     .await;
 
-    // 调用邮箱 API 发送
     let title = "【弦予】您的邮箱验证码";
     let context = format!(
         "您正在进行弦予测试系统的注册/登录操作。\n\n您的验证码是：{}\n\n验证码 5 分钟内有效，请勿泄露给他人。\n\n—— 弦予邮箱注册登录测试系统",
@@ -830,7 +764,6 @@ pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
 }
 
-/// 用户注册
 pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
@@ -839,7 +772,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let password2 = str_of(&data, "password2");
     let nickname = str_of(&data, "nickname").trim().to_string();
 
-    // 表单验证
     if email.is_empty() || !is_valid_email(&email) {
         return ctx.err(400, "请输入合法的邮箱地址");
     }
@@ -853,7 +785,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "两次输入的密码不一致");
     }
 
-    // 校验验证码（未使用 + 未过期）
     let code_row = sqlx::query(
         "SELECT id FROM email_test_codes WHERE email = ? AND code = ? AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
     )
@@ -869,7 +800,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     };
     let code_id: i64 = code_row.try_get("id").unwrap_or(0);
 
-    // 检查邮箱是否已注册
     let existing = sqlx::query("SELECT id FROM email_test_users WHERE email = ?")
         .bind(&email)
         .fetch_optional(pool)
@@ -880,13 +810,11 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "该邮箱已注册，请直接登录");
     }
 
-    // 哈希密码
     let hash = match bcrypt::hash(&password, 10) {
         Ok(h) => h,
         Err(_) => return ctx.err(500, "密码加密失败"),
     };
 
-    // 写入用户
     let ins = sqlx::query("INSERT INTO email_test_users (email, password, nickname) VALUES (?, ?, ?)")
         .bind(&email)
         .bind(&hash)
@@ -897,12 +825,10 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     match ins {
         Ok(result) => {
             let uid = result.last_insert_id() as i64;
-            // 标记验证码已使用
             let _ = sqlx::query("UPDATE email_test_codes SET used = 1 WHERE id = ?")
                 .bind(code_id)
                 .execute(pool)
                 .await;
-            // 写日志
             log_action(pool, uid, &email, "register", &ctx.client_ip).await;
 
             ctx.ok("注册成功", Value::Null)
@@ -911,7 +837,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
 }
 
-/// 用户登录
 pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
@@ -942,7 +867,6 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(403, "账号已被禁用，请联系管理员");
     }
 
-    // 检查设备封禁
     let login_device_id = str_of(&data, "device_id").trim().to_string();
     if !login_device_id.is_empty() {
         let banned = sqlx::query("SELECT reason FROM banned_devices WHERE device_id = ? LIMIT 1")
@@ -965,16 +889,13 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let user_email: String = row.try_get("email").unwrap_or_default();
     let nickname: String = row.try_get("nickname").unwrap_or_default();
 
-    // 更新最后登录时间
     let _ = sqlx::query("UPDATE email_test_users SET last_login = NOW() WHERE id = ?")
         .bind(uid)
         .execute(pool)
         .await;
 
-    // 写日志
     log_action(pool, uid, &user_email, "login", &ctx.client_ip).await;
 
-    // 生成 JWT
     let token = sign_email_token(&ctx.config, uid, &user_email);
 
     ctx.ok(
@@ -990,7 +911,6 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     )
 }
 
-/// 重置密码（找回密码）
 pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
@@ -1011,7 +931,6 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         return ctx.err(400, "两次输入的密码不一致");
     }
 
-    // 校验验证码
     let code_row = sqlx::query(
         "SELECT id FROM email_test_codes WHERE email = ? AND code = ? AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
     )
@@ -1027,7 +946,6 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     };
     let code_id: i64 = code_row.try_get("id").unwrap_or(0);
 
-    // 检查用户是否存在
     let user_row = sqlx::query("SELECT id FROM email_test_users WHERE email = ?")
         .bind(&email)
         .fetch_optional(pool)
@@ -1039,7 +957,6 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     };
     let user_id: i64 = user_row.try_get("id").unwrap_or(0);
 
-    // 更新密码
     let hash = match bcrypt::hash(&password, 10) {
         Ok(h) => h,
         Err(_) => return ctx.err(500, "密码加密失败"),
@@ -1050,19 +967,16 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         .execute(pool)
         .await;
 
-    // 标记验证码已使用
     let _ = sqlx::query("UPDATE email_test_codes SET used = 1 WHERE id = ?")
         .bind(code_id)
         .execute(pool)
         .await;
 
-    // 写日志
     log_action(pool, user_id, &email, "reset_password", &ctx.client_ip).await;
 
     ctx.ok("密码已重置成功", Value::Null)
 }
 
-/// 获取用户信息（需 token）
 pub async fn get_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let token = str_of(&data, "token");
@@ -1090,7 +1004,6 @@ pub async fn get_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response 
         return ctx.err(403, "账号已被禁用");
     }
 
-    // 获取最近操作日志
     let logs = sqlx::query(
         "SELECT action, detail, created_at FROM email_test_logs WHERE user_id = ? ORDER BY id DESC LIMIT 8",
     )
@@ -1132,7 +1045,6 @@ pub async fn get_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response 
 mod tests {
     use super::*;
 
-    /// 构造测试用 Config
     fn test_config() -> crate::config::Config {
         crate::config::Config {
             db_host: "127.0.0.1".into(),

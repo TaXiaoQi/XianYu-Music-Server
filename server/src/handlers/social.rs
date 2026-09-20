@@ -21,7 +21,6 @@ fn data_url_to_bytes(data_url: &str) -> Option<Vec<u8>> {
     base64::engine::general_purpose::STANDARD.decode(raw).ok()
 }
 
-/// 将图片数据压缩为 JPEG 保存到 uploads/feedback/，返回相对 URL。
 fn compress_and_save_feedback_image(bytes: &[u8], name: &str, max_w: u32, quality: u32) -> Option<String> {
     use image::GenericImageView;
     let img = image::load_from_memory(bytes).ok()?;
@@ -95,12 +94,9 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     if feedback_type.is_empty() {
         feedback_type = "problem".to_string();
     }
-    // 内测申请（beta）：与问题反馈/功能建议并列的第三种反馈类型，
-    // 同意后由后台把提交设备ID自动加入版本管理的内测名单
     if feedback_type != "problem" && feedback_type != "suggestion" && feedback_type != "beta" {
         feedback_type = "problem".to_string();
     }
-    // 标题为空时按反馈类型赋予默认标题
     if title.is_empty() {
         title = match feedback_type.as_str() {
             "suggestion" => "功能建议".to_string(),
@@ -122,7 +118,6 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         "all_logs_truncated": raw_all_logs.chars().count() > all_logs.chars().count(),
     })
     .to_string();
-    // 图片：功能建议支持上传图片，接收 base64 data URL 数组，压缩保存到 uploads/feedback/
     let raw_images = data.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default();
     if (feedback_type == "problem" || feedback_type == "beta") && !raw_images.is_empty() {
         return ctx.err(400, "该反馈类型不支持上传图片");
@@ -201,7 +196,6 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     let platform = str_of(&data, "platform").trim().to_string();
     let app_version = str_of(&data, "app_version").trim().to_string();
     let device_id = str_of(&data, "device_id").trim().chars().take(64).collect::<String>();
-    // 内测申请查重（与昵称/头像审核同思路）：同一设备存在待处理的内测申请时禁止重复提交，防止刷屏
     if feedback_type == "beta" {
         let pending_betas: i64 = if device_id.is_empty() {
             sqlx::query_scalar(
@@ -224,7 +218,6 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             return ctx.err(429, "已有内测申请正在审核中，请耐心等待审核结果");
         }
     }
-    // 详细设备信息：厂商/型号/系统版本/架构/计算机名（移动端与桌面端上报，便于定位具体设备）
     let device_brand = str_of(&data, "device_brand").trim().chars().take(64).collect::<String>();
     let device_model = str_of(&data, "device_model").trim().chars().take(128).collect::<String>();
     let os_version = str_of(&data, "os_version").trim().chars().take(64).collect::<String>();
@@ -256,7 +249,6 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         .await;
     match result {
         Ok(r) => {
-            // 与壁纸/头像/昵称审核通知同思路：提交后邮件通知开启反馈板块通知的管理员
             let type_label = match feedback_type.as_str() {
                 "suggestion" => "功能建议",
                 "beta" => "内测申请",
@@ -274,11 +266,10 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             ).await;
             ctx.json(200, "提交成功", Some(json!({ "id": r.last_insert_id() })))
         }
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
-/// 账号封禁申诉：并入 user_feedback 表（category='appeal'），与普通反馈共享每日限额。
 pub async fn submit_appeal(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -296,7 +287,6 @@ pub async fn submit_appeal(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     if content.chars().count() > 1000 {
         return ctx.err(400, "申诉内容不能超过 1000 字");
     }
-    // 与反馈共用每日限额（反馈 + 申诉合计）
     let daily_limit = get_feedback_daily_limit(pool).await;
     if daily_limit > 0 {
         let submitted_today: i64 = sqlx::query_scalar(
@@ -338,7 +328,7 @@ pub async fn submit_appeal(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
         .await;
     match result {
         Ok(r) => ctx.json(200, "申诉已提交，请耐心等待处理", Some(json!({ "id": r.last_insert_id() }))),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
@@ -371,10 +361,6 @@ pub async fn check_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
     }
 }
 
-/// 获取当前用户的反馈处理通知：返回该用户已解决（resolved）或已拒绝（rejected）
-/// 且尚未确认（notified_at 为空）的反馈。客户端据此展示处理管理员与完成说明/拒绝理由。
-/// 请求携带 device_id 时只返回该设备提交的反馈（回执按设备下发，避免移动端问题
-/// 弹到同账号的桌面端）；未带 device_id 的旧客户端保持原全量行为。
 pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -414,7 +400,6 @@ pub async fn get_my_feedback_notifications(body: &str, ctx: ReqCtx, pool: &MySql
     ctx.ok("获取通知成功", json!({ "list": list }))
 }
 
-/// 确认反馈处理通知：将指定反馈的 notified_at 置为当前时间，标记该用户已读。
 pub async fn confirm_feedback_notification(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -438,7 +423,6 @@ pub async fn confirm_feedback_notification(body: &str, ctx: ReqCtx, pool: &MySql
     }
 }
 
-/// 将一行反馈记录转换为 JSON（含 nullable 字段处理）
 fn row_to_json(row: &sqlx::mysql::MySqlRow) -> Value {
     use sqlx::Row;
     json!({
@@ -458,7 +442,6 @@ fn row_to_json(row: &sqlx::mysql::MySqlRow) -> Value {
     })
 }
 
-/// 获取当前用户的反馈列表（含状态），用于客户端「我的反馈」查看。
 pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -517,7 +500,6 @@ pub async fn list_my_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     }
 }
 
-/// 获取当前用户未确认的昵称变更通知（回执），供客户端弹窗展示。
 pub async fn get_nickname_change_notices(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -543,7 +525,6 @@ pub async fn get_nickname_change_notices(body: &str, ctx: ReqCtx, pool: &MySqlPo
     ctx.ok("获取通知成功", json!({ "list": list }))
 }
 
-/// 确认昵称变更通知：标记已读，并同步客户端本地昵称。
 pub async fn confirm_nickname_change_notice(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -567,7 +548,6 @@ pub async fn confirm_nickname_change_notice(body: &str, ctx: ReqCtx, pool: &MySq
     }
 }
 
-/// 将昵称变更通知行转换为 JSON
 fn row_to_json_notice(row: &sqlx::mysql::MySqlRow) -> Value {
     use sqlx::Row;
     json!({

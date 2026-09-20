@@ -234,7 +234,6 @@ interface FallbackModule {
   updated_at?: string
 }
 
-/** 与桌面端 FALLBACK_MODULE_METHODS 对应的方法清单 */
 const MODULE_METHODS: Record<string, string[]> = {
   lx_search: ['search'],
   lx_album: ['searchAlbums', 'getAlbumSongs'],
@@ -268,7 +267,6 @@ function moduleMethods(key: string): string[] {
   return MODULE_METHODS[key] || []
 }
 
-/** 方法是否被当前代码覆盖（简单文本探测，仅供后台提示） */
 function isMethodCovered(item: FallbackModule, method: string): boolean {
   if (!item.code) return false
   return new RegExp(`\\b${method}\\s*[:=(]`).test(item.code)
@@ -404,7 +402,6 @@ ${methodLines}
 
 function insertTemplate() {
   if (form.value.code.trim() && form.value.code.trim() !== '') {
-    // 已有代码时确认覆盖
     webConfirm('当前已有代码，填入模板会覆盖现有内容，是否继续？', { title: '覆盖代码', confirmText: '覆盖' }).then(ok => {
       if (ok) form.value.code = codeTemplate(form.value.moduleKey)
     })
@@ -589,7 +586,6 @@ onMounted(() => {
   color: var(--text-light);
 }
 
-/* 方法 chips */
 .card-methods {
   display: flex;
   flex-wrap: wrap;
@@ -611,7 +607,6 @@ onMounted(() => {
   border-style: solid;
 }
 
-/* 元信息 */
 .card-meta {
   display: flex;
   flex-wrap: wrap;
@@ -633,7 +628,6 @@ onMounted(() => {
   font-style: italic;
 }
 
-/* 底部 */
 .card-footer {
   display: flex;
   justify-content: space-between;
@@ -664,7 +658,6 @@ onMounted(() => {
 .icon-btn:hover { background: #f5f5f5; color: var(--text); }
 .icon-btn-danger:hover { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 
-/* Toggle 开关 */
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -787,7 +780,6 @@ onMounted(() => {
 .field-row { display: flex; gap: 16px; }
 .field-row .field { flex: 1; }
 
-/* 代码区 */
 .code-field-head {
   display: flex;
   justify-content: space-between;
@@ -839,7 +831,6 @@ onMounted(() => {
   line-height: 1.5;
 }
 
-/* ctx 契约折叠面板 */
 .ctx-panel {
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -865,7 +856,6 @@ onMounted(() => {
   overflow-x: auto;
 }
 
-/* 启用/禁用选择器 */
 .type-picker { display: flex; gap: 8px; }
 .type-option {
   display: inline-flex;
@@ -895,7 +885,6 @@ onMounted(() => {
 .pick-disable.active { background: #f9fafb; color: #6b7280; }
 .pick-disable.active .pick-dot { background: #6b7280; }
 
-/* 弹窗底部 */
 .modal-foot {
   display: flex;
   justify-content: flex-end;

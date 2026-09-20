@@ -172,7 +172,6 @@ pub async fn save_banned_words(pool: &MySqlPool, cfg: &BannedWordsConfig) -> Res
     Ok(())
 }
 
-/// 内置违禁词检查：命中返回 Reject，否则返回 None
 fn check_banned_words(cfg: &BannedWordsConfig, text: &str) -> Option<AuditResult> {
     if !cfg.enabled {
         return None;
@@ -259,7 +258,6 @@ async fn call_external(cfg: &AuditExternalConfig, payload: Value) -> AuditResult
 }
 
 pub async fn audit_text(pool: &MySqlPool, scene: &str, text: &str, meta: Value) -> AuditResult {
-    // 内置违禁词优先检查，命中直接拒绝
     let bw = load_banned_words(pool).await;
     if let Some(r) = check_banned_words(&bw, text) {
         return r;

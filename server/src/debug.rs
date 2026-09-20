@@ -4,7 +4,7 @@ use std::path::PathBuf;
 
 use crate::admin;
 use crate::config::Config;
-use crate::handlers::helpers::{parse_body, random_hex, random_int, str_of, validate_nickname};
+use crate::handlers::helpers::{extract_id, parse_body, random_hex, random_int, str_of, validate_nickname};
 use crate::response::ReqCtx;
 
 const DEBUG_DIR: &str = "data/debug";
@@ -97,19 +97,6 @@ fn get_array(state: &Value, key: &str) -> Vec<Value> {
 
 fn set_array(state: &mut Value, key: &str, items: Vec<Value>) {
     state[key] = json!(items);
-}
-
-fn extract_id(data: &Value) -> String {
-    for key in ["ciyuanxi_id", "user_id", "id", "uid"] {
-        let v = str_of(data, key);
-        if !v.trim().is_empty() {
-            return v.trim().to_string();
-        }
-        if let Some(n) = data.get(key).and_then(|x| x.as_i64()) {
-            return n.to_string();
-        }
-    }
-    String::new()
 }
 
 fn user_matches(user: &Value, ident: &str) -> bool {
@@ -348,7 +335,6 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             "debug": true
         })),
         "send_verify_code" | "email_send_code" => {
-            // 本地调试模式：Turnstile 未启用，直接放行
             let mut state = load_state();
             let email = str_of(&data, "email").trim().to_string();
             let typ = {
@@ -693,7 +679,6 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
                 "version": 1, "uploaded_at": now_string(), "timestamp": now_ts(),
                 "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
             }));
-            // 纯订阅同步（本地无插件）时客户端会传空 plugin 仅携带 subscriptions。
             let plugin_empty = plugin.get("id").and_then(|v| v.as_str()).unwrap_or("").is_empty()
                 && plugin.get("script").and_then(|v| v.as_str()).unwrap_or("").is_empty();
             if plugin_empty && data.get("subscriptions").is_none() {
@@ -712,7 +697,6 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             }
             save["plugins"] = json!(plugins);
             save["stats"]["plugin_count"] = json!(plugins.len());
-            // 订阅链接列表整包替换（与插件同步语义一致：上传端为权威）。
             if let Some(subs) = data.get("subscriptions").and_then(|v| v.as_array()) {
                 let clean: Vec<Value> = subs.iter()
                     .filter(|item| item.get("url").and_then(|u| u.as_str()).map(|u| !u.trim().is_empty()).unwrap_or(false))
@@ -831,7 +815,6 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             }))
         }
         "get_daily_recommend" => {
-            // 本地调试模式：返回固定示例算法，便于客户端联调每日推荐板块
             let seed = 424242;
             ctx.ok("ok", json!({
                 "version": 1,

@@ -6,7 +6,6 @@ use sqlx::Row;
 use super::{err, log_operation, ok, row_to_value, AdminCtx};
 use crate::handlers::helpers::{default_nickname, int_of, parse_body, str_of, validate_ciyuanxi_id, validate_nickname};
 
-/// 获取用户列表（分页 + 关键词搜索）
 pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page").max(1);
@@ -17,7 +16,6 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
     let keyword = str_of(&data, "keyword").trim().to_string();
     let offset = (page - 1) * page_size;
 
-    // 查询总数
     let total: i64 = if keyword.is_empty() {
         sqlx::query_scalar("SELECT COUNT(*) FROM app_users")
             .fetch_one(pool)
@@ -33,7 +31,6 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
             .unwrap_or(0)
     };
 
-    // 查询列表
     let rows = if keyword.is_empty() {
         sqlx::query("SELECT * FROM app_users ORDER BY created_at DESC LIMIT ? OFFSET ?")
             .bind(page_size)
@@ -54,7 +51,6 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
     match rows {
         Ok(rows) => {
             let mut list: Vec<Value> = rows.iter().map(row_to_value).collect();
-            // 访客账号不展示邮箱/密码等敏感字段。
             list = super::mask_sensitive(&_ctx.role, list);
             let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
             ok("ok", json!({
@@ -65,11 +61,10 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
                 "list": list,
             }))
         }
-        Err(e) => err(500, &format!("查询失败: {}", e)),
+        Err(e) => { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     }
 }
 
-/// 用户统计汇总（总数 / 正常 / 封禁），用于用户管理页顶部三卡片。
 pub async fn get_user_stats(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let total: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM app_users").fetch_one(pool).await.unwrap_or(0);
@@ -125,7 +120,7 @@ pub async fn batch_toggle_user_status(body: &str, ctx: &AdminCtx, pool: &MySqlPo
             log_operation(pool, ctx, "批量更新用户状态", "全部用户", &format!("状态改为:{} 原因:{} 影响:{}人", if status != 0 { "正常" } else { "禁用" }, ban_reason, count)).await;
             ok(&format!("成功更新{}个用户状态", count), Value::Null)
         }
-        Err(e) => err(500, &format!("操作失败: {}", e)),
+        Err(e) => { tracing::error!("操作失败: {e}"); err(500, "操作失败") },
     }
 }
 
@@ -187,15 +182,12 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     let master_quota = int_of(&data, "master_quota");
     let master_quota = if master_quota == 0 { 200 } else { master_quota };
     let mut ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
-    // 兼容前端将弦予号放在 username 字段的提交方式
     if ciyuanxi_id.is_empty() {
         ciyuanxi_id = str_of(&data, "username").trim().to_string();
     }
-    // 弦予号必填 + 微信号规则校验
     if let Err(msg) = validate_ciyuanxi_id(&ciyuanxi_id) {
         return err(400, msg);
     }
-    // 昵称可选，留空默认"弦予+号"
     if username.is_empty() {
         username = default_nickname(&ciyuanxi_id);
     }
@@ -211,7 +203,6 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     if !email.is_empty() && !crate::admin::is_valid_email(&email) {
         return err(400, "邮箱格式不正确");
     }
-    // 弦予号唯一性校验
     let id_dup = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
         .bind(&ciyuanxi_id)
         .fetch_optional(pool)
@@ -229,7 +220,6 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     if id_dup || id_pretty {
         return err(409, "该弦予号已被占用");
     }
-    // 用户名唯一性：与客户端注册保持一致，同时检查管理员表和普通用户表
     let admin_exists = sqlx::query("SELECT id FROM admin_users WHERE username = ? LIMIT 1")
         .bind(&username)
         .fetch_optional(pool)
@@ -263,7 +253,6 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         Ok(h) => h,
         Err(_) => return err(500, "加密失败"),
     };
-    // 留空邮箱写 NULL（未绑定），避免空串 '' 之间撞 uk_email 唯一键
     let email_bind: Option<&str> = if email.is_empty() { None } else { Some(email.as_str()) };
     let inserted = sqlx::query("INSERT INTO app_users (nickname, password, email, email_verified, status, ciyuanxi_id, master_quota) VALUES (?,?,?,1,1,?,?)")
         .bind(&username)
@@ -274,7 +263,7 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
         .execute(pool)
         .await;
     if let Err(e) = inserted {
-        return err(500, &format!("添加失败: {}", e));
+        { tracing::error!("添加失败: {e}"); return err(500, "添加失败"); }
     }
     log_operation(pool, ctx, "添加用户", &format!("昵称:{}", username), &format!("弦予号:{} 额度:{}", ciyuanxi_id, master_quota)).await;
     ok("添加成功", json!({ "ciyuanxi_id": ciyuanxi_id }))
@@ -320,7 +309,6 @@ pub async fn batch_set_master_quota(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     ok("已设置", Value::Null)
 }
 
-/// 查看用户同步的插件列表（读 data/sync/{id}/plugins.json）
 pub async fn get_user_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "user_id");
@@ -379,7 +367,6 @@ pub async fn get_user_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     }))
 }
 
-/// 后台修改指定账号昵称：填新昵称 + 原因，写库并下发客户端回执通知。
 pub async fn change_user_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -414,7 +401,6 @@ pub async fn change_user_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if old_nickname == new_nickname {
         return err(400, "新昵称与当前昵称相同");
     }
-    // 昵称唯一性：与注册/新增保持一致，同时检查管理员表和普通用户表
     let admin_exists = sqlx::query("SELECT id FROM admin_users WHERE username = ? LIMIT 1")
         .bind(&new_nickname)
         .fetch_optional(pool)
@@ -433,16 +419,14 @@ pub async fn change_user_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if admin_exists || exists {
         return err(409, "昵称已存在");
     }
-    // 更新昵称
     let upd = sqlx::query("UPDATE app_users SET nickname = ? WHERE id = ?")
         .bind(&new_nickname)
         .bind(id)
         .execute(pool)
         .await;
     if let Err(e) = upd {
-        return err(500, &format!("修改失败: {}", e));
+        { tracing::error!("修改失败: {e}"); return err(500, "修改失败"); }
     }
-    // 同步 user_feedback 表中的昵称（保持头像/昵称一致性）
     if !ciyuanxi_id.is_empty() {
         let _ = sqlx::query("UPDATE user_feedback SET nickname = ? WHERE ciyuanxi_id = ? AND nickname = ?")
             .bind(&new_nickname)
@@ -451,7 +435,6 @@ pub async fn change_user_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
             .execute(pool)
             .await;
     }
-    // 写入客户端回执通知
     let _ = sqlx::query(
         "INSERT INTO nickname_change_notices (ciyuanxi_id, old_nickname, new_nickname, reason, changed_by) VALUES (?,?,?,?,?)",
     )
@@ -470,7 +453,6 @@ pub async fn change_user_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     ok("昵称已修改", json!({ "old_nickname": old_nickname, "new_nickname": new_nickname }))
 }
 
-/// 一键替换 user_id -> ciyuanxi_id
 pub async fn replace_user_id_to_ciyuanxi(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let skip = ["app_users", "admin_users", "admin_operation_log", "admin_login_log"];
     let tables: Vec<String> = match sqlx::query("SHOW TABLES").fetch_all(pool).await {
@@ -483,21 +465,20 @@ pub async fn replace_user_id_to_ciyuanxi(_body: &str, ctx: &AdminCtx, pool: &MyS
                     .flatten()
             })
             .collect(),
-        Err(e) => return err(500, &format!("服务器错误: {}", e)),
+        Err(e) => return { tracing::error!("服务器错误: {e}"); err(500, "服务器错误") },
     };
     let mut report: Vec<Value> = Vec::new();
     for table in &tables {
         if skip.contains(&table.as_str()) {
             continue;
         }
-        // 获取所有列
         let cols_rows = match sqlx::query(&format!("SHOW COLUMNS FROM `{}`", table)).fetch_all(pool).await {
             Ok(r) => r,
             Err(_) => continue,
         };
         let mut target_cols: Vec<String> = Vec::new();
         let mut pk = String::default();
-        let mut all_cols: Vec<(String, String)> = Vec::new(); // (name, key) key=PRI
+        let mut all_cols: Vec<(String, String)> = Vec::new();
         for r in &cols_rows {
             let field: String = r.get("Field");
             let key: String = r.get("Key");
@@ -561,7 +542,6 @@ pub async fn replace_user_id_to_ciyuanxi(_body: &str, ctx: &AdminCtx, pool: &MyS
     ok("替换完成", json!({ "report": report, "total_columns": report.len() }))
 }
 
-/// 获取封禁设备列表
 pub async fn list_banned_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page").max(1);
@@ -572,7 +552,6 @@ pub async fn list_banned_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     let offset = (page - 1) * page_size;
     let keyword = str_of(&data, "keyword").trim().to_string();
 
-    // 查询封禁设备列表：关联 app_open_log 取每台设备最新一条记录，获取硬件型号/系统/版本/所属账号，再关联 app_users 取昵称
     let base_sql = "
         SELECT 
             b.*,
@@ -619,17 +598,14 @@ pub async fn list_banned_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) 
     match rows {
         Ok(rows) => {
             let mut list: Vec<Value> = rows.iter().map(row_to_value).collect();
-            // 访客账号不展示邮箱/密码等敏感字段。
             list = super::mask_sensitive(&_ctx.role, list);
             let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
             ok("ok", json!({ "total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "list": list }))
         }
-        Err(e) => err(500, &format!("查询失败: {}", e)),
+        Err(e) => { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     }
 }
 
-/// 平台归一：desktop/mobile/watch。
-/// 老记录 platform 为空时按 os_version 兜底（含 Windows → 桌面端，其余 → 移动端）。
 fn normalize_platform(platform: &str, os_version: &str) -> &'static str {
     match platform {
         "desktop" | "windows" => "desktop",
@@ -646,8 +622,6 @@ fn normalize_platform(platform: &str, os_version: &str) -> &'static str {
     }
 }
 
-/// SQL 版平台归一（与 normalize_platform 对齐），用于设备列表过滤与分类计数。
-/// 注意：`a` 必须是每台设备最新一条 app_open_log 记录。
 const PLATFORM_CASE_SQL: &str = "CASE \
     WHEN a.platform IN ('desktop', 'windows') THEN 'desktop' \
     WHEN a.platform = 'watch' THEN 'watch' \
@@ -655,7 +629,6 @@ const PLATFORM_CASE_SQL: &str = "CASE \
     WHEN (a.platform IS NULL OR a.platform = '') AND a.os_version LIKE '%Windows%' THEN 'desktop' \
     ELSE 'mobile' END";
 
-/// 获取所有设备列表（分页 + 关键词搜索，从 app_open_log 取每台设备最新一条记录）
 pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page").max(1);
@@ -665,7 +638,6 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     };
     let offset = (page - 1) * page_size;
     let keyword = str_of(&data, "keyword").trim().to_string();
-    // 平台过滤：desktop/mobile/watch，空或其他值表示不过滤
     let platform_filter = match str_of(&data, "platform").trim() {
         "desktop" => Some("desktop".to_string()),
         "mobile" => Some("mobile".to_string()),
@@ -673,9 +645,6 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         _ => None,
     };
 
-    // 关联 app_open_log 取每台设备最新一条记录，再关联 app_users 取昵称，关联 banned_devices 判断是否被封禁。
-    // 关联账号优先取 app_users.last_device_id（登录时写入，最可靠），回退到 app_open_log.ciyuanxi_id。
-    // platform 输出为归一后的值（desktop/mobile/watch），老记录为空时按 os_version 兜底。
     let base_sql = format!("
         SELECT
             a.device_id,
@@ -712,7 +681,6 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         LEFT JOIN banned_devices b ON b.device_id = a.device_id
     ", PLATFORM_CASE_SQL);
 
-    // 平台分类计数（latest-join 后按归一平台分组）
     let counts_sql = format!(
         "SELECT {} AS plat, COUNT(*) AS c FROM app_open_log a \
          INNER JOIN (SELECT device_id, MAX(id) AS max_id FROM app_open_log GROUP BY device_id) latest \
@@ -731,7 +699,6 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             let c: i64 = r.try_get("c").unwrap_or(0);
             platform_counts.insert(plat, json!(c));
         }
-        // all = 三端之和（GROUP BY 只会产出三端桶）
         let sum: i64 = ["desktop", "mobile", "watch"]
             .iter()
             .filter_map(|k| platform_counts.get(*k).and_then(|v| v.as_i64()))
@@ -794,16 +761,14 @@ pub async fn list_all_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     match rows {
         Ok(rows) => {
             let mut list: Vec<Value> = rows.iter().map(row_to_value).collect();
-            // 访客账号不展示邮箱/密码等敏感字段。
             list = super::mask_sensitive(&_ctx.role, list);
             let total_pages = ((total as f64) / (page_size as f64)).ceil() as i64;
             ok("ok", json!({ "total": total, "page": page, "page_size": page_size, "total_pages": total_pages, "platform_counts": platform_counts, "list": list }))
         }
-        Err(e) => err(500, &format!("查询失败: {}", e)),
+        Err(e) => { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     }
 }
 
-/// 封禁设备
 pub async fn ban_device(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -828,11 +793,10 @@ pub async fn ban_device(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respons
             log_operation(pool, ctx, "封禁设备", &format!("设备ID:{}", device_id), &format!("原因:{} 操作人:{}", reason, ctx.username)).await;
             ok("已封禁", Value::Null)
         }
-        Err(e) => err(500, &format!("操作失败: {}", e)),
+        Err(e) => { tracing::error!("操作失败: {e}"); err(500, "操作失败") },
     }
 }
 
-/// 解封设备
 pub async fn unban_device(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -853,11 +817,10 @@ pub async fn unban_device(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
             log_operation(pool, ctx, "解封设备", &format!("设备ID:{} ID:{}", device_id, id), &format!("操作人:{}", ctx.username)).await;
             ok("已解封", Value::Null)
         }
-        Err(e) => err(500, &format!("操作失败: {}", e)),
+        Err(e) => { tracing::error!("操作失败: {e}"); err(500, "操作失败") },
     }
 }
 
-/// 查询用户关联的设备ID列表
 pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let user_id = int_of(&data, "user_id");
@@ -866,7 +829,6 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         return err(400, "需要提供用户ID或弦予号");
     }
 
-    // 从 app_users 获取最后登录设备
     let user_row = if user_id > 0 {
         sqlx::query("SELECT ciyuanxi_id, nickname, last_device_id FROM app_users WHERE id = ? LIMIT 1")
             .bind(user_id).fetch_optional(pool).await
@@ -884,7 +846,6 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     let user_ciyuanxi_id: String = user_row.get("ciyuanxi_id");
     let last_device_id: String = user_row.get("last_device_id");
 
-    // 查询该设备的登录记录
     let login_logs = if !last_device_id.is_empty() {
         sqlx::query("SELECT device_id, ip, created_at FROM admin_app_login_log WHERE device_id = ? ORDER BY created_at DESC LIMIT 20")
             .bind(&last_device_id).fetch_all(pool).await
@@ -892,7 +853,6 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         Ok(vec![])
     };
 
-    // 查询该设备的启动记录
     let open_logs = if !last_device_id.is_empty() {
         sqlx::query("SELECT device_id, ip, app_version, created_at FROM app_open_log WHERE device_id = ? ORDER BY created_at DESC LIMIT 20")
             .bind(&last_device_id).fetch_all(pool).await
@@ -900,7 +860,6 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         Ok(vec![])
     };
 
-    // 检查设备是否被封禁
     let is_banned = if !last_device_id.is_empty() {
         sqlx::query("SELECT id FROM banned_devices WHERE device_id = ? LIMIT 1")
             .bind(&last_device_id).fetch_optional(pool).await
@@ -922,8 +881,6 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
     })).collect();
 
-    // 该账号关联的全部设备（去重），每台带型号/系统/平台/封禁状态/最后活跃。
-    // 来源：app_open_log 中该弦予号出现过的设备 + app_users.last_device_id。
     let mut devices: Vec<Value> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
     let device_rows = sqlx::query(
@@ -960,7 +917,6 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             "last_active": r.try_get::<String, _>("created_at").unwrap_or_default(),
         }));
     }
-    // last_device_id 可能没有该账号的启动记录（只在登录表），单独补一条
     if !last_device_id.is_empty() && seen.insert(last_device_id.clone()) {
         let extra = sqlx::query(
             "SELECT a.device_id, a.device_name, a.device_brand, a.device_model, a.os_version, a.app_version, a.platform, a.created_at, \
@@ -1003,7 +959,6 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
             }));
         }
     }
-    // 当前登录设备排在最前
     devices.sort_by_key(|d| d.get("is_last").and_then(|v| v.as_bool()).unwrap_or(false) == false);
 
     ok("ok", json!({
@@ -1017,7 +972,6 @@ pub async fn get_user_devices(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     }))
 }
 
-/// 获取设备详情：关联账号列表、当前关联账号、封禁状态、听歌统计
 pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -1025,7 +979,6 @@ pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         return err(400, "设备ID不能为空");
     }
 
-    // 设备最新一条启动记录
     let latest = sqlx::query(
         "SELECT device_id, device_model, os_version, app_version, ip, ciyuanxi_id, created_at
          FROM app_open_log WHERE device_id = ? ORDER BY id DESC LIMIT 1",
@@ -1036,7 +989,6 @@ pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     .ok()
     .flatten();
 
-    // 封禁状态
     let ban_row = sqlx::query("SELECT id, reason, banned_by, created_at FROM banned_devices WHERE device_id = ? LIMIT 1")
         .bind(&device_id)
         .fetch_optional(pool)
@@ -1051,7 +1003,6 @@ pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
     })).unwrap_or(Value::Null);
 
-    // 关联账号：从 app_open_log 取所有出现过的 ciyuanxi_id，并合并 app_users.last_device_id 关联的账号
     let account_rows = sqlx::query(
         "SELECT DISTINCT ciyuanxi_id FROM (
             SELECT a.ciyuanxi_id FROM app_open_log a WHERE a.device_id = ? AND a.ciyuanxi_id != ''
@@ -1065,7 +1016,6 @@ pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     .await
     .unwrap_or_default();
 
-    // 当前关联账号：app_users.last_device_id = device_id
     let current_account = sqlx::query(
         "SELECT id, ciyuanxi_id, nickname, listen_duration, unique_songs_count, avatar_url
          FROM app_users WHERE last_device_id = ? ORDER BY id DESC LIMIT 1",
@@ -1087,7 +1037,6 @@ pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         if cid.is_empty() {
             continue;
         }
-        // 查每个账号的详情
         let user_info = sqlx::query(
             "SELECT id, nickname, listen_duration, unique_songs_count, avatar_url, last_device_id
              FROM app_users WHERE ciyuanxi_id = ? LIMIT 1",
@@ -1110,8 +1059,6 @@ pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         }
     }
 
-    // 如果 app_open_log 里有 ciyuanxi_id 但 app_users 表里没有的，也加入（未注册的）
-    // 同时确保当前关联账号也在列表中
     let has_current = accounts.iter().any(|a| a["ciyuanxi_id"].as_str() == Some(&current_ciyuanxi_id));
     if !has_current && !current_ciyuanxi_id.is_empty() {
         if let Some(u) = &current_account {
@@ -1145,7 +1092,6 @@ pub async fn get_device_detail(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     }))
 }
 
-/// 重置设备的听歌统计：对该设备上所有关联账号执行重置
 pub async fn reset_device_listen_stats(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -1153,7 +1099,6 @@ pub async fn reset_device_listen_stats(body: &str, ctx: &AdminCtx, pool: &MySqlP
         return err(400, "设备ID不能为空");
     }
 
-    // 收集所有关联账号的 ciyuanxi_id
     let rows = sqlx::query(
         "SELECT DISTINCT ciyuanxi_id FROM app_open_log WHERE device_id = ? AND ciyuanxi_id != ''",
     )
@@ -1162,7 +1107,6 @@ pub async fn reset_device_listen_stats(body: &str, ctx: &AdminCtx, pool: &MySqlP
     .await
     .unwrap_or_default();
 
-    // 也加上 app_users.last_device_id 关联的账号
     let current = sqlx::query("SELECT ciyuanxi_id FROM app_users WHERE last_device_id = ?")
         .bind(&device_id)
         .fetch_all(pool)
@@ -1212,7 +1156,6 @@ pub async fn reset_device_listen_stats(body: &str, ctx: &AdminCtx, pool: &MySqlP
     ok(&format!("已重置 {} 个关联账号的听歌统计", reset_count), Value::Null)
 }
 
-/// 删除设备记录：从 app_open_log 和 banned_devices 中删除
 pub async fn delete_device_record(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -1234,7 +1177,6 @@ pub async fn delete_device_record(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     ok("设备记录已删除", Value::Null)
 }
 
-/// 批量删除设备记录
 pub async fn batch_delete_devices(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_ids: Vec<String> = data.get("device_ids")
@@ -1269,7 +1211,6 @@ pub async fn batch_delete_devices(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     ok(&format!("已删除 {} 台设备的记录", total_deleted), Value::Null)
 }
 
-/// 批量封禁设备（统一原因，逐台 INSERT IGNORE）
 pub async fn batch_ban_devices(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_ids: Vec<String> = data.get("device_ids")
@@ -1302,7 +1243,6 @@ pub async fn batch_ban_devices(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     ok(&format!("已封禁 {} 台设备", total), Value::Null)
 }
 
-/// 获取设备关联账号的插件信息（取当前关联账号）
 pub async fn get_device_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
@@ -1310,7 +1250,6 @@ pub async fn get_device_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
         return err(400, "设备ID不能为空");
     }
 
-    // 找当前关联账号
     let row = sqlx::query("SELECT ciyuanxi_id, nickname FROM app_users WHERE last_device_id = ? ORDER BY id DESC LIMIT 1")
         .bind(&device_id)
         .fetch_optional(pool)

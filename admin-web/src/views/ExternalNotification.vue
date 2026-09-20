@@ -830,7 +830,6 @@ interface ModuleItem {
   desc: string
 }
 
-// 通知板块定义
 const moduleList: ModuleItem[] = [
   { key: 'wallpaper', field: 'notify_wallpaper', label: '壁纸审核', desc: '新壁纸提交待审核' },
   { key: 'avatar', field: 'notify_avatar', label: '头像审核', desc: '新头像提交待审核' },
@@ -1172,7 +1171,6 @@ const wsLogs = ref<WsLog[]>([])
 
 const wsClientConnected = ref(false)
 
-// HTTP 客户端
 const httpClientUrl = ref('')
 const httpClientMethod = ref('GET')
 const httpClientHeaders = ref('')
@@ -1180,18 +1178,14 @@ const httpClientBody = ref('')
 const httpClientSending = ref(false)
 const httpClientResult = ref<{ status: number; headers: Record<string, string>; body: string; elapsed_ms: number } | null>(null)
 
-// SSE
 const sseMessage = ref('')
 
-// WS 服务器
 const wsMessage = ref('')
 const wsBroadcastMessage = ref('')
 
-// WS 客户端
 const wsClientUrl = ref('')
 const wsClientMessage = ref('')
 
-// WS 客户端自动重连配置
 const wsClientConfig = reactive({
   url: '',
   auto_reconnect: false,
@@ -1200,7 +1194,6 @@ const wsClientConfig = reactive({
 })
 const wsClientConfigSaving = ref(false)
 
-// 连接鉴权配置
 const authForm = reactive({ token: '', token_enabled: false })
 const authShowToken = ref(false)
 const authSaving = ref(false)
@@ -1772,7 +1765,6 @@ onMounted(() => {
   gap: 10px;
   flex-shrink: 0;
 }
-/* 通知邮箱页顶部操作区 */
 .email-actions {
   display: flex;
   justify-content: flex-end;

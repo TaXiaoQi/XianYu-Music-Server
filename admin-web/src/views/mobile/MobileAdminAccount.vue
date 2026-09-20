@@ -142,7 +142,6 @@ const currentId = adminUser?.id ?? 0
 const fileInput = ref<HTMLInputElement | null>(null)
 let avatarTarget: any = null
 
-// 修改登录弹窗
 const loginModalVisible = ref(false)
 const loginSaving = ref(false)
 const loginTarget = ref<any>(null)
@@ -224,7 +223,6 @@ async function submitRole() {
     roleDialogVisible.value = false
     roleTarget.value = null
     if (roleForm.value.role === 'super_admin') {
-      // 转让超管后当前账号降级，前端管理态由后端强拦截兜底，提示重新登录
       showToast('已转让，当前账号降为一级管理，超管操作将受限', 'success')
     }
     load()
@@ -232,7 +230,6 @@ async function submitRole() {
     showToast(res.msg || '变更失败')
   }
 }
-// 权限：超管可上传任意管理员头像，普通管理员只能上传自己的
 function canUploadAvatar(a: any): boolean {
   if (isSuper) return true
   return a.id === currentId
@@ -352,7 +349,6 @@ onMounted(load)
   font-size: 12px;
   line-height: 1.6;
 }
-/* 等级选择卡片式选项 */
 .role-select {
   display: flex;
   flex-direction: column;
@@ -406,7 +402,6 @@ onMounted(load)
   flex-shrink: 0;
   display: inline-flex;
 }
-/* 新增账号：等级选择 */
 .mobile-card-label {
   font-size: 13px;
   font-weight: 700;

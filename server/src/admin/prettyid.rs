@@ -6,7 +6,6 @@ use sqlx::Row;
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of, validate_ciyuanxi_id};
 
-/// 修改用户弦予号（普通号码，不进入靓号表）
 pub async fn change_ciyuanxi_id(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let user_id = int_of(&data, "user_id");

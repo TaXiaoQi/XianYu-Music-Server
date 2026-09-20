@@ -7,7 +7,6 @@ use super::{err, log_operation, ok, AdminCtx};
 use crate::audit_policy::{self, AuditExternalConfig, BannedWordsConfig};
 use crate::handlers::helpers::{bool_of, int_of, parse_body, str_of};
 
-/// 确保头像审核表存在
 async fn ensure_avatar_table(pool: &MySqlPool) {
     for stmt in crate::schema::table_statements().iter() {
         if stmt.contains("`user_avatar_pending`") || stmt.contains("`user_nickname_pending`") {
@@ -46,7 +45,7 @@ pub async fn save_audit_external_config(body: &str, ctx: &AdminCtx, pool: &MySql
         cfg.api_key = current.api_key;
     }
     if let Err(e) = audit_policy::save_config(pool, &cfg).await {
-        return err(500, &format!("保存审核配置失败: {}", e));
+        { tracing::error!("保存审核配置失败: {e}"); return err(500, "保存审核配置失败"); }
     }
     log_operation(pool, ctx, "保存外部审核配置", &format!("启用:{} 服务:{}", cfg.enabled, cfg.provider), "").await;
     ok("审核配置已保存", json!(cfg))
@@ -91,16 +90,14 @@ pub async fn save_banned_words_config(body: &str, ctx: &AdminCtx, pool: &MySqlPo
                 .collect()
         })
         .unwrap_or_default();
-    // 去重（保留首次出现顺序）
     let mut seen = std::collections::HashSet::new();
     words.retain(|w| seen.insert(w.clone()));
-    // 限制词条数量，防止配置过大
     if words.len() > 5000 {
         words.truncate(5000);
     }
     let cfg = BannedWordsConfig { enabled, words };
     if let Err(e) = audit_policy::save_banned_words(pool, &cfg).await {
-        return err(500, &format!("保存违禁词库失败: {}", e));
+        { tracing::error!("保存违禁词库失败: {e}"); return err(500, "保存违禁词库失败"); }
     }
     log_operation(pool, ctx, "保存内置违禁词库", &format!("启用:{} 词数:{}", enabled, cfg.words.len()), "").await;
     ok("违禁词库已保存", json!({
@@ -132,12 +129,10 @@ pub async fn test_banned_words(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     }
 }
 
-/// 待审核头像列表 + 统计
 pub async fn list_avatar_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     ensure_avatar_table(pool).await;
 
-    // 查询待审核头像（关联 app_users 获取用户名和当前头像）
     let rows = sqlx::query(
         "SELECT p.id, p.ciyuanxi_id, p.avatar_data, p.status, p.created_at, \
          u.nickname AS username, u.avatar_url AS current_avatar \
@@ -157,7 +152,6 @@ pub async fn list_avatar_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
         Err(_) => return err(500, "数据库错误"),
     };
 
-    // 统计各状态数量
     let stats_row = sqlx::query(
         "SELECT \
          SUM(status = 'pending') AS pending, \
@@ -184,7 +178,6 @@ pub async fn list_avatar_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     ok("ok", json!({ "list": list, "stats": stats }))
 }
 
-/// 待审核改名申请列表
 pub async fn list_nickname_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     ensure_avatar_table(pool).await;
@@ -213,7 +206,6 @@ pub async fn list_nickname_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     }
 }
 
-/// 统一审核记录列表（按状态，头像 + 改名）
 pub async fn list_audit_records(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let status = str_of(&data, "status").trim().to_string();
@@ -279,7 +271,6 @@ pub async fn list_audit_records(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
         }
     }
 
-    // 统计（头像 + 改名合并）
     let stats_row = sqlx::query(
         "SELECT \
          (SELECT COUNT(*) FROM user_avatar_pending WHERE status='pending') + (SELECT COUNT(*) FROM user_nickname_pending WHERE status='pending') AS pending, \
@@ -304,7 +295,6 @@ pub async fn list_audit_records(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     ok("ok", json!({ "list": list, "stats": stats }))
 }
 
-/// 审核通过头像
 pub async fn approve_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -339,7 +329,6 @@ pub async fn approve_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     ok("审核通过", Value::Null)
 }
 
-/// 审核拒绝头像
 pub async fn reject_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -363,7 +352,6 @@ pub async fn reject_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Resp
     ok("已拒绝", Value::Null)
 }
 
-/// 审核通过改名
 pub async fn approve_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -398,7 +386,6 @@ pub async fn approve_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     ok("审核通过", Value::Null)
 }
 
-/// 审核拒绝改名
 pub async fn reject_nickname(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");

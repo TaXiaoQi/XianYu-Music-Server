@@ -502,7 +502,6 @@ function platformLabelKey(key: string): string {
   return PLATFORMS.find(p => p.key === key)?.label || '桌面端'
 }
 
-// 各平台可发布的系统细分：桌面分 Windows/Linux/macOS，移动分 Android/鸿蒙/iOS，腕上端暂不细分
 const SYSTEM_META: Record<PlatformKey, { key: string; label: string }[]> = {
   desktop: [
     { key: 'windows', label: 'Windows' },
@@ -517,14 +516,12 @@ const SYSTEM_META: Record<PlatformKey, { key: string; label: string }[]> = {
   watch: [],
 }
 
-/** 平台默认系统：桌面→windows、移动→android、腕上端→''；无 system 字段的遗留记录按此展示 */
 function defaultSystem(platform: PlatformKey): string {
   if (platform === 'mobile') return 'android'
   if (platform === 'watch') return ''
   return 'windows'
 }
 
-/** 配置项的有效系统（遗留无 system 记录按平台默认） */
 function systemOf(item: any): string {
   const s = item?.system
   return s || defaultSystem(platformOf(item))
@@ -582,7 +579,6 @@ async function loadDesktop() {
   desktopLoading.value = false
 }
 
-// 版本配置弹窗
 const desktopModalVisible = ref(false)
 const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string; storeUrl: string }>({ version: '', updateContent: '', downloadUrl: '', storeUrl: '' })
 const desktopDraftEnabled = ref(false)
@@ -602,7 +598,6 @@ const desktopPackageFileDraft = ref<File | null>(null)
 const desktopPackageDraft = ref({ fileName: '', fileSize: 0, fileBase64: '' })
 const desktopPackageDragging = ref(false)
 
-// 商店分发设置弹窗
 const storeModalVisible = ref(false)
 const storeDraftEnabled = ref(false)
 const storeDraftUrl = ref('')
@@ -633,7 +628,6 @@ const desktopChannelDesc = computed(() => {
   return desktopDraftEnabled.value ? '启用更新时，需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
 })
 
-/** 测试版组合版本号：主版本 + -beta- + beta号（如 1.2.0-beta-3） */
 const composedVersion = computed(() => {
   if (desktopDraftChannel.value !== 'beta') return desktopDraft.value.version.trim()
   const main = desktopDraft.value.version.trim()
@@ -677,7 +671,6 @@ function openDesktopModal(item?: any) {
   desktopModalVisible.value = true
 }
 
-/** 新建弹窗内切换平台时，同步将目标系统重置为所选平台的有效默认值 */
 function switchDraftPlatform(key: PlatformKey) {
   if (desktopEditingVersion.value) return
   desktopDraftPlatform.value = key
@@ -755,7 +748,6 @@ async function saveDesktop() {
       showToast('修改成功', 'success')
       desktopModalVisible.value = false
     } else {
-      // 新增成功：保持弹窗打开并清空表单（保留平台与渠道），方便继续新增多个版本
       showToast('保存成功，可继续新增版本', 'success')
       desktopEditingVersion.value = ''
       desktopEditingChannel.value = desktopDraftChannel.value
@@ -945,7 +937,6 @@ async function removeBetaTester(t: any) {
   }
 }
 
-// 内测设备详情（关联帐号 / 厂商 / 型号 / 系统版本）+ 备注编辑
 const betaDetailVisible = ref(false)
 const betaDetailLoading = ref(false)
 const betaDetail = ref<any>(null)
@@ -1005,7 +996,6 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-/* 统计卡片 */
 .stats-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1066,7 +1056,6 @@ onMounted(() => {
   max-width: 580px;
 }
 
-/* 新增按钮 */
 .header-actions {
   display: flex;
   align-items: center;
@@ -1095,7 +1084,6 @@ onMounted(() => {
 }
 .btn-add:active { transform: scale(0.96); }
 
-/* 内测名单按钮 */
 .btn-beta {
   position: relative;
   display: inline-flex;
@@ -1180,7 +1168,6 @@ onMounted(() => {
 .dot-watch { background: #8b5cf6; }
 .dot-app { background: #10b981; }
 
-/* 平台切换 tab */
 .platform-tabs {
   display: inline-flex;
   gap: 4px;
@@ -1304,7 +1291,6 @@ onMounted(() => {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 类型指示条 */
 .type-bar {
   width: 4px;
   flex-shrink: 0;
@@ -1319,7 +1305,6 @@ onMounted(() => {
 .bar-crash { background: #ef4444; }
 .bar-group { background: #8b5cf6; }
 
-/* 卡片内容 */
 .card-body {
   flex: 1;
   padding: 16px 18px;
@@ -1334,7 +1319,6 @@ onMounted(() => {
   align-items: center;
 }
 
-/* 类型徽章 */
 .type-badge {
   display: inline-block;
   padding: 3px 10px;
@@ -1363,7 +1347,6 @@ onMounted(() => {
 .badge-crash { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 .badge-group { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 
-/* Toggle 开关 */
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -1395,7 +1378,6 @@ onMounted(() => {
 .toggle-switch input:checked + .toggle-slider { background: #10b981; }
 .toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
 
-/* 标题和正文 */
 .card-title {
   font-size: 15px;
   font-weight: 700;
@@ -1423,7 +1405,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-/* 链接 */
 .card-link {
   display: flex;
   align-items: center;
@@ -1442,7 +1423,6 @@ onMounted(() => {
 }
 .card-link a:hover { color: #4f46e5; text-decoration: underline; }
 
-/* 底部 */
 .card-footer {
   display: flex;
   justify-content: space-between;
@@ -1598,7 +1578,6 @@ onMounted(() => {
   background: var(--card-solid);
 }
 
-/* 渠道卡片 */
 .channel-card {
   width: 100%;
   display: flex;
@@ -1623,7 +1602,6 @@ onMounted(() => {
 .channel-card p { margin: 0; font-size: 12px; color: var(--text-muted); word-break: break-all; }
 .channel-card > span { flex-shrink: 0; font-size: 12px; color: var(--accent); font-weight: 700; }
 
-/* 类型选择器 */
 .type-picker {
   display: flex;
   gap: 8px;
@@ -1659,12 +1637,10 @@ onMounted(() => {
 .pick-disable.active { background: var(--control-bg); color: #6b7280; }
 .pick-disable.active .pick-dot { background: #6b7280; }
 
-/* 平台选择器 */
 .platform-picker .pick-platform.active { background: var(--accent-soft); color: var(--accent); }
 .platform-picker .pick-platform.active .pick-dot { background: var(--accent); }
 .platform-picker .pick-platform.locked { cursor: not-allowed; opacity: 0.7; }
 
-/* 渠道选择器（正式版 / 测试版） */
 .pick-stable.active { background: rgba(34, 197, 94, 0.14); color: #10b981; }
 .pick-stable.active .pick-dot { background: #10b981; }
 .pick-beta-opt.active { background: rgba(245, 158, 11, 0.14); color: #d97706; }
@@ -1677,7 +1653,6 @@ onMounted(() => {
   margin: 0;
 }
 
-/* 测试版组合版本号：版本号 -beta- beta号 */
 .version-combo {
   display: flex;
   align-items: center;
@@ -1708,7 +1683,6 @@ onMounted(() => {
 }
 .version-combo-num { max-width: 90px !important; }
 
-/* 内测名单弹窗 */
 .beta-backdrop { z-index: 10010; }
 .beta-add-row {
   display: flex;
@@ -1763,7 +1737,6 @@ onMounted(() => {
   border-color: var(--accent);
 }
 
-/* 内测设备详情弹窗 */
 .beta-detail-body {
   display: flex;
   flex-direction: column;
@@ -1871,7 +1844,6 @@ onMounted(() => {
 }
 .beta-item-date { font-size: 11px; color: var(--text-muted); }
 
-/* 渠道选项 */
 .channel-options {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1899,7 +1871,6 @@ onMounted(() => {
 .channel-option strong { font-size: 14px; }
 .channel-option span { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 
-/* 拖拽上传区 */
 .package-dropzone {
   display: flex;
   flex-direction: column;
@@ -1943,7 +1914,6 @@ onMounted(() => {
 .file-hidden { display: none; }
 .file-info { font-size: 12px; color: var(--text-muted); }
 
-/* 上传进度 */
 .upload-progress {
   display: flex;
   align-items: center;
@@ -1968,7 +1938,6 @@ onMounted(() => {
   text-align: right;
 }
 
-/* 弹窗底部 */
 .modal-foot {
   display: flex;
   justify-content: flex-end;
@@ -2019,7 +1988,6 @@ onMounted(() => {
 .fade-up-enter-active { transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-up-enter-from { opacity: 0; transform: translateY(16px); }
 
-/* 弹窗动画 */
 .modal-enter-active { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .modal-leave-active { transition: all 0.2s ease; }
 .modal-enter-from,
@@ -2033,7 +2001,6 @@ onMounted(() => {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* 卡片列表过渡 */
 .card-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .card-leave-active { transition: all 0.3s ease; }
 .card-enter-from { opacity: 0; transform: translateY(20px); }

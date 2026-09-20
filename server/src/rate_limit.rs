@@ -10,8 +10,6 @@ use crate::response::ReqCtx;
 
 const VIOLATION_WINDOW_SECONDS: i64 = 300;
 
-/// 数据库临时封禁查询的内存负缓存间隔（秒）：
-/// 每个身份在该间隔内只查一次库，避免正常请求每条都付出一次 DB 往返
 const DB_BLOCK_CHECK_TTL_SECONDS: i64 = 15;
 
 #[derive(Default)]
@@ -19,9 +17,7 @@ pub struct ApiRateLimiter {
     windows: Mutex<HashMap<String, WindowState>>,
     cooldowns: Mutex<HashMap<String, i64>>,
     temp_blocks: Mutex<HashMap<String, i64>>,
-    /// 身份 -> 下次允许查库确认封禁的时间戳（负缓存）
     db_block_checks: Mutex<HashMap<String, i64>>,
-    /// 上次全量清理的时间戳（秒），节流避免每请求都锁三张表全量扫描
     last_cleanup: AtomicI64,
 }
 
@@ -71,8 +67,6 @@ pub async fn check_api_rate_limit(
     check_with_identity(limiter, pool, action, identity, &ctx.client_ip, ctx).await
 }
 
-/// 后台登录专用限流：IP 与用户名双维度各自独立计数，任一超限即拦截。
-/// 攻击者即使轮换用户名，其 IP 维度窗口仍会被计满，防止暴力破解。
 pub async fn check_admin_login_rate_limit(
     limiter: &ApiRateLimiter,
     pool: Option<&MySqlPool>,
@@ -132,7 +126,6 @@ async fn check_with_identity(
         return Some(rate_limited_response(ctx, until - now, "请求过于频繁，当前设备已被临时限制"));
     }
 
-    // 内存无封禁时按负缓存间隔查库确认，命中则同步进内存并拦截
     if limiter.should_check_db_block(&block_key, now) {
         if let Some(db_until) = check_db_temp_block(pool, &identity).await {
             limiter.set_memory_temp_block(&block_key, db_until);
@@ -257,8 +250,6 @@ impl ApiRateLimiter {
         self.temp_blocks.lock().unwrap().insert(key.to_string(), until);
     }
 
-    /// 是否需要查库确认封禁：距上次确认不足 TTL 时跳过（负缓存）。
-    /// 封禁记录由限流触发时写入，正常请求高频率查库纯属开销。
     fn should_check_db_block(&self, block_key: &str, now: i64) -> bool {
         let mut checks = self.db_block_checks.lock().unwrap();
         match checks.get(block_key).copied() {
@@ -271,7 +262,6 @@ impl ApiRateLimiter {
     }
 
     fn cleanup(&self, now: i64) {
-        // 节流：过期条目本身有 TTL 兜底（读取时会判过期），30 秒清一次足够
         let last = self.last_cleanup.load(Ordering::Relaxed);
         if now - last < 30 {
             return;
@@ -281,7 +271,7 @@ impl ApiRateLimiter {
             .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
             .is_err()
         {
-            return; // 另一个请求正在清理
+            return;
         }
 
         let mut cooldowns = self.cooldowns.lock().unwrap();
@@ -330,9 +320,6 @@ fn profile_for_action(action: &str) -> RateProfile {
             block_seconds: 3600,
             allow_temp_block: true,
         },
-        // 扫码登录状态轮询：桌面端/手表端均 2s 一次（≈30 次/分），只读
-        // 状态检查。单独走宽松档且不累计封禁——此前套用 auth 档（10 次/分）
-        // 必然在二维码存活期内被打断，表现为「一扫码就提示已过期」。
         "poll_tv_login_status" => RateProfile {
             name: "poll",
             window_seconds: 60,

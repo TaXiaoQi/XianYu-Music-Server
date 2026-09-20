@@ -1,9 +1,7 @@
 use rand::Rng;
 use serde_json::Value;
 use sqlx::MySqlPool;
-use sqlx::Row;
 
-/// 解析请求体 JSON
 pub fn parse_body(body: &str) -> Value {
     serde_json::from_str(body).unwrap_or(Value::Null)
 }
@@ -24,7 +22,6 @@ pub fn int_of(v: &Value, key: &str) -> i64 {
         .unwrap_or(0)
 }
 
-#[allow(dead_code)]
 pub fn bool_of(v: &Value, key: &str) -> bool {
     match v.get(key) {
         Some(Value::Bool(b)) => *b,
@@ -34,44 +31,35 @@ pub fn bool_of(v: &Value, key: &str) -> bool {
     }
 }
 
-/// 生成弦予号（顺序+1逻辑，从 1000 开始找第一个未使用的号）
-/// 注：新流程改为用户自行填写弦予号，此函数仅作向后兼容保留
-#[allow(dead_code)]
-pub async fn generate_ciyuanxi_id(pool: &MySqlPool) -> String {
-    let mut used: std::collections::HashSet<i64> = std::collections::HashSet::new();
-
-    if let Ok(rows) = sqlx::query("SELECT ciyuanxi_id FROM app_users WHERE ciyuanxi_id REGEXP '^[0-9]+$'")
-        .fetch_all(pool)
-        .await
-    {
-        for row in rows {
-            if let Ok(v) = row.try_get::<String, _>("ciyuanxi_id") {
-                if let Ok(n) = v.parse::<i64>() {
-                    used.insert(n);
-                }
-            }
-        }
+pub fn is_valid_email(email: &str) -> bool {
+    let email = email.trim();
+    if email.is_empty() || !email.contains('@') || email.contains(' ') {
+        return false;
     }
-    if let Ok(rows) = sqlx::query("SELECT ciyuanxi_id FROM ciyuanxi_pretty_ids WHERE ciyuanxi_id REGEXP '^[0-9]+$'")
-        .fetch_all(pool)
-        .await
-    {
-        for row in rows {
-            if let Ok(v) = row.try_get::<String, _>("ciyuanxi_id") {
-                if let Ok(n) = v.parse::<i64>() {
-                    used.insert(n);
-                }
-            }
-        }
-    }
-    let mut id = 1000i64;
-    while used.contains(&id) {
-        id += 1;
-    }
-    id.to_string()
+    let mut parts = email.split('@');
+    let local = parts.next().unwrap_or("");
+    let domain = parts.next().unwrap_or("");
+    let rest = parts.next();
+    !local.is_empty()
+        && !domain.is_empty()
+        && domain.contains('.')
+        && !domain.starts_with('.')
+        && rest.is_none()
 }
 
-/// 校验弦予号（支持纯数字、纯字母、数字字母组合，支持大小写字母，6-20 个字符，不含特殊符号）
+pub fn extract_id(data: &Value) -> String {
+    for key in ["ciyuanxi_id", "user_id", "id", "uid"] {
+        let v = str_of(data, key);
+        if !v.trim().is_empty() {
+            return v.trim().to_string();
+        }
+        if let Some(n) = data.get(key).and_then(|x| x.as_i64()) {
+            return n.to_string();
+        }
+    }
+    String::new()
+}
+
 pub fn validate_ciyuanxi_id(id: &str) -> Result<(), &'static str> {
     let len = id.chars().count();
     if len < 6 || len > 20 {
@@ -85,14 +73,12 @@ pub fn validate_ciyuanxi_id(id: &str) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// 判断字符是否为汉字（CJK 统一表意文字基本区）
 fn is_cjk_char(c: char) -> bool {
     ('\u{4e00}'..='\u{9fff}').contains(&c)
         || ('\u{3400}'..='\u{4dbf}').contains(&c)
         || ('\u{f900}'..='\u{faff}').contains(&c)
 }
 
-/// 校验昵称：仅允许字母、数字、汉字三种字符，长度在 [min, max] 之间
 pub fn validate_nickname(nickname: &str, min: usize, max: usize) -> Result<(), &'static str> {
     let len = nickname.chars().count();
     if len < min || len > max {
@@ -106,12 +92,10 @@ pub fn validate_nickname(nickname: &str, min: usize, max: usize) -> Result<(), &
     Ok(())
 }
 
-/// 默认昵称：弦予 + 弦予号（如 弦予161）
 pub fn default_nickname(ciyuanxi_id: &str) -> String {
     format!("弦予{}", ciyuanxi_id)
 }
 
-/// 解析版本号字符串为 [major, minor, patch]
 pub fn parse_version_code(v: &str) -> Option<(i32, i32, i32)> {
     let re = regex::Regex::new(r"(\d+)\.(\d+)\.(\d+)").ok()?;
     let caps = re.captures(v)?;
@@ -122,13 +106,10 @@ pub fn parse_version_code(v: &str) -> Option<(i32, i32, i32)> {
     ))
 }
 
-/// 判断版本号是否带预发布后缀（如 `1.0.1-beta7` 含 `-`）。
 fn has_prerelease(v: &str) -> bool {
     v.contains('-')
 }
 
-/// 提取预发布后缀中的数字：`1.0.1-beta7` → 7；`1.0.1-beta.5` → 5（点分隔）；
-/// `1.0.1-beta-2` → 2；`beta`（无数字）→ 0。
 fn prerelease_number(v: &str) -> Option<i64> {
     let idx = v.find('-')?;
     let tail = &v[idx + 1..];
@@ -140,7 +121,6 @@ fn prerelease_number(v: &str) -> Option<i64> {
         .ok()
 }
 
-/// 比较两个版本号：1 if a>b, -1 if a<b, 0 if equal/unparseable
 pub fn compare_version_code(a: &str, b: &str) -> i32 {
     let pa = parse_version_code(a);
     let pb = parse_version_code(b);
@@ -158,8 +138,6 @@ pub fn compare_version_code(a: &str, b: &str) -> i32 {
             if pa.2 != pb.2 {
                 return if pa.2 > pb.2 { 1 } else { -1 };
             }
-            // 主版本相等：正式版 > 预发布版；预发布之间按后缀数字比较，
-            // 避免 `1.0.1-beta7` 与 `1.0.1-beta6` 被判为相等。
             let a_pre = has_prerelease(a);
             let b_pre = has_prerelease(b);
             if a_pre != b_pre {
@@ -187,8 +165,6 @@ pub fn random_int(min: i64, max: i64) -> i64 {
     rng.gen_range(min..=max)
 }
 
-/// 根据邮箱判定角色 member/admin/super_admin
-/// 管理员账号已去除邮箱，统一返回 member
 pub async fn resolve_role_by_email(_pool: &MySqlPool, _email: &str) -> String {
     "member".to_string()
 }
@@ -199,14 +175,12 @@ mod tests {
 
     #[test]
     fn prerelease_dot_separated_numbers_are_ordered() {
-        // 回归：`beta.5` / `beta.6`（点分隔后缀）曾因数字提取失败被判相等
         assert_eq!(cmp("2.0.1-beta.6", "2.0.1-beta.5"), 1);
         assert_eq!(cmp("2.0.1-beta.5", "2.0.1-beta.6"), -1);
     }
 
     #[test]
     fn prerelease_number_separated_variants_are_ordered() {
-        // 紧凑与横杠分隔的后缀同样按数字比较
         assert_eq!(cmp("2.0.1-beta6", "2.0.1-beta5"), 1);
         assert_eq!(cmp("2.0.1-beta-2", "2.0.1-beta-1"), 1);
     }

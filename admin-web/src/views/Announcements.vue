@@ -273,7 +273,6 @@ function platformLabelKey(key: string | undefined): string {
   return PLATFORMS.find(p => p.key === key)?.label || PLATFORMS[0].label
 }
 
-// 平台切换筛选（同版本管理）
 const platformFilter = ref<PlatformKey>('desktop')
 const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
 const filteredList = computed(() => announcements.value.filter(a => platformOf(a) === platformFilter.value))
@@ -431,7 +430,6 @@ onMounted(() => {
   max-width: 580px;
 }
 
-/* 新增按钮 */
 .btn-add {
   display: inline-flex;
   align-items: center;
@@ -454,7 +452,6 @@ onMounted(() => {
 }
 .btn-add:active { transform: scale(0.96); }
 
-/* 平台切换 tab */
 .platform-tabs {
   display: inline-flex;
   gap: 4px;
@@ -594,7 +591,6 @@ onMounted(() => {
   }
 }
 
-/* 类型指示条 */
 .type-bar {
   width: 4px;
   flex-shrink: 0;
@@ -603,7 +599,6 @@ onMounted(() => {
 .type-warning .type-bar { background: #f59e0b; }
 .type-update .type-bar { background: #10b981; }
 
-/* 卡片内容 */
 .card-body {
   flex: 1;
   padding: 16px 18px;
@@ -618,7 +613,6 @@ onMounted(() => {
   align-items: center;
 }
 
-/* 类型徽章 */
 .type-badge {
   display: inline-block;
   padding: 3px 10px;
@@ -644,7 +638,6 @@ onMounted(() => {
 .plat-mobile { background: #eef2ff; color: #4f46e5; }
 .plat-watch { background: #e7f5ea; color: #15803d; }
 
-/* Toggle 开关 */
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -676,7 +669,6 @@ onMounted(() => {
 .toggle-switch input:checked + .toggle-slider { background: #10b981; }
 .toggle-switch input:checked + .toggle-slider::before { transform: translateX(16px); }
 
-/* 标题和正文 */
 .card-title {
   font-size: 15px;
   font-weight: 700;
@@ -695,7 +687,6 @@ onMounted(() => {
   overflow: hidden;
 }
 
-/* 链接 */
 .card-link {
   display: flex;
   align-items: center;
@@ -714,7 +705,6 @@ onMounted(() => {
 }
 .card-link a:hover { color: #4f46e5; text-decoration: underline; }
 
-/* 底部 */
 .card-footer {
   display: flex;
   justify-content: space-between;
@@ -852,7 +842,6 @@ onMounted(() => {
 }
 .field-row .field { flex: 1; }
 
-/* 类型选择器 */
 .type-picker {
   display: flex;
   gap: 8px;
@@ -900,7 +889,6 @@ onMounted(() => {
 .pick-plat-watch.active { background: #e7f5ea; color: #15803d; }
 .pick-plat-watch.active .pick-dot { background: #15803d; }
 
-/* 弹窗底部 */
 .modal-foot {
   display: flex;
   justify-content: flex-end;
@@ -951,7 +939,6 @@ onMounted(() => {
 .fade-up-enter-active { transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-up-enter-from { opacity: 0; transform: translateY(16px); }
 
-/* 弹窗动画 */
 .modal-enter-active { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .modal-leave-active { transition: all 0.2s ease; }
 .modal-enter-from,
@@ -967,7 +954,6 @@ onMounted(() => {
   transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* 卡片列表过渡 */
 .card-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .card-leave-active { transition: all 0.3s ease; }
 .card-enter-from { opacity: 0; transform: translateY(20px); }

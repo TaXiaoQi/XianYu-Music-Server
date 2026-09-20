@@ -368,15 +368,15 @@ pub async fn migrate_local_cache_to_database(_body: &str, ctx: &AdminCtx) -> Res
     let config_value = read_config_value(ctx);
     let cfg: crate::config::Config = match serde_json::from_value(config_value.clone()) {
         Ok(v) => v,
-        Err(e) => return err(400, &format!("配置文件无法解析: {}", e)),
+        Err(e) => return { tracing::error!("配置文件无法解析: {e}"); err(400, "配置文件无法解析") },
     };
     let pool = match crate::db::connect(&cfg).await {
         Ok(v) => v,
-        Err(e) => return err(400, &format!("数据库连接配置无效: {}", e)),
+        Err(e) => return { tracing::error!("数据库连接配置无效: {e}"); err(400, "数据库连接配置无效") },
     };
     match tokio::time::timeout(std::time::Duration::from_secs(8), sqlx::query("SELECT 1").execute(&pool)).await {
         Ok(Ok(_)) => {}
-        Ok(Err(e)) => return err(400, &format!("数据库连接失败: {}", e)),
+        Ok(Err(e)) => return { tracing::error!("数据库连接失败: {e}"); err(400, "数据库连接失败") },
         Err(_) => return err(400, "数据库连接超时"),
     }
 

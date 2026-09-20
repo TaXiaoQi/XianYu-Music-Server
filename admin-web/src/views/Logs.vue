@@ -213,30 +213,25 @@ const activeTab = ref<'operation' | 'login'>('operation')
 const loading = ref(false)
 const pageSize = 20
 
-// 搜索 / 筛选
 const keyword = ref('')
-const statusFilter = ref('') // '' | 'success' | 'failed'
+const statusFilter = ref('')
 
-// 操作日志
 const opList = ref<OperationLog[]>([])
 const opPage = ref(1)
 const opTotal = ref(0)
 const opTotalPages = ref(0)
 
-// 登录日志
 const loginList = ref<LoginLog[]>([])
 const loginPage = ref(1)
 const loginTotal = ref(0)
 const loginTotalPages = ref(0)
 
-// 当前 tab 的派生值
 const curTotal = computed(() => (activeTab.value === 'operation' ? opTotal.value : loginTotal.value))
 const curPage = computed(() => (activeTab.value === 'operation' ? opPage.value : loginPage.value))
 const curTotalPages = computed(() => (activeTab.value === 'operation' ? opTotalPages.value : loginTotalPages.value))
 
 const hasFilter = computed(() => !!keyword.value || !!statusFilter.value)
 
-// 分页页码
 const pageNumbers = computed(() => {
   const tp = curTotalPages.value
   const cur = curPage.value
@@ -316,7 +311,6 @@ function loadCurrent() {
 function switchTab(tab: 'operation' | 'login') {
   if (activeTab.value === tab) return
   activeTab.value = tab
-  // 切换 tab 时重新加载该 tab 数据
   loadCurrent()
 }
 
@@ -509,7 +503,6 @@ onMounted(() => {
 }
 .btn-reset:hover { color: var(--text); border-color: #ccc; }
 
-/* 状态筛选 chips */
 .status-chips {
   display: inline-flex;
   gap: 6px;
@@ -607,7 +600,6 @@ onMounted(() => {
   color: #2563eb;
 }
 
-/* 状态徽标 */
 .badge {
   display: inline-flex;
   align-items: center;

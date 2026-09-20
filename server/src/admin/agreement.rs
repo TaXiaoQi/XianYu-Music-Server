@@ -73,7 +73,7 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     .execute(pool)
     .await;
     if let Err(e) = save_title {
-        return err(500, &format!("保存标题失败: {}", e));
+        { tracing::error!("保存标题失败: {e}"); return err(500, "保存标题失败"); }
     }
 
     let save_content = sqlx::query(
@@ -83,7 +83,7 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     .execute(pool)
     .await;
     if let Err(e) = save_content {
-        return err(500, &format!("保存内容失败: {}", e));
+        { tracing::error!("保存内容失败: {e}"); return err(500, "保存内容失败"); }
     }
 
     log_operation(pool, ctx, "保存用户协议", "user_agreement", &format!("标题:{}", title)).await;

@@ -6,16 +6,11 @@ use sqlx::{MySqlPool, Row};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 use crate::response::ReqCtx;
 
-/// 分享有效期下限（分钟）：5 分钟
 const SHARE_MIN_MINUTES: i64 = 5;
-/// 分享有效期上限（分钟）：24 小时
 const SHARE_MAX_MINUTES: i64 = 24 * 60;
-/// 分享默认有效期（分钟）：2 小时
 const SHARE_DEFAULT_MINUTES: i64 = 120;
-/// 条幅分享短码长度
 const SHARE_ID_LEN: usize = 8;
 
-/// 手写 URL 组件百分号编码（deep link 里歌名/歌手含中文与空格）
 fn url_encode_component(input: &str) -> String {
     let mut out = String::with_capacity(input.len() * 3);
     for byte in input.as_bytes() {
@@ -30,10 +25,6 @@ fn url_encode_component(input: &str) -> String {
     out
 }
 
-/// 封面 URL 转缩略图 URL（走 /uploads/covers ?w=150 实时缩放），
-/// 深链传给客户端弹窗用小图，秒开且省流量。
-/// 仅对本站 /uploads/covers/ 封面生效；第三方插件 CDN 封面原样返回，
-/// 避免拼坏外链 query。
 fn cover_thumb_url(cover: &str) -> String {
     if cover.is_empty() || !cover.contains("/uploads/covers/") {
         return cover.to_string();
@@ -42,7 +33,6 @@ fn cover_thumb_url(cover: &str) -> String {
     format!("{cover}{sep}w=150")
 }
 
-/// 构造唤起 App 的深链（带歌曲元数据与封面缩略图，App 端弹分享预览窗并按音源播放）
 fn build_song_deep_link(
     song_id: &str,
     hash: &str,
@@ -66,7 +56,6 @@ fn build_song_deep_link(
     )
 }
 
-/// HTML 属性/文本转义，用于安全地把动态值注入 <meta> 标签
 fn html_escape(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
@@ -82,8 +71,21 @@ fn html_escape(input: &str) -> String {
     out
 }
 
-/// 生成一个随机短码候选项。同步函数：内部自建 ThreadRng 并立即 drop，
-/// 严禁将 !Send 的 ThreadRng 持有跨 await，否则会污染上层 future 的 Send 约束。
+fn json_script_safe(input: &str) -> String {
+    let mut out = String::with_capacity(input.len() + 8);
+    for ch in input.chars() {
+        match ch {
+            '<' => out.push_str("\\u003c"),
+            '>' => out.push_str("\\u003e"),
+            '&' => out.push_str("\\u0026"),
+            '\u{2028}' => out.push_str("\\u2028"),
+            '\u{2029}' => out.push_str("\\u2029"),
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 fn next_share_id() -> String {
     let mut rng = rand::thread_rng();
     (0..SHARE_ID_LEN)
@@ -98,7 +100,6 @@ fn next_share_id() -> String {
         .collect()
 }
 
-/// 生成短分享码，并保证在 share_log 中唯一
 async fn gen_unique_share_id(pool: &MySqlPool) -> String {
     loop {
         let id = next_share_id();
@@ -113,13 +114,11 @@ async fn gen_unique_share_id(pool: &MySqlPool) -> String {
                     return id;
                 }
             }
-            Err(_) => return id, // 读库异常时直接返回，避免死循环
+            Err(_) => return id,
         }
     }
 }
 
-/// 上报一次真实「用户点分享」动作（切歌预生成 share_log 不触发本接口），
-/// 供仪表台分享统计使用，避免被预加载刷虚高。
 pub async fn report_share_action(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").to_string();
@@ -129,12 +128,10 @@ pub async fn report_share_action(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         .await
     {
         Ok(_) => ctx.ok("ok", json!({})),
-        Err(e) => ctx.err(500, &format!("上报失败: {}", e)),
+        Err(e) => { tracing::error!("上报失败: {e}"); ctx.err(500, "上报失败") },
     }
 }
 
-/// 校验封面 URL 是否可被外部访问：仅接受远程 http(s)，拒绝本地/回环/Tauri asset 地址，
-/// 避免本地封面路径或混合内容进入落地页（导致「不安全」提示与封面无法加载）。
 fn sanitize_cover_url(cover: &str) -> String {
     let trimmed = cover.trim().to_string();
     if !(trimmed.starts_with("http://") || trimmed.starts_with("https://")) {
@@ -149,7 +146,6 @@ fn sanitize_cover_url(cover: &str) -> String {
     trimmed
 }
 
-/// 创建歌曲分享记录（客户端在播放时预生成，落地页不做网页播放，仅拉起客户端）
 pub async fn create_share(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let song_name = str_of(&data, "song_name");
@@ -162,7 +158,6 @@ pub async fn create_share(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response
     let hash = str_of(&data, "hash");
     let duration_ms = int_of(&data, "duration_ms");
     let source = str_of(&data, "source");
-    // 分享有效期（分钟）：客户端「分享链接有效时长」设置传入，下限 5min、上限 24h，缺省 2h
     let raw_ttl = int_of(&data, "expire_minutes");
     let ttl_min = if (SHARE_MIN_MINUTES..=SHARE_MAX_MINUTES).contains(&raw_ttl) {
         raw_ttl
@@ -173,8 +168,6 @@ pub async fn create_share(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response
         build_song_deep_link(&song_id, &hash, &song_name, &singer, duration_ms, &source, &cover);
 
     let share_id = gen_unique_share_id(pool).await;
-    // 分享链接优先拼配置的独立分享域名（share.xianyumusic.cn），
-    // 未配置则回退用请求 Host（即客户端连接的 api 域名下的 /s/{id}）。
     let share_base = ctx.config.share_base_url.trim().trim_end_matches('/');
     let share_url = if share_base.is_empty() {
         format!("{}/s/{}", ctx.base_url.trim_end_matches('/'), share_id)
@@ -182,7 +175,6 @@ pub async fn create_share(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response
         format!("{}/s/{}", share_base, share_id)
     };
 
-    // request_params 保留原始请求体，落地页据此重建 deep_link
     let params_truncated: String = body.chars().take(50_000).collect();
     let insert = sqlx::query(
         "INSERT INTO share_log \
@@ -210,11 +202,10 @@ pub async fn create_share(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response
                 "deep_link": deep_link,
             }),
         ),
-        Err(e) => ctx.err(500, &format!("创建分享失败: {}", e)),
+        Err(e) => { tracing::error!("创建分享失败: {e}"); ctx.err(500, "创建分享失败") },
     }
 }
 
-/// 落地页 __SHARE_DATA__ 所需歌曲信息（cover 需传入绝对 https 地址，与 og:image 一致）
 fn row_to_share_data(row: &Value, body_params: &Value, download_api: &str, cover_abs: &str) -> Value {
     let song_name = str_of(row, "song_name");
     let singer = str_of(row, "singer");
@@ -228,15 +219,11 @@ fn row_to_share_data(row: &Value, body_params: &Value, download_api: &str, cover
         "cover": cover_abs,
         "duration_ms": duration_ms,
         "deep_link": build_song_deep_link(&song_id, &hash, &song_name, &singer, duration_ms, &source, cover_abs),
-        // Android 包名（客户端运行时上报，debug 包带 .debug 后缀）：
-        // QQ/浏览器内置 WebView 拦截裸 scheme，落地页需用 intent://package= 拉起
         "android_package": str_of(body_params, "android_package"),
-        // 用于拼接 App 唤醒失败后的下载地址的上前缀：{base}/api?action=share_download
         "download_api": download_api,
     })
 }
 
-/// 渲染分享落地页（自包含单文件，无网页播放：仅拉客户端 + 无客户端引导去官方下载）
 pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str) -> String {
     let base = download_api
         .split("/api?")
@@ -253,12 +240,8 @@ pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str)
     } else {
         format!("{} - {}", song, singer)
     };
-    // 描述文案
     let og_desc = "这首歌曲来自弦予音乐，点击卡片即可在 App 内收听全曲";
 
-    // 封面统一做绝对化：既用于 og:image，也作为落地页展示封面。
-    // 本地/回环/asset 地址（旧数据可能残留）回退站点 logo；
-    // http(s) 直接复用并强制 https，避免 HTTPS 落地页加载 HTTP 封面触发混合内容「不安全」提示。
     let cover = str_of(row, "cover_path");
     let cover_lower = cover.to_lowercase();
     let is_local_cover = cover_lower.contains("asset.localhost")
@@ -277,30 +260,24 @@ pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str)
         format!("{}/logo.png", base)
     };
     let og_url = format!("{}/s/{}", base, str_of(row, "share_id"));
-    // og:image 用本站方形缩略图（?w=300 实时缩放，与深链 w=150 同通道）：
-    // 原图体积大爬虫抓取慢甚至超时，非方形封面还会导致 QQ 卡片封面排版偏移。
-    // 仅对本站 /uploads/covers/ 封面生效；logo 兜底与第三方 CDN 封面原样使用。
     let og_image = if cover_abs.contains("/uploads/covers/") {
         let sep = if cover_abs.contains('?') { '&' } else { '?' };
         format!("{cover_abs}{sep}w=300")
     } else {
         cover_abs.clone()
     };
-    // 落地页 <title>：带歌曲名，QQ/微信卡片在缺 og:title 时会回退读 title
     let page_title = if og_title.is_empty() {
         "弦予音乐 · 分享".to_string()
     } else {
         format!("{} · 弦予音乐", og_title)
     };
 
-    // 落地页展示封面与 og:image 保持一致，避免本地/相对封面在页面与卡片里显示不一致
     let data = row_to_share_data(row, body_params, download_api, &cover_abs);
-    let json_str = serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string());
+    let json_str = json_script_safe(&serde_json::to_string(&data).unwrap_or_else(|_| "{}".to_string()));
 
     HTML
         .replace("__SHARE_JSON__", &json_str)
         .replace("__TITLE__", &html_escape(&page_title))
-        // favicon 与官网/管理后台一致（static 目录下的 logo.png），走 https 绝对地址
         .replace("__FAVICON__", &html_escape(&format!("{}/logo.png", base)))
         .replace("__OG_TITLE__", &html_escape(&og_title))
         .replace("__OG_DESC__", &html_escape(og_desc))

@@ -72,7 +72,6 @@
       </div>
     </Transition>
 
-    <!-- 工具条：类型筛选 + 排序 + 批量操作 -->
     <div class="toolbar">
       <div class="toolbar-group">
         <button class="tool-btn" :class="{ active: typeFilter === 'all' }" @click="setTypeFilter('all')">全部类型</button>
@@ -190,7 +189,6 @@
               </div>
             </div>
 
-            <!-- 主体：左内容，右图片（默认展开） -->
             <div class="card-body">
               <div class="card-main">
                 <p class="fb-content fb-content-main fb-content-click" title="点击查看完整留言" @click.stop="openContentModal(item)">{{ item.content || '无内容' }}</p>
@@ -797,7 +795,6 @@ import { webActionMenu } from '@/utils/webDialog'
 import { fmtTime } from '@/utils/time'
 import { formatOsVersion } from '@/utils/osVersion'
 
-// 当前登录管理员用户名（用于判断反馈是否由本人认领）
 const currentAdminName = getAdminUser()?.username || ''
 function isMineFeedback(item: Feedback): boolean {
   return !!item.assignee && item.assignee === currentAdminName
@@ -852,7 +849,6 @@ const feedbackDailyLimit = ref(20)
 const feedbackLimitInput = ref(20)
 const searchKeyword = ref('')
 const appliedKeyword = ref('')
-/** 手动搜索：输入不实时匹配，点击「搜索」或回车时才应用关键字并刷新反馈条 */
 function handleSearch() {
   appliedKeyword.value = searchKeyword.value.trim().toLowerCase()
   loadList()
@@ -883,7 +879,6 @@ function statusLabel(s: string): string {
   return statusMap[s] || s
 }
 
-// 平台版本标签文案
 const platformMap: Record<string, string> = {
   desktop: '桌面版',
   mobile: '移动版',
@@ -910,7 +905,6 @@ async function openSortMenu() {
   }
 }
 
-// 状态/类型切换仅触发列表重新加载，不重载整个页面，避免卡死
 function setFilter(s: string) {
   if (activeFilter.value === s) return
   activeFilter.value = s
@@ -954,8 +948,6 @@ function getCompletedDisplay(item: Feedback): string {
 }
 
 // ===== 图片处理 =====
-// 客户端上传的图片可能存为内网 IP:端口 的完整 URL（如 http://47.80.58.50:8081/...），
-// 后台通过 https 域名访问时会被浏览器混合内容策略拦截，这里将跨源地址改写为后台同源路径加载。
 function normalizeImgUrl(u: string): string {
   if (u.startsWith('http://') || u.startsWith('https://')) {
     try {
@@ -981,7 +973,6 @@ function itemImages(item: Feedback): string[] {
     return []
   }
 }
-// 反馈完成时管理员附带图片（resolve_images 列，JSON 数组）
 function resolveItemImages(item: Feedback): string[] {
   if (!item.resolve_images) return []
   try {
@@ -993,7 +984,6 @@ function resolveItemImages(item: Feedback): string[] {
     return []
   }
 }
-// 堆叠样式：仅第一张完整显示，其余向右下偏移并置于底层，视觉上"只显示一张，其余叠压其后"
 function stackThumbStyle(i: number, total: number): Record<string, string> {
   if (total <= 1) return {}
   const offset = Math.min(i, 3) * 5
@@ -1067,10 +1057,8 @@ function closeStats() {
 
 // ===== 新建事项弹窗 =====
 const createModalVisible = ref(false)
-// 类型与平台均无默认值，需创建者自行选择
 const createType = ref<'problem' | 'suggestion' | ''>('')
 const createPlatform = ref<'desktop' | 'mobile' | 'watch' | ''>('')
-// 标题默认取所选类型，无需手动填写
 const createTitle = computed(() => {
   if (createType.value === 'suggestion') return '功能建议'
   return '问题反馈'
@@ -1168,8 +1156,6 @@ async function submitCreate() {
   }
 }
 
-// 仅待处理/处理中可执行完成或拒绝操作，终态（已解决/已拒绝）不再显示操作按钮
-
 // ===== 认领功能 =====
 async function claimFeedback(id: number) {
   const item = feedbackList.value.find(f => f.id === id)
@@ -1182,7 +1168,6 @@ async function claimFeedback(id: number) {
   const res = await adminApi('claim_feedback', { id })
   if (res.code === 200) {
     showToast(isTransfer ? '已转认领到自己名下' : '认领成功，已置为处理中', 'success')
-    // 仅刷新列表数据，不重载页面
     await loadList()
   } else {
     showToast(res.msg || '认领失败')
@@ -1222,7 +1207,6 @@ async function pollFeedbackAlerts() {
   if (alertProcessing) return
   alertProcessing = true
   try {
-    // 1. 处理待确认的协同请求（我是认领人）
     const reqRes = await adminApi<any>('poll_collab_requests')
     if (reqRes.code === 200 && reqRes.data?.list?.length) {
       for (const req of reqRes.data.list) {
@@ -1234,7 +1218,6 @@ async function pollFeedbackAlerts() {
         await respondCollabRequest(req, approve)
       }
     }
-    // 2. 展示未读通知（转认告知 / 协同结果 / 协同完成）
     const notifRes = await adminApi<any>('poll_admin_notifications')
     if (notifRes.code === 200 && notifRes.data?.list?.length) {
       const list = notifRes.data.list
@@ -1245,7 +1228,6 @@ async function pollFeedbackAlerts() {
       await loadList()
     }
   } catch {
-    // 轮询失败静默处理
   } finally {
     alertProcessing = false
   }
@@ -1262,7 +1244,6 @@ async function abandonFeedback(id: number) {
   const res = await adminApi('abandon_feedback', { id })
   if (res.code === 200) {
     showToast(res.msg || '已放弃', 'success')
-    // 仅刷新列表数据，不重载页面
     await loadList()
   } else {
     showToast(res.msg || '操作失败')
@@ -1365,7 +1346,6 @@ async function confirmResolve() {
   }
 }
 
-/** 按平台返回设备图标类型：桌面显示器 / 手机 / 手表 */
 function deviceIcon(item: Feedback): 'desktop' | 'mobile' | 'watch' {
   if (item.platform === 'mobile') return 'mobile'
   if (item.platform === 'watch') return 'watch'
@@ -1443,7 +1423,6 @@ function hasAllLogs(item: Feedback): boolean {
   return truthyFlag(item.has_all_logs) || !!item.all_logs
 }
 
-/** 拼装设备信息展示文本：厂商 · 型号 · 系统版本（架构/计算机名） */
 function deviceInfoText(item: Feedback): string {
   const brand = item.device_brand || ''
   const model = item.device_model || ''
@@ -1465,7 +1444,6 @@ function isBeta(item: Feedback): boolean {
   return item.category !== 'appeal' && item.feedback_type === 'beta'
 }
 
-// 同意弹窗
 const betaApproveModalVisible = ref(false)
 const betaApproveTarget = ref<Feedback | null>(null)
 const betaApproveNote = ref('')
@@ -1594,12 +1572,10 @@ async function changeStatus(id: number, status: string) {
   const res = await adminApi('update_feedback_status', { id, status })
   if (res.code === 200) {
     showToast('状态已更新', 'success')
-    // 本地更新
     const item = feedbackList.value.find(f => f.id === id)
     if (item) {
       const oldStatus = item.status
       item.status = status
-      // 更新统计
       if (stats.value[oldStatus as keyof FbStats] !== undefined) {
         stats.value[oldStatus as keyof FbStats]--
       }
@@ -1670,13 +1646,11 @@ function toggleSelect(id: number) {
   } else {
     selectedIds.value.add(id)
   }
-  // 触发响应式更新
   selectedIds.value = new Set(selectedIds.value)
 }
 
 function toggleSelectAll() {
   if (allSelected.value) {
-    // 取消全选（仅取消当前列表的选中）
     filteredList.value.forEach(f => selectedIds.value.delete(f.id))
   } else {
     filteredList.value.forEach(f => selectedIds.value.add(f.id))
@@ -1733,9 +1707,7 @@ async function restoreItem(id: number) {
   const res = await adminApi('restore_feedback', { id })
   if (res.code === 200) {
     showToast('恢复成功', 'success')
-    // 从回收站列表移除
     recycleList.value = recycleList.value.filter(r => r.id !== id)
-    // 刷新主列表
     await loadList()
   } else {
     showToast(res.msg || '恢复失败')
@@ -1746,7 +1718,6 @@ onMounted(() => {
   loadFeedbackLimit()
   loadList()
   window.addEventListener('keydown', onViewerKeydown)
-  // 启动协同请求与通知轮询（转认告知 / 协同请求 / 协同完成）
   alertPollTimer = setInterval(pollFeedbackAlerts, 8000)
 })
 
@@ -1981,7 +1952,6 @@ onUnmounted(() => {
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
-/* 主体布局：主内容靠左，图片堆叠于右侧 */
 .fb-card .card-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2352,7 +2322,6 @@ onUnmounted(() => {
   word-break: break-all;
 }
 
-/* 卡片底部 */
 .card-foot {
   display: flex;
   justify-content: space-between;
@@ -2450,10 +2419,8 @@ onUnmounted(() => {
 .resolve-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .resolve-label { font-weight: 700; }
 .resolve-text span:last-child { color: #16a34a; white-space: pre-wrap; word-break: break-word; }
-/* 拒绝原因（复用 resolve-note 布局，红色区分） */
 .reject-note { background: rgba(239, 68, 68, 0.12); color: #ef4444; }
 .reject-note .resolve-text span:last-child { color: #ef4444; }
-/* 完成图片缩略图 */
 .resolve-imgs {
   display: flex;
   flex-wrap: wrap;
@@ -3123,7 +3090,6 @@ onUnmounted(() => {
   border-color: var(--accent-color);
   color: var(--accent-color);
 }
-/* 批量菜单向左弹出/收回动效 */
 .batch-slide-enter-active,
 .batch-slide-leave-active {
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),

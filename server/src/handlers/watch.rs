@@ -6,7 +6,6 @@ use sqlx::Row;
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 use crate::response::ReqCtx;
 
-/// 手表端可下发的合法控制命令
 const ALLOWED_OPS: &[&str] = &[
     "toggle",
     "play",
@@ -23,7 +22,6 @@ fn op_allowed(op: &str) -> bool {
     ALLOWED_OPS.contains(&op)
 }
 
-/// 手表端提交控制命令 → 写入 watch_commands 队列，等待手机端轮询执行。
 pub async fn watch_submit_command(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
@@ -38,7 +36,6 @@ pub async fn watch_submit_command(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     }
     let payload = data.get("payload").cloned().unwrap_or(Value::Null);
     let payload_str = payload.to_string();
-    // request_id 唯一冲突时 INSERT IGNORE 幂等跳过，手机端按序取走即可
     let result = sqlx::query(
         "INSERT IGNORE INTO watch_commands (request_id, ciyuanxi_id, from_device_id, op, payload, status) VALUES (?,?,?,?,?,'pending')",
     )
@@ -51,12 +48,10 @@ pub async fn watch_submit_command(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     .await;
     match result {
         Ok(_) => ctx.ok("已提交", json!({ "request_id": request_id, "op": op })),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
-/// 手机端轮询本账号未消费的手表命令，取出后标记 consumed。
-/// 返回最多 20 条，手机端按序执行。
 pub async fn watch_poll_command(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
@@ -103,7 +98,6 @@ pub async fn watch_poll_command(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     ctx.ok("ok", json!({ "commands": commands }))
 }
 
-/// 手机端心跳 + 上报当前播放信息（presence），手表端据此判断手机在线并展示曲目信息。
 pub async fn watch_phone_ping(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
@@ -145,7 +139,6 @@ pub async fn watch_phone_ping(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     .bind(is_favorite)
     .execute(pool)
     .await;
-    // 顺带清理该账号过期的手机 presence（> 15 分钟未心跳视为离线）
     let _ = sqlx::query(
         "DELETE FROM device_presence WHERE ciyuanxi_id = ? AND device_type = 'mobile' AND updated_at < DATE_SUB(NOW(), INTERVAL 15 MINUTE)",
     )
@@ -155,7 +148,6 @@ pub async fn watch_phone_ping(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     ctx.ok("ok", json!({ "online": true }))
 }
 
-/// 手表端查询本账号在线手机设备及其当前播放信息。
 pub async fn watch_phone_query(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();

@@ -4,7 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use crate::audit_policy::{self, AuditDecision};
-use crate::handlers::helpers::{parse_body, str_of, validate_ciyuanxi_id, validate_nickname};
+use crate::handlers::helpers::{extract_id, parse_body, str_of, validate_ciyuanxi_id, validate_nickname};
 use crate::response::ReqCtx;
 
 const SETTINGS_FIELDS: [&str; 8] = [
@@ -17,14 +17,6 @@ const SETTINGS_FIELDS: [&str; 8] = [
     "search_board_enabled",
     "page_animation_enabled",
 ];
-
-fn extract_id(data: &Value) -> String {
-    let ciyuanxi_id = str_of(data, "ciyuanxi_id");
-    if !ciyuanxi_id.is_empty() {
-        return ciyuanxi_id;
-    }
-    str_of(data, "user_id")
-}
 
 pub async fn get_user_info(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
@@ -139,7 +131,7 @@ pub async fn update_user_settings(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     let result = sqlx::query(&sql).bind(&ciyuanxi_id).execute(pool).await;
     match result {
         Ok(_) => ctx.ok_empty("ok"),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
@@ -249,7 +241,6 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         if exists {
             return ctx.err(400, "昵称已被使用");
         }
-        // 检查昵称是否与管理员用户名冲突（大小写不敏感）
         {
             let admin_conflict = sqlx::query("SELECT id FROM admin_users WHERE LOWER(username) = LOWER(?) LIMIT 1")
                 .bind(&nickname)
@@ -320,7 +311,7 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 .execute(pool)
                 .await;
             if let Err(e) = result {
-                return ctx.err(500, &format!("服务器错误: {}", e));
+                { tracing::error!("服务器错误: {e}"); return ctx.err(500, "服务器错误"); }
             }
             crate::admin::email::notify_external_emails_for_module(
                 pool,
@@ -391,7 +382,7 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 .execute(pool)
                 .await;
             if let Err(e) = result {
-                return ctx.err(500, &format!("服务器错误: {}", e));
+                { tracing::error!("服务器错误: {e}"); return ctx.err(500, "服务器错误"); }
             }
             crate::admin::email::notify_external_emails_for_module(
                 pool,
@@ -422,11 +413,6 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         (false, true) => ctx.ok("头像已上传，等待管理员审核", json!({ "status": "pending" })),
         (false, false) => ctx.err(400, "没有需要更新的字段"),
     }
-}
-
-#[allow(dead_code)]
-fn sql_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
 pub async fn check_username(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
@@ -485,13 +471,10 @@ pub async fn change_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         .bind(uid)
         .execute(pool)
         .await;
-    // 改密后撤销该账号全部已签发 token，其他设备需重新登录
     crate::handlers::token::revoke_user(pool, &ciyuanxi_id).await;
     ctx.ok_empty("密码修改成功")
 }
 
-/// 修改弦予号（每月限一次 + 唯一性校验）
-/// 参考微信号设计：弦予号是用户唯一登录标识，可修改但每月仅限一次。
 pub async fn update_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let old_ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
@@ -520,13 +503,11 @@ pub async fn update_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
         return ctx.err(404, "用户不存在");
     };
 
-    // 校验密码
     let stored: String = user.get("password");
     if !bcrypt::verify(&password, &stored).unwrap_or(false) {
         return ctx.err(400, "密码错误");
     }
 
-    // 每月限一次
     if let Ok(Some(last)) = user.try_get::<Option<chrono::NaiveDateTime>, _>("ciyuanxi_id_updated_at") {
         let now = chrono::Utc::now().naive_utc();
         let diff_days = (now - last).num_days();
@@ -536,7 +517,6 @@ pub async fn update_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
         }
     }
 
-    // 唯一性校验（app_users + pretty_ids）
     let dup_user = sqlx::query("SELECT id FROM app_users WHERE ciyuanxi_id = ? AND ciyuanxi_id != ? LIMIT 1")
         .bind(&new_ciyuanxi_id)
         .bind(&old_ciyuanxi_id)
@@ -562,13 +542,11 @@ pub async fn update_ciyuanxi_id(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
         .bind(uid)
         .execute(pool)
         .await;
-    // 弦予号是 token 属主标识，变更后旧号下全部 token 失效，客户端需重新登录
     crate::handlers::token::revoke_user(pool, &old_ciyuanxi_id).await;
 
     ctx.ok("弦予号修改成功", json!({ "ciyuanxi_id": new_ciyuanxi_id }))
 }
 
-/// 绑定邮箱（通过 type='bind' 的邮箱验证码）
 pub async fn bind_email(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = extract_id(&data);
@@ -744,24 +722,12 @@ pub async fn report_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     }
 
     // ===== 增量上报协议（stats_mode = "delta"）=====
-    // 各端只上报自上次成功上报后的增量，服务端做合计，成为多端
-    // 累计/今日/本周时长的唯一真源。
-    // 旧版客户端的全量累计 + GREATEST 合并路径已下线（2026-09-16）：
-    // 全量累计值在合计语义下会污染云端数据，直接拒绝并要求升级。
     if data.get("stats_mode").and_then(|v| v.as_str()) == Some("delta") {
         return report_listen_stats_delta(&data, &ciyuanxi_id, ctx, pool).await;
     }
     ctx.err(426, "客户端版本过旧，听歌统计上报协议已升级，请更新到最新版本")
 }
 
-/// 增量听歌统计上报（stats_mode = "delta"）
-///
-/// 请求字段（均为秒，允许数字或字符串）：
-/// - delta_duration:       自上次成功上报后的累计增量
-/// - delta_daily_duration: 当日增量（跨天由客户端归零基线）
-/// - delta_songs:          新增「计入播放次数」的歌曲数（可选）
-/// 响应字段：server_total_duration / server_daily_duration / server_weekly_duration，
-/// 客户端显示统一以服务端值为准（多端一致）。
 async fn report_listen_stats_delta(
     data: &serde_json::Value,
     ciyuanxi_id: &str,
@@ -784,7 +750,6 @@ async fn report_listen_stats_delta(
         .unwrap_or(0)
         .max(0);
 
-    // 检查重置信号：增量语义下直接清零并要求客户端清本地基线重新累计
     let reset_row = sqlx::query(
         "SELECT listen_stats_reset_at FROM app_users WHERE ciyuanxi_id = ?",
     )
@@ -817,7 +782,6 @@ async fn report_listen_stats_delta(
     }
 
     if delta_total <= 0 && delta_daily <= 0 && delta_songs <= 0 {
-        // 零增量也回传服务端现值，方便客户端对齐显示
         return read_listen_stats_snapshot(ciyuanxi_id, ctx, pool).await;
     }
 
@@ -833,7 +797,6 @@ async fn report_listen_stats_delta(
     .execute(pool)
     .await;
 
-    // 当日统计按增量累加（日榜/周榜数据源）
     let _ = sqlx::query(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
          VALUES (?, DATE(NOW() + INTERVAL 8 HOUR), ?, ?) \
@@ -852,11 +815,10 @@ async fn report_listen_stats_delta(
             read_listen_stats_snapshot(ciyuanxi_id, ctx, pool).await
         }
         Ok(_) => ctx.err(404, "用户不存在"),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
-/// 读取服务端累计/当日/本周听歌统计快照（增量模式的统一回传格式）
 async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     use serde_json::json;
     let total: i64 = sqlx::query_scalar(
@@ -896,7 +858,6 @@ async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySql
     )
 }
 
-/// get_listen_stats 查询账号累计听歌时长（秒）
 pub async fn get_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = extract_id(&data);
@@ -922,7 +883,7 @@ pub async fn get_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
             )
         }
         Ok(None) => ctx.err(404, "用户不存在"),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
@@ -937,7 +898,7 @@ pub async fn deduct_master_quota(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
         .await;
     match res {
         Ok(_) => ctx.ok_empty("ok"),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 

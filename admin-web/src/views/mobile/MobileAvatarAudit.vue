@@ -261,7 +261,6 @@ onUnmounted(() => stopPolling())
 .stat-chip.approved .stat-num { color: #16a34a; }
 .stat-chip.rejected .stat-num { color: #dc2626; }
 
-/* 记录卡片 */
 .audit-item { display: flex; flex-direction: column; gap: 6px; }
 .audit-type-badge {
   flex-shrink: 0;

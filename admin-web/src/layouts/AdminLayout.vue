@@ -190,17 +190,13 @@ const isDebugMode = import.meta.env.DEV
 
 const pageTitle = computed(() => (route.meta.title as string) || '仪表盘')
 const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
-/** 低级别账号访问涉密页面时，用「涉密资料」占位内容替换真实数据区。
- * 分级：三级访客拦截全部涉密页；二级管理仅放行「审核设置」，其余涉密页（数据库/配置/账号/外部通知/后台日志等）拦截。 */
 const sensitiveBlocked = computed(() => {
   if (route.meta.sensitive !== true) return false
   if (auth.isGuest) return true
   if (auth.user?.role === 'admin2') return !route.path.endsWith('/turnstile-config')
-  // admin（一级管理）与超管正常访问
   return false
 })
 
-/** 铃铛消息通知列表（与仪表盘「消息通知」一致） */
 const noticeItems = computed(() => [
   { label: '新壁纸审核', desc: '用户上传壁纸待审核', count: notify.totals.wallpaper || 0, to: '/wallpapers', className: 'wallpaper' },
   { label: '新头像审核', desc: '用户头像变更待审核', count: notify.totals.avatar || 0, to: '/avatar-audit', className: 'avatar' },
@@ -263,7 +259,6 @@ async function handleLogout() {
   router.push('/login')
 }
 
-// SVG 图标
 const icons = {
   dashboard: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
   users: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>',

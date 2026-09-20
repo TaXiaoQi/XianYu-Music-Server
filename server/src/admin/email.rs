@@ -6,7 +6,6 @@ use sqlx::Row;
 use super::{err, is_valid_email, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{bool_of, int_of, parse_body, str_of};
 
-/// 通知板块白名单（用于动态列名与全局设置，防止注入）
 pub const NOTIFY_MODULES: [&str; 4] = ["wallpaper", "avatar", "nickname", "feedback"];
 
 async fn ensure_email_tables(pool: &MySqlPool) {
@@ -22,7 +21,6 @@ async fn ensure_email_tables(pool: &MySqlPool) {
     }
 }
 
-/// 读取某板块的全局通知开关（server_settings），默认开启
 pub async fn notify_module_enabled(pool: &MySqlPool, module: &str) -> bool {
     let key = format!("notify_module_{}", module);
     sqlx::query_scalar::<_, String>("SELECT setting_value FROM server_settings WHERE setting_key = ?")
@@ -35,10 +33,6 @@ pub async fn notify_module_enabled(pool: &MySqlPool, module: &str) -> bool {
         .unwrap_or(true)
 }
 
-/// 向开启该板块通知的邮箱发送邮件，返回成功发送的邮箱列表
-/// 使用 HTML 卡片渲染（头像/壁纸可附带图片，带「前往审核」按钮跳转后台登录）。
-/// `image_url` 为空时不展示图片；`base_url` 为空时回退 public_base_url。
-#[allow(dead_code)]
 pub async fn notify_external_emails_for_module(
     pool: &MySqlPool,
     config: &crate::config::Config,
@@ -59,7 +53,6 @@ pub async fn notify_external_emails_for_module(
     } else {
         "https://api.xianyumusic.cn".to_string()
     };
-    // 触发统一事件广播（Webhook + WS订阅 + SSE订阅），内部自行检查各通道开关与板块配置
     super::commtool::broadcast_event(pool, module, subject, body, image_url, &login_base).await;
     if !notify_module_enabled(pool, module).await {
         return Vec::new();
@@ -91,7 +84,6 @@ pub async fn notify_external_emails_for_module(
     sent
 }
 
-/// HTML 转义，防止用户内容破坏邮件卡片布局
 fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -100,9 +92,6 @@ fn html_escape(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-/// 构建审核通知 HTML 卡片邮件
-/// `title` 为邮件主题（也会作为卡片头部标题），`body` 为正文描述，
-/// `image_url` 为可选审核图片（完整 URL 或 data URI），`login_url_base` 用于拼接「前往审核」链接。
 pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_url_base: &str) -> String {
     let login_url = if login_url_base.trim().is_empty() {
         "https://api.xianyumusic.cn".to_string()
@@ -154,8 +143,6 @@ pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_u
     )
 }
 
-/// 构建验证码 HTML 卡片邮件
-/// `type_label` 为操作类型（注册/登录/找回密码/注销账号），`code` 为验证码。
 pub fn build_verify_code_email_html(type_label: &str, code: &str) -> String {
     let esc_label = html_escape(type_label);
     let esc_code = html_escape(code);
@@ -189,7 +176,6 @@ pub fn build_verify_code_email_html(type_label: &str, code: &str) -> String {
     )
 }
 
-/// 通知邮箱列表
 pub async fn list_notification_emails(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     ensure_email_tables(pool).await;
@@ -220,7 +206,6 @@ fn row_to_email(r: &sqlx::mysql::MySqlRow) -> Value {
     })
 }
 
-/// 新增通知邮箱
 pub async fn add_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
@@ -260,7 +245,6 @@ pub async fn add_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     }
 }
 
-/// 更新通知邮箱的备注与板块开关
 pub async fn update_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -291,7 +275,6 @@ pub async fn update_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlP
     }
 }
 
-/// 快捷导入管理员邮箱
 pub async fn import_admin_emails(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     ensure_email_tables(pool).await;
@@ -329,7 +312,6 @@ pub async fn import_admin_emails(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     ok(&format!("成功导入 {} 个管理员邮箱{}", imported.len(), if skipped.is_empty() { String::new() } else { format!("，{} 个已存在跳过", skipped.len()) }), json!({ "imported": imported, "skipped": skipped }))
 }
 
-/// 获取全局通知板块设置
 pub async fn get_notification_modules(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let mut modules = json!({});
     for m in NOTIFY_MODULES.iter() {
@@ -338,7 +320,6 @@ pub async fn get_notification_modules(_body: &str, _ctx: &AdminCtx, pool: &MySql
     ok("", modules)
 }
 
-/// 保存全局通知板块设置
 pub async fn update_notification_modules(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let mut changed: Vec<String> = Vec::new();
@@ -357,7 +338,6 @@ pub async fn update_notification_modules(body: &str, ctx: &AdminCtx, pool: &MySq
     ok("已保存", Value::Null)
 }
 
-/// 删除通知邮箱
 pub async fn delete_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -381,7 +361,6 @@ pub async fn delete_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlP
     }
 }
 
-/// 启用/禁用通知邮箱
 pub async fn toggle_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -401,14 +380,12 @@ pub async fn toggle_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlP
     }
 }
 
-/// 发送测试邮件（此处记录日志，实际发送依赖邮箱接口配置）
 pub async fn test_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
     if email.is_empty() || !is_valid_email(&email) {
         return err(400, "邮箱格式不正确");
     }
-    // 尚无真实 SMTP 对接，模拟发送成功并记录
     let _ = sqlx::query("INSERT INTO email_send_log (email, subject, interface_id, template_id, status, error_msg, ip) VALUES (?,?,0,0,1,'',?)")
         .bind(&email)
         .bind("【弦予后台】通知邮箱测试")
@@ -419,7 +396,6 @@ pub async fn test_notification_email(body: &str, ctx: &AdminCtx, pool: &MySqlPoo
     ok("测试邮件已发送，请查收", Value::Null)
 }
 
-/// 邮箱测试用户列表（分页）
 pub async fn email_users_list(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let page = int_of(&data, "page");
@@ -466,7 +442,6 @@ pub async fn email_users_list(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     }
 }
 
-/// 切换邮箱测试用户状态
 pub async fn email_users_toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -483,7 +458,6 @@ pub async fn email_users_toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     }
 }
 
-/// 删除邮箱测试用户（级联清理）
 pub async fn email_users_delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -530,7 +504,6 @@ pub async fn email_users_delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     ok(&format!("删除成功{}", if app_user_deleted { "（已同步删除主用户及歌单数据）" } else { "" }), Value::Null)
 }
 
-/// 邮箱测试用户日志
 pub async fn email_users_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -549,7 +522,6 @@ pub async fn email_users_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     }
 }
 
-/// 邮箱测试用户统计
 pub async fn email_users_stats(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_test_users").fetch_one(pool).await.unwrap_or(0);
@@ -565,7 +537,6 @@ pub async fn email_users_stats(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
 //  邮箱 API 配置管理
 // ============================================================
 
-/// 写入或更新 server_settings 值（不存在则 INSERT）
 async fn upsert_setting(pool: &MySqlPool, key: &str, value: &str) {
     let _ = sqlx::query(
         "INSERT INTO server_settings (setting_key, setting_value, description) VALUES (?, ?, '') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
@@ -653,7 +624,6 @@ fn parse_smtp_accounts_from_body(
     accounts
 }
 
-/// 获取邮箱机配置（密码字段脱敏）
 pub async fn get_email_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let cfg = crate::handlers::email_auth::load_email_config(pool, &ctx.config).await;
     let has_password = !cfg.password.is_empty();
@@ -679,7 +649,6 @@ pub async fn get_email_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     }))
 }
 
-/// 从请求体解析布尔开关（支持 true/false/1/0）
 fn parse_bool_setting(data: &serde_json::Value, key: &str) -> Option<bool> {
     match data.get(key) {
         Some(serde_json::Value::Bool(b)) => Some(*b),
@@ -689,7 +658,6 @@ fn parse_bool_setting(data: &serde_json::Value, key: &str) -> Option<bool> {
     }
 }
 
-/// 保存邮箱机配置（密码为空时保留原值）
 pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
 
@@ -699,7 +667,6 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
         return err(400, "邮箱机发送方式不正确");
     }
 
-    // 通道开关
     let channel_general = parse_bool_setting(&data, "email_channel_general").unwrap_or(true);
     let channel_api = parse_bool_setting(&data, "email_channel_api").unwrap_or(false);
     let channel_pool = parse_bool_setting(&data, "email_channel_pool").unwrap_or(true);
@@ -729,11 +696,9 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     upsert_setting(pool, "smtp_username", &smtp_username).await;
     upsert_setting(pool, "smtp_accounts", &smtp_accounts_json).await;
 
-    // 通用密码为空时保留原值
     if !password.is_empty() && password != "********" {
         upsert_setting(pool, "email_password", &password).await;
     }
-    // SMTP 密码为空时保留原值
     if !smtp_password.is_empty() && smtp_password != "********" {
         upsert_setting(pool, "smtp_password", &smtp_password).await;
     }
@@ -747,7 +712,6 @@ pub async fn update_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     ok("邮箱机配置已保存", Value::Null)
 }
 
-/// 发送测试邮件（使用当前配置）
 pub async fn test_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let recipient = str_of(&data, "email").trim().to_string();
@@ -774,7 +738,7 @@ pub async fn test_email_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
         }
         Err(e) => {
             eprintln!("[admin] test_email_config 发送失败: {}", e);
-            err(500, &format!("邮件发送失败: {}", e))
+            { tracing::error!("邮件发送失败: {e}"); err(500, "邮件发送失败") }
         }
     }
 }

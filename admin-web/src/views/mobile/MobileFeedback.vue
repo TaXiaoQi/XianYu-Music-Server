@@ -61,7 +61,6 @@
       </div>
     </section>
 
-    <!-- 工具条：类型筛选 + 排序 + 批量 -->
     <section class="toolbar">
       <div class="toolbar-group">
         <button class="tool-btn" :class="{ active: type === '' }" @click="type = ''">全部类型</button>
@@ -533,7 +532,6 @@ import { fmtTime } from '@/utils/time'
 import { formatOsVersion } from '@/utils/osVersion'
 import './MobilePage.css'
 
-// 当前登录管理员用户名（用于判断反馈是否由本人认领）
 const currentAdminName = getAdminUser()?.username || ''
 function isMineFeedback(f: any): boolean {
   return !!f.assignee && f.assignee === currentAdminName
@@ -579,7 +577,6 @@ const limitInput = ref(20)
 const limitSaving = ref(false)
 const limitVisible = ref(false)
 const searchKeyword = ref('')
-/** 手动搜索：仅点击"搜索"或回车时才应用，避免输入过程中列表实时刷新 */
 const appliedKeyword = ref('')
 
 function applySearch() {
@@ -676,7 +673,6 @@ function deviceIcon(f: any): 'desktop' | 'mobile' | 'watch' {
   if (f.platform === 'watch') return 'watch'
   return 'desktop'
 }
-/** 拼装设备信息展示文本：厂商 · 型号 · 系统版本（架构/计算机名） */
 function deviceInfoText(f: any): string {
   const brand = f.device_brand || ''
   const model = f.device_model || ''
@@ -787,7 +783,6 @@ async function pollFeedbackAlerts() {
   if (alertProcessing) return
   alertProcessing = true
   try {
-    // 1. 处理待确认的协同请求（我是认领人）
     const reqRes = await adminApi<any>('poll_collab_requests')
     if (reqRes.code === 200 && reqRes.data?.list?.length) {
       for (const req of reqRes.data.list) {
@@ -799,7 +794,6 @@ async function pollFeedbackAlerts() {
         await respondCollabRequest(req, approve)
       }
     }
-    // 2. 展示未读通知（转认告知 / 协同结果 / 协同完成）
     const notifRes = await adminApi<any>('poll_admin_notifications')
     if (notifRes.code === 200 && notifRes.data?.list?.length) {
       const list = notifRes.data.list
@@ -810,7 +804,6 @@ async function pollFeedbackAlerts() {
       await loadList()
     }
   } catch {
-    // 轮询失败静默处理
   } finally {
     alertProcessing = false
   }
@@ -926,7 +919,6 @@ function isBeta(f: any): boolean {
   return f?.category !== 'appeal' && f?.feedback_type === 'beta'
 }
 
-// 同意弹窗
 const betaApproveVisible = ref(false)
 const betaApproveTarget = ref<any>(null)
 const betaApproveNote = ref('')
@@ -1015,7 +1007,6 @@ const createSaving = ref(false)
 const createNotify = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 
-// 平台版本标签文案
 const platformMap: Record<string, string> = {
   desktop: '桌面版',
   mobile: '移动版',
@@ -1105,7 +1096,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 </script>
 
 <style scoped>
-/* 页面头部 */
 .mobile-page-head {
   display: flex;
   align-items: flex-start;
@@ -1132,7 +1122,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .mobile-head-desc { margin-top: 4px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .mobile-head-actions { display: flex; gap: 8px; flex: 0 0 auto; }
 
-/* 限制面板 */
 .limit-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .limit-info { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1; }
 .limit-icon {
@@ -1170,7 +1159,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   margin: 0 0 12px 0;
 }
 
-/* 统计卡片 */
 .stats-row {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -1203,7 +1191,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .stat-num { font-size: 16px; font-weight: 850; line-height: 1; }
 .stat-label { font-size: 10px; color: var(--text-muted); }
 
-/* 工具条 */
 .toolbar { display: flex; flex-direction: column; gap: 8px; }
 .toolbar-group { display: flex; gap: 6px; justify-content: center; }
 .tool-btn {
@@ -1259,7 +1246,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   display: flex;
   align-items: center;
 }
-/* 批量栏悬浮于工具栏行内，不参与布局，避免切换/关闭时挤压页面 */
 .batch-bar {
   position: absolute;
   right: 0;
@@ -1280,8 +1266,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   height: 30px;
   line-height: 1;
 }
-/* 批量菜单切换：仅淡入淡出，不做 transform 动画。
-   避免切换时合成层创建/销毁，触发底部 fixed tabbar 的 backdrop-filter 重栅格化闪烁 */
 .batch-slide-enter-active,
 .batch-slide-leave-active {
   transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1);
@@ -1295,10 +1279,8 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .batch-select-all { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-light); flex-shrink: 0; padding: 0 4px; }
 .batch-count { font-size: 11px; color: var(--text-muted); flex-shrink: 0; }
 
-/* 反馈卡片 */
 .mfb-item { position: relative; padding: 14px; }
 .mfb-item.batch-selected { border-color: #EC4141; }
-/* 批量勾选框：参考桌面版，绝对定位悬浮卡片右上角，不参与布局，避免挤压底部悬浮底栏 */
 .card-checkbox {
   position: absolute;
   top: 12px;
@@ -1391,7 +1373,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .badge-resolved { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
 .badge-rejected { background: rgba(236, 65, 65, 0.10); color: #EC4141; }
 
-/* 主体 */
 .mfb-main { display: flex; gap: 10px; align-items: flex-start; margin-top: 10px; }
 .mfb-left { flex: 1; min-width: 0; }
 .mfb-content {
@@ -1437,7 +1418,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .resolve-label { font-weight: 800; }
 .resolve-text span { word-break: break-word; }
 
-/* 图片堆叠 */
 .img-stack {
   position: relative;
   width: 76px; height: 76px;
@@ -1460,7 +1440,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   z-index: 20;
 }
 
-/* 卡片底部 */
 .mfb-foot { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
 .foot-meta { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
 .foot-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
@@ -1481,7 +1460,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .act-resolve { color: #16a34a; border-color: rgba(34, 197, 94, 0.3); }
 .act-reject { color: #EC4141; border-color: rgba(236, 65, 65, 0.3); }
 
-/* 弹窗通用补充 */
 .resolve-target-info {
   display: flex; flex-direction: column; gap: 2px;
   margin: 10px 20px 0; padding: 8px 12px;
@@ -1523,7 +1501,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .recycle-remaining.urgent { color: #EC4141; font-weight: 800; }
 .type-badge.small { font-size: 9px; padding: 1px 6px; }
 
-/* 新建弹窗 */
 .mfb-create-body { padding: 10px 20px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .mfb-create-body .mobile-dialog-input {
   width: 100%;
@@ -1581,7 +1558,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   display: flex; align-items: center; justify-content: center; cursor: pointer;
 }
 
-/* 完成弹窗 */
 .mfb-resolve-images {
   display: flex; flex-direction: column; gap: 8px;
   margin: 0 20px 14px;
@@ -1589,7 +1565,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .mfb-resolve-opt { font-size: 12px; font-weight: 700; color: var(--text-muted); }
 .mfb-resolve-dropzone { padding: 14px; }
 
-/* 统计弹窗 */
 .mfb-stats-body { padding: 10px 20px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
 .mfb-stats-total { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 14px; border-radius: 14px; background: var(--control-bg); }
 .mfb-stats-total strong { font-size: 30px; line-height: 1; }
@@ -1616,10 +1591,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .c-rejected { color: #dc2626; }
 .c-pending { color: #f59e0b; }
 
-/* 图片查看器 */
-/* z-index 11000：必须高于 .mobile-dialog-overlay（10000）——查看器常从留言详情弹窗内
-   打开，而两者复用同一 overlay 类且查看器在模板中位于详情弹窗之前，同层级时 DOM 靠后
-   的详情弹窗会盖住查看器，图片无法查看 */
 .mfb-viewer { z-index: 11000; background: rgba(0, 0, 0, 0.9) !important; padding: 0; }
 .mfb-viewer-img { max-width: 92vw; max-height: 88vh; object-fit: contain; border-radius: 8px; }
 .mfb-viewer-close {
@@ -1644,7 +1615,6 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
   background: rgba(255, 255, 255, 0.16); color: #fff; font-size: 13px; font-weight: 800;
 }
 
-/* 留言详情弹窗 */
 .fb-content-click { cursor: pointer; }
 .fb-content-click:hover { opacity: 0.85; }
 .device-info-row { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-muted); }

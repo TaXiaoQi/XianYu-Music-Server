@@ -1,6 +1,5 @@
 <template>
   <div class="users-wrap">
-    <!-- 顶部工具栏：搜索 + 操作合并为一行，批量管理在最右侧弹出 -->
     <Transition name="fade-down" appear>
     <div class="toolbar-row">
       <div class="search-box">
@@ -40,7 +39,6 @@
     </div>
     </Transition>
 
-    <!-- 统计行：用户总数 / 正常 / 被封禁（同设备管理页三卡片） -->
     <Transition name="fade-up" appear>
       <div class="stats-row">
         <div class="stat-chip">
@@ -513,10 +511,8 @@ const total = ref(0)
 const totalPages = ref(0)
 const batchLoading = ref(false)
 
-// 顶部统计卡片（总数 / 正常 / 封禁）
 const stats = ref({ total: 0, normal: 0, banned: 0 })
 
-// 分页页码计算
 const pageNumbers = computed(() => {
   const max = 7
   const pages: number[] = []
@@ -552,7 +548,6 @@ async function loadUsers() {
   loadUserStats()
 }
 
-// 刷新顶部统计卡片（返回全量统计，与搜索关键字无关）
 async function loadUserStats() {
   const res = await adminApi<{ total: number; normal: number; banned: number }>('get_user_stats')
   if (res.code === 200 && res.data) {
@@ -632,7 +627,7 @@ async function toggleStatus(u: User) {
   let reason = ''
   if (newStatus === 0) {
     const input = await webPrompt(`请输入封禁用户 "${u.nickname || u.username}" 的原因：`, '', { title: '封禁用户', placeholder: '封禁原因（必填）' })
-    if (input === null) return // 用户取消，静默退出
+    if (input === null) return
     reason = input.trim()
     if (!reason) {
       showToast('封禁原因不能为空')
@@ -651,7 +646,7 @@ async function toggleStatus(u: User) {
 
 async function changeCiyuanxi(u: User) {
   const input = await webPrompt(`请输入 "${u.nickname || u.username}" 的新弦予号：`, u.ciyuanxi_id || '', { title: '修改弦予号', placeholder: '6-20 位，仅含字母或数字' })
-  if (input === null) return // 用户取消，静默退出
+  if (input === null) return
   const newId = input.trim()
   if (!newId) {
     showToast('请输入弦予号', 'error')
@@ -734,7 +729,7 @@ async function batchToggleSelected(status: number) {
   let reason = ''
   if (!status) {
     const input = await webPrompt(`请输入对选中的 ${ids.length} 个用户执行封禁的原因：`, '', { title: '批量禁用', placeholder: '封禁原因（必填）' })
-    if (input === null) return // 用户取消，静默退出
+    if (input === null) return
     reason = input.trim()
     if (!reason) {
       showToast('封禁原因不能为空')
@@ -774,7 +769,7 @@ async function batchBanDevice() {
     return
   }
   const input = await webPrompt(`将封禁选中的 ${targets.length} 个用户最近登录的设备，请输入封禁原因：`, '', { title: '批量封禁设备ID', placeholder: '封禁原因（必填）' })
-  if (input === null) return // 用户取消，静默退出
+  if (input === null) return
   const reason = input.trim()
   if (!reason) {
     showToast('封禁原因不能为空')
@@ -1054,7 +1049,6 @@ const deviceLoading = ref(false)
 const deviceData = ref<any>({})
 const userDevices = ref<any[]>([])
 
-/** 设备平台图标：desktop/mobile/watch（服务端已归一化，空值按系统版本兜底） */
 function userDeviceIcon(dv: any): 'desktop' | 'mobile' | 'watch' {
   if (dv.platform === 'mobile' || dv.platform === 'watch' || dv.platform === 'desktop') return dv.platform
   if (/windows/i.test(dv.os_version || '')) return 'desktop'
@@ -1095,7 +1089,7 @@ async function openDeviceModal(u: User) {
 
 async function banUserDevice(deviceId: string, username: string) {
   const reason = await webPrompt(`请输入封禁用户 "${username}" 的设备 (${deviceId.substring(0, 16)}...) 的原因：`, '', { title: '封禁设备', placeholder: '封禁原因（必填）' })
-  if (reason === null) return // 用户取消，静默退出
+  if (reason === null) return
   const reasonText = reason.trim()
   if (!reasonText) {
     showToast('封禁原因不能为空')
@@ -1186,7 +1180,6 @@ onMounted(() => {
   margin: 0 auto;
 }
 
-/* 顶部工具栏：搜索 + 操作合并为一行 */
 .toolbar-row {
   display: flex;
   align-items: center;
@@ -1214,7 +1207,6 @@ onMounted(() => {
 }
 .search-box input:focus { border-color: var(--accent); }
 
-/* 统计卡片（同设备管理页三卡片样式） */
 .stats-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1251,7 +1243,6 @@ onMounted(() => {
   .stat-num { font-size: 18px; }
 }
 
-/* 右侧操作区 */
 .toolbar-actions {
   display: flex;
   align-items: center;
@@ -1264,7 +1255,6 @@ onMounted(() => {
   gap: 10px;
   flex-wrap: wrap;
 }
-/* 批量菜单向左弹出/收回动效（参考反馈页，固定高度避免挤压主表） */
 .batch-slot {
   display: flex;
   align-items: center;
@@ -1400,7 +1390,6 @@ onMounted(() => {
 }
 .btn-warning:hover { background: #e67e22; border-color: #e67e22; }
 
-/* 设备ID单元格 */
 .device-id-cell {
   font-size: 11px;
   font-family: monospace;
@@ -1410,7 +1399,6 @@ onMounted(() => {
 }
 .device-id-cell:hover { opacity: 0.7; }
 
-/* 表格（同设备管理页：列固定横向，宽度不足时横向滚动，表头不换行竖排） */
 .table-wrapper {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -1424,7 +1412,6 @@ thead th {
   white-space: nowrap;
 }
 
-/* 头像 */
 .user-avatar {
   width: 40px;
   height: 40px;
@@ -1446,14 +1433,12 @@ thead th {
   font-size: 14px;
 }
 
-/* 行操作按钮 */
 .row-actions {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
 }
 
-/* 设备封禁表单 */
 .ban-form {
   display: flex;
   gap: 10px;
@@ -1472,7 +1457,6 @@ thead th {
   justify-content: center;
 }
 
-/* 分页 */
 .pagination {
   display: flex;
   justify-content: center;
@@ -1508,7 +1492,6 @@ thead th {
   margin-left: 8px;
 }
 
-/* 弹窗 */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1582,7 +1565,6 @@ thead th {
   margin-top: 24px;
 }
 
-/* 弹窗顶部标题栏 + 关闭按钮 */
 .modal-head-bar {
   display: flex;
   align-items: center;
@@ -1615,7 +1597,6 @@ thead th {
   color: #e74c3c;
 }
 
-/* 弹窗淡进淡出 */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-active .modal, .modal-leave-active .modal {
@@ -1632,14 +1613,12 @@ thead th {
 .fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-up-enter-from { opacity: 0; transform: translateY(12px); }
 
-/* 表格行逐条加载 */
 tbody tr.table-row { animation: rowIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes rowIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 用户设备信息弹窗：全部设备列表 */
 .user-device-list {
   display: flex;
   flex-direction: column;

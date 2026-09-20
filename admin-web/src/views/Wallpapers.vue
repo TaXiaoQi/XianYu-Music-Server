@@ -905,7 +905,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   color: #ef4444;
 }
 
-/* 平台切换 tab */
 .platform-tabs {
   display: inline-flex;
   gap: 4px;
@@ -1025,7 +1024,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* 缩略图 */
 .thumb-wrap {
   position: relative;
   width: 100%;
@@ -1049,7 +1047,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   color: #d1d5db;
 }
 
-/* hover 遮罩 */
 .thumb-overlay {
   position: absolute;
   inset: 0;
@@ -1077,7 +1074,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 .overlay-btn:hover { background: var(--card-solid); }
 
-/* 状态标签 */
 .status-tag {
   position: absolute;
   top: 10px;
@@ -1093,7 +1089,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 .tag-pending { background: rgba(245, 158, 11, 0.9); color: #fff; }
 .tag-rejected { background: rgba(239, 68, 68, 0.9); color: #fff; }
 
-/* 信息区 */
 .card-info {
   padding: 14px 16px;
   display: flex;
@@ -1173,7 +1168,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 .review-pending { color: #f59e0b; font-weight: 500; }
 
-/* 操作按钮 */
 .card-actions {
   display: flex;
   gap: 6px;
@@ -1276,7 +1270,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   background: var(--card-solid);
 }
 
-/* 平台选择器 */
 .platform-picker {
   display: flex;
   gap: 8px;
@@ -1312,7 +1305,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 .pick-platform-btn.active .pick-dot { background: var(--accent); }
 
-/* 上传区域 */
 .upload-zone {
   position: relative;
   border: 2px dashed var(--border);
@@ -1370,7 +1362,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 .upload-pct { font-size: 12px; color: var(--text-muted); min-width: 36px; text-align: right; }
 
-/* 弹窗底部 */
 .modal-foot {
   display: flex;
   justify-content: flex-end;

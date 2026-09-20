@@ -1,6 +1,5 @@
 <template>
   <div class="mobile-layout">
-    <!-- 固定背景层：渐变恒定铺满视口，随页面内容变长而拉伸，统一所有移动页背景(等于仪表台背景) -->
     <div class="mobile-bg" aria-hidden="true"></div>
     <header class="mobile-topbar">
       <div>
@@ -103,8 +102,6 @@ import SensitiveNotice from '@/views/SensitiveNotice.vue'
 const router = useRouter()
 const route = useRoute()
 
-/** 低级别账号访问涉密页面时，用「涉密资料」占位内容替换真实数据区（页面外壳与切换动效保留）。
- * 分级：三级访客拦截全部涉密页；二级管理仅放行「审核设置」，其余涉密页拦截。 */
 const sensitiveBlocked = computed(() => {
   if (route.meta.sensitive !== true) return false
   if (auth.isGuest) return true
@@ -112,7 +109,6 @@ const sensitiveBlocked = computed(() => {
   return false
 })
 
-// 切换路由时回到容器顶部
 watch(
   () => route.fullPath,
   () => {
@@ -126,7 +122,6 @@ const notify = useNotificationStore()
 const notifyOpen = ref(false)
 const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
 
-/** 铃铛消息通知列表（与桌面端一致） */
 const noticeItems = computed(() => [
   { label: '新壁纸审核', desc: '用户上传壁纸待审核', count: notify.totals.wallpaper || 0, to: '/m/wallpapers', className: 'wallpaper' },
   { label: '新头像审核', desc: '用户头像变更待审核', count: notify.totals.avatar || 0, to: '/m/avatar-audit', className: 'avatar' },
@@ -235,7 +230,6 @@ async function handleLogout() {
   color: #EC4141;
   background: rgba(236, 65, 65, 0.08);
 }
-/* 主题切换（参考桌面端设计） */
 .theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -264,7 +258,6 @@ async function handleLogout() {
 .theme-toggle svg {
   flex-shrink: 0;
 }
-/* 退出登录（参考桌面端设计） */
 .logout-btn {
   display: inline-flex;
   align-items: center;
@@ -293,9 +286,6 @@ async function handleLogout() {
 .mobile-main {
   padding: 14px;
   padding-bottom: calc(92px + env(safe-area-inset-bottom));
-  /* 背景由固定视口层 .mobile-bg 提供，此处不再持有拉伸背景：
-     所有移动页(含仪表台)统一可见同一恒定渐变，页面滚动/切换不会因
-     元素高度变化导致渐变重排或背景闪烁 */
   min-height: 100dvh;
   scrollbar-gutter: stable;
   color-scheme: light;
@@ -348,8 +338,6 @@ html[data-theme='dark'] .mobile-main {
   background: color-mix(in srgb, var(--card) 92%, transparent);
   box-shadow: var(--shadow-card);
   backdrop-filter: blur(22px);
-  /* 预分配稳定的 backdrop 合成层，避免页内元素（如批量菜单）增删合成层时
-     trigger tabbar 反复重栅格化，导致"抽搐/闪烁" */
   will-change: backdrop-filter;
 }
 .mobile-tabbar a {
@@ -574,7 +562,6 @@ html[data-theme='dark'] .mobile-main {
   background: var(--control-bg);
 }
 
-/* 弹窗居中缩放 + 透明度过渡（0.24s，符合移动端规范） */
 .mobile-fade-enter-active,
 .mobile-fade-leave-active {
   transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1);

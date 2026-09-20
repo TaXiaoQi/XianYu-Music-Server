@@ -6,7 +6,6 @@ use sqlx::Row;
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 use crate::response::ReqCtx;
 
-/// error 错误上报
 pub async fn error(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -33,11 +32,10 @@ pub async fn error(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
 
     match result {
         Ok(r) => ctx.json(200, "上报成功", Some(json!({ "id": r.last_insert_id() }))),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
-/// check 数据库连接检查
 pub async fn check(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let conn_ok = sqlx::query("SELECT 1").execute(pool).await.is_ok();
     let tables = [
@@ -60,7 +58,6 @@ pub async fn check(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     )
 }
 
-/// install 安装
 pub async fn install(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let conn_ok = sqlx::query("SELECT 1").execute(pool).await.is_ok();
     if !conn_ok {
@@ -69,7 +66,6 @@ pub async fn install(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     ctx.json(200, "安装完成", Some(json!([])))
 }
 
-/// open 客户端启动上报
 pub async fn app_open(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -96,13 +92,10 @@ pub async fn app_open(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
 
     match result {
         Ok(_) => ctx.ok_empty("ok"),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
-/// 写入一条音源调用记录（source_call_log）。
-/// dashboard 的音源调用分布与热搜均依赖此表。
-/// fire-and-forget：写入失败静默，不阻塞主流程。
 async fn record_source_call(
     pool: &MySqlPool,
     data: &serde_json::Value,
@@ -141,10 +134,6 @@ async fn record_source_call(
     .await;
 }
 
-/// search 搜索上报
-///
-/// 客户端 Search.vue 在完成一次音源搜索后上报（fire-and-forget）。
-/// 写入 source_call_log（action='search'），dashboard 据此统计热搜关键词。
 pub async fn search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
@@ -154,10 +143,6 @@ pub async fn search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     ctx.ok_empty("ok")
 }
 
-/// get_hot_search 大家都在搜（Top 10 热搜关键词）
-///
-/// 聚合所有用户累计的搜索数据（source_call_log action='search'），
-/// 按搜索次数倒序返回前 N 条，供客户端搜索弹窗「热搜」页展示。
 pub async fn get_hot_search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let limit = data
@@ -191,22 +176,16 @@ pub async fn get_hot_search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 .collect();
             ctx.json(200, "ok", Some(json!({ "list": list })))
         }
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
-/// report_user_behavior 播放行为上报
-///
-/// 客户端播放/切歌时会上报本次播放时长。排行榜依赖 app_users.listen_duration，
-/// 因此这里必须同步写入账号表；否则正式服务会把该 action 当作未知操作，
-/// 播放统计被客户端静默吞掉，排行榜一直没有数据。
 pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     if data.is_null() {
         return ctx.err(400, "参数错误");
     }
 
-    // 无论是否登录都记录音源调用（音源调用分布统计不依赖账号）
     let ua_action = {
         let a = str_of(&data, "action");
         if a.is_empty() { "play" } else { &a }.to_string()
@@ -215,7 +194,6 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
 
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
     if ciyuanxi_id.is_empty() {
-        // 未登录播放不参与账号排行榜，但不应打断客户端播放流程。
         return ctx.ok_empty("ok");
     }
 
@@ -224,8 +202,6 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         return ctx.ok_empty("ok");
     }
 
-    // 记录播放历史（每日推荐算法的数据源）。
-    // 仅记录有效收听（>=10s），避免快速切歌灌水；同时清理 180 天前的历史控制表体积。
     if duration >= 10 {
         let song_name = str_of(&data, "song_name");
         if !song_name.is_empty() {
@@ -252,7 +228,6 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         }
     }
 
-    // 检查是否存在待处理的听歌统计重置信号，如有则跳过本次更新（由 report_listen_stats 统一处理重置）
     let has_reset: Option<String> = sqlx::query_scalar(
         "SELECT listen_stats_reset_at FROM app_users WHERE ciyuanxi_id = ?",
     )
@@ -274,7 +249,6 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     .execute(pool)
     .await;
 
-    // 同步写入每日统计（用于日榜/周榜）；连接统一 UTC，按北京时间切日
     let _ = sqlx::query(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration) \
          VALUES (?, DATE(NOW() + INTERVAL 8 HOUR), ?) \
@@ -288,6 +262,6 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     match result {
         Ok(r) if r.rows_affected() > 0 => ctx.ok_empty("ok"),
         Ok(_) => ctx.err(404, "用户不存在"),
-        Err(e) => ctx.err(500, &format!("服务器错误: {}", e)),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }

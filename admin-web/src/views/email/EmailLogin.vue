@@ -61,7 +61,6 @@ async function handleLogin() {
   }
 }
 
-// 已登录则跳转主页
 onMounted(() => {
   if (getEmailToken()) {
     router.replace('/email/home')

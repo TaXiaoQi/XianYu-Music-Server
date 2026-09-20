@@ -23,7 +23,6 @@ async fn seed_sources(pool: &MySqlPool) {
     .await;
 }
 
-/// 获取音源开关配置
 pub async fn get_source(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     seed_sources(pool).await;
@@ -47,7 +46,6 @@ Ok(rows) => {
     }
 }
 
-/// 切换音源开关
 pub async fn toggle_source(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let source_code = str_of(&data, "source_code").trim().to_string();

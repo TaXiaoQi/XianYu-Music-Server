@@ -1,12 +1,10 @@
 <template>
   <div class="mobile-page">
     <div class="mobile-card mobile-toolbar">
-      <!-- 第一行：仅搜索 -->
       <div class="mobile-search-row">
         <input v-model="keyword" class="mobile-input" placeholder="搜索昵称 / 弦予号 / 邮箱" @keyup.enter="loadList" />
         <button class="mobile-btn primary" @click="loadList">搜索</button>
       </div>
-      <!-- 第二行：新增用户（左）+ 批量菜单（右） -->
       <div class="mobile-toolbar-row">
         <button class="mobile-btn" @click="toggleAdd">{{ openAdd ? '收起新增' : '新增用户' }}</button>
         <div class="batch-slot">
@@ -27,7 +25,6 @@
       </div>
     </div>
 
-    <!-- 统计：用户总数 / 正常 / 封禁（同设备管理页三卡片） -->
     <div class="mobile-grid" style="grid-template-columns: repeat(3, minmax(0, 1fr));">
       <div class="mobile-stat">
         <div class="stat-icon-row">
@@ -288,7 +285,6 @@ const saving = ref(false)
 const openAdd = ref(false)
 const list = ref<any[]>([])
 const addForm = ref({ ciyuanxi_id: '', nickname: '', password: '', email: '' })
-// 顶部统计卡片（总数 / 正常 / 封禁）
 const stats = ref({ total: 0, normal: 0, banned: 0 })
 
 function toggleAdd() {
@@ -317,7 +313,6 @@ function openAvatarPreview(url: string) {
   avatarPreview.value = url
 }
 
-// 批量选择模式（参考桌面端）
 const isBatchMode = ref(false)
 const selected = ref<Set<number>>(new Set())
 const selectedCount = computed(() => selected.value.size)
@@ -354,7 +349,7 @@ async function batchToggleSelected(status: number) {
   let reason = ''
   if (status !== 1) {
     const input = await mobilePrompt(`请输入对选中的 ${selected.value.size} 个用户执行禁用的原因`, '')
-    if (input === null) return // 用户取消，静默退出
+    if (input === null) return
     reason = input.trim()
     if (!reason) return showToast('封禁原因不能为空')
   }
@@ -384,7 +379,7 @@ async function batchBanDevice() {
     return
   }
   const input = await mobilePrompt(`将封禁选中的 ${targets.length} 个用户最近登录的设备，请输入封禁原因`, '')
-  if (input === null) return // 用户取消，静默退出
+  if (input === null) return
   const reason = input.trim()
   if (!reason) return showToast('封禁原因不能为空')
   if (!(await mobileConfirm(`确定封禁 ${targets.length} 个用户的设备ID吗？封禁后这些设备将无法登录。`))) return
@@ -429,7 +424,6 @@ async function loadList() {
   loading.value = false
   loadUserStats()
 }
-// 刷新顶部统计卡片（返回全量统计，与搜索关键字无关）
 async function loadUserStats() {
   const res = await adminApi<any>('get_user_stats')
   if (res.code === 200 && res.data) {
@@ -484,7 +478,7 @@ async function toggleUser(u: any) {
   let reason = ''
   if (status === 0) {
     const input = await mobilePrompt(`请输入封禁用户 ${u.nickname || u.username} 的原因`, '')
-    if (input === null) return // 用户取消，静默退出
+    if (input === null) return
     reason = input.trim()
     if (!reason) return showToast('封禁原因不能为空')
   }
@@ -601,7 +595,6 @@ async function refreshDeviceInfo(u: any) {
   deviceLoading.value = false
 }
 
-/** 设备平台图标：desktop/mobile/watch（服务端已归一化，空值按系统版本兜底） */
 function userDeviceIcon(dv: any): 'desktop' | 'mobile' | 'watch' {
   if (dv.platform === 'mobile' || dv.platform === 'watch' || dv.platform === 'desktop') return dv.platform
   if (/windows/i.test(dv.os_version || '')) return 'desktop'
@@ -664,7 +657,6 @@ async function deleteUser(u: any) {
 onMounted(loadList)
 </script>
 <style scoped>
-/* 新增用户面板展开/收起 - 平滑高度动画 */
 .user-expand-wrap.mobile-card { padding: 0; }
 .user-expand-inner {
   display: flex;
@@ -688,7 +680,6 @@ onMounted(loadList)
   opacity: 0;
 }
 
-/* 弹窗头部 */
 .mobile-dialog-head {
   display: flex;
   align-items: center;
@@ -721,7 +712,6 @@ onMounted(loadList)
   color: #EC4141;
 }
 
-/* 弹窗主体 */
 .popup-body {
   padding: 12px 0 0;
   overflow-y: auto;
@@ -803,7 +793,6 @@ onMounted(loadList)
 .badge-success { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
 .badge-error { background: rgba(236, 65, 65, 0.10); color: #EC4141; }
 
-/* 顶部工具栏：第一行搜索，第二行 新增用户(左) + 批量菜单(右) */
 .mobile-toolbar {
   display: flex;
   flex-direction: column;
@@ -825,7 +814,6 @@ onMounted(loadList)
   white-space: nowrap;
 }
 
-/* 第二行：新增用户（左）+ 批量菜单槽位（右），固定高度，批量条替换按钮时高度不变，不挤压主表 */
 .mobile-toolbar-row {
   position: relative;
   display: flex;
@@ -841,8 +829,6 @@ onMounted(loadList)
   justify-content: flex-end;
 }
 
-/* 批量条：参考桌面端用户管理样式，向右弹出，固定高度不改动布局；
-   批量操作过多时绝对定位覆盖整行（含新增用户按钮），保证批量操作优先完整显示 */
 .mobile-batch-bar {
   position: absolute;
   top: 2px;
@@ -874,7 +860,6 @@ onMounted(loadList)
   flex: none;
 }
 
-/* 批量菜单向右弹出/收回动画（参考桌面端用户管理） */
 .batch-slide-enter-active,
 .batch-slide-leave-active {
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
@@ -918,7 +903,6 @@ onMounted(loadList)
   margin-top: 0;
 }
 
-/* 头像 */
 .mobile-avatar {
   width: 48px;
   height: 48px;
@@ -1006,7 +990,6 @@ onMounted(loadList)
   opacity: 0.85;
 }
 
-/* 头像预览 */
 .mobile-avatar-preview {
   position: fixed;
   inset: 0;
@@ -1025,7 +1008,6 @@ onMounted(loadList)
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
 }
 
-/* 修改昵称弹窗表单 */
 .mobile-form {
   display: flex;
   flex-direction: column;
@@ -1070,7 +1052,6 @@ onMounted(loadList)
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* 用户设备信息弹窗：全部设备列表 */
 .user-device-list { display: flex; flex-direction: column; gap: 8px; }
 .user-device-item {
   display: flex;

@@ -1,8 +1,3 @@
-/**
- * 后台 API 客户端
- * 统一封装 fetch 请求，自动携带 JWT token
- */
-
 const ADMIN_API = '/admin/api'
 
 export interface ApiResponse<T = any> {
@@ -38,11 +33,6 @@ export function setAdminUser(user: { id: number; username: string; role: string;
   localStorage.setItem('admin_user', JSON.stringify(user))
 }
 
-/**
- * 调用后台 API
- * @param action 后台 action 名称
- * @param data 请求体数据（会被 JSON 序列化）
- */
 export async function adminApi<T = any>(action: string, data: Record<string, any> = {}): Promise<ApiResponse<T>> {
   const token = getToken()
   const headers: Record<string, string> = {
@@ -61,7 +51,6 @@ export async function adminApi<T = any>(action: string, data: Record<string, any
     })
     const json: ApiResponse<T> = await res.json()
 
-    // 401 时清除 token 并跳转登录
     if (json.code === 401) {
       clearToken()
       if (window.location.pathname !== '/login') {
@@ -75,9 +64,6 @@ export async function adminApi<T = any>(action: string, data: Record<string, any
   }
 }
 
-/**
- * Toast 提示
- */
 export function showToast(msg: string, type: 'success' | 'error' = 'error'): void {
   const t = document.createElement('div')
   t.className = `toast ${type}`

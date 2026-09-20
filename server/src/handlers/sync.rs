@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use crate::handlers::helpers::{parse_body, str_of};
 use crate::response::ReqCtx;
 
-/// data/sync/{digits}/ 目录（与 PHP fileSyncDir 一致）
 fn sync_root() -> PathBuf {
     PathBuf::from("data/sync")
 }
@@ -112,7 +111,6 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
         let _ = std::fs::remove_file(path);
     }
     let _ = std::fs::remove_dir(&chunkdir);
-    // 合并同 ID 歌单（songs 合并）
     let mut map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
     for pl in &all_playlists {
         let id = pl.get("id").map(|v| v.as_str().unwrap_or("").to_string()).unwrap_or_default();
@@ -128,12 +126,7 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
         entry["songs"] = json!(existing_arr);
     }
     let mut merged: Vec<Value> = map.into_values().collect();
-    // merge 模式（新客户端）：按 cloudId 逐条 upsert 到已有快照、保留其他设备新增、
-    // 并按 delete_cloud_ids 删除，防止整包重建把其他设备新增的歌单抹掉。
-    // 旧客户端不带 merge 时保持原有整包覆盖（向后兼容）。
     let do_merge = matches!(data.get("merge"), Some(Value::Bool(true)));
-    // 云端歌单统一使用「字符串 cloudId」作为稳定键：
-    // 上传端回传 [ {id: 本地id, cloudId: 云端id} ]，使上传端能写回本地、跨设备稳定定位。
     let mut id_map: Vec<Value> = Vec::new();
     if do_merge {
         let existing: Vec<Value> = read_snapshot(&ciyuanxi_id, "playlists.json")
@@ -155,9 +148,7 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
         let mut probe: i64 = 0;
         for mut pl in merged {
             let local_id = pl.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
-            // 同本地 id 的行视为同一歌单：合并后无需保留旧行，并继承其已有云端 id（若有）
             let mut inherited: Option<String> = None;
-            // 已有行的歌曲级删除墓碑（歌单内移除单曲），合并时保留
             let mut prev_deleted: std::collections::HashSet<String> = std::collections::HashSet::new();
             by_cloud.retain(|(k, r)| {
                 if r.get("id").and_then(|v| v.as_str()) == Some(local_id.as_str()) {
@@ -176,8 +167,6 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
                     true
                 }
             });
-            // cloudId 统一为字符串稳定键：已有则沿用；否则为本地上传歌单分配新云端 id，
-            // 并写入快照行，回传给上传端写回本地（保证同歌单再次上传可定位到同一份）。
             let mut key = pl
                 .get("cloudId")
                 .and_then(|c| c.as_str())
@@ -193,9 +182,6 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
             if let Some(k) = &key {
                 pl["cloudId"] = json!(k);
             }
-            // 歌曲级删除墓碑合并（歌单内移除单曲的全端传播）：
-            // deleted = 已有墓碑 ∪ 本次上报 − 本次实际上传的歌曲 path（重新添加自动解除删除）；
-            // songs 按删除集裁剪，避免其他端下载时已删歌曲回流；随快照存储并在下载响应带出。
             let client_deleted: std::collections::HashSet<String> = pl
                 .get("deletedSongPaths")
                 .and_then(|v| v.as_array())
@@ -268,7 +254,6 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
     });
     let file = dir.join("playlists.json");
     let ok = std::fs::write(&file, serde_json::to_string(&save).unwrap_or_default()).is_ok();
-    // 更新元信息
     let meta = json!({
         "last_sync": now_str(),
         "last_sync_timestamp": now_ts(),
@@ -277,8 +262,6 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
     });
     let _ = std::fs::write(dir.join("meta.json"), serde_json::to_string(&meta).unwrap_or_default());
     if ok {
-        // 回传 id_map：本地 id → 云端字符串 cloudId，供上传端写回本地，
-        // 保证同歌单再次上传可定位到同一份、跨设备稳定定位。
         ctx.ok("同步成功", json!({
             "playlist_count": merged.len(),
             "song_total": song_total,
@@ -307,8 +290,6 @@ pub async fn file_sync_download(body: &str, ctx: ReqCtx) -> Response {
     match std::fs::read_to_string(&file) {
         Ok(content) => match serde_json::from_str::<Value>(&content) {
             Ok(v) => {
-                // 自愈：给缺失 cloudId 的云端歌单分配稳定字符串 id 并回写，
-                // 保证修复前的历史快照下载后也能稳定定位、删除范围选项可用。
                 let (fixed_snapshot, changed) = ensure_cloud_ids(v);
                 if changed {
                     let _ = write_snapshot(&ciyuanxi_id, "playlists.json", &fixed_snapshot);
@@ -321,7 +302,6 @@ pub async fn file_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-/// 给快照中缺少 cloudId 的歌单分配稳定字符串云端 id（复用上传端相同格式），返回（新快照，是否变更）。
 fn ensure_cloud_ids(snapshot: Value) -> (Value, bool) {
     let mut changed = false;
     let Some(playlists) = snapshot.get("playlists").cloned() else {
@@ -352,8 +332,6 @@ fn ensure_cloud_ids(snapshot: Value) -> (Value, bool) {
     (s, changed)
 }
 
-/// 从文件存储快照中按云端字符串 cloudId 删除歌单（「删除全部/仅保留本地」的云端落盘操作）。
-/// 仅删除，不重建；保留其余歌单与其他端新增。传空列表时为无操作。
 pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
@@ -416,7 +394,6 @@ pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-/// 读取插件/设置类的 JSON 快照文件
 fn read_snapshot(ciyuanxi_id: &str, name: &str) -> Result<Value, ()> {
     let file = sync_dir(ciyuanxi_id).join(name);
     if !file.exists() {
@@ -436,10 +413,6 @@ fn write_snapshot(ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
     std::fs::write(dir.join(name), serde_json::to_string(data).unwrap_or_default()).is_ok()
 }
 
-/// 后台重置听歌时长时写入「清零快照」。
-/// reset_at 记录本次清零时间点：客户端通过它做一次性下发（仅当云端更重置时间新于本地
-/// 已应用的 reset_at 才清零一次），避免永久屏蔽用户后续重新累计。
-/// reason 为管理员填写的清除原因，随快照下发供客户端弹窗展示。
 pub fn write_listen_stats_reset(ciyuanxi_id: &str, reason: &str) -> bool {
     let trimmed = reason.trim();
     let save = json!({
@@ -463,7 +436,6 @@ pub fn write_listen_stats_reset(ciyuanxi_id: &str, reason: &str) -> bool {
     write_snapshot(ciyuanxi_id, "listen_stats.json", &save)
 }
 
-/// 清洗订阅列表：仅保留带有效 url 的对象，其余字段透传（id/name/addedAt 等）。
 fn sanitize_subscriptions(raw: &Value) -> Option<Vec<Value>> {
     let arr = raw.as_array()?;
     let list: Vec<Value> = arr
@@ -489,7 +461,6 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
     if !plugin.is_object() {
         return ctx.err(400, "plugin 格式错误");
     }
-    // 纯订阅同步（本地无插件）时客户端会传空 plugin 仅携带 subscriptions。
     let plugin_empty = plugin.get("id").and_then(|v| v.as_str()).unwrap_or("").is_empty()
         && plugin.get("script").and_then(|v| v.as_str()).unwrap_or("").is_empty();
     if plugin_empty && data.get("subscriptions").is_none() {
@@ -514,8 +485,6 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
             if p.get("id").cloned().unwrap_or(Value::Null) != pid {
                 continue;
             }
-            // 旧客户端可能不带用户变量加密块：合并时保留已存的密文，
-            // 避免新端上传的加密变量被无字段的上传覆盖丢失（服务端仅存密文，不解密）。
             let mut merged = plugin.clone();
             if merged.get("userVariablesEncrypted").is_none() {
                 if let Some(old_enc) = p.get("userVariablesEncrypted").cloned() {
@@ -533,7 +502,6 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
     let count = plugins.len() as i64;
     save_data["plugins"] = json!(plugins);
     save_data["stats"]["plugin_count"] = json!(count);
-    // 订阅链接列表整包替换（与插件同步语义一致：上传端为权威）。
     if let Some(subs) = data.get("subscriptions").and_then(sanitize_subscriptions) {
         let sub_count = subs.len() as i64;
         save_data["subscriptions"] = json!(subs);
@@ -559,8 +527,6 @@ pub async fn plugin_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-/// 按 id 从云端插件快照中删除插件（「删除全部/仅保留本地/仅删云端」的云端落盘操作）。
-/// 仅删除指定 id，不影响其余插件与订阅列表。传空列表时为无操作。
 pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
@@ -611,8 +577,6 @@ pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx) -> Response {
     ctx.ok("删除成功", json!({ "deleted": deleted, "plugin_count": kept.len() as i64 }))
 }
 
-/// 平台标识对应的快照文件名：desktop / mobile 设置结构不同，分开存储互不覆盖。
-/// 未携带 platform（旧客户端）沿用旧的 settings.json，下载时平台文件不存在也回退到它。
 fn settings_file_name(platform: &str) -> String {
     match platform {
         "desktop" => "settings_desktop.json".to_string(),
@@ -652,7 +616,6 @@ pub async fn settings_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
     let platform = str_of(&data, "platform").trim().to_string();
     let file_name = settings_file_name(&platform);
-    // 平台文件优先；不存在时回退旧版共用 settings.json（首次升级迁移）
     if platform == "desktop" || platform == "mobile" {
         if let Ok(v) = read_snapshot(&ciyuanxi_id, &file_name) {
             return ctx.ok("获取成功", v);
@@ -666,11 +629,6 @@ pub async fn settings_sync_download(body: &str, ctx: ReqCtx) -> Response {
     ctx.ok("暂无同步数据", json!({ "settings": null }))
 }
 
-/// 上传当前用户收藏歌曲列表（文件快照：data/sync/{id}/favorites.json）
-///
-/// 合并模式（merge: true）：逐条按 path upsert + delete_paths 删除，保留未涉及条目，
-/// 供客户端实现收藏按键合并，避免整包覆盖把其他设备新增的收藏抹掉。
-/// 旧客户端不带 merge 时不走合并，保持整包覆盖语义（向后兼容）。
 pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
@@ -698,7 +656,6 @@ pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
                 (p, it)
             })
             .collect();
-        // upsert：同 path 覆盖，新 path 追加
         for it in favorites.as_array().cloned().unwrap_or_default() {
             let item = it;
             let p = item.get("path").and_then(|x| x.as_str()).map(|s| s.to_string());
@@ -712,7 +669,6 @@ pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
                 by_path.push((None, item));
             }
         }
-        // delete_paths：删除指定 path 的收藏
         if let Some(Value::Array(del)) = data.get("delete_paths") {
             let delset: std::collections::HashSet<String> = del
                 .iter()
@@ -744,7 +700,6 @@ pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     ctx.ok("上传成功", json!({ "song_count": count }))
 }
 
-/// 下载指定用户的收藏歌曲列表（排行榜"查看"用户详情用）
 pub async fn favorites_sync_download(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
@@ -757,9 +712,6 @@ pub async fn favorites_sync_download(body: &str, ctx: ReqCtx) -> Response {
     }
 }
 
-/// 上传当前用户听歌统计快照（文件快照：data/sync/{id}/listen_stats.json）。
-/// 载荷中 listen_stats 为统计对象（累计时长/首数 + 每日明细），整份存储。
-/// merged = 本地离线数据是否已被一次性地并入服务端累计；cleared = 服务端后台是否已清零（制裁）。
 pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
@@ -772,7 +724,6 @@ pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     }
     let merged = matches!(data.get("merged"), Some(Value::Bool(true)));
     let cleared = matches!(data.get("cleared"), Some(Value::Bool(true)));
-    // reset_at（后台清零时间点）尽量沿用客户端上报值，缺失时保留既有文件值，避免覆盖丢失。
     let mut reset_at = data.get("reset_at").and_then(Value::as_i64).unwrap_or(0);
     if reset_at == 0 {
         reset_at = read_snapshot(&ciyuanxi_id, "listen_stats.json")
@@ -780,7 +731,6 @@ pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
             .and_then(|v| v.get("reset_at").and_then(Value::as_i64))
             .unwrap_or(0);
     }
-    // reason（清零原因）客户端一般不回传，沿用既有文件值，确保后续设备仍能读到原因。
     let mut reason = data
         .get("reason")
         .and_then(Value::as_str)
@@ -808,7 +758,6 @@ pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     ctx.ok("上传成功", json!({ "updated": true }))
 }
 
-/// 下载当前用户听歌统计快照。
 pub async fn listen_stats_sync_download(body: &str, ctx: ReqCtx) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();

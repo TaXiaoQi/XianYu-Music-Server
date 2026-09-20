@@ -29,7 +29,6 @@
         加载中...
       </div>
       <div v-else class="config-card">
-      <!-- 只下发链接，按钮显示文字由各端客户端多语言本地化，后台不再配置文字 -->
 
       <div class="section-title">官网入口</div>
       <div class="field-grid">

@@ -527,7 +527,6 @@ async function doChangeRole(): Promise<void> {
     const res = await adminApi('change_admin_role', { id: roleTarget.value.id, role: roleForm.value.role })
     if (res.code === 0) {
       showToast(res.msg || '等级已变更', 'success')
-      // 转让超管后当前账号降级，刷新后不再拥有超管操作权限
       const target = roleTarget.value
       const newRole = roleForm.value.role
       await loadList()
@@ -543,7 +542,6 @@ async function doChangeRole(): Promise<void> {
   }
 }
 
-// 头像上传权限：超管可传任意管理员，普通管理员只能传自己
 function canUploadAvatar(item: Admin): boolean {
   if (isSuper.value) return true
   return item.id === currentAdminId.value
@@ -620,7 +618,6 @@ function closeAddModal() {
 }
 
 function selectSuperRole() {
-  // 仅当当前无超管时允许选择，否则提示
   if (stats.value.super_admin > 0) {
     showToast('超级管理员已存在，全局最多只能有一个')
     return
@@ -740,7 +737,6 @@ function closeLoginModal() {
   loginTarget.value = null
 }
 
-// 修改自己时需要填当前密码；超管修改他人时无需
 const needOldPassword = computed(() => !!loginTarget.value && loginTarget.value.id === currentAdminId.value)
 
 function strengthLevel(): number {
@@ -815,7 +811,6 @@ function isValidEmail(email: string): boolean {
 }
 
 async function reloadAfterLoginChange() {
-  // 若修改的是自己，更新本地缓存的登录用户信息
   if (loginTarget.value && loginTarget.value.id === currentAdminId.value) {
     const u = getAdminUser()
     if (u) {
@@ -1391,7 +1386,6 @@ onMounted(() => {
 .role-opt-name { font-size: 14px; font-weight: 600; color: var(--text); }
 .role-opt-desc { font-size: 11px; color: var(--text-muted); }
 
-/* 转让超级管理提示 */
 .role-transfer-warn {
   margin-top: 14px;
   padding: 10px 12px;

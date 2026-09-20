@@ -2,12 +2,10 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 use tracing::warn;
 
-/// 全部建表语句（供启动初始化和后台修复共用）
 pub fn table_statements() -> &'static [&'static str] {
     &TABLE_STATEMENTS
 }
 
-/// 启动时确保核心表存在
 pub async fn ensure_schema(pool: &MySqlPool) {
     for stmt in table_statements() {
         if let Err(e) = sqlx::query(stmt).execute(pool).await {
@@ -16,15 +14,11 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     }
     ensure_feedback_log_columns(pool).await;
     ensure_column(pool, "app_open_log", "platform", "varchar(16) NOT NULL DEFAULT ''").await;
-    // os_version 需容纳「Android xx (API xx) · ROM名」格式（如 MagicOS 10），
-    // 旧列宽 32/64 不够，严格模式下超长插入会整体失败，存量库平滑加宽
     ensure_varchar_width(pool, "user_feedback", "os_version", 96).await;
     ensure_varchar_width(pool, "error_log", "os_version", 96).await;
     ensure_varchar_width(pool, "app_open_log", "os_version", 96).await;
     ensure_varchar_width(pool, "admin_app_login_log", "os_version", 96).await;
-    // 设备市场名（如「小米16」），客户端上报；展示名优先用它，无则回退型号
     ensure_column(pool, "app_open_log", "device_name", "varchar(128) NOT NULL DEFAULT ''").await;
-    // 设备厂商（如 HONOR、Xiaomi），客户端上报；后台设备条主名称按「厂商 · 型号」展示
     ensure_column(pool, "app_open_log", "device_brand", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "email_verified", "tinyint(1) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "ciyuanxi_id", "varchar(32) NOT NULL DEFAULT ''").await;
@@ -37,45 +31,38 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "app_users", "background_url", "LONGTEXT NULL").await;
     ensure_column(pool, "app_users", "signature", "varchar(255) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "listen_stats_reset_at", "datetime NULL").await;
-    // 听歌统计重置基准偏移量：重置后客户端首次上报的累计值作为基准，后续上报减去基准得到真实增量
     ensure_column(pool, "app_users", "listen_duration_offset", "bigint(20) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "unique_songs_offset", "int(11) NOT NULL DEFAULT 0").await;
-    // 弦予号每月限改：记录最近一次修改时间
     ensure_column(pool, "app_users", "ciyuanxi_id_updated_at", "datetime NULL").await;
     ensure_column(pool, "listen_daily_stats", "unique_songs_count", "int(11) unsigned NOT NULL DEFAULT 0").await;
-    // 账号系统重构：app_users.username 改为 nickname（仅改应用用户表，不动管理员/日志表）
     ensure_app_users_username_to_nickname(pool).await;
-    // email 列可空化：NULL 表示未绑定邮箱（唯一键不拦 NULL），
-    // 修复后台留空邮箱添加用户时与既有 '' 撞 uk_email 唯一键导致插入静默失败的问题
     ensure_app_users_email_nullable(pool).await;
-    // 管理员头像：平滑补列
     ensure_column(pool, "admin_users", "avatar_url", "varchar(512) NOT NULL DEFAULT ''").await;
-    // 管理员账号邮箱：用于后台通知接收与快捷导入外部通知
     ensure_column(pool, "admin_users", "email", "varchar(128) NOT NULL DEFAULT ''").await;
-    // 通知邮箱板块开关：壁纸审核 / 头像 / 昵称 / 反馈更新
+    ensure_column(pool, "admin_users", "token_invalid_before", "bigint(20) NULL DEFAULT NULL").await;
     ensure_column(pool, "notification_emails", "notify_wallpaper", "tinyint(1) NOT NULL DEFAULT 1").await;
     ensure_column(pool, "notification_emails", "notify_avatar", "tinyint(1) NOT NULL DEFAULT 1").await;
     ensure_column(pool, "notification_emails", "notify_nickname", "tinyint(1) NOT NULL DEFAULT 1").await;
     ensure_column(pool, "notification_emails", "notify_feedback", "tinyint(1) NOT NULL DEFAULT 1").await;
-    // 壁纸表后置补列：旧库可能缺少新增列，缺列会导致列表查询报“数据库错误”
     ensure_column(pool, "wallpapers", "category", "varchar(64) NOT NULL DEFAULT '默认'").await;
     ensure_column(pool, "wallpapers", "sort_order", "int(11) NOT NULL DEFAULT 0").await;
-    // 头像/改名待审记录：快照提交前的旧值，供后台「当前/旧」对比（批准后会覆盖原始字段）
     ensure_column(pool, "user_avatar_pending", "old_avatar", "LONGTEXT NULL").await;
     ensure_column(pool, "user_nickname_pending", "old_name", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "wallpapers", "uploaded_by_nickname", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "wallpapers", "reviewed_at", "datetime NULL").await;
     ensure_column(pool, "wallpapers", "reviewed_by", "varchar(64) NOT NULL DEFAULT ''").await;
-    // 壁纸分平台下发：desktop / mobile / watch（腕上端预留）。旧数据视为桌面端。
     ensure_column(pool, "wallpapers", "platform", "varchar(16) NOT NULL DEFAULT 'desktop'").await;
-    // 日推画像聚合与排行榜查询加速：ciyuanxi_id + played_at 复合索引
+    ensure_column(pool, "wallpapers", "media_type", "varchar(16) NOT NULL DEFAULT 'image'").await;
+    ensure_column(pool, "wallpapers", "video_url", "varchar(512) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "wallpapers", "video_poster", "varchar(512) NOT NULL DEFAULT ''").await;
+    ensure_column(pool, "wallpapers", "video_duration", "int(11) NOT NULL DEFAULT 0").await;
+    ensure_column(pool, "wallpapers", "video_size", "bigint(20) NOT NULL DEFAULT 0").await;
+    ensure_column(pool, "wallpapers", "video_sha256", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_index(pool, "play_history", "idx_ciyuanxi_played", "ciyuanxi_id, played_at").await;
-    // 扫码登录：被扫桌面端上报的位置信息（供移动端确认页展示）
     ensure_column(pool, "tv_login_codes", "location", "varchar(255) NOT NULL DEFAULT ''").await;
     ensure_default_admin(pool).await;
 }
 
-/// 确保至少有一个管理员账号，如果 admin_users 表为空则创建默认 admin
 async fn ensure_default_admin(pool: &MySqlPool) {
     let count: i64 = sqlx::query("SELECT COUNT(*) AS cnt FROM admin_users")
         .fetch_one(pool)
@@ -85,7 +72,6 @@ async fn ensure_default_admin(pool: &MySqlPool) {
     if count > 0 {
         return;
     }
-    // 使用 bcrypt 哈希默认密码 adminadmin
     let hash = match bcrypt::hash("adminadmin", 10) {
         Ok(h) => h,
         Err(e) => {
@@ -122,7 +108,6 @@ async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: 
     }
 }
 
-/// varchar 列宽不足时平滑加宽（MODIFY 保留数据），用于上报格式变长后的兜底迁移
 async fn ensure_varchar_width(pool: &MySqlPool, table: &str, column: &str, target: u32) {
     let cur: i64 = sqlx::query(
         "SELECT COALESCE(CHARACTER_MAXIMUM_LENGTH, 0) AS len FROM information_schema.columns \
@@ -133,7 +118,6 @@ async fn ensure_varchar_width(pool: &MySqlPool, table: &str, column: &str, targe
     .fetch_one(pool)
     .await
     .map(|r| r.get("len"))
-    // 表不存在（新装库建表已是目标宽度）视为无需迁移
     .unwrap_or(target as i64);
     if cur >= target as i64 {
         return;
@@ -172,36 +156,23 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "error_logs", "LONGTEXT").await;
     ensure_column(pool, "user_feedback", "all_logs", "LONGTEXT").await;
     ensure_column(pool, "user_feedback", "log_meta", "TEXT").await;
-    // 申诉与普通反馈共用 user_feedback 表，用 category 区分：feedback / appeal
     ensure_column(pool, "user_feedback", "category", "VARCHAR(16) NOT NULL DEFAULT 'feedback'").await;
-    // 认领人（管理员账号名）与完成说明、通知确认时间（反馈 todo 化）
     ensure_column(pool, "user_feedback", "assignee", "VARCHAR(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "resolve_note", "TEXT").await;
-    // 拒绝理由：反馈被拒绝时必填，展示给提交用户（与 resolve_note 相对）
     ensure_column(pool, "user_feedback", "reject_reason", "TEXT").await;
     ensure_column(pool, "user_feedback", "notified_at", "DATETIME DEFAULT NULL").await;
-    // 认领时间与完成时间（用于后台反馈时间线展示）
     ensure_column(pool, "user_feedback", "claimed_at", "DATETIME DEFAULT NULL").await;
     ensure_column(pool, "user_feedback", "resolved_at", "DATETIME DEFAULT NULL").await;
-    // 反馈类型：problem（问题反馈）/ suggestion（功能建议），images 保存图片 URL 的 JSON 数组
     ensure_column(pool, "user_feedback", "feedback_type", "VARCHAR(16) NOT NULL DEFAULT 'problem'").await;
     ensure_column(pool, "user_feedback", "images", "TEXT").await;
-    // 平台版本：desktop（桌面版）/ mobile（移动版）/ watch（腕上版，预留），后台创建时由管理员选择
     ensure_column(pool, "user_feedback", "platform", "VARCHAR(32) NOT NULL DEFAULT ''").await;
-    // 客户端反馈时上报的具体应用版本号（如 1.1.4-beta1），用于后台按版本定位问题
     ensure_column(pool, "user_feedback", "app_version", "VARCHAR(32) NOT NULL DEFAULT ''").await;
-    // 回收站：软删除时间与删除人，14天后自动过期
     ensure_column(pool, "user_feedback", "deleted_at", "DATETIME DEFAULT NULL").await;
     ensure_column(pool, "user_feedback", "deleted_by", "VARCHAR(64) NOT NULL DEFAULT ''").await;
-    // 协同功能：collaborators 存储所有协作者列表（JSON 数组），completed_by 存储已完成者列表
     ensure_column(pool, "user_feedback", "collaborators", "TEXT").await;
     ensure_column(pool, "user_feedback", "completed_by", "TEXT").await;
-    // 完成反馈时附带的图片（管理员在完成弹窗上传），存图片 URL 的 JSON 数组
     ensure_column(pool, "user_feedback", "resolve_images", "TEXT").await;
-    // 提交设备的唯一标识：回执（处理结果通知）只下发给提交反馈的设备，
-    // 避免移动端问题弹到同账号的桌面端；为空（旧数据/后台创建）时所有设备可见
     ensure_column(pool, "user_feedback", "device_id", "VARCHAR(64) NOT NULL DEFAULT ''").await;
-    // 详细设备信息：厂商/型号/系统版本/架构/计算机名，反馈 bug 时一眼识别具体设备
     ensure_column(pool, "user_feedback", "device_brand", "VARCHAR(64) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "device_model", "VARCHAR(128) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "user_feedback", "os_version", "VARCHAR(96) NOT NULL DEFAULT ''").await;
@@ -209,11 +180,7 @@ async fn ensure_feedback_log_columns(pool: &MySqlPool) {
     ensure_column(pool, "user_feedback", "machine_name", "VARCHAR(64) NOT NULL DEFAULT ''").await;
 }
 
-/// 账号系统重构迁移：将 app_users.username 列改名为 nickname。
-/// 仅迁移应用用户表，不影响 admin_users / 各类日志表。
-/// 若存在 username 列且尚不存在 nickname 列，则执行改名并重建唯一键。
 async fn ensure_app_users_username_to_nickname(pool: &MySqlPool) {
-    // 检查 username 列是否存在
     let has_username: i64 = sqlx::query(
         "SELECT COUNT(*) AS cnt FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'app_users' AND column_name = 'username'",
     )
@@ -222,7 +189,6 @@ async fn ensure_app_users_username_to_nickname(pool: &MySqlPool) {
     .map(|r| r.get("cnt"))
     .unwrap_or(0);
 
-    // 检查 nickname 列是否存在
     let has_nickname: i64 = sqlx::query(
         "SELECT COUNT(*) AS cnt FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = 'app_users' AND column_name = 'nickname'",
     )
@@ -239,7 +205,6 @@ async fn ensure_app_users_username_to_nickname(pool: &MySqlPool) {
             warn!("schema rename username->nickname failed: {}", e);
             return;
         }
-        // 删除旧唯一键（若存在），再重建为 nickname 唯一键
         let _ = sqlx::query("ALTER TABLE `app_users` DROP INDEX `uk_username`")
             .execute(pool)
             .await;
@@ -248,13 +213,10 @@ async fn ensure_app_users_username_to_nickname(pool: &MySqlPool) {
             .await;
         warn!("schema migrated: app_users.username -> nickname");
     } else if has_nickname == 0 {
-        // 全新表：确保 nickname 列与唯一键存在
         ensure_column(pool, "app_users", "nickname", "varchar(64) NOT NULL DEFAULT ''").await;
     }
 }
 
-/// email 列可空化迁移：存量库 email 为 NOT NULL 时改为可空，并把历史 '' 归一为 NULL。
-/// NULL 表示未绑定邮箱；uk_email 唯一键允许多个 NULL，允许多个无邮箱账号共存。
 async fn ensure_app_users_email_nullable(pool: &MySqlPool) {
     let not_nullable: i64 = sqlx::query(
         "SELECT COUNT(*) AS cnt FROM information_schema.columns \
@@ -276,7 +238,6 @@ async fn ensure_app_users_email_nullable(pool: &MySqlPool) {
             warn!("schema migrated: app_users.email -> nullable");
         }
     }
-    // 历史 '' 占用唯一键坑位，归一为 NULL（幂等，无 '' 时影响 0 行）
     if let Err(e) = sqlx::query("UPDATE `app_users` SET `email` = NULL WHERE `email` = ''")
         .execute(pool)
         .await
@@ -754,6 +715,12 @@ static TABLE_STATEMENTS: &[&str] = &[
             `description` varchar(512) NOT NULL DEFAULT '',
             `image_url` varchar(512) NOT NULL DEFAULT '',
             `thumbnail_url` varchar(512) NOT NULL DEFAULT '',
+            `media_type` varchar(16) NOT NULL DEFAULT 'image',
+            `video_url` varchar(512) NOT NULL DEFAULT '',
+            `video_poster` varchar(512) NOT NULL DEFAULT '',
+            `video_duration` int(11) NOT NULL DEFAULT 0,
+            `video_size` bigint(20) NOT NULL DEFAULT 0,
+            `video_sha256` varchar(64) NOT NULL DEFAULT '',
             `category` varchar(64) NOT NULL DEFAULT '默认',
             `platform` varchar(16) NOT NULL DEFAULT 'desktop',
             `sort_order` int(11) NOT NULL DEFAULT 0,
@@ -1015,7 +982,6 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_read_at` (`read_at`),
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        // 手表↔手机 联动命令中继队列：手表提交，手机轮询取出执行
         "CREATE TABLE IF NOT EXISTS `watch_commands` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `request_id` varchar(64) NOT NULL DEFAULT '',
@@ -1031,7 +997,6 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ciyuanxi_status` (`ciyuanxi_id`, `status`),
             KEY `idx_status_created` (`status`, `created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
-        // 设备在线状态（presence）：手机 ping，手表据此判断目标手机是否在线并取当前播放信息
         "CREATE TABLE IF NOT EXISTS `device_presence` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',

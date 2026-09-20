@@ -414,7 +414,6 @@ function platformLabelOf(item: any): string {
   return platformLabelKey(platformOf(item))
 }
 
-// 各平台可发布的系统细分：桌面分 Windows/Linux/macOS，移动分 Android/鸿蒙/iOS，腕上端暂不细分
 const SYSTEM_META: Record<PlatformKey, { key: string; label: string }[]> = {
   desktop: [
     { key: 'windows', label: 'Windows' },
@@ -429,14 +428,12 @@ const SYSTEM_META: Record<PlatformKey, { key: string; label: string }[]> = {
   watch: [],
 }
 
-/** 平台默认系统：桌面→windows、移动→android、腕上端→''；无 system 字段的遗留记录按此展示 */
 function defaultSystem(platform: PlatformKey): string {
   if (platform === 'mobile') return 'android'
   if (platform === 'watch') return ''
   return 'windows'
 }
 
-/** 配置项的有效系统（遗留无 system 记录按平台默认） */
 function systemOf(item: any): string {
   const s = item?.system
   return s || defaultSystem(platformOf(item))
@@ -500,7 +497,6 @@ async function loadDesktop() {
   desktopLoading.value = false
 }
 
-// 版本配置弹窗
 const desktopModalVisible = ref(false)
 const desktopDraft = ref({ version: '', updateContent: '', downloadUrl: '' })
 const desktopDraftEnabled = ref(false)
@@ -532,7 +528,6 @@ const desktopChannelDesc = computed(() => {
   return desktopDraftEnabled.value ? '启用更新时需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
 })
 
-/** 测试版组合版本号：主版本 + -beta- + beta号（如 1.2.0-beta-3） */
 const composedVersion = computed(() => {
   if (desktopDraftChannel.value !== 'beta') return desktopDraft.value.version.trim()
   const main = desktopDraft.value.version.trim()
@@ -573,7 +568,6 @@ function openDesktopModal(item?: any) {
   desktopModalVisible.value = true
 }
 
-/** 新建弹窗内切换平台时，同步将目标系统重置为所选平台的有效默认值 */
 function switchDraftPlatform(key: PlatformKey) {
   if (desktopEditingVersion.value) return
   desktopDraftPlatform.value = key
@@ -759,7 +753,6 @@ async function removeBetaTester(t: any) {
   else showToast(res.msg || '移除失败')
 }
 
-// 内测设备详情（关联帐号 / 厂商 / 型号 / 系统版本）+ 备注编辑
 const betaDetailVisible = ref(false)
 const betaDetailLoading = ref(false)
 const betaDetail = ref<any>(null)
@@ -821,7 +814,6 @@ onMounted(() => {
 .ver-header-actions { display: flex; gap: 8px; align-self: flex-start; }
 .ver-header-actions .mobile-btn { align-self: auto; }
 
-/* 内测名单按钮 */
 .beta-btn {
   position: relative;
   display: inline-flex;
@@ -845,7 +837,6 @@ onMounted(() => {
   justify-content: center;
 }
 
-/* 平台切换 */
 .platform-tabs {
   display: inline-flex;
   gap: 4px;
@@ -871,7 +862,6 @@ onMounted(() => {
   color: var(--accent);
 }
 
-/* 系统切换次级标签栏 */
 .system-tabs {
   margin-bottom: 14px;
   margin-top: -6px;
@@ -881,7 +871,6 @@ onMounted(() => {
   font-size: 11px;
 }
 
-/* 统计栏 */
 .ver-stats { display: flex; gap: 10px; margin-bottom: 20px; }
 .ver-stat {
   display: flex;
@@ -898,7 +887,6 @@ onMounted(() => {
 .ver-stat-num.gray { color: #9ca3af; }
 .ver-stat-label { font-size: 11px; color: var(--text-muted); }
 
-/* 区块 */
 .ver-section { margin-bottom: 20px; }
 .ver-section-label { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .ver-section-label h3 { font-size: 15px; font-weight: 750; margin: 0; color: var(--text); }
@@ -908,7 +896,6 @@ onMounted(() => {
 .dot-watch { background: #8b5cf6; }
 .dot-app { background: #10b981; }
 
-/* 空状态 */
 .ver-empty {
   padding: 40px 20px;
   text-align: center;
@@ -937,10 +924,8 @@ onMounted(() => {
   cursor: pointer;
 }
 
-/* 卡片列表 */
 .ver-card-list { display: flex; flex-direction: column; gap: 12px; }
 
-/* 卡片 */
 .ver-card {
   display: flex;
   background: var(--card, var(--white));
@@ -993,12 +978,10 @@ onMounted(() => {
 .badge-beta { background: rgba(245, 158, 11, 0.14); color: #d97706; }
 .ver-badges { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 
-/* 渠道选择（正式版/测试版） */
 .channel-stable.on { background: #10b981; border-color: #10b981; color: #fff; }
 .channel-beta.on { background: #f59e0b; border-color: #f59e0b; color: #fff; }
 .field-hint { font-size: 11px; color: var(--text-muted); line-height: 1.5; margin: 0; }
 
-/* 测试版组合版本号 */
 .ver-combo { display: flex; align-items: center; gap: 6px; }
 .ver-combo input {
   flex: 1; min-width: 0;
@@ -1015,7 +998,6 @@ onMounted(() => {
 }
 .ver-combo-num { max-width: 76px !important; }
 
-/* 内测名单弹窗 */
 .beta-backdrop { z-index: 11000; }
 .beta-add-row { display: flex; gap: 8px; }
 .beta-add-row input {
@@ -1068,7 +1050,6 @@ onMounted(() => {
 .beta-item.clickable:active { background: var(--border); }
 .beta-item-actions { display: flex; gap: 2px; flex-shrink: 0; }
 
-/* 内测设备详情弹窗 */
 .beta-detail-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
 .beta-detail-row { display: flex; gap: 12px; font-size: 13px; line-height: 1.6; }
 .beta-detail-row.full { flex-direction: column; gap: 4px; }
@@ -1085,7 +1066,6 @@ onMounted(() => {
 .beta-detail-empty { font-size: 12px; color: var(--text-muted); }
 .beta-detail-src { font-style: normal; font-size: 11px; color: var(--text-muted); margin-left: 6px; }
 
-/* Toggle */
 .ver-toggle { position: relative; display: inline-block; width: 38px; height: 22px; cursor: pointer; flex-shrink: 0; }
 .ver-toggle input { opacity: 0; width: 0; height: 0; }
 .ver-toggle-slider {
@@ -1128,7 +1108,6 @@ onMounted(() => {
 .ver-icon-btn:active { background: #f5f5f5; color: var(--text); }
 .ver-icon-danger:active { background: rgba(236, 65, 65, 0.12); color: #ef4444; }
 
-/* 表单 */
 .ver-form { display: flex; flex-direction: column; gap: 12px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field span { font-size: 12px; font-weight: 700; color: var(--text-light); }
@@ -1161,7 +1140,6 @@ onMounted(() => {
 }
 .enable-btn.on { background: #EC4141; border-color: #EC4141; color: #fff; }
 
-/* 分页 */
 .pagination { display: flex; justify-content: center; gap: 6px; flex-wrap: wrap; margin-top: 16px; }
 .page-btn {
   min-width: 34px; padding: 7px 11px; border: 1px solid var(--border);
@@ -1172,7 +1150,6 @@ onMounted(() => {
 .page-btn.active { background: #EC4141; color: #fff; border-color: #EC4141; }
 .page-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* 弹窗 */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 10000;
   display: flex; align-items: center; justify-content: center;
@@ -1233,7 +1210,6 @@ onMounted(() => {
 .progress-bar-fill { height: 100%; background: var(--accent); transition: width 0.3s; }
 .progress-text { font-size: 11px; color: var(--text-muted); min-width: 36px; text-align: right; }
 
-/* 过渡动画 */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.24s cubic-bezier(0.16, 1, 0.3, 1); }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-active .modal-dialog { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

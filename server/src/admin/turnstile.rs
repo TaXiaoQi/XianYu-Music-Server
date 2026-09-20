@@ -6,7 +6,6 @@ use sqlx::Row;
 use super::{log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{parse_body, str_of};
 
-/// 读取 server_settings 单个 key（空字符串视为未设置）
 async fn read_setting(pool: &MySqlPool, key: &str) -> Option<String> {
     sqlx::query("SELECT setting_value FROM server_settings WHERE setting_key = ? LIMIT 1")
         .bind(key)
@@ -18,7 +17,6 @@ async fn read_setting(pool: &MySqlPool, key: &str) -> Option<String> {
         .filter(|s| !s.trim().is_empty())
 }
 
-/// 写入或更新 server_settings 值
 async fn upsert_setting(pool: &MySqlPool, key: &str, value: &str, desc: &str) {
     let _ = sqlx::query(
         "INSERT INTO server_settings (setting_key, setting_value, description) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), description = VALUES(description)",
@@ -50,7 +48,6 @@ fn fallback_secret(provider: &str, ctx: &AdminCtx) -> String {
     }
 }
 
-/// 获取通用人机验证配置（secret 脱敏）
 pub async fn get_captcha_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let old_turnstile_enabled = read_setting(pool, "turnstile_enabled").await;
     let old_turnstile_site_key = read_setting(pool, "turnstile_site_key").await;
@@ -99,7 +96,6 @@ pub async fn get_captcha_config(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     }))
 }
 
-/// 保存通用人机验证配置（secret 为空或为占位符时保留原值）
 pub async fn save_captcha_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
 
@@ -124,7 +120,6 @@ pub async fn save_captcha_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     upsert_setting(pool, "captcha_provider", &provider, "人机验证服务商：turnstile、hcaptcha、off").await;
     upsert_setting(pool, "captcha_site_key", &site_key, "人机验证 Site Key（前端展示用）").await;
 
-    // secret 为空或为占位符时保留原值
     if !secret.is_empty() && secret != "********" {
         upsert_setting(pool, "captcha_secret", &secret, "人机验证 Secret Key（后端校验用，留空则回退环境变量）").await;
     } else if old_provider != provider {
@@ -143,12 +138,10 @@ pub async fn save_captcha_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     ok("人机验证配置已保存", Value::Null)
 }
 
-/// 兼容旧后台 action 名称。
 pub async fn get_turnstile_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     get_captcha_config(body, ctx, pool).await
 }
 
-/// 兼容旧后台 action 名称。
 pub async fn save_turnstile_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     save_captcha_config(body, ctx, pool).await
 }

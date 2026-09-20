@@ -211,7 +211,6 @@ interface SmtpAccountForm {
   remark: string
 }
 
-// 常见邮箱服务商域名 → [SMTP 服务器地址, 端口]。未命中的域名回退为 smtp.<域名>:465
 const SMTP_ENDPOINTS: Record<string, [string, number]> = {
   'qq.com': ['smtp.qq.com', 465],
   'vip.qq.com': ['smtp.qq.com', 465],
@@ -779,7 +778,6 @@ onMounted(loadConfig)
 .fade-up-enter-active, .fade-up-leave-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-up-enter-from { opacity: 0; transform: translateY(12px); }
 
-/* 卡片入场动画 */
 .smtp-account-card { animation: cardIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both; }
 @keyframes cardIn {
   from { opacity: 0; transform: translateY(8px); }

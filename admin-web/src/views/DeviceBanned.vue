@@ -325,7 +325,6 @@ function switchPlatform(key: string) {
 }
 const total = ref(0)
 const totalPages = ref(0)
-// 各平台设备数（服务端归一口径：latest-join 后分组）
 const platformCounts = ref<Record<string, number>>({ all: 0, desktop: 0, mobile: 0, watch: 0 })
 
 const stats = computed(() => {
@@ -590,8 +589,6 @@ async function openPluginsModal(d: Device) {
 }
 
 // ===== 工具函数 =====
-// 平台标签：服务端 list_all_devices 已输出归一后的 platform（desktop/mobile/watch）；
-// 兜底逻辑仅用于异常数据
 function platformKey(d: Device): string {
   if (d.platform === 'desktop' || d.platform === 'mobile' || d.platform === 'watch') return d.platform
   return /windows/i.test(d.os_version || '') ? 'desktop' : 'mobile'
@@ -600,7 +597,6 @@ function platformLabel(d: Device): string {
   const map: Record<string, string> = { desktop: '桌面端', mobile: '移动端', watch: '腕上端' }
   return map[platformKey(d)] || ''
 }
-// 展示名：厂商为主（如 HONOR）+ 型号，与反馈条一致；无厂商回退市场名/型号（旧数据兼容）
 function deviceDisplayName(d: Device): string {
   const brand = (d.device_brand || '').trim()
   const model = (d.device_model || '').trim()
@@ -635,7 +631,6 @@ onMounted(loadDevices)
   margin: 0 auto;
 }
 
-/* 顶部工具栏 */
 .toolbar-row {
   display: flex;
   align-items: center;
@@ -666,7 +661,6 @@ onMounted(loadDevices)
 .toolbar-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .toolbar-actions-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
-/* 批量菜单切换动效 */
 .batch-swap-enter-active, .batch-swap-leave-active { transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
 .batch-swap-enter-from { opacity: 0; transform: translateY(-6px) scale(0.97); }
 .batch-swap-leave-to { opacity: 0; transform: translateY(4px) scale(0.97); }
@@ -682,7 +676,6 @@ onMounted(loadDevices)
 }
 .batch-count { font-size: 12px; color: var(--accent); font-weight: 600; margin-left: 2px; }
 
-/* 复选框 */
 .checkbox-badge {
   display: inline-flex;
   align-items: center;
@@ -703,7 +696,6 @@ onMounted(loadDevices)
 .col-check .checkbox-badge { margin-right: 0; }
 .row-selected { background: var(--accent-soft, rgba(0,0,0,0.03)); }
 
-/* 手动封禁面板 */
 .ban-panel {
   background: linear-gradient(135deg, var(--control-bg) 0%, rgba(236, 65, 65, 0.10) 100%);
   border: 1px solid var(--border);
@@ -751,7 +743,6 @@ onMounted(loadDevices)
   animation: spin 0.7s linear infinite;
 }
 
-/* 统计行 */
 .stats-row {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -782,7 +773,6 @@ onMounted(loadDevices)
 .stat-num { font-size: 22px; font-weight: 800; line-height: 1.2; }
 .stat-label { font-size: 12px; color: var(--text-muted); }
 
-/* 卡片 */
 .card {
   background: var(--card-solid);
   border: 1px solid var(--border);
@@ -819,7 +809,6 @@ tbody tr:hover td { background: #fafbfc; }
   flex-shrink: 0;
   color: var(--text-light);
 }
-/* 平台切换（与版本管理页同款） */
 .platform-tabs {
   display: inline-flex;
   gap: 4px;
@@ -868,7 +857,6 @@ tbody tr:hover td { background: #fafbfc; }
   max-width: 260px;
 }
 .col-platform { white-space: nowrap; }
-/* 平台标签（与反馈页同款） */
 .platform-badge {
   flex-shrink: 0;
   display: inline-flex;
@@ -901,13 +889,11 @@ tbody tr:hover td { background: #fafbfc; }
 .muted { color: var(--text-muted); }
 .col-time { white-space: nowrap; font-size: 12px; color: var(--text-light); }
 
-/* 徽章 */
 .badge { display: inline-flex; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
 .badge-success { background: #f0fdf4; color: #16a34a; }
 .badge-error { background: rgba(236, 65, 65, 0.12); color: #dc2626; }
 .badge-info { background: #eff6ff; color: #3b82f6; }
 
-/* 按钮 */
 .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--card-solid); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
 .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -921,7 +907,6 @@ tbody tr:hover td { background: #fafbfc; }
 .btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 6px; }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* 状态/空态 */
 .state-box {
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   padding: 60px 20px; color: var(--text-muted); gap: 12px; font-size: 14px;
@@ -940,7 +925,6 @@ tbody tr:hover td { background: #fafbfc; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .empty { padding: 32px 20px; text-align: center; color: var(--text-muted); font-size: 13px; }
 
-/* 分页 */
 .pagination {
   display: flex; justify-content: center; gap: 6px; margin-top: 16px; align-items: center;
   padding: 0 0 16px;
@@ -954,7 +938,6 @@ tbody tr:hover td { background: #fafbfc; }
 .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
 .pagination span { font-size: 12px; color: var(--text-muted); margin-left: 8px; }
 
-/* 弹窗 */
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1001,7 +984,6 @@ tbody tr:hover td { background: #fafbfc; }
 }
 .modal-close-btn:hover { background: rgba(0, 0, 0, 0.06); color: #e74c3c; }
 
-/* 详情弹窗内容 */
 .detail-section { margin-bottom: 24px; }
 .detail-section h4 { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
 .detail-grid {
@@ -1026,7 +1008,6 @@ tbody tr:hover td { background: #fafbfc; }
   color: #991b1b;
 }
 
-/* 子表格 */
 .sub-table { min-width: 600px; }
 .sub-table thead th { font-size: 11px; padding: 8px 10px; }
 .sub-table tbody td { font-size: 12px; padding: 8px 10px; }
@@ -1036,7 +1017,6 @@ tbody tr:hover td { background: #fafbfc; }
   display: flex; gap: 16px; margin-bottom: 16px; font-size: 13px; color: #666; flex-wrap: wrap;
 }
 
-/* 弹窗动画 */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.3s ease; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-active .modal, .modal-leave-active .modal {
@@ -1046,13 +1026,11 @@ tbody tr:hover td { background: #fafbfc; }
   transform: scale(0.92) translateY(20px);
 }
 
-/* 过渡 */
 .fade-up-enter-active, .fade-up-leave-active { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-up-enter-from, .fade-up-leave-to { opacity: 0; transform: translateY(8px); }
 .fade-down-enter-active { transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
 .fade-down-enter-from { opacity: 0; transform: translateY(-12px); }
 
-/* 响应式 */
 @media (max-width: 768px) {
   .stats-row { grid-template-columns: 1fr; gap: 8px; }
   .toolbar-row { flex-direction: column; }

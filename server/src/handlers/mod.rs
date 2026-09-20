@@ -19,9 +19,7 @@ use sqlx::MySqlPool;
 
 use crate::response::ReqCtx;
 
-/// 按 action 分发到对应 handler
 pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    // 用户资源操作统一 token 属主校验（软模式下不拦截无 token 的存量客户端）
     if let Some(resp) = token::check_dispatch_auth(action, body, &ctx, pool).await {
         return resp;
     }

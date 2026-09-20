@@ -18,30 +18,25 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
-use axum::response::{IntoResponse, Response};
+use axum::response::Response;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
 
-/// 房间（配对通道）数量上限。
 const MAX_ROOMS: usize = 4096;
 
-/// 握手超时：连接后须在该时限内发合法 hello。
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 
-/// 每连接发往对端/自身的 outbound channel 容量。
 const CHANNEL_CAPACITY: usize = 256;
 
 // ===================== 房间状态 =====================
 
 struct Peer {
-    /// 连接唯一序号：离场清理时用于确认槽内还是不是自己（防误踢新连接）。
     conn_id: u64,
     name: String,
     tx: mpsc::Sender<WsMessage>,
 }
 
-/// 连接序号发生器。
 fn next_conn_id() -> u64 {
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
@@ -60,12 +55,10 @@ fn rooms() -> &'static Mutex<HashMap<String, Room>> {
 
 // ===================== 路由入口 =====================
 
-/// `GET /watch-relay`：升级为 WebSocket。
 pub async fn watch_relay_handler(ws: WebSocketUpgrade) -> Response {
     ws.on_upgrade(handle_socket)
 }
 
-/// 握手消息。
 struct Hello {
     role: String,
     key: String,
@@ -82,7 +75,6 @@ fn parse_hello(text: &str) -> Option<Hello> {
         return None;
     }
     let key = v.get("key")?.as_str()?.to_ascii_lowercase();
-    // device_key 约定：64 位十六进制（32 字节随机数的 hex）。
     if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
         return None;
     }
@@ -137,7 +129,6 @@ async fn handle_socket(socket: WebSocket) {
             } else {
                 &mut room.watch
             };
-            // 同角色重复连接：踢旧留新。
             if let Some(old) = slot.take() {
                 let _ = old.tx.try_send(WsMessage::Text(
                     json!({"op": "replaced"}).to_string().into(),
@@ -148,7 +139,6 @@ async fn handle_socket(socket: WebSocket) {
                 name: hello.name.clone(),
                 tx: tx.clone(),
             });
-            // 对端（另一角色）是否已在线。
             let peer = if hello.role == "phone" {
                 room.watch.as_ref()
             } else {
@@ -213,16 +203,13 @@ async fn handle_socket(socket: WebSocket) {
                 match peer_tx {
                     Some(tx) => {
                         if tx.send(WsMessage::Binary(bytes)).await.is_err() {
-                            // 对端离线：帧丢弃（XYW1 心跳会让客户端感知对端失活）。
                         }
                     }
                     None => {
-                        // 对端未就绪：静默丢弃，客户端心跳/退避机制自会重试。
                     }
                 }
             }
             WsMessage::Text(t) => {
-                // 应用层 ping（可选）：回 pong；其余文本忽略。
                 if t.contains("\"ping\"") {
                     let _ = tx
                         .send(WsMessage::Text(json!({"op": "pong"}).to_string().into()))
@@ -250,7 +237,6 @@ async fn handle_socket(socket: WebSocket) {
             &mut room.watch
         };
         let still_mine = slot.as_ref().map(|p| p.conn_id == conn_id).unwrap_or(false);
-        // 仅当离场的是自己占的坑时才清位（防误踢新连接）。
         if still_mine {
             *slot = None;
         }

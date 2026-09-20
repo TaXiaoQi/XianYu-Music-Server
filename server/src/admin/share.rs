@@ -6,7 +6,6 @@ use sqlx::Row;
 use super::{log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body};
 
-/// 查看分享详情
 pub async fn view_share_detail(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let id = int_of(&data, "id");
@@ -38,7 +37,6 @@ fn remove_dir_all(path: &std::path::Path) {
     }
 }
 
-/// 删除过期分享文件
 pub async fn delete_expired_shares(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     let rows = sqlx::query("SELECT id, share_id, song_name, expired_at FROM share_log WHERE expired_at < NOW() ORDER BY expired_at ASC")
@@ -66,7 +64,6 @@ pub async fn delete_expired_shares(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
         let mut deleted = false;
         let mut reason = String::new();
         if dir.is_dir() {
-            // 先清空再删除目录，失败回退到重命名
             remove_dir_all(&dir);
             if std::fs::remove_dir(&dir).is_ok() || !dir.exists() {
                 deleted = true;
@@ -74,7 +71,6 @@ pub async fn delete_expired_shares(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
                 let expired_at: String = r.get("expired_at");
                 details.push(format!("已删除: share_id={} ({}) 过期时间: {}", share_id, song_name, expired_at));
             } else {
-                // 尝试重命名延迟删除
                 let renamed = shares_base.join(format!("{}_deleted_{}", share_id, std::process::id()));
                 if std::fs::rename(&dir, &renamed).is_ok() {
                     let _ = std::fs::remove_dir_all(&renamed);

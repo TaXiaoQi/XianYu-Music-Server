@@ -170,7 +170,6 @@ const sourceItems = computed(() => {
   }))
 })
 
-// 统计卡片配置（支持动态值，与桌面版一致，今日热搜在最后）
 const statCards = [
   {
     label: '今日用户',
@@ -199,7 +198,6 @@ const statCards = [
   },
 ]
 
-// ─── SVG 圆环分段 ───────────────────────────────────────────
 const DONUT_R = 48
 const DONUT_STROKE = 20
 const DONUT_C = 2 * Math.PI * DONUT_R
@@ -231,25 +229,21 @@ const activeItem = computed(() => {
 
 function toggleActive(index: number) {
   activeIndex.value = activeIndex.value === index ? -1 : index
-  // 选中时把对应列表项滚动到滚动容器可见位置，避免被遮住
   if (activeIndex.value >= 0) {
     scrollLegendToActive(activeIndex.value)
   }
 }
 
-/** 直接选中指定索引对应的列表项（圆环点击用，避免移动端 mouseenter 先行设置 activeIndex 后被 toggle 取消的问题） */
 function setActive(index: number) {
   activeIndex.value = index
   scrollLegendToActive(index)
 }
 
-/** 滚动右侧图例容器，使指定索引的列表项可见 */
 function scrollLegendToActive(index: number) {
   const container = legendRef.value
   if (!container) return
   const item = container.querySelectorAll('.source-legend-item')[index] as HTMLElement | undefined
   if (!item) return
-  // 用 getBoundingClientRect 计算列表项相对滚动容器的位置（offsetTop 相对定位祖先，基准不可靠）
   const cRect = container.getBoundingClientRect()
   const iRect = item.getBoundingClientRect()
   const cTop = container.scrollTop
@@ -263,7 +257,6 @@ function scrollLegendToActive(index: number) {
   }
 }
 
-/** 点击圆环区域，按角度计算落在哪个扇区 */
 function onDonutClick(e: MouseEvent | TouchEvent) {
   const el = e.currentTarget as HTMLElement | null
   if (!el || donutSegments.value.length === 0) return
@@ -275,16 +268,12 @@ function onDonutClick(e: MouseEvent | TouchEvent) {
   const dx = clientX - rect.left - cx
   const dy = clientY - rect.top - cy
   const radius = Math.sqrt(dx * dx + dy * dy)
-  // 点击在圆环内孔（中心总调用区域）或超出外缘都忽略，避免误触
-  // 坐标基于 CSS 像素，需按元素实际尺寸换算 viewBox 半径
   const scale = rect.width / 120
   const innerR = (DONUT_R - DONUT_STROKE / 2) * scale
   const outerR = (DONUT_R + DONUT_STROKE / 2) * scale
   if (radius < innerR || radius > outerR) return
-  // 视觉角度：0° 在正上方，顺时针递增
   let angle = Math.atan2(dx, -dy) * (180 / Math.PI)
   if (angle < 0) angle += 360
-  // 根据累计角度找扇区
   const items = sourceItems.value
   const total = items.reduce((s, it) => s + Number(it.count || 0), 0)
   let acc = 0
@@ -360,7 +349,6 @@ onMounted(async () => {
   gap: 14px;
 }
 
-/* 标题区 */
 .dsh-head {
   display: flex;
   justify-content: space-between;
@@ -439,7 +427,6 @@ onMounted(async () => {
   color: #EC4141;
 }
 
-/* 今日音源调用占比 */
 .source-section {
   display: flex;
   flex-direction: column;
@@ -477,7 +464,6 @@ onMounted(async () => {
   align-items: stretch;
 }
 
-/* 左侧圆环 */
 .source-donut {
   position: relative;
   width: 130px;
@@ -543,7 +529,6 @@ onMounted(async () => {
   display: block;
 }
 
-/* 右侧滚动列表 */
 .source-legend {
   flex: 1;
   min-width: 0;
@@ -610,7 +595,6 @@ onMounted(async () => {
   font-size: 12px;
 }
 
-/* 数据概览（4 个卡片单行排列，覆盖全局 2 列网格） */
 .stats-section {
   display: flex;
   flex-direction: column;
@@ -653,7 +637,6 @@ onMounted(async () => {
   font-size: 15px;
 }
 
-/* 常用操作（去卡片化） */
 .quick-section {
   display: flex;
   flex-direction: column;
@@ -682,7 +665,6 @@ onMounted(async () => {
   flex: 0 0 auto;
 }
 
-/* 服务器 API */
 .api-section {
   display: flex;
   flex-direction: column;

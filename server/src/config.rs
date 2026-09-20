@@ -31,16 +31,10 @@ pub struct Config {
     pub local_debug_no_db: bool,
     #[serde(default = "default_static_dir")]
     pub static_dir: String,
-    /// 公网访问地址，用于拼接壁纸等资源的完整 URL（如 https://xymusic.example.com）
-    /// 当请求头中无法获取 Host 时，使用此配置作为兜底
     #[serde(default)]
     pub public_base_url: String,
-    /// 分享落地页独立域名（如 https://share.xianyumusic.cn）。
-    /// 客户端经 api 域名调用 create_share 时，分享链接直接拼到该域名；
-    /// 留空则回退用请求 Host 拼（即 api 域名下的 /s/{id}）。
     #[serde(default)]
     pub share_base_url: String,
-    /// App 用户资源操作是否强制要求 user_token（true=硬模式拒绝无 token 请求；false=软模式仅校验携带 token 的请求）
     #[serde(default)]
     pub require_user_token: bool,
 }
@@ -49,7 +43,6 @@ fn default_static_dir() -> String {
     "../admin-web/dist".into()
 }
 
-/// 代码内置的默认密钥（历史遗留），生产环境继续使用等于把后台拱手让人
 const KNOWN_DEFAULT_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
 
 impl Config {
@@ -77,9 +70,7 @@ impl Config {
         Ok(cfg)
     }
 
-    /// 启动期安全校验：密钥为默认值/空/过短时拒绝启动，防止带着已知密钥暴露公网
     pub fn validate_security(&self) -> Result<(), String> {
-        // 本地无数据库调试模式仅用于本机开发，跳过强校验
         if self.local_debug_no_db {
             return Ok(());
         }
@@ -88,8 +79,6 @@ impl Config {
                 return Err(format!("配置项 {name} 为空：请在 config.json 或环境变量（JWT_SECRET / API_SECRET）中设置强随机密钥"));
             }
             if value == KNOWN_DEFAULT_SECRET {
-                // api_secret 内置于客户端默认配置，改动会导致存量客户端失联，
-                // 阶段性只警告不拦截；jwt_secret 与客户端无关，必须更换
                 if name == "jwt_secret" {
                     return Err(format!("配置项 jwt_secret 仍为代码内置默认值：该值随源码公开，任何人可伪造管理员令牌接管后台。请改为强随机值后重启（如 openssl rand -hex 32 生成）"));
                 }
@@ -106,6 +95,12 @@ impl Config {
         if self.jwt_secret == self.api_secret {
             return Err("jwt_secret 与 api_secret 不能相同：管理员令牌签名密钥与客户端 API 密钥必须各自独立，避免一处泄露全线失守".to_string());
         }
+        if self.admin_username == "admin" && self.admin_password == "adminadmin" {
+            tracing::warn!(
+                "安全警告：后台账号仍为默认凭证 admin/adminadmin（随源码公开，任何人可登录后台）。\
+                 请立即在后台修改密码，或在 config.json / 环境变量中设置 ADMIN_USERNAME / ADMIN_PASSWORD"
+            );
+        }
         Ok(())
     }
 
@@ -118,8 +113,6 @@ impl Config {
             db_pass: env::var("DB_PASS").unwrap_or_default(),
             db_charset: env::var("DB_CHARSET").unwrap_or_else(|_| "utf8mb4".into()),
             api_secret: env::var("API_SECRET").unwrap_or_else(|_| "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200".into()),
-            // 签名时间戳容忍窗口（秒）：跨境链路 + 部分网络拦 NTP 导致设备时钟漂移，
-            // 300s 过紧会误拒真实用户（「部分网络登录失败」），放宽到 15 分钟
             api_timestamp_tolerance: env::var("API_TIMESTAMP_TOLERANCE").ok().and_then(|s| s.parse().ok()).unwrap_or(900),
             admin_username: env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".into()),
             admin_password: env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "adminadmin".into()),

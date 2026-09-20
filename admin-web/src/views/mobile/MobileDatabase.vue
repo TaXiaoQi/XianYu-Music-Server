@@ -196,7 +196,6 @@ onMounted(load)
 .mobile-btn.auto.active{border-color:#7c3aed;background:#7c3aed;color:#fff}
 .auto-dot{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 0 2px rgba(255,255,255,0.35);animation:pulse 1.6s ease-in-out infinite}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}}
-/* 弹窗内容 */
 .auto-body{padding:4px 20px 20px;display:flex;flex-direction:column;gap:14px;max-height:52vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .auto-toggle{display:flex;align-items:center;justify-content:space-between}
 .auto-label{font-size:14px;font-weight:850;color:var(--text)}

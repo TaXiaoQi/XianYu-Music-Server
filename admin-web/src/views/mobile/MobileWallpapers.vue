@@ -581,7 +581,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   white-space: nowrap;
 }
 
-/* 平台切换 */
 .platform-tabs {
   display: inline-flex;
   gap: 4px;
@@ -607,7 +606,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   color: var(--accent);
 }
 
-/* 状态筛选 */
 .wp-tabs {
   display: flex;
   gap: 8px;
@@ -648,7 +646,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 .wp-tab.active .tab-count { background: rgba(255, 255, 255, 0.25); }
 
-/* 上传限制 */
 .limit-head {
   display: flex;
   align-items: flex-start;
@@ -663,7 +660,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 .limit-row .mobile-input { flex: 1; }
 .limit-row .mobile-btn { flex-shrink: 0; }
 
-/* 账号独立上限 */
 .account-form { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
 .account-form-row { display: flex; gap: 8px; }
 .account-form-row .mobile-input:first-child { width: 40%; flex: none; }
@@ -687,7 +683,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 .text-btn { border: none; background: transparent; color: var(--accent); font-size: 12px; font-weight: 700; cursor: pointer; padding: 4px; }
 .text-btn.danger { color: #ef4444; }
 
-/* 画廊 */
 .wp-gallery {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -781,7 +776,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 .empty-title { font-size: 14px; font-weight: 700; color: var(--text-light); margin-bottom: 4px; }
 .empty-sub { font-size: 12px; color: var(--text-muted); }
 
-/* 弹窗 */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -836,7 +830,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 }
 .modal-field input:focus, .modal-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
-/* 平台选择器 */
 .platform-row { display: flex; gap: 8px; }
 .platform-btn {
   flex: 1; padding: 10px; border-radius: 12px; border: 1px solid var(--border);
@@ -875,7 +868,6 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
 .modal-btn.save { border: none; background: #EC4141; color: #fff; }
 .modal-btn.save:disabled { opacity: 0.55; }
 
-/* 过渡动画 */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-active .modal-dialog { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

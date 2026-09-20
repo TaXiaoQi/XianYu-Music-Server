@@ -2,21 +2,9 @@ use axum::response::Response;
 use serde_json::{json, Value};
 use sqlx::MySqlPool;
 
-use super::{err, log_operation, ok, row_to_value, AdminCtx};
+use super::{err, int_of, log_operation, ok, row_to_value, str_of, AdminCtx};
 
-fn str_of<'a>(v: &'a serde_json::Value, key: &str) -> &'a str {
-    v.get(key).and_then(|x| x.as_str()).unwrap_or("")
-}
-
-fn int_of(v: &serde_json::Value, key: &str) -> i64 {
-    v.get(key)
-        .and_then(|x| x.as_i64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
-        .unwrap_or(0)
-}
-
-/// 管理员列表 + 统计
 pub async fn list_admins(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    // 查询列表（不返回 password 字段）
     let list: Vec<Value> = match sqlx::query(
         "SELECT id, username, email, avatar_url, role, status, created_at, updated_at FROM admin_users ORDER BY created_at DESC",
     )
@@ -27,7 +15,6 @@ pub async fn list_admins(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Resp
         Err(_) => return err(500, "数据库错误"),
     };
 
-    // 统计
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users")
         .fetch_one(pool).await.unwrap_or(0);
     let active: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users WHERE status = 1")
@@ -55,7 +42,6 @@ pub async fn list_admins(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Resp
     }))
 }
 
-/// 切换管理员状态（启用/禁用）
 pub async fn toggle_admin_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if ctx.role != "super_admin" {
         return err(403, "仅超级管理员可以管理管理员账号");
@@ -68,7 +54,6 @@ pub async fn toggle_admin_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     if id == ctx.id {
         return err(400, "不能修改自己的状态");
     }
-    // 查询当前状态
     let current: Option<i32> = sqlx::query_scalar("SELECT status FROM admin_users WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
@@ -78,7 +63,6 @@ pub async fn toggle_admin_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     match current {
         Some(status) => {
             let new_status = if status == 1 { 0 } else { 1 };
-            // 禁止禁用最后一个启用中的超级管理员
             if status == 1 && new_status == 0 {
                 let role: Option<String> = sqlx::query_scalar("SELECT role FROM admin_users WHERE id = ?")
                     .bind(id)
@@ -96,7 +80,8 @@ pub async fn toggle_admin_status(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
                     }
                 }
             }
-            let _ = sqlx::query("UPDATE admin_users SET status = ? WHERE id = ?")
+            let _ = sqlx::query("UPDATE admin_users SET status = ?, token_invalid_before = IF(? = 0, UNIX_TIMESTAMP(), token_invalid_before) WHERE id = ?")
+                .bind(new_status)
                 .bind(new_status)
                 .bind(id)
                 .execute(pool)
@@ -123,11 +108,9 @@ pub async fn add_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
     if !email.is_empty() && !super::is_valid_email(&email) {
         return err(400, "邮箱格式不正确");
     }
-    // 角色合法性：仅允许 超管 / 一级管理 / 二级管理 / 访客。
     if !matches!(role.as_str(), "super_admin" | "admin" | "admin2" | "guest") {
         return err(400, "角色不合法");
     }
-    // 超级管理员全局只能有一个
     if role == "super_admin" {
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM admin_users WHERE role = 'super_admin'")
             .fetch_one(pool)
@@ -172,7 +155,6 @@ pub async fn delete_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
     if id == ctx.id {
         return err(400, "不能删除自己");
     }
-    // 禁止删除最后一个超级管理员
     let role: Option<String> = sqlx::query_scalar("SELECT role FROM admin_users WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
@@ -196,10 +178,6 @@ pub async fn delete_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
     ok("删除成功", serde_json::Value::Null)
 }
 
-/// 超管变更其他账号等级，支持转让超级管理。
-///
-/// - 将目标升为「超级管理」时视为转让：目标成为超管，当前超管自动降为一级管理，保证全局仅一个超管。
-/// - 其余情况仅更新目标账号等级；不允许超管变更自己的等级（交接走转让）。
 pub async fn change_admin_role(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if ctx.role != "super_admin" {
         return err(403, "仅超级管理员可以变更账号等级");
@@ -207,7 +185,6 @@ pub async fn change_admin_role(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     let data: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
     let id = int_of(&data, "id");
     let role = str_of(&data, "role").to_string();
-    // 角色合法性：仅允许 超管 / 一级管理 / 二级管理 / 访客。
     if !matches!(role.as_str(), "super_admin" | "admin" | "admin2" | "guest") {
         return err(400, "角色不合法");
     }
@@ -223,20 +200,19 @@ pub async fn change_admin_role(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     let Some(target_role) = target_role else {
         return err(404, "账号不存在");
     };
-    // 转让超级管理：目标升为超管，当前超管降为一级管理。
     if role == "super_admin" {
-        let _ = sqlx::query("UPDATE admin_users SET role = 'admin' WHERE id = ?")
+        let _ = sqlx::query("UPDATE admin_users SET role = 'admin', token_invalid_before = UNIX_TIMESTAMP() WHERE id = ?")
             .bind(ctx.id)
             .execute(pool)
             .await;
-        let _ = sqlx::query("UPDATE admin_users SET role = 'super_admin' WHERE id = ?")
+        let _ = sqlx::query("UPDATE admin_users SET role = 'super_admin', token_invalid_before = UNIX_TIMESTAMP() WHERE id = ?")
             .bind(id)
             .execute(pool)
             .await;
         log_operation(pool, ctx, "转让超级管理", &format!("目标账号ID:{}", id), "当前超管降为一级管理").await;
         return ok("已转让超级管理，当前账号降为一级管理", serde_json::Value::Null);
     }
-    let _ = sqlx::query("UPDATE admin_users SET role = ? WHERE id = ?")
+    let _ = sqlx::query("UPDATE admin_users SET role = ?, token_invalid_before = UNIX_TIMESTAMP() WHERE id = ?")
         .bind(&role)
         .bind(id)
         .execute(pool)

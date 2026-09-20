@@ -223,7 +223,6 @@ function platformLabelKey(key: string | undefined): string {
   return PLATFORMS.find(p => p.key === key)?.label || PLATFORMS[0].label
 }
 
-// 平台切换筛选（同版本管理）
 const platformFilter = ref<PlatformKey>('desktop')
 const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
 const filteredList = computed(() => list.value.filter(a => platformOf(a) === platformFilter.value))
@@ -357,7 +356,6 @@ onMounted(loadList)
 .ann-title { font-size: 18px; font-weight: 850; margin: 0 0 4px; color: var(--text); }
 .ann-desc { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0; }
 
-/* 平台切换 tab（同版本管理） */
 .mplat-tabs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -393,13 +391,9 @@ onMounted(loadList)
   padding: 9px 16px;
 }
 
-/* 统计（复用共享 .mobile-grid/.mobile-stat，内联3列） */
-
-/* 空状态 */
 .empty-title { font-size: 14px; font-weight: 700; color: var(--text-light); margin-bottom: 4px; }
 .empty-sub { font-size: 12px; color: var(--text-muted); }
 
-/* 公告列表 */
 .ann-list {
   display: flex;
   flex-direction: column;
@@ -463,7 +457,6 @@ onMounted(loadList)
 .plat-mobile { background: #eef2ff; color: #4f46e5; }
 .plat-watch { background: #e7f5ea; color: #15803d; }
 
-/* 开关 */
 .switch { position: relative; display: inline-flex; flex-shrink: 0; cursor: pointer; }
 .switch input { display: none; }
 .switch .track {
@@ -545,7 +538,6 @@ onMounted(loadList)
   flex-shrink: 0;
 }
 
-/* 弹窗 */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -615,7 +607,6 @@ onMounted(loadList)
 .modal-field input:focus,
 .modal-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
-/* 类型选择器 */
 .type-picker {
   display: flex;
   gap: 8px;
@@ -676,7 +667,6 @@ onMounted(loadList)
 .modal-btn.save { border: none; background: #EC4141; color: #fff; }
 .modal-btn.save:disabled { opacity: 0.55; }
 
-/* 过渡动画 */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-active .modal-dialog { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

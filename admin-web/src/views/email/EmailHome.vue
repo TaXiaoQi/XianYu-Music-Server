@@ -145,7 +145,6 @@ onMounted(loadProfile)
   background: var(--track);
 }
 
-/* Header */
 .page-header {
   background: #fff;
   border-bottom: 1px solid #e8e8e8;
@@ -195,14 +194,12 @@ onMounted(loadProfile)
   background: rgba(236, 65, 65, 0.10);
 }
 
-/* Main */
 .page-main {
   max-width: 720px;
   margin: 0 auto;
   padding: 32px 20px;
 }
 
-/* Profile Card */
 .profile-card {
   background: #fff;
   border: 1px solid #e8e8e8;
@@ -282,7 +279,6 @@ onMounted(loadProfile)
   color: #1a7a3a;
 }
 
-/* Logs Card */
 .logs-card {
   background: #fff;
   border: 1px solid #e8e8e8;
@@ -354,7 +350,6 @@ onMounted(loadProfile)
   padding: 32px 0;
 }
 
-/* Loading */
 .loading-state {
   text-align: center;
   padding: 60px 0;

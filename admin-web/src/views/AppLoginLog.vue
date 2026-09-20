@@ -226,12 +226,10 @@ const stats = ref<LogStats>({
 })
 const total = ref(0)
 
-// 筛选
 const keyword = ref('')
 const statusFilter = ref('')
 const hasFilter = computed(() => !!keyword.value || !!statusFilter.value)
 
-// 分页页码
 const pageNumbers = computed(() => {
   const max = 7
   const pages: number[] = []
@@ -246,7 +244,6 @@ const pageNumbers = computed(() => {
   return pages
 })
 
-// 今日成功/失败百分比
 const successPct = computed(() => {
   if (stats.value.today_count === 0) return 0
   return Math.round((stats.value.today_success / stats.value.today_count) * 100)
@@ -497,7 +494,6 @@ onMounted(() => {
 }
 .table-wrap { overflow-x: auto; }
 
-/* 行 */
 .row {
   display: grid;
   grid-template-columns: 60px 140px 130px 160px 90px 90px 80px 160px 150px;

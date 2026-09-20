@@ -7,14 +7,10 @@ use sqlx::MySqlPool;
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
-/// 兜底模块 JSON 文件路径（相对 serve 根，与公告/版本配置同目录）
 fn fallback_modules_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("fallback_modules.json")
 }
 
-/// 签名私钥来源：优先环境变量，其次 api/fallback_sign_key.txt（均存 hex 32 字节种子）。
-/// 刻意不放进 Config/config.json，避免经后台「配置管理」页面读取/篡改私钥。
-/// 客户端内嵌验签公钥（fd2f887e74ad...）与之成对，切勿在服务端之外泄露。
 fn load_signing_private_key() -> Option<SigningKey> {
     let seed_hex = std::env::var("FALLBACK_SIGN_PRIVATE_KEY")
         .ok()
@@ -39,20 +35,16 @@ fn load_signing_private_key() -> Option<SigningKey> {
     Some(SigningKey::from_bytes(&seed))
 }
 
-/// 签名消息构造：与服务端/客户端约定逐字一致（clinent 端 fallback_verify.rs 同构）。
-/// 含 moduleKey + version 防止签名在不同模块/版本间复用。
 fn module_signing_message(module_key: &str, version: i64, code: &str) -> Vec<u8> {
     format!("xianyu-fallback-v1\x00{module_key}\x00{version}\x00{code}").into_bytes()
 }
 
-/// 对模块签名，返回 hex（128 字符）。私钥未配置返回 None（由调用方决定拒绝保存）。
 fn sign_module(module_key: &str, version: i64, code: &str) -> Option<String> {
     let key = load_signing_private_key()?;
     let sig = key.sign(&module_signing_message(module_key, version, code));
     Some(hex::encode(sig.to_bytes()))
 }
 
-/// 客户端与后台共同约定的模块 key 白名单（与桌面端 FALLBACK_MODULE_METHODS 一一对应）
 pub const VALID_MODULE_KEYS: &[(&str, &str)] = &[
     ("lx_search", "落雪歌曲搜索"),
     ("lx_album", "专辑/歌单获取"),
@@ -113,9 +105,6 @@ fn now_ymd_hms() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-/// 公开端点数据：仅返回已启用模块，字段与桌面端 sync.ts 期望一致。
-/// 每个模块附带 ed25519 签名（save 时落盘；缺失则按当前代码/版本实时重签）。
-/// 客户端验签通过才允许执行；私钥未配置时 signature 为空串 → 客户端将丢弃该模块回退内置实现（fail-closed）。
 pub fn enabled_modules_payload() -> Vec<Value> {
     read_modules()
         .into_iter()
@@ -143,7 +132,6 @@ pub fn enabled_modules_payload() -> Vec<Value> {
         .collect()
 }
 
-/// 获取兜底模块列表（未配置的模块也返回占位，供后台展示全部可用模块）
 pub async fn list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     let configured = read_modules();
     let list: Vec<Value> = VALID_MODULE_KEYS
@@ -169,8 +157,6 @@ pub async fn list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     ok("ok", json!({ "list": list }))
 }
 
-/// 新增/编辑兜底模块（按 moduleKey upsert）。
-/// 代码变化时版本号自动 +1（客户端按 version 变化感知更新），代码不变则保持版本号。
 pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let module_key = str_of(&data, "module_key").trim().to_string();
@@ -209,7 +195,6 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
         }
     };
 
-    // 签名：私钥未配置则拒绝保存，防止产出无法被客户端验签通过的模块。
     let signature = match sign_module(&module_key, version, &code) {
         Some(sig) => sig,
         None => return err(500, "服务端未配置兜底模块签名密钥（FALLBACK_SIGN_PRIVATE_KEY 或 api/fallback_sign_key.txt），无法保存"),
@@ -258,7 +243,6 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     }))
 }
 
-/// 删除兜底模块（客户端下次拉取后回退内置默认实现）
 pub async fn delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let module_key = str_of(&data, "module_key").trim().to_string();
@@ -281,7 +265,6 @@ pub async fn delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     ok("删除成功，客户端将回退内置默认实现", Value::Null)
 }
 
-/// 切换兜底模块启用状态
 pub async fn toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let module_key = str_of(&data, "module_key").trim().to_string();
@@ -314,7 +297,6 @@ mod sign_tests {
     use super::*;
     use ed25519_dalek::{Verifier, VerifyingKey};
 
-    /// 与客户端 fallback_verify.rs 内嵌公钥逐字一致；若此常量与客户端不同步，签名将无法被客户端验证。
     const CLIENT_PUBLIC_KEY_HEX: &str =
         "fd2f887e74adb2009079bc822536d8f09d1404656f748289608592b6a4c974c5";
 

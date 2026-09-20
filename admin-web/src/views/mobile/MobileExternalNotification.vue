@@ -1024,7 +1024,6 @@ const wsLogs = ref<WsLog[]>([])
 
 const wsClientConnected = ref(false)
 
-// HTTP 客户端
 const httpClientUrl = ref('')
 const httpClientMethod = ref('GET')
 const httpClientHeaders = ref('')
@@ -1032,18 +1031,14 @@ const httpClientBody = ref('')
 const httpClientSending = ref(false)
 const httpClientResult = ref<{ status: number; headers: Record<string, string>; body: string; elapsed_ms: number } | null>(null)
 
-// SSE
 const sseMessage = ref('')
 
-// WS 服务器
 const wsMessage = ref('')
 const wsBroadcastMessage = ref('')
 
-// WS 客户端
 const wsClientUrl = ref('')
 const wsClientMessage = ref('')
 
-// WS 客户端自动重连配置
 const wsClientConfig = reactive({
   url: '',
   auto_reconnect: false,
@@ -1052,7 +1047,6 @@ const wsClientConfig = reactive({
 })
 const wsClientConfigSaving = ref(false)
 
-// 连接鉴权配置
 const authForm = reactive({ token: '', token_enabled: false })
 const authShowToken = ref(false)
 const authSaving = ref(false)
@@ -1415,7 +1409,6 @@ onMounted(() => {
   color: #fff;
 }
 
-/* 通知板块 */
 .module-head {
   display: flex;
   align-items: flex-start;
@@ -1575,7 +1568,6 @@ onMounted(() => {
   flex-direction: column;
 }
 
-/* 统计 */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -1607,7 +1599,6 @@ onMounted(() => {
 .stat-label { font-size: 10px; color: var(--text-muted); }
 .stat-num { font-size: 18px; font-weight: 850; line-height: 1.2; color: var(--text); }
 
-/* 列表 */
 .mobile-item.is-disabled { opacity: 0.6; }
 .mobile-admin-left {
   display: flex;
@@ -1963,7 +1954,6 @@ onMounted(() => {
 }
 .client-row input:focus { border-color: var(--accent); }
 
-/* 弹窗 */
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -2082,7 +2072,6 @@ onMounted(() => {
 .modal-btn.save { border: none; background: #EC4141; color: #fff; }
 .modal-btn.save:disabled { opacity: 0.55; }
 
-/* 过渡动画 */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)); }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-active .modal-dialog { animation: modalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

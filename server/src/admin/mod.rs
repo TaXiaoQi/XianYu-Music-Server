@@ -32,16 +32,15 @@ pub mod version;
 pub mod wallpaper;
 pub mod commtool;
 
-/// JWT 载荷：管理员身份
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AdminClaims {
     pub sub: i64,
     pub username: String,
     pub role: String,
+    pub iat: usize,
     pub exp: usize,
 }
 
-/// 当前登录管理员上下文
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 pub struct AdminCtx {
@@ -53,18 +52,17 @@ pub struct AdminCtx {
     pub base_url: String,
 }
 
-/// 签发 JWT（24 小时时效）
 pub fn sign_token(cfg: &crate::config::Config, id: i64, username: &str, role: &str) -> String {
-    let exp = (std::time::SystemTime::now()
+    let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
-        .as_secs()
-        + 86400) as usize;
+        .as_secs();
     let claims = AdminClaims {
         sub: id,
         username: username.to_string(),
         role: role.to_string(),
-        exp,
+        iat: now as usize,
+        exp: (now + 86400) as usize,
     };
     jsonwebtoken::encode(
         &jsonwebtoken::Header::default(),
@@ -74,8 +72,7 @@ pub fn sign_token(cfg: &crate::config::Config, id: i64, username: &str, role: &s
     .unwrap_or_default()
 }
 
-/// 解析 Bearer JWT
-pub fn verify_token(cfg: &crate::config::Config, header: Option<&str>) -> Option<AdminClaims> {
+pub async fn verify_token(cfg: &crate::config::Config, header: Option<&str>, pool: Option<&MySqlPool>) -> Option<AdminClaims> {
     let bearer = header?.strip_prefix("Bearer ")?;
     let data = jsonwebtoken::decode::<AdminClaims>(
         bearer,
@@ -83,10 +80,25 @@ pub fn verify_token(cfg: &crate::config::Config, header: Option<&str>) -> Option
         &jsonwebtoken::Validation::default(),
     )
     .ok()?;
-    Some(data.claims)
+    let claims = data.claims;
+    if let Some(pool) = pool {
+        let invalid_before: Option<i64> =
+            sqlx::query_scalar("SELECT token_invalid_before FROM admin_users WHERE id = ?")
+                .bind(claims.sub)
+                .fetch_optional(pool)
+                .await
+                .ok()
+                .flatten()
+                .flatten();
+        if let Some(ts) = invalid_before {
+            if (claims.iat as i64) < ts {
+                return None;
+            }
+        }
+    }
+    Some(claims)
 }
 
-/// 统一 JSON 响应（后台不使用加密）
 pub fn json(code: i32, msg: &str, data: Option<Value>) -> Response {
     let payload =
         serde_json::to_string(&json!({ "code": code, "msg": msg, "data": data })).unwrap_or_default();
@@ -111,7 +123,6 @@ pub fn err(code: i32, msg: &str) -> Response {
     json(code, msg, None)
 }
 
-/// 代理专用：返回透传 JSON（不强制 {code,msg,data} 结构），附加 http_code / raw
 pub fn proxy_response(payload: Option<Value>) -> Response {
     let body = serde_json::to_string(&payload.unwrap_or(Value::Null)).unwrap_or_default();
     (
@@ -122,7 +133,6 @@ pub fn proxy_response(payload: Option<Value>) -> Response {
         .into_response()
 }
 
-/// 记录后台操作日志
 pub async fn log_operation(pool: &MySqlPool, ctx: &AdminCtx, action: &str, target: &str, detail: &str) {
     let _ = sqlx::query(
         "INSERT INTO admin_operation_log (admin_id, admin_username, action, target, detail, ip) VALUES (?,?,?,?,?,?)",
@@ -137,7 +147,6 @@ pub async fn log_operation(pool: &MySqlPool, ctx: &AdminCtx, action: &str, targe
     .await;
 }
 
-/// 提取客户端 IP
 pub fn client_ip(headers: &HeaderMap) -> String {
     crate::sign::get_client_ip(
         headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()),
@@ -146,19 +155,9 @@ pub fn client_ip(headers: &HeaderMap) -> String {
     )
 }
 
-/// 简单的邮箱格式校验
-pub fn is_valid_email(email: &str) -> bool {
-    let email = email.trim();
-    if email.is_empty() || !email.contains('@') {
-        return false;
-    }
-    let mut parts = email.split('@');
-    let local = parts.next().unwrap_or("");
-    let domain = parts.next().unwrap_or("");
-    !local.is_empty() && !domain.is_empty() && domain.contains('.')
-}
+pub use crate::handlers::helpers::is_valid_email;
+pub use crate::handlers::helpers::{int_of, str_of};
 
-/// 将一行转换为 JSON 对象（列名 -> 值），兼容文本/数字/二进制/NULL
 pub fn row_to_value(row: &sqlx::mysql::MySqlRow) -> Value {
     use sqlx::Row;
     let mut map = serde_json::Map::new();
@@ -194,7 +193,6 @@ pub fn row_to_value(row: &sqlx::mysql::MySqlRow) -> Value {
     Value::Object(map)
 }
 
-/// 批量对行对象中的涉密敏感字段脱敏（guest 专用），其余角色原样返回。
 pub fn mask_sensitive(role: &str, rows: Vec<Value>) -> Vec<Value> {
     if role != "guest" {
         return rows;
@@ -214,10 +212,6 @@ pub fn mask_sensitive(role: &str, rows: Vec<Value>) -> Vec<Value> {
         .collect()
 }
 
-/// 各角色通用的「查看型」动作白名单。
-///
-/// 三级访客只能查看这些内容；二级管理在其基础上另可操作反馈与审核。
-/// 任何写操作或涉密读取（数据库/配置文件/外部通知/邮箱/审核密钥/后台日志/管理员列表等）一律拦截。
 fn is_read_action(action: &str) -> bool {
     matches!(
         action,
@@ -266,7 +260,6 @@ fn is_read_action(action: &str) -> bool {
     )
 }
 
-/// 反馈类可写动作（二级管理可执行）。
 fn is_feedback_action(action: &str) -> bool {
     matches!(
         action,
@@ -288,7 +281,6 @@ fn is_feedback_action(action: &str) -> bool {
     )
 }
 
-/// 审核类可写动作（二级管理可执行，含头像/改名审核、审核设置、作弊词、验证码审核配置）。
 fn is_audit_action(action: &str) -> bool {
     matches!(
         action,
@@ -309,22 +301,15 @@ fn is_audit_action(action: &str) -> bool {
     )
 }
 
-/// 角色是否允许执行该动作。
-///
-/// 分级：超管(超级管理)、一级管理(admin) 拥有全量操作；二级管理(admin2) 仅反馈+审核+查看；
-/// 三级访客(guest) 仅查看。漏给任意低级别角色放行任何高危动作。
 fn role_allowed(role: &str, action: &str) -> bool {
     match role {
         "guest" => is_read_action(action),
         "admin2" => is_read_action(action) || is_feedback_action(action) || is_audit_action(action),
-        // admin（一级管理）与 super_admin（超管）默认全量放行，个别超管专属操作由具体接口自行校验。
         _ => true,
     }
 }
 
-/// 后台 action 分发（仅登录态调用）
 pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool) -> Response {
-    // 分级权限强拦截：低级别账号仅放行其职责内的动作。
     if !role_allowed(&ctx.role, action) {
         let msg = match ctx.role.as_str() {
             "guest" => "访客账号仅可查看，不能操作",

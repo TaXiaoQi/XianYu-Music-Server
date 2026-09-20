@@ -1,19 +1,14 @@
-/**
- * EmailForgot 组件测试
- */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import EmailForgot from '../EmailForgot.vue'
 import * as emailApi from '@/api/email'
 
-// mock vue-router
 const mockPush = vi.fn()
 const mockReplace = vi.fn()
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
 }))
 
-// mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {}
   return {
@@ -25,7 +20,6 @@ const localStorageMock = (() => {
 })()
 vi.stubGlobal('localStorage', localStorageMock)
 
-// RouterLink stub
 const RouterLinkStub = {
   template: '<a :href="to"><slot /></a>',
   props: ['to'],
@@ -54,7 +48,6 @@ describe('EmailForgot.vue', () => {
     const wrapper = mountComponent()
     expect(wrapper.find('h1').text()).toBe('找回密码')
     const inputs = wrapper.findAll('input')
-    // email, code, password, password2
     expect(inputs.length).toBe(4)
     expect(wrapper.find('button[type="submit"]').exists()).toBe(true)
     expect(wrapper.find('.code-btn').exists()).toBe(true)
@@ -120,9 +113,9 @@ describe('EmailForgot.vue', () => {
 
     await wrapper.find('input[type="email"]').setValue('user@test.com')
     const inputs = wrapper.findAll('input')
-    await inputs[1].setValue('123456')   // code
-    await inputs[2].setValue('NewPass123') // password
-    await inputs[3].setValue('NewPass123') // password2
+    await inputs[1].setValue('123456')
+    await inputs[2].setValue('NewPass123')
+    await inputs[3].setValue('NewPass123')
 
     await wrapper.find('form').trigger('submit.prevent')
     await flushPromises()

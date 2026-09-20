@@ -18,11 +18,11 @@ fn about_config_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("about_config.json")
 }
 
-/// 平台专属关于页配置文件：desktop / mobile 配置结构独立，互不覆盖。
 fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
     match platform {
         "desktop" => Some(std::path::Path::new("api").join("about_config_desktop.json")),
         "mobile" => Some(std::path::Path::new("api").join("about_config_mobile.json")),
+        "watch" => Some(std::path::Path::new("api").join("about_config_watch.json")),
         _ => None,
     }
 }
@@ -71,7 +71,6 @@ fn read_announcements() -> Vec<serde_json::Value> {
 }
 
 pub async fn get_source_status(ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    // 确保音源配置存在
     let _ = sqlx::query("DELETE FROM music_source_config")
         .execute(pool)
         .await;
@@ -217,8 +216,6 @@ pub async fn get_version_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     }
 }
 
-/// 平台默认系统：桌面 Windows、移动 Android、腕上端无系统细分（""）。
-/// 无 system 字段的遗留记录与未携带 system 的在用客户端按此默认系统处理，保证不回归。
 fn default_system(platform: &str) -> &'static str {
     match platform {
         "mobile" => "android",
@@ -227,7 +224,6 @@ fn default_system(platform: &str) -> &'static str {
     }
 }
 
-/// 配置项的有效系统：优先读 system 字段；无 system 字段的遗留记录视为平台默认系统。
 fn item_system<'a>(item: &'a serde_json::Value, platform: &str) -> &'a str {
     let raw = item.get("system").and_then(|v| v.as_str()).unwrap_or("");
     if raw.is_empty() {
@@ -248,8 +244,6 @@ fn system_label(platform: &str, system: &str) -> &'static str {
     }
 }
 
-/// 读取指定平台指定系统指定渠道（stable/beta）的最新已启用版本配置。
-/// system 为空时按平台默认系统解析（遗留无 system 记录匹配默认系统，保证在用客户端不回归）。
 fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str) -> Option<serde_json::Value> {
     let path = std::path::Path::new("api").join("version.json");
     let content = std::fs::read_to_string(path).ok()?;
@@ -267,7 +261,6 @@ fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str) 
         if item_platform != platform {
             continue;
         }
-        // 渠道过滤：未标注 channel 的历史条目一律视为正式版
         let item_channel = item.get("channel").and_then(|v| v.as_str()).unwrap_or("stable");
         if item_channel != channel {
             continue;
@@ -276,7 +269,6 @@ fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str) 
         if !enabled {
             continue;
         }
-        // 系统过滤：仅匹配有效系统相同的记录；遗留无 system 记录按平台默认系统匹配
         if item_system(item, platform) != effective_system {
             continue;
         }
@@ -294,7 +286,6 @@ fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str) 
     best
 }
 
-/// 设备是否在内测名单中（beta_testers 表）。
 async fn beta_device_allowed(pool: &MySqlPool, device_id: &str) -> bool {
     if device_id.is_empty() {
         return false;
@@ -307,11 +298,6 @@ async fn beta_device_allowed(pool: &MySqlPool, device_id: &str) -> bool {
         > 0
 }
 
-/// 内测资格检查（客户端开屏门槛）：
-/// 客户端自行判定本地版本号含 beta 预发布段即为内测构建，携带 device_id 上报，
-/// 服务端只查 beta_testers 名单返回 allowed；不在名单 → 客户端拦截并弹内测申请窗。
-/// 不在名单且该设备存在待审核的内测申请时附 `pending: true`，
-/// 客户端改为弹「审核中」窗（仅退出软件，不再提供申请入口）。
 pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let raw = parse_body(body);
     let device_id = str_of(&raw, "device_id").trim().to_string();
@@ -336,9 +322,6 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     let system = str_of(&raw, "system").trim().to_string();
     let device_id = str_of(&raw, "device_id").trim().to_string();
 
-    // 渠道细分：普通设备只拉正式版；内测名单中的设备额外参与测试版比价，
-    // 测试版版本号更高时才下发（正式版发布后高于测试版则自然回正）。
-    // system 客户端可选携带；未携带则按平台默认系统推送（兼容在用客户端），只匹配同系统与遗留无 system 记录。
     let mut selected: Option<serde_json::Value> =
         latest_enabled_platform_version(&platform, "stable", &system);
     if beta_device_allowed(pool, &device_id).await {
@@ -384,7 +367,6 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
             })),
         );
     }
-    // 兜底：version.json 无已启用版本时，回退到历史 app_versions 数据
     let row = sqlx::query("SELECT * FROM app_versions WHERE status != 'disabled' ORDER BY id DESC LIMIT 1")
         .fetch_optional(pool)
         .await
@@ -413,15 +395,10 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
                 })),
             )
         }
-        // 无任何已发布版本：data 返回 null（不要返回数组，客户端按对象解析）
         None => ctx.json::<serde_json::Value>(200, "ok", None),
     }
 }
 
-/// 分享落地页「去下载」用的免签接口：返回指定平台服务器发布的最新版本下载信息。
-/// 与官网对齐——下载来源统一取服务器发布的版本（version.json → app_versions 兜底）。
-/// 返回按系统细分的下载列表 systems，供官网按系统渲染下载入口；顶层字段保留第一个可用系统，
-/// 兼容分享落地页等旧消费方。
 pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let raw = parse_body(body);
     let req_platform = str_of(&raw, "platform");
@@ -436,7 +413,6 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         _ => "弦予音乐桌面端",
     };
 
-    // 各系统的正式版下载（下载页/分享页不对内测渠道开放）
     let system_keys: Vec<&str> = match platform.as_str() {
         "mobile" => vec!["android", "harmonyos", "ios"],
         "watch" => vec![""],
@@ -466,7 +442,6 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         }
     }
 
-    // 顶层字段兼容旧消费方（分享落地页等），取第一个可用系统
     if let Some(f) = first {
         return ctx.ok(
             "ok",
@@ -482,7 +457,6 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         );
     }
 
-    // 兜底：历史 app_versions 中最新的非禁用版本
     let row = sqlx::query("SELECT * FROM app_versions WHERE status != 'disabled' ORDER BY id DESC LIMIT 1")
         .fetch_optional(pool)
         .await
@@ -509,8 +483,6 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     }
 }
 
-/// 下发兜底模块：桌面端启动及每 30 分钟拉取一次，
-/// 返回已启用模块的 {moduleKey, name, version, digest, code, updatedAt} 列表
 pub async fn get_fallback_modules(ctx: ReqCtx) -> Response {
     let modules = crate::admin::fallback::enabled_modules_payload();
     ctx.json(200, "ok", Some(json!({ "modules": modules })))
@@ -551,8 +523,6 @@ pub async fn get_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
     let device_id = str_of(&data, "device_id").trim().to_string();
-    // 根据平台单独推送，如版本/壁纸：请求方传入 platform，只取该平台可用的公告。
-    // 旧数据（无 platform 字段）视为桌面端配置，保证分平台上线前的公告继续生效。
     let platform = {
         let p = str_of(&data, "platform").trim().to_string();
         if p.is_empty() { "desktop".to_string() } else { p }
@@ -653,12 +623,10 @@ pub async fn confirm_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
 
     match result {
         Ok(_) => ctx.ok("确认成功", json!({ "announcement_id": announcement_id, "updatedAt": updated_at })),
-        Err(e) => ctx.err(500, &format!("记录公告确认失败: {}", e)),
+        Err(e) => { tracing::error!("记录公告确认失败: {e}"); ctx.err(500, "记录公告确认失败") },
     }
 }
 
-/// 移动端专属链接覆盖：开源地址指向移动端仓库，
-/// 参考项目改为桌面端仓库（即配置中的 projectUrl）。
 pub fn apply_mobile_about_overrides(config: &mut Value) {
     let Some(obj) = config.as_object_mut() else { return };
     let desktop_url = obj
@@ -678,9 +646,6 @@ pub fn apply_platform_about_overrides(config: &mut Value, body: &str) {
     apply_mobile_about_overrides(config);
 }
 
-/// 读取平台专属关于页配置；文件不存在返回 None（调用方回退默认配置）。
-/// 移动端存档以移动端默认值（开源=移动端仓库、参考=桌面端仓库）为基底合并，
-/// 缺省字段不会被桌面端默认值污染。
 fn read_platform_about_config(platform: &str) -> Option<serde_json::Value> {
     let path = platform_about_config_path(platform)?;
     let content = std::fs::read_to_string(path).ok()?;
@@ -699,7 +664,6 @@ fn read_platform_about_config(platform: &str) -> Option<serde_json::Value> {
 
 pub async fn get_about_config(body: &str, ctx: ReqCtx) -> Response {
     let platform = str_of(&parse_body(body), "platform").trim().to_string();
-    // 平台专属配置优先；无平台配置时回退默认配置（移动端叠加链接覆盖，保持旧行为）
     if let Some(config) = read_platform_about_config(&platform) {
         return ctx.json(200, "ok", Some(config));
     }
@@ -708,7 +672,6 @@ pub async fn get_about_config(body: &str, ctx: ReqCtx) -> Response {
     ctx.json(200, "ok", Some(config))
 }
 
-/// 获取站点 Logo（公开接口，供后台登录页等无需登录场景使用）
 pub async fn get_site_logo(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let url = crate::admin::site_config::read_site_logo(pool).await;
     ctx.json(200, "ok", Some(json!({ "logo_url": url })))
@@ -763,7 +726,6 @@ fn loadavg() -> (f64, f64) {
     (cpu, mem)
 }
 
-/// 排行榜公开部分缓存（Top N + 总人数）：对所有用户一致，30s 内复用
 struct LeaderboardCacheEntry {
     entries: Vec<Value>,
     total_users: u32,
@@ -797,11 +759,9 @@ fn leaderboard_cache_put(key: String, entries: Vec<Value>, total_users: u32) {
     }
 }
 
-/// 构建单个周期的 4 条 SQL（top/count/me/me_count）
 fn build_leaderboard_sql(kind: &str, period: &str) -> (String, String, String, String) {
     let order_col = if kind == "listen" { "listen_duration" } else { "unique_songs_count" };
 
-    // 连接统一 UTC，日期计算统一按北京时间(UTC+8)切日，保证日榜/周榜在本地 0 点重置
     match period {
         "daily" => {
             let day_filter = "stat_date = DATE(NOW() + INTERVAL 8 HOUR)";
@@ -849,7 +809,6 @@ fn build_leaderboard_sql(kind: &str, period: &str) -> (String, String, String, S
             )
         }
         "weekly" => {
-            // 本周一 ~ 今天（按北京时间切日）
             let week_filter = "stat_date >= DATE_SUB(DATE(NOW() + INTERVAL 8 HOUR), INTERVAL WEEKDAY(DATE(NOW() + INTERVAL 8 HOUR)) DAY) AND stat_date <= DATE(NOW() + INTERVAL 8 HOUR)";
             (
                 format!(
@@ -895,7 +854,6 @@ fn build_leaderboard_sql(kind: &str, period: &str) -> (String, String, String, S
             )
         }
         _ => {
-            // total
             (
                 format!(
                     "SELECT ciyuanxi_id, nickname, avatar_url, CAST({} AS SIGNED) AS value \
@@ -921,7 +879,6 @@ fn build_leaderboard_sql(kind: &str, period: &str) -> (String, String, String, S
     }
 }
 
-/// 获取单个周期的排行榜（公开部分走缓存，个人排名实时查询）
 async fn fetch_leaderboard_period(
     pool: &MySqlPool,
     kind: &str,
@@ -931,7 +888,6 @@ async fn fetch_leaderboard_period(
 ) -> Result<Value, String> {
     let cache_key = format!("{}|{}|{}", kind, period, limit);
 
-    // 公开部分（Top N + 总人数）走缓存，对所有用户一致
     let (entries, total_users) = if let Some((e, tu)) = leaderboard_cache_get(&cache_key) {
         (e, tu)
     } else {
@@ -960,7 +916,6 @@ async fn fetch_leaderboard_period(
         (entries, total_users)
     };
 
-    // 个人排名（me）不缓存，按用户实时查询
     let mut me: Option<Value> = None;
     let mut leaderboard: Vec<Value> = Vec::with_capacity(entries.len());
     for e in entries {
@@ -1015,7 +970,6 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     let limit = data.get("limit").and_then(|v| v.as_i64()).unwrap_or(50).clamp(1, 100);
     let ciyuanxi_id = data.get("ciyuanxi_id").and_then(|v| v.as_str()).unwrap_or("").to_string();
 
-    // period=all：一次请求返回日/周/总三榜，减少客户端多次往返
     if period == "all" {
         let mut leaderboards = serde_json::Map::new();
         for p in ["daily", "weekly", "total"] {

@@ -1,14 +1,7 @@
-/**
- * 后台（PC 端）统一弹窗工具
- * 替代浏览器原生 confirm() / prompt()
- * 样式：毛玻璃 + 圆角 + 阴影 + 居中，适配后台整体设计（见 main.css 中的 .web-dialog-*）
- */
-
 export interface WebConfirmOptions {
   title?: string
   confirmText?: string
   cancelText?: string
-  /** 危险操作时使用红色确认按钮 */
   danger?: boolean
 }
 
@@ -53,7 +46,6 @@ function closeDialog(overlay: HTMLDivElement) {
   }, 240)
 }
 
-/** 转义 HTML，防止注入 */
 function escapeHtml(input: string): string {
   return input
     .replace(/&/g, '&amp;')

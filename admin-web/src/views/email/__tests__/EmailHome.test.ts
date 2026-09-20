@@ -1,19 +1,14 @@
-/**
- * EmailHome 组件测试
- */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import EmailHome from '../EmailHome.vue'
 import * as emailApi from '@/api/email'
 
-// mock vue-router
 const mockPush = vi.fn()
 const mockReplace = vi.fn()
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
 }))
 
-// mock localStorage
 const localStorageMock = (() => {
   let store: Record<string, string> = {}
   return {
@@ -101,17 +96,14 @@ describe('EmailHome.vue', () => {
     const wrapper = mountComponent()
     await flushPromises()
 
-    // 昵称和邮箱
     expect(wrapper.find('h2').text()).toBe('TestUser')
     expect(wrapper.find('.email-text').text()).toBe('test@xianyu.com')
 
-    // 状态徽章
     const badge = wrapper.find('.status-badge')
     expect(badge.exists()).toBe(true)
     expect(badge.classes()).toContain('active')
     expect(badge.text()).toBe('正常')
 
-    // 头像首字母
     expect(wrapper.find('.avatar').text()).toBe('T')
   })
 
@@ -146,11 +138,9 @@ describe('EmailHome.vue', () => {
     const logItems = wrapper.findAll('.log-item')
     expect(logItems.length).toBe(2)
 
-    // 第一条日志应为登录
     const firstAction = logItems[0].find('.log-action')
     expect(firstAction.text()).toBe('登录')
 
-    // 第二条日志应为注册
     const secondAction = logItems[1].find('.log-action')
     expect(secondAction.text()).toBe('注册')
   })
@@ -184,7 +174,6 @@ describe('EmailHome.vue', () => {
 
     expect(clearSpy).toHaveBeenCalled()
 
-    // 跳转在 setTimeout 1000ms 中
     vi.advanceTimersByTime(1000)
     await flushPromises()
 

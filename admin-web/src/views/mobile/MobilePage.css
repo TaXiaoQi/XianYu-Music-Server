@@ -256,11 +256,9 @@
   -webkit-backdrop-filter: blur(8px);
   animation: none !important;
 }
-/* Pattern B 弹窗遮罩同样排除动画干扰 */
 .modal-backdrop {
   animation: none !important;
 }
-/* 弹窗淡出时立即移除背景模糊，避免 opacity 透明后 backdrop-filter 模糊残留 */
 .mobile-fade-leave-active,
 .modal-leave-active,
 .modal-backdrop-leave-active,
@@ -276,7 +274,6 @@
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
   overflow: hidden;
 }
-/* Vue Transition: 居中淡入淡出 */
 .mobile-fade-enter-active,
 .mobile-fade-leave-active {
   transition: opacity 0.24s var(--motion, cubic-bezier(0.16, 1, 0.3, 1));
@@ -359,7 +356,6 @@
 .mobile-dialog-btn.confirm.danger:active {
   background: rgba(236, 65, 65, 0.08);
 }
-/* 操作菜单列表 */
 .mobile-dialog-actions-list {
   display: flex;
   flex-direction: column;
@@ -429,7 +425,6 @@ html[data-theme='dark'] .mobile-dialog-overlay {
 }
 
 /* ---------- 页面内容块入场动画（统一补齐所有页面） ---------- */
-/* 排除弹窗遮罩，避免 animation-fill-mode: both 锁定 opacity 干扰 Vue Transition 淡出 */
 .mobile-page > *:not(.mobile-dialog-overlay):not(.modal-backdrop) {
   animation: mobileBlockIn 0.42s var(--motion, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }

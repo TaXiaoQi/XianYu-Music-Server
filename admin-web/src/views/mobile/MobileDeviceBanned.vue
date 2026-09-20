@@ -275,7 +275,6 @@ const PLATFORM_TABS: { key: string; label: string }[] = [
   { key: 'watch', label: '腕上端' },
 ]
 const platformFilter = ref('all')
-// 各平台设备数（服务端归一口径）
 const platformCounts = ref<Record<string, number>>({ all: 0, desktop: 0, mobile: 0, watch: 0 })
 
 function switchPlatform(key: string) {
@@ -494,7 +493,6 @@ function closePlugins() {
 }
 
 // ===== 工具函数 =====
-// 平台标签：优先取服务端记录的 platform；旧数据无该字段时按 os_version 推断
 function platformKey(d: Device): string {
   if (d.platform === 'desktop' || d.platform === 'mobile' || d.platform === 'watch') return d.platform
   return /windows/i.test(d.os_version || '') ? 'desktop' : 'mobile'
@@ -503,7 +501,6 @@ function platformLabel(d: Device): string {
   const map: Record<string, string> = { desktop: '桌面端', mobile: '移动端', watch: '腕上端' }
   return map[platformKey(d)] || ''
 }
-// 展示名：厂商为主（如 HONOR）+ 型号，与反馈条一致；无厂商回退市场名/型号（旧数据兼容）
 function deviceDisplayName(d: Device): string {
   const brand = (d.device_brand || '').trim()
   const model = (d.device_model || '').trim()
@@ -533,13 +530,11 @@ onMounted(loadDevices)
 </script>
 
 <style scoped>
-/* 顶部工具栏 */
 .mobile-toolbar {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-/* 工具栏槽位：搜索行始终占位，批量条悬浮覆盖其上，切换时高度不变，避免挤压主表 */
 .toolbar-slot {
   position: relative;
 }
@@ -559,7 +554,6 @@ onMounted(loadDevices)
   white-space: nowrap;
 }
 
-/* 批量模式：绝对定位悬浮覆盖搜索行，不参与文档流，切换时零位移 */
 .mobile-batch-bar {
   position: absolute;
   top: 0;
@@ -583,7 +577,6 @@ onMounted(loadDevices)
   flex-shrink: 0;
   white-space: nowrap;
 }
-/* 批量条向左滑出/收回动画 */
 .batch-slide-enter-active,
 .batch-slide-leave-active {
   transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1),
@@ -627,7 +620,6 @@ onMounted(loadDevices)
   margin-top: 0;
 }
 
-/* 列表项 */
 .mobile-item-main {
   flex: 1;
   min-width: 0;
@@ -638,7 +630,6 @@ onMounted(loadDevices)
   justify-content: space-between;
   gap: 8px;
 }
-/* 平台标签（与反馈页同款） */
 .platform-badge {
   flex-shrink: 0;
   display: inline-flex;
@@ -652,7 +643,6 @@ onMounted(loadDevices)
 .platform-desktop { background: rgba(59, 130, 246, 0.12); color: #3b82f6; }
 .platform-mobile { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 .platform-watch { background: rgba(20, 184, 166, 0.12); color: #14b8a6; }
-/* 平台切换（与版本管理页同款） */
 .platform-tabs {
   display: inline-flex;
   gap: 4px;
@@ -725,7 +715,6 @@ onMounted(loadDevices)
   opacity: 0.85;
 }
 
-/* 弹窗头部 */
 .mobile-dialog-head {
   display: flex;
   align-items: center;
@@ -758,7 +747,6 @@ onMounted(loadDevices)
   color: #EC4141;
 }
 
-/* 弹窗主体 */
 .popup-body {
   padding: 12px 0 0;
   overflow-y: auto;
@@ -785,7 +773,6 @@ onMounted(loadDevices)
   color: var(--text);
 }
 
-/* 详情网格 */
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -822,7 +809,6 @@ onMounted(loadDevices)
   color: #EC4141;
 }
 
-/* 子表格 */
 .popup-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);

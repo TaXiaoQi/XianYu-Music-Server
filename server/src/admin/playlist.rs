@@ -6,7 +6,6 @@ use sqlx::Row;
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
-/// 获取用户的所有云端歌单（含歌曲）
 pub async fn get_user_playlists(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let mut ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
@@ -76,7 +75,6 @@ pub async fn get_user_playlists(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     }))
 }
 
-/// 后台删除用户的单个云端歌单
 pub async fn delete_user_playlist(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let playlist_id = int_of(&data, "playlist_id");
@@ -102,7 +100,6 @@ pub async fn delete_user_playlist(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     ok("删除成功", Value::Null)
 }
 
-/// 一键删除空的"我喜欢的音乐"歌单
 pub async fn delete_empty_favorite_playlists(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     let all = sqlx::query("SELECT id, user_id, name, song_count, created_at FROM user_playlists WHERE is_favorite = 1 AND name = '我喜欢的音乐' ORDER BY user_id ASC, created_at ASC, id ASC")
@@ -111,8 +108,7 @@ pub async fn delete_empty_favorite_playlists(body: &str, ctx: &AdminCtx, pool: &
         Ok(r) => r,
         Err(_) => return err(500, "清理失败"),
     };
-    // 按 user_id 分组
-    let mut grouped: std::collections::BTreeMap<String, Vec<(i64, i64)>> = std::collections::BTreeMap::new(); // user_id -> [(id, created_ts)]
+    let mut grouped: std::collections::BTreeMap<String, Vec<(i64, i64)>> = std::collections::BTreeMap::new();
     for r in &all {
         let uid: String = r.get("user_id");
         let pid: i64 = r.get("id");

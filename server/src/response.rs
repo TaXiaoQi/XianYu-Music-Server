@@ -6,7 +6,6 @@ use serde_json::{json, Value};
 
 use crate::config::Config;
 
-/// 请求上下文：携带共享状态与请求头（用于判断是否需要加密响应）
 #[derive(Clone)]
 pub struct ReqCtx {
     pub config: Config,
@@ -53,7 +52,6 @@ impl ReqCtx {
         }
     }
 
-    /// 输出 JSON 响应；若为加密请求则 AES 加密后返回，与 PHP Sign::jsonResponse 一致
     pub fn json<T: Serialize>(&self, code: i32, msg: &str, data: Option<T>) -> Response {
         let payload = serde_json::to_string(&json!({ "code": code, "msg": msg, "data": data }))
             .unwrap_or_else(|_| r#"{"code":500,"msg":"serialize error","data":null}"#.to_string());
