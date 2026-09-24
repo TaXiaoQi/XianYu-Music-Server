@@ -107,6 +107,7 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move {
             db::ping(&cfg, &pool2).await;
             schema::ensure_schema(&pool2).await;
+            handlers::sync::backfill_legacy_sync_files(&pool2).await;
         });
         let auto_pool = pool.clone();
         tokio::spawn(async move {

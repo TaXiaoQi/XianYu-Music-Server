@@ -1,11 +1,15 @@
 use axum::response::Response;
 use chrono::Utc;
 use serde_json::{json, Value};
+use sqlx::MySqlPool;
 use std::path::PathBuf;
 
 use crate::handlers::helpers::{parse_body, str_of};
 use crate::response::ReqCtx;
 
+/// 旧版把用户同步数据按文件存放在 data/sync/<弦予号>/*.json，
+/// 现已全部迁入 user_sync_files / user_sync_chunks 两张表。
+/// 以下路径函数仅供旧文件迁移回填与遗留清理使用。
 fn sync_root() -> PathBuf {
     PathBuf::from("data/sync")
 }
@@ -15,8 +19,8 @@ fn sync_dir(ciyuanxi_id: &str) -> PathBuf {
     sync_root().join(digits)
 }
 
-fn chunk_dir(ciyuanxi_id: &str) -> PathBuf {
-    sync_dir(ciyuanxi_id).join("chunks")
+fn sync_user_id(ciyuanxi_id: &str) -> String {
+    ciyuanxi_id.chars().filter(|c| c.is_ascii_digit()).collect()
 }
 
 fn now_str() -> String {
@@ -27,27 +31,193 @@ fn now_ts() -> i64 {
     Utc::now().timestamp()
 }
 
-pub async fn file_sync_upload_start(body: &str, ctx: ReqCtx) -> Response {
-    let data = parse_body(body);
+/// 整包读用户同步文件：先查 DB，未命中时尝试旧文件懒迁移（导入后删除旧文件）。
+async fn read_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str) -> Result<Value, ()> {
+    let uid = sync_user_id(ciyuanxi_id);
+    let row: Option<(String,)> =
+        sqlx::query_as("SELECT content FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?")
+            .bind(&uid)
+            .bind(name)
+            .fetch_optional(pool)
+            .await
+            .map_err(|_| ())?;
+    if let Some((content,)) = row {
+        return serde_json::from_str(&content).map_err(|_| ());
+    }
+    // 旧文件回退：命中即导入 DB 并移除旧文件
+    let file = sync_dir(ciyuanxi_id).join(name);
+    if !file.exists() {
+        return Err(());
+    }
+    let content = std::fs::read_to_string(&file).map_err(|_| ())?;
+    let v: Value = serde_json::from_str(&content).map_err(|_| ())?;
+    let _ = sqlx::query("INSERT IGNORE INTO user_sync_files (ciyuanxi_id, file_name, content, content_size) VALUES (?, ?, ?, ?)")
+        .bind(&uid)
+        .bind(name)
+        .bind(&content)
+        .bind(content.len() as i64)
+        .execute(pool)
+        .await;
+    let _ = std::fs::remove_file(&file);
+    Ok(v)
+}
+
+/// 整包写用户同步文件（DB upsert），成功后清掉可能残留的旧文件。
+async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
+    let uid = sync_user_id(ciyuanxi_id);
+    let content = serde_json::to_string(data).unwrap_or_default();
+    let ok = sqlx::query(
+        "INSERT INTO user_sync_files (ciyuanxi_id, file_name, content, content_size) VALUES (?, ?, ?, ?) \
+         ON DUPLICATE KEY UPDATE content = VALUES(content), content_size = VALUES(content_size)",
+    )
+    .bind(&uid)
+    .bind(name)
+    .bind(&content)
+    .bind(content.len() as i64)
+    .execute(pool)
+    .await
+    .is_ok();
+    if ok {
+        let _ = std::fs::remove_file(sync_dir(ciyuanxi_id).join(name));
+    }
+    ok
+}
+
+/// 注销/清理用户时删除其全部同步数据（DB + 遗留目录兜底）。
+pub async fn delete_user_sync_data(pool: &MySqlPool, ciyuanxi_id: &str) {
+    let uid = sync_user_id(ciyuanxi_id);
+    let _ = sqlx::query("DELETE FROM user_sync_files WHERE ciyuanxi_id = ?")
+        .bind(&uid)
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("DELETE FROM user_sync_chunks WHERE ciyuanxi_id = ?")
+        .bind(&uid)
+        .execute(pool)
+        .await;
+    let _ = std::fs::remove_dir_all(sync_dir(ciyuanxi_id));
+}
+
+/// 启动回填：把 data/sync 下遗留的旧文件（含中断上传的分块）导入 DB，
+/// 导入成功的文件即删除；幂等，可重复执行。
+pub async fn backfill_legacy_sync_files(pool: &MySqlPool) {
+    let root = sync_root();
+    let mut migrated = 0usize;
+    let entries = match std::fs::read_dir(&root) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for e in entries.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            let uid = e.file_name().to_string_lossy().to_string();
+            let files = match std::fs::read_dir(&p) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            for f in files.flatten() {
+                let fp = f.path();
+                if fp.is_dir() {
+                    // chunks 目录：遗留的分块文件导入 user_sync_chunks
+                    if fp.file_name().map(|n| n == "chunks").unwrap_or(false) {
+                        if let Ok(cs) = std::fs::read_dir(&fp) {
+                            for c in cs.flatten() {
+                                let cp = c.path();
+                                let cname = c.file_name().to_string_lossy().to_string();
+                                if let Some(idx) = parse_chunk_index(&cname) {
+                                    if let Ok(content) = std::fs::read_to_string(&cp) {
+                                        let ins = sqlx::query(
+                                            "INSERT IGNORE INTO user_sync_chunks (ciyuanxi_id, chunk_index, total_chunks, content) VALUES (?, ?, 0, ?)",
+                                        )
+                                        .bind(&uid)
+                                        .bind(idx)
+                                        .bind(&content)
+                                        .execute(pool)
+                                        .await;
+                                        if ins.map(|r| r.rows_affected() > 0).unwrap_or(false) {
+                                            let _ = std::fs::remove_file(&cp);
+                                            migrated += 1;
+                                        }
+                                    }
+                                }
+                            }
+                            let _ = std::fs::remove_dir(&fp);
+                        }
+                    }
+                } else {
+                    let name = f.file_name().to_string_lossy().to_string();
+                    if !name.ends_with(".json") {
+                        continue;
+                    }
+                    if let Ok(content) = std::fs::read_to_string(&fp) {
+                        let size = content.len() as i64;
+                        let ins = sqlx::query(
+                            "INSERT IGNORE INTO user_sync_files (ciyuanxi_id, file_name, content, content_size) VALUES (?, ?, ?, ?)",
+                        )
+                        .bind(&uid)
+                        .bind(&name)
+                        .bind(&content)
+                        .bind(size)
+                        .execute(pool)
+                        .await;
+                        if ins.map(|r| r.rows_affected() > 0).unwrap_or(false) {
+                            let _ = std::fs::remove_file(&fp);
+                            migrated += 1;
+                        }
+                    }
+                }
+            }
+            let _ = std::fs::remove_dir(&p);
+        } else {
+            // 根级文件：属于无数字字符的异常弦予号（旧逻辑落到根目录）
+            let name = e.file_name().to_string_lossy().to_string();
+            if !name.ends_with(".json") {
+                continue;
+            }
+            if let Ok(content) = std::fs::read_to_string(&p) {
+                let size = content.len() as i64;
+                let ins = sqlx::query(
+                    "INSERT IGNORE INTO user_sync_files (ciyuanxi_id, file_name, content, content_size) VALUES ('', ?, ?, ?)",
+                )
+                .bind(&name)
+                .bind(&content)
+                .bind(size)
+                .execute(pool)
+                .await;
+                if ins.map(|r| r.rows_affected() > 0).unwrap_or(false) {
+                    let _ = std::fs::remove_file(&p);
+                    migrated += 1;
+                }
+            }
+        }
+    }
+    // 清理超过 7 天的遗留分块（客户端中断上传的残渣）
+    let _ = sqlx::query("DELETE FROM user_sync_chunks WHERE updated_at < NOW() - INTERVAL 7 DAY")
+        .execute(pool)
+        .await;
+    if migrated > 0 {
+        tracing::info!("[sync] backfilled {} legacy sync items into db", migrated);
+    }
+}
+
+pub async fn file_sync_upload_start(_body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(_body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    let dir = chunk_dir(&ciyuanxi_id);
-    if std::fs::create_dir_all(&dir).is_err() {
-        return ctx.err(500, "创建目录失败");
-    }
-    if let Ok(entries) = std::fs::read_dir(&dir) {
-        for e in entries.flatten() {
-            if e.path().extension().map(|x| x == "json").unwrap_or(false) {
-                let _ = std::fs::remove_file(e.path());
-            }
-        }
+    let uid = sync_user_id(&ciyuanxi_id);
+    let ok = sqlx::query("DELETE FROM user_sync_chunks WHERE ciyuanxi_id = ?")
+        .bind(&uid)
+        .execute(pool)
+        .await
+        .is_ok();
+    if !ok {
+        return ctx.err(500, "重置分块失败");
     }
     ctx.ok("ok", json!({ "chunk_dir_ready": true }))
 }
 
-pub async fn file_sync_upload_chunk(body: &str, ctx: ReqCtx) -> Response {
+pub async fn file_sync_upload_chunk(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     let chunk_index = data.get("chunk_index").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -56,61 +226,63 @@ pub async fn file_sync_upload_chunk(body: &str, ctx: ReqCtx) -> Response {
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    let dir = chunk_dir(&ciyuanxi_id);
-    if std::fs::create_dir_all(&dir).is_err() {
-        return ctx.err(500, "创建目录失败");
-    }
-    let file = dir.join(format!("chunk_{}.json", chunk_index));
+    let uid = sync_user_id(&ciyuanxi_id);
     let payload = json!({
         "chunk_index": chunk_index,
         "total_chunks": total_chunks,
         "chunk_data": chunk_data
     });
-    match std::fs::write(&file, serde_json::to_string(&payload).unwrap_or_default()) {
-        Ok(_) => ctx.ok("ok", json!({ "chunk_index": chunk_index, "total_chunks": total_chunks })),
-        Err(_) => ctx.err(500, &format!("分块 {} 写入失败", chunk_index)),
+    let content = serde_json::to_string(&payload).unwrap_or_default();
+    let ok = sqlx::query(
+        "INSERT INTO user_sync_chunks (ciyuanxi_id, chunk_index, total_chunks, content) VALUES (?, ?, ?, ?) \
+         ON DUPLICATE KEY UPDATE total_chunks = VALUES(total_chunks), content = VALUES(content)",
+    )
+    .bind(&uid)
+    .bind(chunk_index)
+    .bind(total_chunks)
+    .bind(&content)
+    .execute(pool)
+    .await
+    .is_ok();
+    if ok {
+        ctx.ok("ok", json!({ "chunk_index": chunk_index, "total_chunks": total_chunks }))
+    } else {
+        ctx.err(500, &format!("分块 {} 写入失败", chunk_index))
     }
 }
 
-pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
+pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    let dir = sync_dir(&ciyuanxi_id);
-    let chunkdir = chunk_dir(&ciyuanxi_id);
-    if !chunkdir.is_dir() {
+    let uid = sync_user_id(&ciyuanxi_id);
+    let rows: Vec<(i64, String)> = match sqlx::query_as(
+        "SELECT chunk_index, content FROM user_sync_chunks WHERE ciyuanxi_id = ? ORDER BY chunk_index ASC",
+    )
+    .bind(&uid)
+    .fetch_all(pool)
+    .await
+    {
+        Ok(r) => r,
+        Err(_) => return ctx.err(400, "没有分块数据"),
+    };
+    if rows.is_empty() {
         return ctx.err(400, "没有分块数据");
     }
     let mut all_playlists: Vec<Value> = Vec::new();
-    let mut files: Vec<(i64, PathBuf)> = Vec::new();
-    let mut err = false;
-    if let Ok(rd) = std::fs::read_dir(&chunkdir) {
-        for e in rd.flatten() {
-            let name = e.file_name().to_string_lossy().to_string();
-            if let Some(idx) = parse_chunk_index(&name) {
-                files.push((idx, e.path()));
+    for (_, content) in &rows {
+        if let Ok(chunk) = serde_json::from_str::<Value>(content) {
+            if let Some(items) = chunk.get("chunk_data").and_then(|x| x.as_array()) {
+                all_playlists.extend(items.clone());
             }
         }
-    } else {
-        err = true;
     }
-    if err || files.is_empty() {
-        return ctx.err(400, "没有分块文件");
-    }
-    files.sort_by_key(|(i, _)| *i);
-    for (_, path) in &files {
-        if let Ok(content) = std::fs::read_to_string(path) {
-            if let Ok(chunk) = serde_json::from_str::<Value>(&content) {
-                if let Some(items) = chunk.get("chunk_data").and_then(|x| x.as_array()) {
-                    all_playlists.extend(items.clone());
-                }
-            }
-        }
-        let _ = std::fs::remove_file(path);
-    }
-    let _ = std::fs::remove_dir(&chunkdir);
+    let _ = sqlx::query("DELETE FROM user_sync_chunks WHERE ciyuanxi_id = ?")
+        .bind(&uid)
+        .execute(pool)
+        .await;
     let mut map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
     for pl in &all_playlists {
         let id = pl.get("id").map(|v| v.as_str().unwrap_or("").to_string()).unwrap_or_default();
@@ -129,7 +301,8 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
     let do_merge = matches!(data.get("merge"), Some(Value::Bool(true)));
     let mut id_map: Vec<Value> = Vec::new();
     if do_merge {
-        let existing: Vec<Value> = read_snapshot(&ciyuanxi_id, "playlists.json")
+        let existing: Vec<Value> = read_snapshot(pool, &ciyuanxi_id, "playlists.json")
+            .await
             .ok()
             .and_then(|v| v.get("playlists").cloned())
             .and_then(|x| x.as_array().cloned())
@@ -252,15 +425,14 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
         },
         "playlists": merged
     });
-    let file = dir.join("playlists.json");
-    let ok = std::fs::write(&file, serde_json::to_string(&save).unwrap_or_default()).is_ok();
+    let ok = write_snapshot(pool, &ciyuanxi_id, "playlists.json", &save).await;
     let meta = json!({
         "last_sync": now_str(),
         "last_sync_timestamp": now_ts(),
         "playlist_count": merged.len(),
         "song_total": song_total
     });
-    let _ = std::fs::write(dir.join("meta.json"), serde_json::to_string(&meta).unwrap_or_default());
+    let _ = write_snapshot(pool, &ciyuanxi_id, "meta.json", &meta).await;
     if ok {
         ctx.ok("同步成功", json!({
             "playlist_count": merged.len(),
@@ -268,7 +440,7 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx) -> Response {
             "id_map": id_map
         }))
     } else {
-        ctx.err(500, "写入文件失败")
+        ctx.err(500, "同步数据写入失败")
     }
 }
 
@@ -277,28 +449,21 @@ fn parse_chunk_index(name: &str) -> Option<i64> {
     trimmed.parse().ok()
 }
 
-pub async fn file_sync_download(body: &str, ctx: ReqCtx) -> Response {
+pub async fn file_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    let file = sync_dir(&ciyuanxi_id).join("playlists.json");
-    if !file.exists() {
-        return ctx.ok("暂无同步数据", json!({ "playlists": [] }));
-    }
-    match std::fs::read_to_string(&file) {
-        Ok(content) => match serde_json::from_str::<Value>(&content) {
-            Ok(v) => {
-                let (fixed_snapshot, changed) = ensure_cloud_ids(v);
-                if changed {
-                    let _ = write_snapshot(&ciyuanxi_id, "playlists.json", &fixed_snapshot);
-                }
-                ctx.ok("获取成功", fixed_snapshot)
+    match read_snapshot(pool, &ciyuanxi_id, "playlists.json").await {
+        Ok(v) => {
+            let (fixed_snapshot, changed) = ensure_cloud_ids(v);
+            if changed {
+                let _ = write_snapshot(pool, &ciyuanxi_id, "playlists.json", &fixed_snapshot).await;
             }
-            Err(_) => ctx.ok("数据读取失败", json!({ "playlists": [] })),
-        },
-        Err(_) => ctx.ok("数据读取失败", json!({ "playlists": [] })),
+            ctx.ok("获取成功", fixed_snapshot)
+        }
+        Err(_) => ctx.ok("暂无同步数据", json!({ "playlists": [] })),
     }
 }
 
@@ -332,7 +497,7 @@ fn ensure_cloud_ids(snapshot: Value) -> (Value, bool) {
     (s, changed)
 }
 
-pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx) -> Response {
+pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
@@ -351,7 +516,10 @@ pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx) -> Response {
     if delset.is_empty() {
         return ctx.ok("删除成功", json!({ "deleted": 0 }));
     }
-    let existing = read_snapshot(&ciyuanxi_id, "playlists.json").ok().unwrap_or_else(|| json!({ "playlists": [] }));
+    let existing = read_snapshot(pool, &ciyuanxi_id, "playlists.json")
+        .await
+        .ok()
+        .unwrap_or_else(|| json!({ "playlists": [] }));
     let last_ts = existing.get("timestamp").and_then(|v| v.as_i64()).unwrap_or_else(now_ts);
     let playlists = existing
         .get("playlists")
@@ -386,34 +554,15 @@ pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx) -> Response {
         },
         "playlists": kept
     });
-    let ok = write_snapshot(&ciyuanxi_id, "playlists.json", &save);
+    let ok = write_snapshot(pool, &ciyuanxi_id, "playlists.json", &save).await;
     if ok {
         ctx.ok("删除成功", json!({ "deleted": deleted }))
     } else {
-        ctx.err(500, "写入文件失败")
+        ctx.err(500, "同步数据写入失败")
     }
 }
 
-fn read_snapshot(ciyuanxi_id: &str, name: &str) -> Result<Value, ()> {
-    let file = sync_dir(ciyuanxi_id).join(name);
-    if !file.exists() {
-        return Err(());
-    }
-    std::fs::read_to_string(&file)
-        .ok()
-        .and_then(|c| serde_json::from_str(&c).ok())
-        .ok_or(())
-}
-
-fn write_snapshot(ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
-    let dir = sync_dir(ciyuanxi_id);
-    if std::fs::create_dir_all(&dir).is_err() {
-        return false;
-    }
-    std::fs::write(dir.join(name), serde_json::to_string(data).unwrap_or_default()).is_ok()
-}
-
-pub fn write_listen_stats_reset(ciyuanxi_id: &str, reason: &str) -> bool {
+pub async fn write_listen_stats_reset(pool: &MySqlPool, ciyuanxi_id: &str, reason: &str) -> bool {
     let trimmed = reason.trim();
     let save = json!({
         "version": 2,
@@ -433,7 +582,7 @@ pub fn write_listen_stats_reset(ciyuanxi_id: &str, reason: &str) -> bool {
             "daily": []
         }
     });
-    write_snapshot(ciyuanxi_id, "listen_stats.json", &save)
+    write_snapshot(pool, ciyuanxi_id, "listen_stats.json", &save).await
 }
 
 fn sanitize_subscriptions(raw: &Value) -> Option<Vec<Value>> {
@@ -451,7 +600,7 @@ fn sanitize_subscriptions(raw: &Value) -> Option<Vec<Value>> {
     Some(list)
 }
 
-pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
+pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
@@ -467,7 +616,7 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
         return ctx.err(400, "缺少插件或订阅数据");
     }
     let is_first = matches!(data.get("is_first"), Some(Value::Bool(true)));
-    let mut save_data = read_snapshot(&ciyuanxi_id, "plugins.json").unwrap_or_else(|_| {
+    let mut save_data = read_snapshot(pool, &ciyuanxi_id, "plugins.json").await.unwrap_or_else(|_| {
         json!({
             "version": 1, "uploaded_at": now_str(), "timestamp": now_ts(),
             "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
@@ -509,25 +658,25 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx) -> Response {
     }
     save_data["uploaded_at"] = json!(now_str());
     save_data["timestamp"] = json!(now_ts());
-    if !write_snapshot(&ciyuanxi_id, "plugins.json", &save_data) {
-        return ctx.err(500, "文件写入失败");
+    if !write_snapshot(pool, &ciyuanxi_id, "plugins.json", &save_data).await {
+        return ctx.err(500, "同步数据写入失败");
     }
     ctx.ok("上传成功", json!({ "plugin_count": count }))
 }
 
-pub async fn plugin_sync_download(body: &str, ctx: ReqCtx) -> Response {
+pub async fn plugin_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    match read_snapshot(&ciyuanxi_id, "plugins.json") {
+    match read_snapshot(pool, &ciyuanxi_id, "plugins.json").await {
         Ok(v) => ctx.ok("获取成功", v),
         Err(_) => ctx.ok("暂无同步数据", json!({ "plugins": [] })),
     }
 }
 
-pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx) -> Response {
+pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
@@ -546,12 +695,15 @@ pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx) -> Response {
     if delset.is_empty() {
         return ctx.ok("删除成功", json!({ "deleted": 0, "plugin_count": 0 }));
     }
-    let existing = read_snapshot(&ciyuanxi_id, "plugins.json").ok().unwrap_or_else(|| {
-        json!({
-            "version": 1, "uploaded_at": now_str(), "timestamp": now_ts(),
-            "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
-        })
-    });
+    let existing = read_snapshot(pool, &ciyuanxi_id, "plugins.json")
+        .await
+        .ok()
+        .unwrap_or_else(|| {
+            json!({
+                "version": 1, "uploaded_at": now_str(), "timestamp": now_ts(),
+                "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
+            })
+        });
     let plugins = existing
         .get("plugins")
         .and_then(|x| x.as_array())
@@ -571,8 +723,8 @@ pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx) -> Response {
     save["stats"]["plugin_count"] = json!(kept.len() as i64);
     save["uploaded_at"] = json!(now_str());
     save["timestamp"] = json!(now_ts());
-    if !write_snapshot(&ciyuanxi_id, "plugins.json", &save) {
-        return ctx.err(500, "文件写入失败");
+    if !write_snapshot(pool, &ciyuanxi_id, "plugins.json", &save).await {
+        return ctx.err(500, "同步数据写入失败");
     }
     ctx.ok("删除成功", json!({ "deleted": deleted, "plugin_count": kept.len() as i64 }))
 }
@@ -585,7 +737,7 @@ fn settings_file_name(platform: &str) -> String {
     }
 }
 
-pub async fn settings_sync_upload(body: &str, ctx: ReqCtx) -> Response {
+pub async fn settings_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
@@ -602,13 +754,13 @@ pub async fn settings_sync_upload(body: &str, ctx: ReqCtx) -> Response {
         "timestamp": now_ts(),
         "settings": settings
     });
-    if !write_snapshot(&ciyuanxi_id, &file_name, &save) {
-        return ctx.err(500, "文件写入失败");
+    if !write_snapshot(pool, &ciyuanxi_id, &file_name, &save).await {
+        return ctx.err(500, "同步数据写入失败");
     }
     ctx.ok("上传成功", json!({ "uploaded_at": save["uploaded_at"] }))
 }
 
-pub async fn settings_sync_download(body: &str, ctx: ReqCtx) -> Response {
+pub async fn settings_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
@@ -617,19 +769,19 @@ pub async fn settings_sync_download(body: &str, ctx: ReqCtx) -> Response {
     let platform = str_of(&data, "platform").trim().to_string();
     let file_name = settings_file_name(&platform);
     if platform == "desktop" || platform == "mobile" {
-        if let Ok(v) = read_snapshot(&ciyuanxi_id, &file_name) {
+        if let Ok(v) = read_snapshot(pool, &ciyuanxi_id, &file_name).await {
             return ctx.ok("获取成功", v);
         }
-        if let Ok(v) = read_snapshot(&ciyuanxi_id, "settings.json") {
+        if let Ok(v) = read_snapshot(pool, &ciyuanxi_id, "settings.json").await {
             return ctx.ok("获取成功", v);
         }
-    } else if let Ok(v) = read_snapshot(&ciyuanxi_id, &file_name) {
+    } else if let Ok(v) = read_snapshot(pool, &ciyuanxi_id, &file_name).await {
         return ctx.ok("获取成功", v);
     }
     ctx.ok("暂无同步数据", json!({ "settings": null }))
 }
 
-pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
+pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
@@ -644,7 +796,8 @@ pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     let final_list: Vec<Value>;
     let count: i64;
     if merge {
-        let existing: Vec<Value> = read_snapshot(&ciyuanxi_id, "favorites.json")
+        let existing: Vec<Value> = read_snapshot(pool, &ciyuanxi_id, "favorites.json")
+            .await
             .ok()
             .and_then(|v| v.get("favorites").cloned())
             .and_then(|x| x.as_array().cloned())
@@ -694,25 +847,25 @@ pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx) -> Response {
         "stats": { "song_count": count },
         "favorites": final_list
     });
-    if !write_snapshot(&ciyuanxi_id, "favorites.json", &save) {
-        return ctx.err(500, "文件写入失败");
+    if !write_snapshot(pool, &ciyuanxi_id, "favorites.json", &save).await {
+        return ctx.err(500, "同步数据写入失败");
     }
     ctx.ok("上传成功", json!({ "song_count": count }))
 }
 
-pub async fn favorites_sync_download(body: &str, ctx: ReqCtx) -> Response {
+pub async fn favorites_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    match read_snapshot(&ciyuanxi_id, "favorites.json") {
+    match read_snapshot(pool, &ciyuanxi_id, "favorites.json").await {
         Ok(v) => ctx.ok("获取成功", v),
         Err(_) => ctx.ok("暂无同步数据", json!({ "favorites": [] })),
     }
 }
 
-pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
+pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
@@ -726,7 +879,8 @@ pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
     let cleared = matches!(data.get("cleared"), Some(Value::Bool(true)));
     let mut reset_at = data.get("reset_at").and_then(Value::as_i64).unwrap_or(0);
     if reset_at == 0 {
-        reset_at = read_snapshot(&ciyuanxi_id, "listen_stats.json")
+        reset_at = read_snapshot(pool, &ciyuanxi_id, "listen_stats.json")
+            .await
             .ok()
             .and_then(|v| v.get("reset_at").and_then(Value::as_i64))
             .unwrap_or(0);
@@ -737,7 +891,8 @@ pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
         .map(str::to_string)
         .unwrap_or_default();
     if reason.trim().is_empty() {
-        reason = read_snapshot(&ciyuanxi_id, "listen_stats.json")
+        reason = read_snapshot(pool, &ciyuanxi_id, "listen_stats.json")
+            .await
             .ok()
             .and_then(|v| v.get("reason").and_then(Value::as_str).map(String::from))
             .unwrap_or_default();
@@ -752,21 +907,20 @@ pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx) -> Response {
         "reason": reason,
         "listen_stats": stats
     });
-    if !write_snapshot(&ciyuanxi_id, "listen_stats.json", &save) {
-        return ctx.err(500, "文件写入失败");
+    if !write_snapshot(pool, &ciyuanxi_id, "listen_stats.json", &save).await {
+        return ctx.err(500, "同步数据写入失败");
     }
     ctx.ok("上传成功", json!({ "updated": true }))
 }
 
-pub async fn listen_stats_sync_download(body: &str, ctx: ReqCtx) -> Response {
+pub async fn listen_stats_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    match read_snapshot(&ciyuanxi_id, "listen_stats.json") {
+    match read_snapshot(pool, &ciyuanxi_id, "listen_stats.json").await {
         Ok(v) => ctx.ok("获取成功", v),
         Err(_) => ctx.ok("暂无同步数据", json!({ "listen_stats": null })),
     }
 }
-

@@ -1127,6 +1127,7 @@ pub async fn delete_account(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
+    crate::handlers::sync::delete_user_sync_data(pool, &ciyuanxi_id).await;
     let _ = sqlx::query("DELETE FROM play_history WHERE user_id = ? OR ciyuanxi_id = ?")
         .bind(user_id)
         .bind(&ciyuanxi_id)

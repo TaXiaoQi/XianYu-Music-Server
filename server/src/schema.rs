@@ -660,6 +660,26 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_playlist_id` (`playlist_id`),
             KEY `idx_user_id` (`user_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `user_sync_files` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(64) NOT NULL DEFAULT '',
+            `file_name` varchar(64) NOT NULL DEFAULT '',
+            `content` longtext NOT NULL,
+            `content_size` int(11) unsigned NOT NULL DEFAULT 0,
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_user_file` (`ciyuanxi_id`, `file_name`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `user_sync_chunks` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(64) NOT NULL DEFAULT '',
+            `chunk_index` int(11) NOT NULL DEFAULT 0,
+            `total_chunks` int(11) NOT NULL DEFAULT 0,
+            `content` longtext NOT NULL,
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_user_chunk` (`ciyuanxi_id`, `chunk_index`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_avatar_pending` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',

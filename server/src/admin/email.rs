@@ -494,6 +494,7 @@ pub async fn email_users_delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
                 let _ = sqlx::query("DELETE FROM user_playlist_songs WHERE playlist_id = ?").bind(pid).execute(pool).await;
             }
             let _ = sqlx::query("DELETE FROM user_playlists WHERE user_id = ?").bind(&ciyuanxi_id).execute(pool).await;
+            crate::handlers::sync::delete_user_sync_data(pool, &ciyuanxi_id).await;
         }
         let _ = sqlx::query("DELETE FROM play_history WHERE user_id = ?").bind(app_user_id).execute(pool).await;
         let _ = sqlx::query("DELETE FROM app_users WHERE id = ?").bind(app_user_id).execute(pool).await;

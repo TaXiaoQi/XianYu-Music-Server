@@ -258,7 +258,7 @@ pub async fn reset_listen_duration(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
-    crate::handlers::sync::write_listen_stats_reset(&ciyuanxi_id, &reason);
+    crate::handlers::sync::write_listen_stats_reset(pool, &ciyuanxi_id, &reason).await;
     log_operation(pool, ctx, "重置听歌时长", &format!("ciyuanxi_id={}, reason={}", ciyuanxi_id, reason), "").await;
     ok("重置成功", serde_json::Value::Null)
 }
