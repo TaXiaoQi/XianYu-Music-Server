@@ -73,7 +73,7 @@ cat > "${INSTALL_DIR}/config.json" <<EOF
   "db_user": "${DB_USER}",
   "db_pass": "${DB_PASS}",
   "db_charset": "utf8mb4",
-  "api_secret": "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200",
+  "api_secret": "acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3",
   "api_timestamp_tolerance": 300,
   "admin_username": "admin",
   "admin_password": "adminadmin",

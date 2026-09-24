@@ -110,7 +110,7 @@ if exist "server\config.json" (
     echo   "db_user": "chexian",>> "%DEPLOY_SERVER%\config.json"
     echo   "db_pass": "",>> "%DEPLOY_SERVER%\config.json"
     echo   "db_charset": "utf8mb4",>> "%DEPLOY_SERVER%\config.json"
-    echo   "api_secret": "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200",>> "%DEPLOY_SERVER%\config.json"
+    echo   "api_secret": "acca7562ecaf830fcce45814f110eacea83ecf9cf52320c3",>> "%DEPLOY_SERVER%\config.json"
     echo   "api_timestamp_tolerance": 300,>> "%DEPLOY_SERVER%\config.json"
     echo   "admin_username": "admin",>> "%DEPLOY_SERVER%\config.json"
     echo   "admin_password": "adminadmin",>> "%DEPLOY_SERVER%\config.json"
