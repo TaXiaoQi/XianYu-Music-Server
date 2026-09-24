@@ -14,6 +14,10 @@ fn announcements_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("announcement.json")
 }
 
+fn privacy_policy_path() -> std::path::PathBuf {
+    std::path::Path::new("api").join("privacy_policy.json")
+}
+
 fn about_config_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("about_config.json")
 }
@@ -624,6 +628,72 @@ pub async fn confirm_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     match result {
         Ok(_) => ctx.ok("确认成功", json!({ "announcement_id": announcement_id, "updatedAt": updated_at })),
         Err(e) => { tracing::error!("记录公告确认失败: {e}"); ctx.err(500, "记录公告确认失败") },
+    }
+}
+
+/// 获取服务器下发的隐私政策（api/privacy_policy.json）。
+/// enabled=false 或文件缺失时返回 None，客户端使用内置默认版本。
+/// 是否已确认由客户端本地 fingerprint（id + updatedAt）判断，同公告机制。
+pub async fn get_privacy_policy(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let _ = (body, pool);
+    let path = privacy_policy_path();
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return ctx.json::<serde_json::Value>(200, "ok", None);
+    };
+    let Ok(item) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return ctx.json::<serde_json::Value>(200, "ok", None);
+    };
+    let enabled = item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false);
+    let id = item.get("id").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let policy = item.get("content").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    let updated_at = item.get("updatedAt").and_then(|v| v.as_str()).unwrap_or("").trim().to_string();
+    if !enabled || id.is_empty() || policy.is_empty() || updated_at.is_empty() {
+        return ctx.json::<serde_json::Value>(200, "ok", None);
+    }
+    ctx.json(
+        200,
+        "ok",
+        Some(json!({
+            "id": id,
+            "content": policy,
+            "updatedAt": updated_at,
+        })),
+    )
+}
+
+/// 记录隐私政策确认（复用 user_announcement_confirmations 表，
+/// announcement_id 存政策 id）。仅作留存上报，弹窗与否由客户端判断。
+pub async fn confirm_privacy_policy(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let policy_id = str_of(&data, "policy_id").trim().to_string();
+    let policy_updated_at = str_of(&data, "policy_updated_at").trim().to_string();
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    let device_id = str_of(&data, "device_id").trim().to_string();
+
+    if policy_id.is_empty() {
+        return ctx.err(400, "政策 ID 不能为空");
+    }
+    if ciyuanxi_id.is_empty() && device_id.is_empty() {
+        return ctx.err(400, "缺少用户或设备标识");
+    }
+
+    let result = sqlx::query(
+        "INSERT INTO user_announcement_confirmations
+         (ciyuanxi_id, device_id, announcement_id, announcement_title, announcement_updated_at, ip)
+         VALUES (?, ?, ?, 'privacy-policy', ?, ?)
+         ON DUPLICATE KEY UPDATE confirmed_at = CURRENT_TIMESTAMP, announcement_updated_at = VALUES(announcement_updated_at), ip = VALUES(ip)",
+    )
+    .bind(&ciyuanxi_id)
+    .bind(&device_id)
+    .bind(&policy_id)
+    .bind(&policy_updated_at)
+    .bind(&ctx.client_ip)
+    .execute(pool)
+    .await;
+
+    match result {
+        Ok(_) => ctx.ok("确认成功", json!({ "policy_id": policy_id, "updatedAt": policy_updated_at })),
+        Err(e) => { tracing::error!("记录隐私政策确认失败: {e}"); ctx.err(500, "记录隐私政策确认失败") },
     }
 }
 

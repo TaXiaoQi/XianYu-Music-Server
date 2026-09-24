@@ -126,7 +126,7 @@ fn row_to_wallpaper(ctx: &ReqCtx, row: &sqlx::mysql::MySqlRow) -> Value {
 pub async fn list_wallpapers(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let platform = normalize_platform(str_of(&data, "platform").trim());
-    let media_type = str_of(&data, "media_type").trim();
+    let media_type = str_of(&data, "media_type").trim().to_string();
     let rows = if media_type == "image" || media_type == "video" {
         sqlx::query(
             "SELECT * FROM wallpapers WHERE status = 'normal' AND platform = ? AND media_type = ? ORDER BY sort_order DESC, id DESC",

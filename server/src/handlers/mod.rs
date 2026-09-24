@@ -43,6 +43,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_fallback_modules" => system::get_fallback_modules(ctx).await,
         "get_announcement" => system::get_announcement(body, ctx, pool).await,
         "confirm_announcement" => system::confirm_announcement(body, ctx, pool).await,
+        "get_privacy_policy" => system::get_privacy_policy(body, ctx, pool).await,
+        "confirm_privacy_policy" => system::confirm_privacy_policy(body, ctx, pool).await,
         "get_about_config" => system::get_about_config(body, ctx).await,
         "get_site_logo" => system::get_site_logo(ctx, pool).await,
         "get_user_agreement" => system::get_user_agreement(ctx, pool).await,
