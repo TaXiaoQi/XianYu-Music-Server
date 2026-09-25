@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     邮箱注册登录模块 API 集成测试脚本
 .DESCRIPTION
