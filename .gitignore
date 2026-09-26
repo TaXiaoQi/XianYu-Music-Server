@@ -29,3 +29,6 @@ Thumbs.db
 
 # 旧版构建产物备份
 admin-web/dist_old/
+
+# IDE 本地配置不入库
+.idea/
