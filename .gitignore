@@ -10,6 +10,7 @@ server/target/
 # 前端依赖与构建产物
 admin-web/node_modules/
 admin-web/dist/
+*.tsbuildinfo
 
 # 上传文件（用户生成内容）
 uploads/
@@ -32,3 +33,6 @@ admin-web/dist_old/
 
 # IDE 本地配置不入库
 .idea/
+
+# 软著申请材料不入库
+软著申请材料/
