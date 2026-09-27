@@ -27,6 +27,7 @@
               <button class="batch-act" @click="batchToggleSelected(0)" :disabled="selectedCount === 0 || batchLoading">封禁</button>
               <button class="batch-act" @click="batchToggleSelected(1)" :disabled="selectedCount === 0 || batchLoading">启用</button>
               <button class="batch-act" @click="batchBanDevice" :disabled="selectedCount === 0 || batchLoading">封禁ID</button>
+              <button class="batch-act" @click="batchResetDuration" :disabled="selectedCount === 0 || batchLoading">重置时长</button>
               <button class="batch-act batch-act--danger" @click="batchDeleteSelected" :disabled="selectedCount === 0 || batchLoading">删除</button>
               <button class="batch-act" @click="deleteEmptyPlaylists" :disabled="batchLoading">清空歌单</button>
               <span class="batch-count">已选 {{ selectedCount }} 项</span>
@@ -792,6 +793,35 @@ async function batchBanDevice() {
     showToast(`${success} 个成功，${fail} 个失败`, 'error')
   }
   selectedIds.value = new Set()
+}
+
+async function batchResetDuration() {
+  const ids = [...selectedIds.value]
+  if (ids.length === 0) return
+  const input = await webPrompt(`将重置选中的 ${ids.length} 个用户的听歌时长，请输入清除原因：`, '', { title: '批量重置听歌时长', placeholder: '清除原因（必填）' })
+  if (input === null) return
+  const reason = input.trim()
+  if (!reason) {
+    showToast('清除原因不能为空')
+    return
+  }
+  const ok = await webConfirm(`确定重置选中的 ${ids.length} 个用户的听歌时长吗？重置后时长与新增歌数将清零。`, { title: '批量重置听歌时长', confirmText: '确认重置' })
+  if (!ok) return
+  batchLoading.value = true
+  let fail = 0
+  for (const id of ids) {
+    const u = users.value.find(x => x.id === id)
+    const res = await adminApi('reset_listen_duration', { user_id: id, ciyuanxi_id: u?.ciyuanxi_id || '', reason })
+    if (res.code !== 200) fail++
+  }
+  batchLoading.value = false
+  if (fail === 0) {
+    showToast(`已重置 ${ids.length} 个用户`, 'success')
+  } else {
+    showToast(`${ids.length - fail} 个成功，${fail} 个失败`, 'error')
+  }
+  selectedIds.value = new Set()
+  loadUsers()
 }
 
 async function batchDeleteSelected() {

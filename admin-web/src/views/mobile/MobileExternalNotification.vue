@@ -176,6 +176,7 @@
               :key="mod.key"
               class="notify-module-tag"
               :class="{ 'tag-on': item[mod.field] == 1, 'tag-off': item[mod.field] == 0 }"
+              :title="item[mod.field] == 1 ? '点击关闭该类型通知' : '点击开启该类型通知'"
               @click="toggleModuleOnEmail(item, mod.key)"
             >
               <span class="tag-dot"></span>
@@ -183,6 +184,7 @@
             </span>
           </div>
           <div class="mobile-actions">
+            <button class="mobile-btn" @click="openEditTypes(item)">管理类型</button>
             <button class="mobile-btn" :disabled="testingId === item.id" @click="sendTest(item)">{{ testingId === item.id ? '发送中...' : '发送测试' }}</button>
             <button class="mobile-btn" @click="toggle(item)">{{ item.status == 1 ? '停用' : '启用' }}</button>
             <button class="mobile-btn danger" @click="remove(item)">删除</button>
@@ -231,6 +233,48 @@
             <div class="modal-foot">
               <button class="modal-btn cancel" @click="closeAddModal">取消</button>
               <button class="modal-btn save" :disabled="saving" @click="doAdd">{{ saving ? '添加中...' : '确认添加' }}</button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+
+      <!-- 管理通知类型弹窗 -->
+      <Transition name="modal" @before-leave="removeBackdropBlur">
+        <div v-if="editTypesVisible" class="modal-backdrop">
+          <div class="modal-dialog">
+            <div class="modal-head">
+              <h3>管理通知类型</h3>
+              <button class="modal-close" @click="closeEditTypes">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <div class="modal-body">
+              <label class="modal-field">
+                <span>邮箱地址</span>
+                <input :value="editTypesForm.email" type="text" disabled />
+              </label>
+              <div class="modal-field">
+                <span>通知板块</span>
+                <div class="modal-modules">
+                  <label
+                    v-for="mod in moduleList"
+                    :key="mod.key"
+                    class="modal-module-item"
+                    :class="{ on: editTypesForm[mod.field] === 1 }"
+                  >
+                    <input type="checkbox" v-model="editTypesForm[mod.field]" :true-value="1" :false-value="0" />
+                    <span class="modal-module-check">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+                    </span>
+                    <span class="modal-module-name">{{ mod.label }}</span>
+                  </label>
+                </div>
+              </div>
+              <p class="modal-tip">勾选后该邮箱将接收对应板块的状态通知，保存后立即生效。</p>
+            </div>
+            <div class="modal-foot">
+              <button class="modal-btn cancel" @click="closeEditTypes">取消</button>
+              <button class="modal-btn save" :disabled="savingTypes" @click="saveTypes">{{ savingTypes ? '保存中...' : '保存' }}</button>
             </div>
           </div>
         </div>
@@ -821,6 +865,56 @@ function openAddModal() {
 function closeAddModal() {
   if (saving.value) return
   addModalVisible.value = false
+}
+
+// ===== 管理通知类型 =====
+const editTypesVisible = ref(false)
+const savingTypes = ref(false)
+const editTypesForm = ref<any>({ id: 0, email: '', remark: '', notify_wallpaper: 1, notify_avatar: 1, notify_nickname: 1, notify_feedback: 1 })
+
+function openEditTypes(item: any) {
+  editTypesForm.value = {
+    id: item.id,
+    email: item.email,
+    remark: item.remark || '',
+    notify_wallpaper: item.notify_wallpaper == 1 ? 1 : 0,
+    notify_avatar: item.notify_avatar == 1 ? 1 : 0,
+    notify_nickname: item.notify_nickname == 1 ? 1 : 0,
+    notify_feedback: item.notify_feedback == 1 ? 1 : 0,
+  }
+  editTypesVisible.value = true
+}
+
+function closeEditTypes() {
+  if (savingTypes.value) return
+  editTypesVisible.value = false
+}
+
+async function saveTypes() {
+  const f = editTypesForm.value
+  savingTypes.value = true
+  const res = await adminApi('update_notification_email', {
+    id: f.id,
+    remark: f.remark,
+    notify_wallpaper: f.notify_wallpaper,
+    notify_avatar: f.notify_avatar,
+    notify_nickname: f.notify_nickname,
+    notify_feedback: f.notify_feedback,
+  })
+  savingTypes.value = false
+  if (res.code === 200) {
+    const item = list.value.find(i => i.id === f.id)
+    if (item) {
+      item.notify_wallpaper = f.notify_wallpaper
+      item.notify_avatar = f.notify_avatar
+      item.notify_nickname = f.notify_nickname
+      item.notify_feedback = f.notify_feedback
+    }
+    showToast('已保存', 'success')
+    editTypesVisible.value = false
+  } else {
+    showToast(res.msg || '保存失败')
+  }
 }
 
 function isValidEmail(email: string): boolean {
