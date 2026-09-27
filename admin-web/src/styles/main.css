@@ -774,7 +774,7 @@ body:has(.modal-overlay, .modal-backdrop, .web-dialog-overlay, .mobile-dialog-ov
 .web-dialog-overlay {
     position: fixed;
     inset: 0;
-    z-index: 10000;
+    z-index: 11500;
     display: flex;
     align-items: center;
     justify-content: center;
