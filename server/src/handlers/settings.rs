@@ -742,8 +742,16 @@ async fn report_listen_stats_delta(
             .unwrap_or(0.0)
             .max(0.0) as i64
     };
-    let delta_total = parse_sec("delta_duration");
-    let delta_daily = parse_sec("delta_daily_duration");
+    // 单次上报上限的基准值：正常 30 秒~几分钟上报一次，物理上不可能超 4 小时
+    const MAX_SINGLE_DELTA_SECS: i64 = 4 * 3600;
+    // 客户端自报的自上次成功上报以来的墙钟秒数（-1 = 未提供），仅用于交叉比对，
+    // 服务端以自身 listen_reported_at 独立核算为准
+    let client_elapsed_secs = data
+        .get("elapsed_secs")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(-1);
+    let mut delta_total = parse_sec("delta_duration");
+    let mut delta_daily = parse_sec("delta_daily_duration");
     let delta_songs = data
         .get("delta_songs")
         .and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
@@ -751,18 +759,29 @@ async fn report_listen_stats_delta(
         .max(0);
 
     let reset_row = sqlx::query(
-        "SELECT listen_stats_reset_at FROM app_users WHERE ciyuanxi_id = ?",
+        "SELECT listen_stats_reset_at, listen_reported_at FROM app_users WHERE ciyuanxi_id = ?",
     )
     .bind(ciyuanxi_id)
     .fetch_optional(pool)
     .await;
+    let reported_at_sec: i64 = match &reset_row {
+        Ok(Some(row)) => {
+            use sqlx::Row;
+            row.try_get::<i64, _>("listen_reported_at").unwrap_or(0)
+        }
+        _ => 0,
+    };
+    let now_sec: i64 = sqlx::query_scalar("SELECT UNIX_TIMESTAMP()")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
 
     if let Ok(Some(r)) = reset_row {
         use sqlx::Row;
         let reset: Option<String> = r.try_get("listen_stats_reset_at").unwrap_or(None);
         if let Some(ts) = reset {
             let _ = sqlx::query(
-                "UPDATE app_users SET listen_stats_reset_at = NULL, listen_duration = 0, unique_songs_count = 0, listen_duration_offset = 0, unique_songs_offset = 0 WHERE ciyuanxi_id = ?",
+                "UPDATE app_users SET listen_stats_reset_at = NULL, listen_duration = 0, unique_songs_count = 0, listen_duration_offset = 0, unique_songs_offset = 0, listen_reported_at = 0 WHERE ciyuanxi_id = ?",
             )
             .bind(ciyuanxi_id)
             .execute(pool)
@@ -785,6 +804,35 @@ async fn report_listen_stats_delta(
         return read_listen_stats_snapshot(ciyuanxi_id, ctx, pool).await;
     }
 
+    // ===== 双重核验（服务端独立核算）=====
+    // 用服务端自己的 listen_reported_at（上次成功上报时刻，数据库时钟）推算
+    // 墙钟跨度得出物理上限；客户端 elapsed 与服务端核算一致（±120 秒）才按
+    // 两者较严的上限放行，不一致（虚报/时钟漂移/缺字段）一律按服务端上限截断
+    // ——两边对上账才入库。
+    let server_elapsed = if reported_at_sec > 0 {
+        (now_sec - reported_at_sec).clamp(0, 30 * 86400)
+    } else {
+        0
+    };
+    let server_max = if reported_at_sec > 0 {
+        (server_elapsed * 3 + 600).min(MAX_SINGLE_DELTA_SECS)
+    } else {
+        7200
+    };
+    let cross_ok =
+        client_elapsed_secs >= 0 && (client_elapsed_secs - server_elapsed).abs() <= 120;
+    let effective_max = if cross_ok {
+        server_max.min(client_elapsed_secs * 3 + 600)
+    } else {
+        server_max
+    };
+    if delta_total > effective_max {
+        delta_total = effective_max;
+    }
+    if delta_daily > delta_total {
+        delta_daily = delta_total;
+    }
+
     let result = sqlx::query(
         "UPDATE app_users \
          SET listen_duration = listen_duration + ?, \
@@ -798,10 +846,17 @@ async fn report_listen_stats_delta(
     .await;
 
     let _ = sqlx::query(
+        "UPDATE app_users SET listen_reported_at = UNIX_TIMESTAMP() WHERE ciyuanxi_id = ?",
+    )
+    .bind(ciyuanxi_id)
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
          VALUES (?, DATE(NOW() + INTERVAL 8 HOUR), ?, ?) \
          ON DUPLICATE KEY UPDATE \
-             listen_duration = listen_duration + VALUES(listen_duration), \
+             listen_duration = LEAST(listen_duration + VALUES(listen_duration), 86400), \
              unique_songs_count = unique_songs_count + VALUES(unique_songs_count)",
     )
     .bind(ciyuanxi_id)

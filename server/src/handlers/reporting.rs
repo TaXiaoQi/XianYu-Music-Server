@@ -197,7 +197,8 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         return ctx.ok_empty("ok");
     }
 
-    let duration = int_of(&data, "listen_duration").max(0);
+    // 单次行为上报上限：一首歌最长不过 1 小时量级，超限视为异常上报截断
+    let duration = int_of(&data, "listen_duration").max(0).min(3600);
     if duration <= 0 {
         return ctx.ok_empty("ok");
     }
