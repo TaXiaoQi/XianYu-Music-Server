@@ -2,6 +2,7 @@ use axum::response::Response;
 use serde_json::{json, Value};
 use sqlx::{MySqlPool, Row};
 
+use crate::admin::wallpaper::{is_mp4, read_global_wallpaper_video_max, sha256_hex};
 use crate::audit_policy::{self, AuditDecision};
 use crate::handlers::helpers::{parse_body, str_of};
 use crate::response::ReqCtx;
@@ -225,6 +226,24 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         }
     }
 
+    let video_data = str_of(&data, "video_data").trim().to_string();
+    if !video_data.is_empty() {
+        return upload_wallpaper_video(
+            ctx,
+            pool,
+            &ciyuanxi_id,
+            &nickname,
+            &title,
+            &description,
+            &category,
+            &platform,
+            &image_data,
+            &video_data,
+            data.get("video_duration").and_then(|v| v.as_i64()).unwrap_or(0),
+        )
+        .await;
+    }
+
     let Some(bytes) = data_url_to_bytes(&image_data) else {
         return ctx.err(400, "无效的图片数据");
     };
@@ -322,5 +341,142 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         "status": initial_status,
         "imageUrl": public_url(&ctx, image_url),
         "thumbnailUrl": public_url(&ctx, thumb_url),
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn upload_wallpaper_video(
+    ctx: ReqCtx,
+    pool: &MySqlPool,
+    ciyuanxi_id: &str,
+    nickname: &str,
+    title: &str,
+    description: &str,
+    category: &str,
+    platform: &str,
+    image_data: &str,
+    video_data: &str,
+    video_duration: i64,
+) -> Response {
+    let Some(video_bytes) = data_url_to_bytes(video_data) else {
+        return ctx.err(400, "无效的视频数据");
+    };
+    let max_mb = read_global_wallpaper_video_max(pool).await;
+    if (video_bytes.len() as i64) > max_mb * 1024 * 1024 {
+        return ctx.err(400, &format!("视频过大，请控制在 {}MB 以内", max_mb));
+    }
+    if !is_mp4(&video_bytes) {
+        return ctx.err(400, "仅支持 MP4 视频");
+    }
+    if video_duration < 0 || video_duration > 86400 {
+        return ctx.err(400, "视频时长无效");
+    }
+    // image_data 作为视频封面（poster + 列表缩略图）
+    let Some(poster_bytes) = data_url_to_bytes(image_data) else {
+        return ctx.err(400, "无效的封面图片数据");
+    };
+    if poster_bytes.len() > 8 * 1024 * 1024 {
+        return ctx.err(400, "封面图片过大，请控制在 8MB 以内");
+    }
+    let poster_valid = image::guess_format(&poster_bytes)
+        .map(|f| matches!(f, image::ImageFormat::Jpeg | image::ImageFormat::Png | image::ImageFormat::WebP | image::ImageFormat::Gif))
+        .unwrap_or(false);
+    if !poster_valid {
+        return ctx.err(400, "封面只支持 JPG / PNG / WEBP / GIF 格式");
+    }
+
+    let dir = wallpaper_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return ctx.err(500, "无法创建上传目录");
+    }
+
+    let audit = audit_policy::audit_image(
+        pool,
+        "wallpaper",
+        image_data,
+        json!({ "ciyuanxi_id": ciyuanxi_id, "title": title, "category": category, "platform": platform }),
+    )
+    .await;
+    let initial_status = match audit.decision {
+        AuditDecision::Pass => "normal",
+        AuditDecision::Reject => "rejected",
+        AuditDecision::Manual => "pending",
+    };
+    let reviewed_by = if initial_status == "pending" {
+        String::new()
+    } else {
+        format!("external:{}", audit.provider)
+    };
+
+    let ins = sqlx::query(
+        "INSERT INTO wallpapers (title, description, category, platform, media_type, video_url, video_poster, video_duration, video_size, video_sha256, image_url, thumbnail_url, status, uploaded_by, uploaded_by_nickname, reviewed_at, reviewed_by) VALUES (?, ?, ?, ?, 'video', '', '', ?, ?, ?, '', '', ?, ?, ?, IF(? = 'pending', NULL, NOW()), ?)",
+    )
+    .bind(title)
+    .bind(description)
+    .bind(category)
+    .bind(platform)
+    .bind(video_duration)
+    .bind(video_bytes.len() as i64)
+    .bind(sha256_hex(&video_bytes))
+    .bind(initial_status)
+    .bind(ciyuanxi_id)
+    .bind(nickname)
+    .bind(initial_status)
+    .bind(&reviewed_by)
+    .execute(pool)
+    .await;
+    let wp_id = match ins {
+        Ok(r) => r.last_insert_id() as i64,
+        Err(_) => return ctx.err(500, "数据库错误"),
+    };
+
+    let video_path = dir.join(format!("wallpaper_{}.mp4", wp_id));
+    if std::fs::write(&video_path, &video_bytes).is_err() {
+        let _ = sqlx::query("DELETE FROM wallpapers WHERE id = ?").bind(wp_id).execute(pool).await;
+        return ctx.err(500, "视频保存失败，请检查目录权限");
+    }
+    let poster_path = dir.join(format!("poster_{}.jpg", wp_id));
+    let thumb_path = dir.join(format!("thumb_{}.jpg", wp_id));
+    if !compress_and_save_image(&poster_bytes, &poster_path, 1920, 82) {
+        let _ = sqlx::query("DELETE FROM wallpapers WHERE id = ?").bind(wp_id).execute(pool).await;
+        let _ = std::fs::remove_file(&video_path);
+        return ctx.err(500, "封面保存失败，请检查目录权限");
+    }
+    if !compress_and_save_image(&poster_bytes, &thumb_path, 480, 72) {
+        let _ = std::fs::copy(&poster_path, &thumb_path);
+    }
+
+    let video_url = format!("/uploads/wallpapers/wallpaper_{}.mp4", wp_id);
+    let poster_url = format!("/uploads/wallpapers/poster_{}.jpg", wp_id);
+    let _ = sqlx::query("UPDATE wallpapers SET video_url = ?, video_poster = ? WHERE id = ?")
+        .bind(&video_url)
+        .bind(&poster_url)
+        .bind(wp_id)
+        .execute(pool)
+        .await;
+
+    if initial_status == "pending" {
+        crate::admin::email::notify_external_emails_for_module(
+            pool,
+            &ctx.config,
+            &ctx.client_ip,
+            "wallpaper",
+            "【弦予后台】新视频壁纸待审核",
+            &format!("用户 {} 上传了视频壁纸「{}」，请及时审核。", ciyuanxi_id, title),
+            &public_url(&ctx, poster_url.clone()),
+            &ctx.base_url,
+        ).await;
+    }
+
+    let msg = match initial_status {
+        "normal" => "上传成功，已通过机审",
+        "rejected" => if audit.reason.is_empty() { "上传成功，但未通过机审" } else { audit.reason.as_str() },
+        _ => "上传成功，等待管理员审核",
+    };
+    ctx.ok(msg, json!({
+        "id": wp_id,
+        "status": initial_status,
+        "videoUrl": public_url(&ctx, video_url),
+        "videoPoster": public_url(&ctx, poster_url),
     }))
 }

@@ -45,7 +45,7 @@ async fn read_global_wallpaper_upload_limit(pool: &MySqlPool) -> i64 {
     .unwrap_or(DEFAULT_WALLPAPER_UPLOAD_LIMIT)
 }
 
-async fn read_global_wallpaper_video_max(pool: &MySqlPool) -> i64 {
+pub(crate) async fn read_global_wallpaper_video_max(pool: &MySqlPool) -> i64 {
     sqlx::query_scalar::<_, Option<String>>(
         "SELECT setting_value FROM server_settings WHERE setting_key = 'wallpaper_video_max_mb' LIMIT 1",
     )
@@ -265,7 +265,7 @@ async fn add_video_wallpaper(
     ok("上传成功", json!({ "id": wp_id }))
 }
 
-fn is_mp4(bytes: &[u8]) -> bool {
+pub(crate) fn is_mp4(bytes: &[u8]) -> bool {
     if bytes.len() < 16 || &bytes[4..8] != b"ftyp" {
         return false;
     }
@@ -277,7 +277,7 @@ fn is_mp4(bytes: &[u8]) -> bool {
         || brand == b"dash"
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
     hasher.update(bytes);
