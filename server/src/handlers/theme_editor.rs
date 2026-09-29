@@ -112,8 +112,23 @@ pub const SLOTS_JSON: &str = r#"{
         { "id": "player.next", "label": "播放 · 下一首" },
         { "id": "player.queue", "label": "播放 · 播放队列" },
         { "id": "player.mode", "label": "播放 · 播放模式" },
+        { "id": "player.lyric", "label": "播放 · 歌词开关" },
+        { "id": "player.comment", "label": "播放 · 评论" },
+        { "id": "player.volume", "label": "播放 · 音量" },
+        { "id": "player.sound", "label": "播放 · 音效（均衡器）" },
+        { "id": "player.mv", "label": "播放 · MV" },
+        { "id": "player.visualizer", "label": "播放 · 可视化（频谱）" },
+        { "id": "player.progress", "label": "播放 · 进度条开关" },
+        { "id": "player.style", "label": "播放 · 页面样式" },
+        { "id": "player.pin", "label": "播放 · 固定状态栏" },
         { "id": "action.search", "label": "顶栏 · 搜索" },
         { "id": "action.mic", "label": "顶栏 · 识曲" },
+        { "id": "desktop.wallpaper", "label": "顶栏 · 皮肤钮" },
+        { "id": "desktop.settings", "label": "顶栏 · 设置钮" },
+        { "id": "page.playall", "label": "列表页 · 播放全部钮" },
+        { "id": "page.sort", "label": "列表页 · 排序钮" },
+        { "id": "page.more", "label": "列表页 · 更多钮" },
+        { "id": "page.fav", "label": "歌单/收藏 · 收藏合集钮" },
         { "id": "action.favorite", "label": "操作 · 收藏" },
         { "id": "action.download", "label": "操作 · 下载" },
         { "id": "action.share", "label": "操作 · 分享" },
@@ -784,10 +799,6 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 .dp-lyric .prev{ font-size:17px; font-weight:700; color:rgba(255,255,255,.30); line-height:1.35; filter:blur(1.5px); }
 .dp-lyric .cur{ font-size:21px; font-weight:800; color:#fff; line-height:1.3; text-shadow:0 1px 10px rgba(0,0,0,.2); }
 .dp-lyric .trans{ font-size:11.5px; color:rgba(255,255,255,.55); margin-top:-6px; }
-/* 右侧竖排工具栏 */
-.dp-rail{ display:flex; flex-direction:column; gap:14px; align-self:center; margin-right:10px; color:rgba(255,255,255,.85); }
-.dp-rail .ic-svg{ width:15px; height:15px; }
-.dp-rail .on{ color:var(--p-accent); }
 /* 底部控制区：细进度线 + 控制条 */
 .dp-prog{ width:calc(100% - 60px); height:2px; border-radius:1px; background:rgba(255,255,255,.28); margin:0 auto; position:relative; flex:none; }
 .dp-prog::before{ content:''; position:absolute; left:0; top:0; bottom:0; width:30%; border-radius:1px; background:rgba(255,255,255,.85); }
@@ -1036,12 +1047,17 @@ const ICON_PATHS = {
   'ui.chevron-down':'<path d="M6 9.5l6 6 6-6"/>',
   'ui.comment':'<path d="M12 20a8 8 0 1 0-7.1-4.3L4 20l4.3-.9A8 8 0 0 0 12 20z"/>',
   'ui.wave':'<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>',
+  'ui.eye':'<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  'ui.pin':'<path d="M9 4h6l-1 6 3.5 3.5H6.5L10 10 9 4z"/><path d="M12 13.5V21"/>',
+  'ui.mv':'<rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="M10.5 9.2l4.5 2.8-4.5 2.8V9.2z"/>',
+  'ui.sort':'<path d="M8 5v14M8 5l-3.5 3.5M8 5l3.5 3.5M16 19V5M16 19l-3.5-3.5M16 19l3.5-3.5"/>',
   'ui.gear':'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1L7 17M17 7l2.1-2.1"/>',
   'ui.headphone':'<path d="M4 14a8 8 0 0 1 16 0"/><rect x="3" y="14" width="4" height="6" rx="2"/><rect x="17" y="14" width="4" height="6" rx="2"/>',
   'ui.calendar':'<rect x="3.5" y="5" width="17" height="16" rx="2.5"/><path d="M3.5 10h17M8 2.5V6M16 2.5V6"/>',
   'ui.music-note':'<path d="M9 18V6l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/>',
   'ui.user':'<circle cx="12" cy="8" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
   'ui.sliders':'<path d="M5 4v5M5 13v7M12 4v9M12 17v3M19 4v3M19 11v9"/><circle cx="5" cy="11" r="2"/><circle cx="12" cy="15" r="2"/><circle cx="19" cy="9" r="2"/>',
+  'ui.volume':'<path d="M4 9.5v5h3.5L12 18.5v-13L7.5 9.5H4z"/><path d="M15.5 9a4.2 4.2 0 0 1 0 6M18 6.8a7.6 7.6 0 0 1 0 10.4"/>',
   'ui.lyrics':'<rect x="3" y="4" width="14" height="16" rx="2.5"/><path d="M7 9h6M7 13h4"/><path d="M20 9v7"/>',
   'ui.watch':'<rect x="7" y="6.5" width="10" height="11" rx="3"/><path d="M9.5 6.5 9 3h6l-.5 3.5M9.5 17.5 9 21h6l-.5-3.5"/>',
   'ui.wrench':'<path d="M21 6.5a5 5 0 0 1-7 4.6L7 18l-3-3 6.9-7A5 5 0 0 1 17.5 3L15 5.5 18.5 9z"/>',
@@ -1057,7 +1073,11 @@ const FALLBACK_ICON = {
   'mine.grid_local':'ui.folder', 'mine.grid_download':'action.download',
   'mine.stat_listen':'ui.headphone', 'mine.stat_today':'ui.calendar', 'mine.stat_count':'ui.music-note',
   'mine.settings':'ui.gear',
-  'landscape.logo':'desktop.logo', 'landscape.wallpaper':'ui.palette', 'landscape.settings':'ui.gear'
+  'landscape.logo':'desktop.logo', 'landscape.wallpaper':'ui.palette', 'landscape.settings':'ui.gear',
+  'desktop.wallpaper':'ui.palette', 'desktop.settings':'ui.gear',
+  'player.lyric':'ui.lyrics', 'player.comment':'ui.comment', 'player.volume':'ui.volume', 'player.sound':'ui.sliders',
+  'player.mv':'ui.mv', 'player.visualizer':'ui.wave', 'player.progress':'ui.eye', 'player.style':'ui.palette', 'player.pin':'ui.pin',
+  'page.playall':'player.play', 'page.sort':'ui.sort', 'page.more':'action.more', 'page.fav':'action.favorite'
 };
 // 播放条三键在「播放页」本页卡里的标题（公共区仍用 SLOTS label 的「播放条 ·」前缀）
 const PAGE_TITLE = {
@@ -1850,8 +1870,8 @@ function dTopbar(t, gearOn){
     + '<span class="d-backbtn">'+iconHtml('nav.back', t.icons, 14)+'</span>'
     + '<div class="d-searchbar">'+iconHtml('action.search', t.icons, 13)+'<span class="grow">搜索音乐...</span>'+iconHtml('action.mic', t.icons, 14)+'</div>'
     + '<span class="d-tbtn">'+iconHtml('ui.moon', t.icons, 15)+'</span>'
-    + '<span class="d-tbtn">'+iconHtml('ui.palette', t.icons, 15)+'</span>'
-    + '<span class="d-tbtn"'+(gearOn?' style="color:var(--p-accent)"':'')+'>'+iconHtml('ui.gear', t.icons, 15)+'</span>'
+    + '<span class="d-tbtn">'+iconHtml('desktop.wallpaper', t.icons, 15)+'</span>'
+    + '<span class="d-tbtn"'+(gearOn?' style="color:var(--p-accent)"':'')+'>'+iconHtml('desktop.settings', t.icons, 15)+'</span>'
     + '<span class="d-ava"></span>'
     + '<span class="d-wsep"></span>'
     + wbtn('<svg viewBox="0 0 10 10"><path d="M1 5h8"/></svg>')
@@ -1878,21 +1898,21 @@ function dPlayerBar(t, opts){
     : iconHtml('player.play', t.icons, 12);
   return '<div class="d-player">'
     + '<div class="d-now"><span class="cov"></span><div style="flex:1;min-width:0"><div class="n">'+(opts.name||'A.I.N.Y. 爱你')+'</div><div class="a">'+(opts.artist||'G.E.M.邓紫棋')+'</div></div></div>'
-    + '<span class="d-ctl"><span class="fav">'+iconHtml('action.favorite', t.icons, 15)+'</span></span>'
+    + '<span class="d-ctl"><span class="fav">'+iconHtml('action.favorite', t.icons, 15)+'</span><span style="display:inline-flex">'+iconHtml('action.download', t.icons, 15)+'</span></span>'
     + '<div class="d-mid"><div class="d-ctl">'
     + iconHtml('player.mode', t.icons, 14)
     + iconHtml('player.prev', t.icons, 14)
     + '<span class="play">'+playIcon+'</span>'
     + iconHtml('player.next', t.icons, 14)
-    + iconHtml('ui.lyrics', t.icons, 14)
+    + iconHtml('player.lyric', t.icons, 14)
     + '</div></div>'
     + '<div class="d-right">'
     + '<span class="sq">'+(opts.hq||'SQ')+'</span>'
-    + iconHtml('ui.comment', t.icons, 14)
-    + iconHtml('ui.headphone', t.icons, 14)
-    + iconHtml('ui.sliders', t.icons, 14)
+    + iconHtml('player.comment', t.icons, 14)
+    + iconHtml('player.volume', t.icons, 14)
+    + iconHtml('player.sound', t.icons, 14)
     + iconHtml('player.queue', t.icons, 14)
-    + iconHtml('ui.chevron-down', t.icons, 14)
+    + '<span style="display:inline-flex;transform:rotate(180deg)">'+iconHtml('ui.chevron-down', t.icons, 14)+'</span>'
     + '</div>'
     + '</div>';
 }
@@ -1923,7 +1943,7 @@ function renderDesktopPlaylist(){
     + '<div class="dl-wrap">'
     + '<div class="dl-head"><span class="dl-cover"></span>'
     + '<div class="dl-info"><div class="dl-title">英文摇滚'+iconHtml('action.more', t.icons, 14)+'</div>'
-    + '<div class="dl-ops"><span class="dl-pill">'+iconHtml('player.play', t.icons, 12)+'全部播放</span><span class="dl-pill">'+iconHtml('action.favorite', t.icons, 12)+'收藏整张歌单</span><span class="dl-round">'+iconHtml('ui.calendar', t.icons, 12)+'</span><span class="dl-round">'+iconHtml('ui.sliders', t.icons, 12)+'</span></div>'
+    + '<div class="dl-ops"><span class="dl-pill">'+iconHtml('page.playall', t.icons, 12)+'全部播放</span><span class="dl-round">'+iconHtml('page.fav', t.icons, 12)+'</span><span class="dl-round">'+iconHtml('page.sort', t.icons, 12)+'</span><span class="dl-round">'+iconHtml('page.more', t.icons, 12)+'</span></div>'
     + '</div></div>'
     + '<div class="dl-body">'+rows.map(r=>dRow(t, r)).join('')+'</div>'
     + '</div></div>'
@@ -1932,7 +1952,6 @@ function renderDesktopPlaylist(){
 function renderDesktopPlayer(){
   const t = state.themes.desktop;
   const stCorner = t.stickers && t.stickers['player.corner'];
-  const railIcons = ['ui.music-note','action.share','ui.wave','ui.info','ui.palette','ui.sliders'];
   dScreen(t).innerHTML =
     '<div class="dp">'
     + '<div class="dp-name" style="margin-top:14px">All We Know <span class="dp-artist" style="margin-top:0;display:inline">- The Chainsmokers, Phoebe Ryan</span></div>'
@@ -1944,7 +1963,6 @@ function renderDesktopPlayer(){
     + '<div class="trans">这就是我们共同的拥有</div>'
     + '<div class="prev">Never face each other</div>'
     + '</div>'
-    + '<div class="dp-rail">'+railIcons.map((s,i)=>'<span'+(i===2?' class="on"':'')+'>'+iconHtml(s, t.icons, 15)+'</span>').join('')+'</div>'
     + '</div>'
     + (stCorner ? '<div class="d-sticker-corner">'+stickerImg(stCorner, 56)+'</div>' : '')
     + '<div class="dp-prog"></div>'
@@ -1957,12 +1975,12 @@ function renderDesktopPlayer(){
     + iconHtml('player.prev', t.icons, 15)
     + '<span class="play">'+iconHtml('player.play', t.icons, 14)+'</span>'
     + iconHtml('player.next', t.icons, 15)
-    + '<span class="word">词</span>'
+    + (t.icons['player.lyric'] ? iconHtml('player.lyric', t.icons, 15) : '<span class="word">词</span>')
     + '<span class="grow"></span>'
     + '<span class="sq" style="border-color:rgba(255,255,255,.6);color:#fff">SQ</span>'
-    + iconHtml('ui.comment', t.icons, 15)
-    + iconHtml('ui.headphone', t.icons, 15)
-    + iconHtml('ui.sliders', t.icons, 15)
+    + iconHtml('player.comment', t.icons, 15)
+    + iconHtml('player.volume', t.icons, 15)
+    + iconHtml('player.sound', t.icons, 15)
     + iconHtml('player.queue', t.icons, 15)
     + '<span class="expand">'+iconHtml('ui.chevron-down', t.icons, 13)+'</span>'
     + '</div>'
@@ -1983,7 +2001,7 @@ function renderDesktopLocal(){
     + '<div class="d-shell">' + dSide(t, 6, null)
     + '<div class="dl-wrap">'
     + '<div class="dl-pagebar"><span class="t">本地音乐</span><span class="sp"></span>'
-    + '<div class="dl-tools"><span class="dl-round">'+iconHtml('player.play', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('ui.refresh', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('ui.music-note', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('ui.calendar', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('ui.sliders', t.icons, 11)+'</span></div></div>'
+    + '<div class="dl-tools"><span class="dl-round">'+iconHtml('page.playall', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('page.sort', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('page.more', t.icons, 11)+'</span></div></div>'
     + '<div class="dl-body">'+rows.map(r=>dRow(t, r)).join('')+'</div>'
     + '</div></div>'
     + dPlayerBar(t, { hq:'SQ' });
@@ -2003,7 +2021,7 @@ function renderDesktopFav(){
     + '<div class="d-shell">' + dSide(t, 8, null)
     + '<div class="dl-wrap">'
     + '<div class="dl-pagebar"><div class="dl-tabs"><span class="on">单曲</span><span>歌单</span><span>专辑</span></div><span class="sp"></span>'
-    + '<div class="dl-tools"><span class="dl-round">'+iconHtml('player.play', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('ui.music-note', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('ui.calendar', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('ui.sliders', t.icons, 11)+'</span></div></div>'
+    + '<div class="dl-tools"><span class="dl-round">'+iconHtml('page.playall', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('page.fav', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('page.sort', t.icons, 11)+'</span><span class="dl-round">'+iconHtml('page.more', t.icons, 11)+'</span></div></div>'
     + '<div class="dl-body">'+rows.map(r=>dRow(t, r)).join('')+'</div>'
     + '</div></div>'
     + dPlayerBar(t, { playing:true, hq:'HR', name:'爱相随', artist:'周华健' });
@@ -2094,21 +2112,21 @@ function renderDesktopMain(){
     + '</div>'
     + '<div class="d-player">'
     + '<div class="d-now"><span class="cov"></span><div style="flex:1;min-width:0"><div class="n">A.I.N.Y. 爱你</div><div class="a">G.E.M.邓紫棋</div></div></div>'
-    + '<span class="d-ctl"><span class="fav">'+iconHtml('action.favorite', t.icons, 15)+'</span></span>'
+    + '<span class="d-ctl"><span class="fav">'+iconHtml('action.favorite', t.icons, 15)+'</span><span style="display:inline-flex">'+iconHtml('action.download', t.icons, 15)+'</span></span>'
     + '<div class="d-mid"><div class="d-ctl">'
     + iconHtml('player.mode', t.icons, 14)
     + iconHtml('player.prev', t.icons, 14)
     + '<span class="play">'+iconHtml('player.play', t.icons, 12)+'</span>'
     + iconHtml('player.next', t.icons, 14)
-    + iconHtml('ui.lyrics', t.icons, 14)
+    + iconHtml('player.lyric', t.icons, 14)
     + '</div></div>'
     + '<div class="d-right">'
     + '<span class="sq">SQ</span>'
-    + iconHtml('ui.comment', t.icons, 14)
-    + iconHtml('ui.headphone', t.icons, 14)
-    + iconHtml('ui.sliders', t.icons, 14)
+    + iconHtml('player.comment', t.icons, 14)
+    + iconHtml('player.volume', t.icons, 14)
+    + iconHtml('player.sound', t.icons, 14)
     + iconHtml('player.queue', t.icons, 14)
-    + iconHtml('ui.chevron-down', t.icons, 14)
+    + '<span style="display:inline-flex;transform:rotate(180deg)">'+iconHtml('ui.chevron-down', t.icons, 14)+'</span>'
     + '</div>'
     + '</div>';
 }
