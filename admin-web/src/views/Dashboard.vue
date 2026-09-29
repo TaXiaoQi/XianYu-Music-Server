@@ -98,6 +98,7 @@
         <router-link to="/about-config" class="btn">关于页设置</router-link>
         <router-link to="/email-config" class="btn">邮箱机管理</router-link>
         <router-link to="/turnstile-config" class="btn">审核设置</router-link>
+        <router-link to="/themes" class="btn">主题中心</router-link>
         <router-link to="/database" class="btn">数据库管理</router-link>
       </div>
     </div>

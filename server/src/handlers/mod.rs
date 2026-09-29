@@ -9,6 +9,8 @@ pub mod share;
 pub mod social;
 pub mod sync;
 pub mod system;
+pub mod theme;
+pub mod theme_editor;
 pub mod token;
 pub mod upload;
 pub mod wallpaper;
@@ -48,6 +50,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_about_config" => system::get_about_config(body, ctx).await,
         "get_site_logo" => system::get_site_logo(ctx, pool).await,
         "get_user_agreement" => system::get_user_agreement(ctx, pool).await,
+        "get_deploy_doc" => system::get_deploy_doc(ctx, pool).await,
         "get_server_load" => system::get_server_load(ctx, pool).await,
         "get_leaderboard" => system::get_leaderboard(body, ctx, pool).await,
         // auth
@@ -97,6 +100,10 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "list_wallpapers" => wallpaper::list_wallpapers(body, ctx, pool).await,
         "my_wallpapers" => wallpaper::my_wallpapers(body, ctx, pool).await,
         "upload_wallpaper" => wallpaper::upload_wallpaper(body, ctx, pool).await,
+        // theme（主题中心）
+        "list_themes" => theme::list_themes(body, ctx, pool).await,
+        "my_themes" => theme::my_themes(body, ctx, pool).await,
+        "upload_theme" => theme::upload_theme(body, ctx, pool).await,
         // playlist
         "delete_playlist" => playlist::delete_playlist(body, ctx, pool).await,
         // file sync

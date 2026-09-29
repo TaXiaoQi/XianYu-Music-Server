@@ -14,7 +14,7 @@ use axum::body::Body;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::Router;
 use config::Config;
 use sqlx::MySqlPool;
@@ -76,12 +76,16 @@ async fn main() -> anyhow::Result<()> {
 
     let _ = std::fs::create_dir_all("uploads/wallpapers");
     let _ = std::fs::create_dir_all("uploads/covers");
+    let _ = std::fs::create_dir_all("uploads/themes");
 
     let app = Router::new()
         .route("/api", get(handle_api).post(handle_api))
         .route("/api/", get(handle_api).post(handle_api))
         .route("/s/:share_id", get(share_landing))
         .route("/s/:share_id/", get(share_landing))
+        .route("/theme-editor", get(theme_editor_page))
+        .route("/theme-editor/qrcode", get(theme_editor_qrcode))
+        .route("/theme-editor/upload", post(theme_editor_upload))
         .route(
             "/.well-known/apple-app-site-association",
             get(serve_apple_app_site_association),
@@ -151,11 +155,13 @@ async fn handle_api(
 
     let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
 
-    let no_sign: [&str; 19] = [
+    let no_sign: [&str; 22] = [
         "install", "check", "get_source_status", "upload_avatar",
         "deduct_master_quota", "get_master_quota_usage",
         "get_captcha", "verify_captcha", "email_send_code", "email_get_captcha_config", "email_get_turnstile_config", "email_register", "email_login", "email_reset_password", "email_get_profile",
-        "open", "get_user_agreement", "get_site_logo", "share_download",
+        "open", "get_user_agreement", "get_deploy_doc", "get_site_logo", "share_download",
+        // TV 扫码授权：网页编辑器等无签名能力的端复用（rate_limit 已有 auth/poll 专项配置）
+        "generate_tv_login_code", "poll_tv_login_status",
     ];
     if !state.config.local_debug_no_db && !no_sign.contains(&action.as_str()) {
         let timestamp = headers
@@ -550,4 +556,46 @@ fn share_404() -> Response {
         Body::from("分享不存在或已过期"),
     )
         .into_response()
+}
+
+async fn theme_editor_page() -> Response {
+    handlers::theme_editor::render_editor_page()
+}
+
+async fn theme_editor_qrcode(
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let data = params.get("data").cloned().unwrap_or_default();
+    if data.is_empty() || data.len() > 512 {
+        return (StatusCode::BAD_REQUEST, "bad request").into_response();
+    }
+    match handlers::theme_editor::qrcode_svg(&data) {
+        Some(svg) => (
+            StatusCode::OK,
+            [
+                (axum::http::header::CONTENT_TYPE, "image/svg+xml; charset=utf-8"),
+                (axum::http::header::CACHE_CONTROL, "no-store"),
+            ],
+            Body::from(svg),
+        )
+            .into_response(),
+        None => (StatusCode::BAD_REQUEST, "bad request").into_response(),
+    }
+}
+
+async fn theme_editor_upload(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    req: Request<Body>,
+) -> Response {
+    let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
+    if !state.db_ready {
+        return ctx.err(503, "数据库不可用，请稍后重试");
+    }
+    let body_bytes = match axum::body::to_bytes(req.into_body(), 64 * 1024 * 1024).await {
+        Ok(b) => b.to_vec(),
+        Err(_) => return ctx.err(400, "请求体过大或无效"),
+    };
+    let body = String::from_utf8_lossy(&body_bytes).into_owned();
+    handlers::theme_editor::upload(&body, ctx, &state.pool).await
 }

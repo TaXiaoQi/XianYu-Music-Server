@@ -22,8 +22,10 @@ const groups = [
       { to: '/m/fallback-modules', label: '兜底管理', desc: '下发客户端兜底模块代码' },
       { to: '/m/about-config', label: '关于页配置', desc: '维护关于页展示内容' },
       { to: '/m/wallpapers', label: '壁纸管理', desc: '审核和管理壁纸资源' },
+      { to: '/m/themes', label: '主题中心', desc: '审核和管理主题包' },
       { to: '/m/avatar-audit', label: '头像/改名审核', desc: '处理用户资料审核' },
       { to: '/m/user-agreement', label: '用户协议', desc: '维护注册和登录页协议内容' },
+      { to: '/m/deploy-doc', label: '部署文档', desc: '维护官网部署文档页内容' },
     ],
   },
   {

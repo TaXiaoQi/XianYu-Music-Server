@@ -23,8 +23,10 @@
             <li><router-link to="/version">版本管理</router-link></li>
             <li><router-link to="/fallback-modules">兜底管理</router-link></li>
             <li><router-link to="/wallpapers">壁纸管理</router-link></li>
+            <li><router-link to="/themes">主题中心</router-link></li>
             <li><router-link to="/avatar-audit">头像/改名审核</router-link></li>
             <li><router-link to="/user-agreement">用户协议</router-link></li>
+            <li><router-link to="/deploy-doc">部署文档</router-link></li>
             <li><router-link to="/about-config">关于页配置</router-link></li>
           </ul>
         </li>

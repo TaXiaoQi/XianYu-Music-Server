@@ -168,6 +168,14 @@ fn user_agreement() -> Value {
     })
 }
 
+fn deploy_doc() -> Value {
+    json!({
+        "title": crate::admin::deploy_doc::DEFAULT_DEPLOY_DOC_TITLE,
+        "content": crate::admin::deploy_doc::DEFAULT_DEPLOY_DOC_CONTENT,
+        "debug": true
+    })
+}
+
 fn require_captcha(data: &Value, ctx: &ReqCtx, state: &mut Value, purpose: &str) -> Option<Response> {
     let captcha_id = str_of(data, "captcha_id").trim().to_string();
     let captcha_answer = str_of(data, "captcha_answer").trim().to_string();
@@ -322,6 +330,7 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             ctx.json(200, "ok", Some(config))
         }
         "get_user_agreement" => ctx.json(200, "ok", Some(user_agreement())),
+        "get_deploy_doc" => ctx.json(200, "ok", Some(deploy_doc())),
         "get_server_load" => ctx.json(200, "ok", Some(json!({
             "cpu": 0,
             "memory": 0,
@@ -642,6 +651,15 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
         })),
         "my_wallpapers" => ctx.ok("ok", json!({ "total": 0, "list": [], "debug": true })),
         "upload_wallpaper" => ctx.ok("上传成功", json!({ "id": now_ts(), "status": "pending", "debug": true })),
+        "list_themes" => ctx.ok("ok", json!({
+            "total": 1,
+            "list": [
+                { "id": 1, "name": "本地调试主题", "platform": "mobile", "previewUrl": "", "status": "normal", "theme": null, "debug": true }
+            ],
+            "debug": true
+        })),
+        "my_themes" => ctx.ok("ok", json!({ "total": 0, "list": [], "debug": true })),
+        "upload_theme" => ctx.ok("上传成功", json!({ "id": now_ts(), "status": "pending", "debug": true })),
         "delete_playlist" => ctx.ok("删除成功", json!({ "debug": true })),
         "file_sync_upload_start" => ctx.ok("ok", json!({ "chunk_dir_ready": true, "debug": true })),
         "file_sync_upload_chunk" => ctx.ok("ok", json!({
@@ -908,6 +926,8 @@ pub fn handle_admin_api(action: &str) -> Response {
         "save_about_config" => admin::ok("本地调试模式：配置已模拟保存", about_config()),
         "get_user_agreement_admin" => admin::ok("ok", user_agreement()),
         "save_user_agreement" => admin::ok("本地调试模式：用户协议已模拟保存", user_agreement()),
+        "get_deploy_doc_admin" => admin::ok("ok", deploy_doc()),
+        "save_deploy_doc" => admin::ok("本地调试模式：部署文档已模拟保存", deploy_doc()),
         "list_versions" => admin::ok("ok", json!({
             "total": 1,
             "total_pages": 1,

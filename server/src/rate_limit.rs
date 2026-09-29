@@ -339,7 +339,8 @@ fn profile_for_action(action: &str) -> RateProfile {
         | "settings_sync_upload"
         | "settings_sync_download"
         | "upload_avatar"
-        | "upload_wallpaper" => RateProfile {
+        | "upload_wallpaper"
+        | "upload_theme" => RateProfile {
             name: "bulk",
             window_seconds: 1,
             warn_threshold: 50,

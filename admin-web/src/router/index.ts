@@ -105,6 +105,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '壁纸管理', mobile: true },
       },
       {
+        path: 'themes',
+        name: 'MobileThemes',
+        component: () => import('@/views/mobile/MobileThemes.vue'),
+        meta: { title: '主题中心', mobile: true },
+      },
+      {
         path: 'avatar-audit',
         name: 'MobileAvatarAudit',
         component: () => import('@/views/mobile/MobileAvatarAudit.vue'),
@@ -133,6 +139,12 @@ const routes: RouteRecordRaw[] = [
         name: 'MobileUserAgreement',
         component: () => import('@/views/mobile/MobileUserAgreement.vue'),
         meta: { title: '用户协议', mobile: true },
+      },
+      {
+        path: 'deploy-doc',
+        name: 'MobileDeployDoc',
+        component: () => import('@/views/mobile/MobileDeployDoc.vue'),
+        meta: { title: '部署文档', mobile: true },
       },
       {
         path: 'admin-account',
@@ -262,6 +274,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '壁纸管理' },
       },
       {
+        path: 'themes',
+        name: 'Themes',
+        component: () => import('@/views/Themes.vue'),
+        meta: { title: '主题中心' },
+      },
+      {
         path: 'avatar-audit',
         name: 'AvatarAudit',
         component: () => import('@/views/AvatarAudit.vue'),
@@ -290,6 +308,12 @@ const routes: RouteRecordRaw[] = [
         name: 'UserAgreement',
         component: () => import('@/views/UserAgreement.vue'),
         meta: { title: '用户协议' },
+      },
+      {
+        path: 'deploy-doc',
+        name: 'DeployDoc',
+        component: () => import('@/views/DeployDoc.vue'),
+        meta: { title: '部署文档' },
       },
       {
         path: 'feedback',

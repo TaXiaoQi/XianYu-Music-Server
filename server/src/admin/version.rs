@@ -281,6 +281,7 @@ fn default_system(platform: &str) -> String {
 fn normalize_system(platform: &str, raw: &str) -> String {
     let allowed: &[&str] = match platform {
         "mobile" => &["android", "harmonyos", "ios"],
+        "watch" => &[""],
         _ => &["windows", "linux", "macos"],
     };
     let r = raw.trim();

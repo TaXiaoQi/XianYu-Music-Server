@@ -61,6 +61,9 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     // wallpaper
     "my_wallpapers",
     "upload_wallpaper",
+    // theme（主题中心）
+    "my_themes",
+    "upload_theme",
     // playlist
     "delete_playlist",
     // file / settings / favorites / plugin sync

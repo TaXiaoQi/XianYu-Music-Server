@@ -16,6 +16,7 @@ pub mod auth;
 pub mod config_file;
 pub mod dashboard;
 pub mod db;
+pub mod deploy_doc;
 pub mod email;
 pub mod fallback;
 pub mod feedback;
@@ -26,6 +27,7 @@ pub mod proxy;
 pub mod share;
 pub mod site_config;
 pub mod source;
+pub mod theme;
 pub mod turnstile;
 pub mod users;
 pub mod version;
@@ -237,11 +239,13 @@ fn is_read_action(action: &str) -> bool {
             | "get_about_config_admin"
             | "get_site_logo"
             | "get_user_agreement_admin"
+            | "get_deploy_doc_admin"
             | "list_versions"
             | "get_desktop_version"
             | "list_beta_testers"
             | "get_beta_tester_detail"
             | "list_wallpapers"
+            | "list_themes"
             | "get_wallpaper_upload_limit"
             | "list_wallpaper_account_limits"
             | "list_announcements"
@@ -341,6 +345,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "migrate_local_cache_to_database" => config_file::migrate_local_cache_to_database(body, &ctx).await,
         "get_user_agreement_admin" => agreement::get(body, &ctx, pool).await,
         "save_user_agreement" => agreement::save(body, &ctx, pool).await,
+        "get_deploy_doc_admin" => deploy_doc::get(body, &ctx, pool).await,
+        "save_deploy_doc" => deploy_doc::save(body, &ctx, pool).await,
         "add_admin" => admins::add_admin(body, &ctx, pool).await,
         "delete_admin" => admins::delete_admin(body, &ctx, pool).await,
         "list_admins" => admins::list_admins(body, &ctx, pool).await,
@@ -441,6 +447,10 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "list_wallpaper_account_limits" => wallpaper::list_wallpaper_account_limits(body, &ctx, pool).await,
         "save_wallpaper_account_limit" => wallpaper::save_wallpaper_account_limit(body, &ctx, pool).await,
         "delete_wallpaper_account_limit" => wallpaper::delete_wallpaper_account_limit(body, &ctx, pool).await,
+        // theme（主题中心审核）
+        "list_themes" => theme::list_themes(body, &ctx, pool).await,
+        "change_theme_status" => theme::change_theme_status(body, &ctx, pool).await,
+        "delete_theme" => theme::delete_theme(body, &ctx, pool).await,
         "add_announcement" => announcement::add(body, &ctx, pool).await,
         "update_announcement" => announcement::update(body, &ctx, pool).await,
         "delete_announcement" => announcement::delete(body, &ctx, pool).await,

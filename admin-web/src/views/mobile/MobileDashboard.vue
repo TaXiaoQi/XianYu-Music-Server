@@ -92,6 +92,7 @@
         <router-link to="/m/email-config" class="mobile-btn">邮箱机设置</router-link>
         <router-link to="/m/turnstile-config" class="mobile-btn">审核设置</router-link>
         <router-link to="/m/about-config" class="mobile-btn">关于页设置</router-link>
+        <router-link to="/m/themes" class="mobile-btn">主题中心</router-link>
         <router-link to="/m/database" class="mobile-btn">数据库管理</router-link>
       </div>
     </div>

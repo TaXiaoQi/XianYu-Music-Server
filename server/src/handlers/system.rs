@@ -784,6 +784,11 @@ pub async fn get_user_agreement(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     ctx.json(200, "ok", Some(json!({ "title": title, "content": content })))
 }
 
+pub async fn get_deploy_doc(ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let (title, content) = crate::admin::deploy_doc::load_deploy_doc(pool).await;
+    ctx.json(200, "ok", Some(json!({ "title": title, "content": content })))
+}
+
 pub async fn get_server_load(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let q = sqlx::query("SELECT COUNT(*) as cnt FROM app_users")
         .fetch_one(pool)

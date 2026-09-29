@@ -755,6 +755,28 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_sort` (`sort_order`),
             KEY `idx_uploaded_by` (`uploaded_by`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `themes` (
+            `id` int(11) NOT NULL AUTO_INCREMENT,
+            `name` varchar(128) NOT NULL DEFAULT '',
+            `description` varchar(512) NOT NULL DEFAULT '',
+            `payload` LONGTEXT,
+            `platform` varchar(16) NOT NULL DEFAULT 'desktop',
+            `preview_url` varchar(512) NOT NULL DEFAULT '',
+            `thumbnail_url` varchar(512) NOT NULL DEFAULT '',
+            `wallpaper_id` int(11) NOT NULL DEFAULT 0,
+            `author_name` varchar(64) NOT NULL DEFAULT '',
+            `sort_order` int(11) NOT NULL DEFAULT 0,
+            `status` varchar(32) NOT NULL DEFAULT 'pending',
+            `uploaded_by` varchar(32) NOT NULL DEFAULT '',
+            `uploaded_by_nickname` varchar(64) NOT NULL DEFAULT '',
+            `reviewed_at` datetime NULL,
+            `reviewed_by` varchar(64) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_status` (`status`),
+            KEY `idx_platform` (`platform`),
+            KEY `idx_uploaded_by` (`uploaded_by`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `email_test_users` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `email` varchar(128) NOT NULL DEFAULT '',
