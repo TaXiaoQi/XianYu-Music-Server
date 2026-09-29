@@ -61,11 +61,19 @@
       </div>
 
       <div class="section-title">参考项目</div>
-      <div class="field-grid">
-        <label class="field">
-          <span>参考项目链接</span>
-          <input v-model="form.referenceProjectUrl" type="text" placeholder="https://..." />
-        </label>
+      <div class="ack-list">
+        <div v-for="(item, index) in form.referenceProjects" :key="index" class="ack-item">
+          <label class="field">
+            <span>项目名</span>
+            <input v-model="item.name" type="text" placeholder="项目名" />
+          </label>
+          <label class="field">
+            <span>项目链接</span>
+            <input v-model="item.url" type="text" placeholder="https://..." />
+          </label>
+          <button type="button" class="btn-remove" @click="removeItem('referenceProjects', index)">删除</button>
+        </div>
+        <button type="button" class="btn-add" @click="addItem('referenceProjects')">＋ 添加参考项目</button>
       </div>
 
       <div class="section-title">致谢名单</div>
@@ -79,12 +87,12 @@
             <span>主页链接</span>
             <input v-model="item.url" type="text" placeholder="https://..." />
           </label>
-          <button type="button" class="btn-remove" @click="removeAcknowledgement(index)">删除</button>
+          <button type="button" class="btn-remove" @click="removeItem('acknowledgements', index)">删除</button>
         </div>
-        <button type="button" class="btn-add" @click="addAcknowledgement">＋ 添加成员</button>
+        <button type="button" class="btn-add" @click="addItem('acknowledgements')">＋ 添加成员</button>
       </div>
 
-      <p class="hint">各个入口只配置链接，按钮显示文字由客户端按语言本地化，不再由后台覆盖。链接留空后，{{ platform === 'mobile' ? '移动端' : '桌面端' }}会隐藏对应外链按钮；检查更新入口可通过开关隐藏。两个平台的配置独立存储、互不影响。致谢名单展示在{{ platform === 'mobile' ? '移动端' : '桌面端' }}“参考项目”下方，点击成员名字跳转其主页，留空的名字会被忽略。</p>
+      <p class="hint">各个入口只配置链接，按钮显示文字由客户端按语言本地化，不再由后台覆盖。参考项目为列表，客户端“参考项目”按钮点击后以弹窗展示全部条目；致谢名单展示在“参考项目”旁的“致谢名单”弹窗中。留空的名字会被忽略；三个平台的配置独立存储、互不影响。</p>
       </div>
     </Transition>
   </div>
@@ -103,8 +111,8 @@ interface AboutConfig {
   officialSiteUrl: string
   updateEnabled: boolean
   projectUrl: string
-  referenceProjectUrl: string
   joinGroupUrl: string
+  referenceProjects: AcknowledgementsItem[]
   acknowledgements: AcknowledgementsItem[]
 }
 
@@ -112,8 +120,11 @@ const desktopDefaults: AboutConfig = {
   officialSiteUrl: 'https://xianyumusic.cn',
   updateEnabled: true,
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
-  referenceProjectUrl: 'https://github.com/Billy636/XianYuMusic',
   joinGroupUrl: 'https://qm.qq.com/q/kvteWSD8yY',
+  referenceProjects: [
+    { name: 'Lycia Player', url: 'https://github.com/Billy636/LyciaMusic' },
+    { name: 'BakaMusic', url: 'https://github.com/Zencok/BakaMusic' },
+  ],
   acknowledgements: [
     { name: '@Billy636', url: 'https://github.com/Billy636' },
     { name: '@Zencok', url: 'https://github.com/Zencok' },
@@ -124,21 +135,41 @@ const desktopDefaults: AboutConfig = {
 const mobileDefaults: AboutConfig = {
   ...desktopDefaults,
   projectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Mobile',
-  referenceProjectUrl: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop',
+  referenceProjects: [
+    { name: '弦予音乐桌面端', url: 'https://github.com/TaXiaoQi/XianYu-Music-Desktop' },
+    { name: 'BakaMusic', url: 'https://github.com/Zencok/BakaMusic' },
+    { name: 'BiliPai', url: 'https://github.com/jay3-yy/BiliPai/releases' },
+    { name: 'RawS', url: 'https://github.com/QFDY-GZC/RawS-Music' },
+  ],
+  acknowledgements: [
+    { name: '@Zencok', url: 'https://github.com/Zencok' },
+    { name: '@jay3-yy', url: 'https://github.com/jay3-yy' },
+    { name: '@QFDY-GZC', url: 'https://github.com/QFDY-GZC' },
+  ],
+}
+
+const watchDefaults: AboutConfig = {
+  ...desktopDefaults,
+  referenceProjects: [
+    { name: '弦予音乐移动端', url: 'https://github.com/TaXiaoQi/XianYu-Music-Mobile' },
+  ],
 }
 
 const loading = ref(true)
 const saving = ref(false)
-const platform = ref<'desktop' | 'mobile'>('desktop')
-const defaultConfig = computed(() => (platform.value === 'mobile' ? mobileDefaults : desktopDefaults))
+const platform = ref<'desktop' | 'mobile' | 'watch'>('desktop')
+const defaultConfig = computed(() =>
+  platform.value === 'mobile' ? mobileDefaults : platform.value === 'watch' ? watchDefaults : desktopDefaults,
+)
 const form = ref<AboutConfig>({ ...desktopDefaults })
 
 const PLATFORMS = [
   { key: 'desktop' as const, label: '桌面端' },
   { key: 'mobile' as const, label: '移动端' },
+  { key: 'watch' as const, label: '腕上端' },
 ]
 
-function switchPlatform(key: 'desktop' | 'mobile') {
+function switchPlatform(key: 'desktop' | 'mobile' | 'watch') {
   if (platform.value === key || loading.value || saving.value) return
   platform.value = key
   loadConfig()
@@ -149,6 +180,9 @@ async function loadConfig() {
   const res = await adminApi<Partial<AboutConfig>>('get_about_config_admin', { platform: platform.value })
   if (res.code === 200 && res.data) {
     form.value = { ...defaultConfig.value, ...res.data }
+    if (!Array.isArray(form.value.referenceProjects)) {
+      form.value.referenceProjects = [...defaultConfig.value.referenceProjects]
+    }
     if (!Array.isArray(form.value.acknowledgements)) {
       form.value.acknowledgements = [...defaultConfig.value.acknowledgements]
     }
@@ -158,12 +192,12 @@ async function loadConfig() {
   loading.value = false
 }
 
-function addAcknowledgement() {
-  form.value.acknowledgements.push({ name: '', url: '' })
+function addItem(list: 'referenceProjects' | 'acknowledgements') {
+  form.value[list].push({ name: '', url: '' })
 }
 
-function removeAcknowledgement(index: number) {
-  form.value.acknowledgements.splice(index, 1)
+function removeItem(list: 'referenceProjects' | 'acknowledgements', index: number) {
+  form.value[list].splice(index, 1)
 }
 
 async function save() {

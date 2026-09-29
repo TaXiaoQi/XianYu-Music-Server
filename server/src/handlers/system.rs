@@ -36,8 +36,11 @@ fn default_about_config() -> serde_json::Value {
         "officialSiteUrl": "https://xianyumusic.cn",
         "updateEnabled": true,
         "projectUrl": "https://github.com/TaXiaoQi/XianYu-Music-Desktop",
-        "referenceProjectUrl": "https://github.com/Billy636/XianYuMusic",
         "joinGroupUrl": "https://qm.qq.com/q/kvteWSD8yY",
+        "referenceProjects": [
+            { "name": "Lycia Player", "url": "https://github.com/Billy636/LyciaMusic" },
+            { "name": "BakaMusic", "url": "https://github.com/Zencok/BakaMusic" }
+        ],
         "acknowledgements": [
             { "name": "@Billy636", "url": "https://github.com/Billy636" },
             { "name": "@Zencok", "url": "https://github.com/Zencok" },
@@ -706,14 +709,41 @@ pub fn apply_mobile_about_overrides(config: &mut Value) {
         .unwrap_or("https://github.com/TaXiaoQi/XianYu-Music-Desktop")
         .to_string();
     obj.insert("projectUrl".into(), json!("https://github.com/TaXiaoQi/XianYu-Music-Mobile"));
-    obj.insert("referenceProjectUrl".into(), json!(desktop_url));
+    obj.insert(
+        "referenceProjects".into(),
+        json!([
+            { "name": "弦予音乐桌面端", "url": desktop_url },
+            { "name": "BakaMusic", "url": "https://github.com/Zencok/BakaMusic" },
+            { "name": "BiliPai", "url": "https://github.com/jay3-yy/BiliPai/releases" },
+            { "name": "RawS", "url": "https://github.com/QFDY-GZC/RawS-Music" }
+        ]),
+    );
+    obj.insert(
+        "acknowledgements".into(),
+        json!([
+            { "name": "@Zencok", "url": "https://github.com/Zencok" },
+            { "name": "@jay3-yy", "url": "https://github.com/jay3-yy" },
+            { "name": "@QFDY-GZC", "url": "https://github.com/QFDY-GZC" }
+        ]),
+    );
+}
+
+pub fn apply_watch_about_overrides(config: &mut Value) {
+    let Some(obj) = config.as_object_mut() else { return };
+    obj.insert(
+        "referenceProjects".into(),
+        json!([
+            { "name": "弦予音乐移动端", "url": "https://github.com/TaXiaoQi/XianYu-Music-Mobile" }
+        ]),
+    );
 }
 
 pub fn apply_platform_about_overrides(config: &mut Value, body: &str) {
-    if str_of(&parse_body(body), "platform") != "mobile" {
-        return;
+    match str_of(&parse_body(body), "platform").trim() {
+        "mobile" => apply_mobile_about_overrides(config),
+        "watch" => apply_watch_about_overrides(config),
+        _ => {}
     }
-    apply_mobile_about_overrides(config);
 }
 
 fn read_platform_about_config(platform: &str) -> Option<serde_json::Value> {
@@ -722,8 +752,10 @@ fn read_platform_about_config(platform: &str) -> Option<serde_json::Value> {
     let saved = serde_json::from_str::<serde_json::Value>(&content).ok()?;
     let obj = saved.as_object()?.clone();
     let mut base = default_about_config();
-    if platform == "mobile" {
-        apply_mobile_about_overrides(&mut base);
+    match platform {
+        "mobile" => apply_mobile_about_overrides(&mut base),
+        "watch" => apply_watch_about_overrides(&mut base),
+        _ => {}
     }
     let mut merged = base.as_object().cloned().unwrap_or_default();
     for (key, value) in obj {

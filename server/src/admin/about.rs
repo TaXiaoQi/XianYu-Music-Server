@@ -13,6 +13,7 @@ fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
     match platform {
         "desktop" => Some(std::path::Path::new("api").join("about_config_desktop.json")),
         "mobile" => Some(std::path::Path::new("api").join("about_config_mobile.json")),
+        "watch" => Some(std::path::Path::new("api").join("about_config_watch.json")),
         _ => None,
     }
 }
@@ -22,8 +23,11 @@ fn default_about_config() -> Value {
         "officialSiteUrl": "https://xianyumusic.cn",
         "updateEnabled": true,
         "projectUrl": "https://github.com/TaXiaoQi/XianYu-Music-Desktop",
-        "referenceProjectUrl": "https://github.com/Billy636/XianYuMusic",
         "joinGroupUrl": "https://qm.qq.com/q/kvteWSD8yY",
+        "referenceProjects": [
+            { "name": "Lycia Player", "url": "https://github.com/Billy636/LyciaMusic" },
+            { "name": "BakaMusic", "url": "https://github.com/Zencok/BakaMusic" }
+        ],
         "acknowledgements": [
             { "name": "@Billy636", "url": "https://github.com/Billy636" },
             { "name": "@Zencok", "url": "https://github.com/Zencok" },
@@ -50,16 +54,20 @@ fn read_about_config() -> Value {
 
 fn default_about_config_for(platform: &str) -> Value {
     let mut config = default_about_config();
-    if platform == "mobile" {
-        crate::handlers::system::apply_mobile_about_overrides(&mut config);
+    match platform {
+        "mobile" => crate::handlers::system::apply_mobile_about_overrides(&mut config),
+        "watch" => crate::handlers::system::apply_watch_about_overrides(&mut config),
+        _ => {}
     }
     config
 }
 
 fn read_platform_about_config(platform: &str) -> Value {
     let mut config = read_about_config();
-    if platform == "mobile" {
-        crate::handlers::system::apply_mobile_about_overrides(&mut config);
+    match platform {
+        "mobile" => crate::handlers::system::apply_mobile_about_overrides(&mut config),
+        "watch" => crate::handlers::system::apply_watch_about_overrides(&mut config),
+        _ => {}
     }
     if let Some(path) = platform_about_config_path(platform) {
         if let Ok(content) = std::fs::read_to_string(&path) {
@@ -91,15 +99,8 @@ pub async fn get(body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     ok("ok", read_platform_about_config(&platform))
 }
 
-pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    let platform = str_of(&data, "platform").trim().to_string();
-    let official_site_url = str_of(&data, "officialSiteUrl").trim().to_string();
-    let project_url = str_of(&data, "projectUrl").trim().to_string();
-    let reference_project_url = str_of(&data, "referenceProjectUrl").trim().to_string();
-    let join_group_url = str_of(&data, "joinGroupUrl").trim().to_string();
-
-    let acknowledgements: Vec<Value> = match data.get("acknowledgements") {
+fn name_url_list_of(data: &Value, key: &str, fallback: Vec<Value>) -> Vec<Value> {
+    match data.get(key) {
         Some(Value::Array(arr)) => arr
             .iter()
             .filter_map(|item| {
@@ -121,19 +122,34 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
                 Some(json!({ "name": name, "url": url }))
             })
             .collect(),
-        _ => read_platform_about_config(&platform)
-            .get("acknowledgements")
+        _ => fallback,
+    }
+}
+
+pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let platform = str_of(&data, "platform").trim().to_string();
+    let official_site_url = str_of(&data, "officialSiteUrl").trim().to_string();
+    let project_url = str_of(&data, "projectUrl").trim().to_string();
+    let join_group_url = str_of(&data, "joinGroupUrl").trim().to_string();
+
+    let current = read_platform_about_config(&platform);
+    let fallback_list = |key: &str| -> Vec<Value> {
+        current
+            .get(key)
             .and_then(|v| v.as_array())
             .cloned()
-            .unwrap_or_default(),
+            .unwrap_or_default()
     };
+    let reference_projects = name_url_list_of(&data, "referenceProjects", fallback_list("referenceProjects"));
+    let acknowledgements = name_url_list_of(&data, "acknowledgements", fallback_list("acknowledgements"));
 
     let config = json!({
         "officialSiteUrl": official_site_url,
         "updateEnabled": bool_of(&data, "updateEnabled"),
         "projectUrl": project_url,
-        "referenceProjectUrl": reference_project_url,
         "joinGroupUrl": join_group_url,
+        "referenceProjects": reference_projects,
         "acknowledgements": acknowledgements,
     });
 
