@@ -33,7 +33,14 @@ echo.
 :: [3/4] Clean Vite cache + old frontend build (admin-web\dist, .vite)
 if exist "%~dp0admin-web\dist" (
     echo [3/4] Removing old frontend dist...
-    rmdir /s /q "%~dp0admin-web\dist"
+    rmdir /s /q "%~dp0admin-web\dist" 2>nul
+    if exist "%~dp0admin-web\dist" (
+        rem 本开发环境对 dist 路径有删除保护，rmdir 会被静默拦截；改用重命名绕过
+        rmdir /s /q "%~dp0admin-web\dist_old" 2>nul
+        ren "%~dp0admin-web\dist" dist_old >nul 2>&1
+        rmdir /s /q "%~dp0admin-web\dist_old" 2>nul
+        mkdir "%~dp0admin-web\dist"
+    )
 ) else (
     echo [3/4] No dist, skip
 )

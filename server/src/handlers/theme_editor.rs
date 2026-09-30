@@ -343,6 +343,16 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 .brand__name{ font-family:var(--font-display); font-size:19px; font-weight:700; letter-spacing:.5px; }
 .brand__sub{ font-size:12.5px; color:var(--text-3); margin-top:2px; }
 .topbar__actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.lang-switch{ position:relative; }
+.lang-switch__btn{ display:inline-flex; align-items:center; justify-content:center; gap:7px; height:40px; padding:0 13px; border-radius:12px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#e5e7eb; cursor:pointer; font-size:13px; font-weight:600; font-family:var(--font-body); white-space:nowrap; transition:background .18s,color .18s; }
+.lang-switch__btn svg{ flex:none; }
+.lang-switch__label{ line-height:1; }
+.lang-switch__btn:hover{ background:rgba(255,255,255,.12); color:#fff; }
+.lang-menu{ position:absolute; top:calc(100% + 8px); right:0; min-width:150px; background:#202227; border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:6px; box-shadow:0 16px 40px rgba(0,0,0,.4); display:none; z-index:999; }
+.lang-switch.open .lang-menu{ display:block; }
+.lang-menu__item{ display:block; width:100%; text-align:left; padding:9px 12px; border-radius:8px; border:none; background:none; color:#e5e7eb; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; }
+.lang-menu__item:hover{ background:rgba(255,255,255,.08); color:#fff; }
+.lang-menu__item.active{ color:#fff; background:rgba(236,65,65,.9); }
 .login-state{ font-size:13px; color:var(--text-2); display:inline-flex; align-items:center; gap:6px; }
 .login-state.on{ color:#0a9d58; font-weight:600; }
 .login-state .dot{ width:7px; height:7px; border-radius:50%; background:var(--text-3); }
@@ -887,6 +897,7 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
       </div>
     </div>
     <div class="topbar__actions">
+      <span data-i18n-mount="dropdown"></span>
       <span class="login-state" id="loginState"><span class="dot"></span><span id="loginText">未登录（导出不需要登录）</span></span>
       <button class="btn" id="btnLogin" onclick="openLogin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg><span>扫码登录</span></button>
       <button class="btn" id="btnLogout" onclick="logout()" style="display:none">退出</button>
@@ -2331,6 +2342,688 @@ renderSlotList('stickers','stickerSlots');
 renderSurfaceList();
 renderPreview();
 syncLoginUi();
+</script>
+<script>
+/* 弦予音乐 · 官网 i18n 内核
+ * 机制：简体为基底，运行时词典替换文本节点 + 常用属性。
+ * zh-TW：简→繁字级映射 + 词语级 override（台湾用语）。
+ * en：词典精确匹配（key=简体原文），未命中保持简体。
+ * 语言：auto(跟随系统/浏览器) | zh-CN | zh-TW | en，localStorage 持久化。
+ */
+(function () {
+  'use strict';
+
+  var LS_KEY = 'xy_lang';
+  var current = null;        // 已解析语言
+  var pref = 'auto';         // 用户偏好（含 auto）
+  var srcMap = new WeakMap(); // TextNode -> 原始简体文本（切换语言前恢复用）
+  var suppress = false;       // Observer 自触发抑制
+
+  function stored() {
+    try { return localStorage.getItem(LS_KEY); } catch (e) { return null; }
+  }
+  function detectSystem() {
+    var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'zh-CN'];
+    for (var i = 0; i < langs.length; i++) {
+      var l = String(langs[i] || '').toLowerCase();
+      if (l === 'zh-tw' || l === 'zh-hk' || l === 'zh-mo' || l.indexOf('zh-hant') === 0 || /^zh-(hant|tw|hk|mo)/.test(l)) return 'zh-TW';
+      if (l.indexOf('en') === 0) return 'en';
+      if (l.indexOf('zh') === 0) return 'zh-CN';
+    }
+    return 'zh-CN';
+  }
+  function resolve(p) {
+    if (p === 'zh-CN' || p === 'zh-TW' || p === 'en') return p;
+    return detectSystem();
+  }
+
+  /* ============ 简→繁：词语级 override（台湾用语，先替换，单轮不回扫） ============ */
+  var PHRASE_LIST = [
+    ['服务器', '伺服器'], ['数据库', '資料庫'], ['内存', '記憶體'], ['缓存', '快取'],
+    ['软件', '軟體'], ['硬件', '硬體'], ['固件', '韌體'],
+    ['视频', '影片'], ['音频', '音訊'], ['在线', '線上'], ['离线', '離線'],
+    ['网络', '網路'], ['智能', '智慧'], ['文件夹', '資料夾'], ['文档', '文件'], ['文件', '檔案'],
+    ['设置', '設定'], ['默认', '預設'], ['账号', '帳號'], ['账户', '帳戶'],
+    ['登录', '登入'], ['登陆', '登入'], ['注销', '登出'],
+    ['支持', '支援'], ['社区', '社群'], ['项目', '專案'], ['仓库', '儲存庫'],
+    ['界面', '介面'], ['鼠标', '滑鼠'], ['屏幕', '螢幕'],
+    ['桌面端', '桌面版'], ['移动端', '行動版'], ['腕上端', '腕上版'],
+    ['歌单', '播放清單'], ['壁纸', '桌布'], ['消息', '訊息'], ['反馈', '回饋'],
+    ['音乐', '音樂'], ['专辑', '專輯'], ['备份', '備份'], ['恢复', '還原'],
+    ['上传', '上傳'], ['下载', '下載'], ['邮箱', '信箱'], ['邮件', '郵件'],
+    ['设备', '裝置'], ['数据', '資料'], ['信息', '資訊'], ['链接', '連結'],
+    ['菜单', '選單'], ['优化', '最佳化'], ['搜索', '搜尋'],
+    ['导入', '匯入'], ['导出', '匯出'], ['刷新', '重新整理'],
+    ['评论', '留言'], ['回复', '回覆'], ['用户', '使用者'], ['权限', '權限'],
+    ['日志', '日誌'], ['筛选', '篩選'], ['当前', '目前'], ['实时', '即時'],
+    ['性能', '效能'], ['字体', '字型'], ['图片', '圖片'],
+    ['创建', '建立'], ['新建', '新增'], ['添加', '新增'], ['保存', '儲存'],
+    ['粘贴', '貼上'], ['剪切', '剪下'], ['复制', '複製'], ['重复', '重複'],
+    ['复杂', '複雜'], ['复合', '複合'], ['运行', '執行'], ['重启', '重新啟動'],
+    ['终端', '終端機'], ['命令', '指令'], ['端口', '連接埠'],
+    ['环境变量', '環境變數'], ['变量', '變數'], ['域名', '網域'], ['证书', '憑證'],
+    ['进程', '處理程序'], ['磁盘', '磁碟'], ['验证', '驗證'], ['质量', '品質'],
+    ['教程', '教學'], ['脚本', '腳本'], ['卸载', '解除安裝'],
+    ['点赞', '點讚'], ['伙伴', '夥伴'], ['干净', '乾淨'], ['干燥', '乾燥'],
+    ['面包', '麵包'], ['面条', '麵條'], ['制造', '製造'], ['制作', '製作'],
+    ['采用', '採用'], ['采取', '採取'], ['采购', '採購'], ['采访', '採訪'],
+    ['心脏', '心臟'], ['内脏', '內臟'], ['肮脏', '骯髒'], ['弄脏', '弄髒'],
+    ['头发', '頭髮'], ['理发', '理髮'], ['杂志', '雜誌'], ['日历', '日曆'],
+    ['游泳', '游泳'], ['皇后', '皇后'], ['手表', '手錶'], ['手表带', '手錶帶'],
+    ['战斗', '戰鬥'], ['奋斗', '奮鬥'], ['斗争', '鬥爭'],
+    ['联系', '聯繫'], ['关系', '關係'], ['细致', '細緻'], ['忧郁', '憂鬱'],
+    ['览器', '覽器'], ['浏览器', '瀏覽器']
+  ];
+  var PHRASE_MAP = {};
+  PHRASE_LIST.forEach(function (p) { PHRASE_MAP[p[0]] = p[1]; });
+  var PHRASE_RE = new RegExp('(' + PHRASE_LIST
+    .slice().sort(function (a, b) { return b[0].length - a[0].length; })
+    .map(function (p) { return p[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); })
+    .join('|') + ')', 'g');
+
+  /* ============ 简→繁：字级映射（两字一组：简繁） ============ */
+  var S2T_SRC =
+    '爱愛碍礙袄襖奥奧坝壩罢罷摆擺败敗办辦帮幫绑綁宝寶报報币幣毕畢边邊变變标標宾賓' +
+    '补補参參惨慘灿燦苍蒼仓倉层層尝嘗长長偿償场場车車彻徹尘塵陈陳称稱惩懲迟遲' +
+    '冲衝丑醜础礎处處触觸传傳闯闖创創纯純词詞辞辭从從丛叢凑湊窜竄错錯' +
+    '达達带帶贷貸单單担擔胆膽弹彈诞誕当當挡擋党黨捣搗导導岛島祷禱灯燈' +
+    '敌敵涤滌递遞点點电電调調钓釣订訂东東动動冻凍斗鬥独獨读讀赌賭' +
+    '断斷锻鍛队隊对對吨噸顿頓夺奪堕墮讹訛额額恶惡儿兒尔爾饿餓发發罚罰' +
+    '阀閥范範贩販饭飯访訪纺紡飞飛废廢费費纷紛坟墳奋奮粪糞丰豐风風' +
+    '缝縫讽諷凤鳳妇婦复復负負该該盖蓋干幹刚剛钢鋼岗崗纲綱给給巩鞏' +
+    '沟溝构構购購够夠蛊蠱顾顧刮颳关關观觀馆館惯慣贯貫广廣归歸龟龜' +
+    '规規贵貴锅鍋国國过過韩韓汉漢号號阂閡鹤鶴贺賀横橫轰轟红紅后後' +
+    '壶壺护護华華划劃画畫话話怀懷坏壞欢歡环環还還缓緩换換唤喚谎謊' +
+    '挥揮汇匯会會讳諱贿賄秽穢获獲机機鸡雞积積极極级級击擊计計记記' +
+    '际際剂劑济濟继繼价價驾駕歼殲监監艰艱拣揀简簡见見舰艦剑劍键鍵' +
+    '溅濺将將姜薑浆漿奖獎奖獎讲講酱醬胶膠浇澆骄驕娇嬌搅攪缴繳轿轎' +
+    '较較阶階节節洁潔结結诫誡届屆紧緊谨謹进進尽盡惊驚经經静靜竞競' +
+    '净淨径徑旧舊剧劇据據惧懼卷捲觉覺绝絕军軍开開凯凱颗顆壳殼课課' +
+    '垦懇恳懇夸誇块塊亏虧扩擴蜡蠟来來赖賴蓝藍栏欄拦攔烂爛览覽' +
+    '劳勞捞撈乐樂类類泪淚篱籬离離里裡礼禮丽麗励勵历歷厉厲隶隸' +
+    '联聯怜憐帘簾莲蓮连連炼煉练練粮糧两兩辆輛谅諒疗療辽遼猎獵' +
+    '临臨邻鄰鳞鱗灵靈岭嶺领領刘劉龙龍楼樓娄婁芦蘆卢盧炉爐鲁魯' +
+    '陆陸录錄虑慮乱亂论論罗羅络絡骆駱妈媽马馬玛瑪吗嗎买買卖賣' +
+    '迈邁麦麥脉脈满滿蛮蠻谩謾猫貓么麼门門闷悶们們梦夢弥彌谜謎' +
+    '觅覓绵綿缅緬庙廟灭滅悯憫鸣鳴谋謀亩畝纳納难難恼惱脑腦闹鬧' +
+    '内內拟擬酿釀鸟鳥聂聶宁寧农農浓濃诺諾盘盤庞龐赔賠喷噴鹏鵬' +
+    '骗騙飘飄频頻贫貧苹蘋凭憑评評泼潑铺鋪仆僕朴樸谱譜齐齊骑騎' +
+    '岂豈启啟弃棄气氣迁遷签簽谦謙钱錢潜潛浅淺谴譴枪槍墙牆强強' +
+    '抢搶桥橋侨僑窍竅亲親轻輕倾傾庆慶琼瓊穷窮区區驱驅权權劝勸' +
+    '确確让讓扰擾热熱认認韧韌荣榮绒絨软軟锐銳闰閏润潤洒灑萨薩' +
+    '赛賽伞傘丧喪骚騷涩澀杀殺筛篩晒曬删刪闪閃陕陝赡贍绍紹设設' +
+    '绅紳审審肾腎声聲胜勝圣聖师師湿濕时時识識实實县縣线線宪憲' +
+    '乡鄉详詳响響项項萧蕭销銷晓曉啸嘯协協胁脅写寫泻瀉谢謝兴興' +
+    '锈鏽虚虛须須许許绪緒续續轩軒悬懸选選学學询詢训訓讯訊逊遜' +
+    '压壓亚亞严嚴盐鹽颜顏阎閻艳豔厌厭验驗阳陽养養样樣谣謠药藥' +
+    '爷爺页頁业業叶葉医醫仪儀义義议議亿億忆憶异異译譯阴陰银銀' +
+    '隐隱应應婴嬰樱櫻鹰鷹营營蝇蠅赢贏拥擁佣傭踊踴优優忧憂邮郵' +
+    '犹猶诱誘与與屿嶼语語誉譽预預驭馭渊淵园園员員圆圓缘緣远遠' +
+    '愿願约約跃躍岳嶽粤粵云雲运運韵韻杂雜灾災载載赞讚赃贓' +
+    '脏髒凿鑿责責择擇则則贼賊赠贈扎紮诈詐斋齋债債战戰张張涨漲' +
+    '账帳胀脹赵趙蛰蟄辙轍针針侦偵诊診镇鎮阵陣挣掙证證织織职職' +
+    '执執纸紙挚摯掷擲帜幟质質钟鐘种種众眾昼晝骤驟诸諸烛燭嘱囑' +
+    '贮貯铸鑄筑築专專转轉赚賺庄莊装裝壮壯状狀准準谘諮资資' +
+    '渍漬踪蹤综綜总總纵縱邹鄒组組钻鑽乌烏乔喬习習书書争爭' +
+    '伟偉伤傷伪偽体體余餘侠俠侣侶侧側侪儕俩倆俭儉储儲兑兌' +
+    '兰蘭兹茲兽獸冈岡况況凉涼减減凛凜' +
+    '厂廠厕廁厘釐厦廈厨廚厮廝叙敘叠疊叹嘆' +
+    '违違适適逻邏遗遺遥遙' +
+    '郑鄭酝醞释釋鉴鑒钥鑰钦欽钧鈞钨鎢铃鈴铅鉛铜銅铝鋁' +
+    '铠鎧镁鎂锋鋒顽頑' +
+    '饮飲饰飾饱飽饲飼饼餅馈饋驶駛骂罵' +
+    '鸭鴨鸽鴿鹅鵝黄黃' +
+    '显顯蚕蠶网網于於';
+  var S2T = {};
+  for (var i = 0; i < S2T_SRC.length; i += 2) S2T[S2T_SRC.charAt(i)] = S2T_SRC.charAt(i + 1);
+
+  function hasCJK(s) { return /[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]/.test(s); }
+
+  function toTraditional(s) {
+    s = s.replace(PHRASE_RE, function (m) { return PHRASE_MAP[m] || m; });
+    if (!hasCJK(s)) return s;
+    var out = '';
+    for (var i = 0; i < s.length; i++) { var c = s.charAt(i); out += S2T[c] || c; }
+    return out;
+  }
+
+  /* ============ EN 词典（key=简体原文） ============ */
+  var EN = {
+    
+"＋ 新建": "+ New",
+"备份文件 / 本地文件夹 / 云端导入": "Backup File / Local Folder / Cloud Import",
+"本地": "Local",
+"本地音乐": "Local Music",
+"本页专属": "Page-Specific",
+"编辑平台（两端各自独立成包）": "Edit Platform (mobile and desktop are packaged separately)",
+"播放最多": "Most Played",
+"查看全部 ›": "View All ›",
+"常规": "General",
+"常规与启动": "General & Startup",
+"词": "Lyrics",
+"打开弦予音乐 App（移动端）→ 扫一扫，确认登录后本页自动完成登录。": "Open the XianYu Music App (mobile) → Scan the QR code. This page will sign in automatically after you confirm.",
+"单曲": "Tracks",
+"单日听歌时长排行": "Daily Listening Time Ranking",
+"导出 JSON": "Export JSON",
+"导航": "Navigation",
+"导入外部歌单": "Import External Playlist",
+"点击麦克风开始识别": "Tap the microphone to start recognition",
+"点击选择预览图": "Click to select a preview image",
+"调配配色与图标，导出或上传广场": "Adjust colors and icons, then export or upload to the Square",
+"二维码": "QR Code",
+"二维码已过期，关闭后重试": "QR code expired. Close this and try again.",
+"发现": "Discover",
+"放大": "Zoom In",
+"封面": "Cover",
+"该平台暂无公共槽位。": "No common slots on this platform.",
+"歌词": "Lyrics",
+"歌单": "Playlist",
+"历史": "History",
+"收藏": "Favorites",
+"今日首数": "Tracks today",
+"累计听歌": "Total listening",
+"今日时长": "Time today",
+"个人中心": "Personal Center",
+"公共控件设置一次、所有页面统一生效：底部导航（发现/我的）、mini 播放条三键（上一首/播放/下一首，播放页控制行也用同一套）、搜索框公共件（放大镜/识曲钮）。": "Set common controls once and they apply uniformly across all pages: the bottom navigation (Discover / Me), the three mini player buttons (Previous / Play / Next — the Now Playing control row uses the same set), and the shared search box parts (magnifier / song recognition button).",
+"公共通用": "Common",
+"管理账号与安全": "Manage account and security",
+"横屏": "Landscape",
+"基本信息": "Basic Info",
+"简介": "Description",
+"简介（可选）": "Description (optional)",
+"简体中文": "Simplified Chinese",
+"胶囊": "Capsule",
+"今天听歌时长": "Listening Time Today",
+"今天已听": "Listened Today",
+"快捷入口形状": "Quick Entry Shape",
+"累计听歌总时长": "Total Listening Time",
+"每日推荐": "Daily Picks",
+"屏幕方向（横竖屏是两套 UI）": "Screen Orientation (landscape and portrait are two separate UIs)",
+"浅色": "Light",
+"强调色": "Accent Color",
+"清除": "Clear",
+"取消": "Cancel",
+"确认上传": "Confirm Upload",
+"日榜": "Daily Chart",
+"如 123": "e.g. 123",
+"扫码登录": "Scan to Log In",
+"扫码登录弦予号": "Scan to log in with XianYu ID",
+"上传": "Upload",
+"上传到主题广场": "Upload to Theme Square",
+"上传广场": "Upload to Square",
+"设置": "Settings",
+"深浅模式": "Light/Dark Mode",
+"深色": "Dark",
+"竖屏": "Portrait",
+"搜索歌曲、歌手、专辑": "Search songs, artists, albums",
+"搜索设置": "Search Settings",
+"搜索音乐...": "Search music...",
+"缩小": "Zoom Out",
+"贴纸槽位": "Sticker Slots",
+"听歌排行榜": "Listening Ranking",
+"听过最多": "Most Listened",
+"统计": "Stats",
+"图标槽位": "Icon Slots",
+"图标建议 SVG 或高清 PNG（单文件 ≤2MB，主题资源总量 ≤5MB）。未设置的槽位在客户端回落默认图标，未知槽位将被忽略。": "Use SVG or high-resolution PNG for icons (max 2MB per file, 5MB total for all theme assets). Slots left unset fall back to default icons in the client; unknown slots are ignored.",
+"推荐壁纸 id（可选，广场壁纸编号）": "Recommended wallpaper ID (optional, Square wallpaper number)",
+"退出": "Exit",
+"外观": "Appearance",
+"为组件设置底面色块与透明度（壁纸模式下的自定义材质效果）。颜色同主题色一样可选，透明度 0%~100%；未设置的组件维持默认材质。切换「本页专属 / 公共通用」同时作用于图标、贴纸与组件色块。": "Set base color blocks and opacity for widgets (custom material effects in wallpaper mode). Colors can be any theme color; opacity ranges from 0% to 100%. Widgets left unset keep the default material. The Page-Specific / Common switch applies to icons, stickers and widget color blocks together.",
+"未登录（导出不需要登录）": "Not signed in (export does not require login)",
+"我的歌单 0": "My Playlists 0",
+"弦予": "XianYu",
+"弦予 · 主题编辑器": "XianYu · Theme Editor",
+"弦予音乐": "XianYu Music",
+"弦予音乐主题编辑器：调配强调色、深浅模式与图标贴纸槽位，导出主题包或上传到主题广场。": "XianYu Music Theme Editor: adjust the accent color, light/dark mode and icon & sticker slots, then export a theme pack or upload it to the Theme Square.",
+"也可手动输入授权码：": "You can also enter the authorization code manually:",
+"移动端": "Mobile",
+"音乐": "Music",
+"音乐库": "Music Library",
+"音源榜单": "Source Charts",
+"语言": "Language",
+"预览图": "Preview Image",
+"预览图（必选，JPG/PNG/WEBP/GIF ≤8MB）": "Preview image (required, JPG/PNG/WEBP/GIF ≤8MB)",
+"圆形": "Circle",
+"暂无搜索历史": "No search history yet",
+"正在生成二维码…": "Generating QR code…",
+"重置为 100%": "Reset to 100%",
+"周榜": "Weekly Chart",
+"主题名称": "Theme Name",
+"专辑": "Album",
+"桌面端": "Desktop",
+"自动 (满特效)": "Auto (full effects)",
+"自建歌单": "Created Playlists",
+"总榜": "Overall Chart",
+"组件色块": "Widget Color Blocks",
+"作用于「我的」页喜欢 / 最近 / 本地 / 下载四个快捷入口的底座形状。": "Applies to the base shapes of the four quick entries on the Me page: Likes / Recent / Local / Download.",
+"开机自动运行": "Launch at Startup",
+"关闭时最小化到托盘": "Minimize to Tray on Close",
+"启动检测更新": "Check for Updates on Launch",
+"性能模式": "Performance Mode",
+"低性能设备自动收缩毛玻璃与动态特效，改善流畅度": "Reduces blur and dynamic effects on low-end devices for smoother performance",
+"GPU 加速": "GPU Acceleration",
+"软件语言": "App Language",
+"选择界面显示语言，切换后立即生效。": "Select the interface display language. Changes take effect immediately.",
+"账号": "Account",
+"腕上联动": "Watch Link",
+"播放": "Play",
+"我的": "Me",
+"全部播放": "Play All",
+"搜索历史": "Search History",
+"听歌数据统计": "Listening Stats",
+"大家都在搜": "Trending Searches",
+"听歌识曲": "Song Recognition",
+"共 43 首歌": "43 songs in total",
+"1 次": "1 time",
+"3 分钟": "3 min",
+"首页": "Home",
+"在线搜索": "Online Search",
+"插件管理": "Plugin Management",
+"反馈": "Feedback",
+"文件夹": "Folders",
+"下载": "Download",
+"已退出登录": "Logged out",
+"播放页": "Now Playing",
+"搜索结果": "Search Results",
+"设置页": "Settings",
+"歌单页": "Playlist Page",
+"主窗口 · 首页": "Main Window · Home",
+"我的收藏": "My Favorites",
+"最近播放": "Recently Played",
+"我的歌单": "My Playlists",
+"底部导航栏": "Bottom Nav Bar",
+"mini 播放条": "Mini Player Bar",
+"搜索框胶囊": "Search Pill",
+"统计大卡": "Stats Hero Card",
+"歌曲行卡": "Song Row Card",
+"用户卡": "User Card",
+"统计卡": "Stats Card",
+"快捷宫格": "Quick Grid",
+"提示卡": "Tip Card",
+"歌单行卡": "Playlist Row Card",
+"识别主按钮": "Recognition Main Button",
+"历史/榜单卡": "History / Chart Card",
+"榜单行卡": "Chart Row Card",
+"tab/音源条": "Tab / Source Bar",
+"音源胶囊底色（应用到所有来源，文字不变）": "Source pill base color (applies to all sources; text color unchanged)",
+"横屏 · 每日推荐": "Landscape · Daily Picks",
+"横屏 · 播放最多": "Landscape · Most Played",
+"横屏 · 歌曲行卡（本地/收藏/最近播放）": "Landscape · Song Row Card (Local / Favorites / Recently Played)",
+"横屏 · 歌单卡": "Landscape · Playlist Card",
+"横屏 · 详情行卡": "Landscape · Detail Row Card",
+"横屏 · 左侧导航": "Landscape · Left Navigation",
+"横屏 · 数量卡（收藏/歌单/历史）": "Landscape · Count Cards (Favorites / Playlists / History)",
+"顶栏（返回 + 标题）": "Top Bar (Back + Title)",
+"设置分组卡": "Settings Group Card",
+"搜索框 · 放大镜": "Search Box · Magnifier",
+"搜索框 · 识曲钮": "Search Box · Recognition Button",
+"壁纸/皮肤中心按钮（竖屏首页右上角圆钮）": "Wallpaper / Skin Center Button (portrait Home top-right round button)",
+"我的 · 统计·累计听歌": "Me · Stats · Total Listening",
+"我的 · 统计·今日时长": "Me · Stats · Time Today",
+"我的 · 统计·今日首数": "Me · Stats · Tracks Today",
+"我的 · 顶栏设置钮": "Me · Top Bar Settings Button",
+"我的 · 导入歌单": "Me · Import Playlist",
+"我的 · 宫格喜欢": "Me · Grid Likes",
+"我的 · 宫格最近": "Me · Grid Recent",
+"我的 · 宫格本地": "Me · Grid Local",
+"我的 · 快捷宫格「下载」图标": "Me · Quick Grid \"Download\" icon",
+"识曲 · 主按钮麦克风": "Recognition · Main Mic Button",
+"底部导航 · 首页": "Bottom Nav · Home",
+"底部导航 · 我的": "Bottom Nav · Me",
+"播放条 · 上一首": "Player Bar · Previous",
+"播放条 · 播放/暂停": "Player Bar · Play/Pause",
+"播放条 · 下一首": "Player Bar · Next",
+"播放页 · 上一首": "Now Playing · Previous",
+"播放页 · 播放/暂停": "Now Playing · Play/Pause",
+"播放页 · 下一首": "Now Playing · Next",
+"播放页 · 播放队列": "Now Playing · Queue",
+"播放页 · 播放模式": "Now Playing · Play Mode",
+"播放页 · 收藏": "Now Playing · Favorite",
+"播放页 · 下载": "Now Playing · Download",
+"播放页 · 分享": "Now Playing · Share",
+"播放页 · 更多": "Now Playing · More",
+"播放页 · 评论": "Now Playing · Comments",
+"播放页 · 倍速/音效": "Now Playing · Speed / Sound FX",
+"横屏 · 侧栏品牌 Logo": "Landscape · Sidebar Brand Logo",
+"横屏 · 顶栏皮肤钮": "Landscape · Top Bar Skin Button",
+"横屏 · 顶栏设置钮": "Landscape · Top Bar Settings Button",
+"音乐库 · 长按拖拽把手（本地/收藏/最近播放）": "Music Library · Long-press Drag Handle (Local / Favorites / Recently Played)",
+"侧栏 · 品牌 Logo": "Sidebar · Brand Logo",
+"侧栏 · 首页": "Sidebar · Home",
+"侧栏 · 设置": "Sidebar · Settings",
+"播放 · 上一首": "Playback · Previous",
+"播放 · 播放/暂停": "Playback · Play/Pause",
+"播放 · 下一首": "Playback · Next",
+"播放 · 播放队列": "Playback · Queue",
+"播放 · 播放模式": "Playback · Play Mode",
+"播放 · 评论": "Playback · Comments",
+"播放 · 音量": "Playback · Volume",
+"播放 · 音效（均衡器）": "Playback · Sound FX (EQ)",
+"播放 · 可视化（频谱）": "Playback · Visualizer (Spectrum)",
+"播放 · MV": "Playback · MV",
+"播放 · 歌词开关": "Playback · Lyrics Toggle",
+"播放 · 进度条开关": "Playback · Progress Bar Toggle",
+"播放 · 页面样式": "Playback · Page Style",
+"播放 · 固定状态栏": "Playback · Pin Status Bar",
+"顶栏 · 搜索": "Top Bar · Search",
+"顶栏 · 识曲": "Top Bar · Recognition",
+"顶栏 · 皮肤钮": "Top Bar · Skin Button",
+"顶栏 · 设置钮": "Top Bar · Settings Button",
+"列表页 · 播放全部钮": "List Page · Play All Button",
+"列表页 · 排序钮": "List Page · Sort Button",
+"列表页 · 更多钮": "List Page · More Button",
+"歌单/收藏 · 收藏合集钮": "Playlist / Favorites · Favorite Collection Button",
+"操作 · 收藏": "Actions · Favorite",
+"操作 · 下载": "Actions · Download",
+"操作 · 分享": "Actions · Share",
+"操作 · 更多": "Actions · More",
+"操作 · 新建歌单": "Actions · New Playlist",
+"识曲页 · 底部装饰贴纸": "Recognition · Bottom Decor Sticker",
+"横屏 · 侧栏左下角贴纸": "Landscape · Sidebar Bottom-left Sticker",
+"右下角贴纸": "Bottom-right Sticker",
+"侧栏底部贴纸": "Sidebar Bottom Sticker",
+"搜索": "Search",
+"识曲": "Recognize",
+"返回": "Back",
+"导入": "Import",
+"在线": "Online",
+"全部": "All",
+"歌手": "Artists",
+"喜欢": "Likes",
+"最近": "Recent",
+"音源": "Sources",
+"工具": "Tools",
+"偏好": "Preferences",
+"你": "You",
+"工具箱": "Toolbox",
+"插件": "Plugins",
+"高级设置": "Advanced",
+"桌面歌词": "Desktop Lyrics",
+"快捷按键": "Hotkeys",
+"触觉反馈强度": "Haptic Feedback Strength",
+"点击底部导航等操作的手感震动强度": "Vibration intensity for taps like the bottom navigation",
+"插件：导入、启用、更新、卸载": "Plugins: import, enable, update, uninstall",
+"音频转换、剪辑、解密、重命名": "Audio conversion, trimming, decryption, renaming",
+"音质、路径、并发、嵌入": "Quality, path, concurrency, embedding",
+"音量、双击播放、播放行为、输出": "Volume, double-click play, playback behavior, output",
+"服务端设置、手动同步、自动同步": "Server settings, manual sync, auto sync",
+"手表遥控、云端兜底、传递策略": "Watch remote, cloud fallback, handoff policy",
+"歌词显示、悬浮歌词窗": "Lyrics display, floating lyrics window",
+"主题、主题色、壁纸、液态玻璃、导航栏": "Theme, accent color, wallpaper, liquid glass, nav bar",
+"语言、反馈、常亮、存储": "Language, feedback, always-on display, storage",
+"检测更新": "Check for Updates",
+"检测更新模式": "Update Check Mode",
+"启动检测": "Check at Launch",
+"启动时自动检查 App 更新": "Automatically check for App updates at launch",
+"库大小": "Library Size",
+"歌曲总时长": "Total Duration",
+"总歌曲": "Total Tracks",
+"总听歌时长": "Total Listening Time",
+"播放次数": "Play Count",
+"无损占比": "Lossless Ratio",
+"常听歌曲": "Frequently Played",
+"未知专辑": "Unknown Album",
+"我的主题": "My Themes",
+"热歌榜": "Hot Chart",
+"飙升榜": "Rising Chart",
+"新歌榜": "New Chart",
+"视频歌曲": "Music Videos",
+"万物DJ榜": "DJ Chart",
+"怀旧榜": "Throwback Chart",
+"影视金曲": "Movie & TV Hits",
+"识别成功后可直接播放、收藏或加入歌单": "After recognition, play, favorite or add to a playlist directly",
+"优先匹配本地曲库，本地没有的走在线音源解析": "Matches the local library first; falls back to online sources when missing locally",
+"请先让音乐外放，再点上面的麦克风": "Play the music out loud first, then tap the microphone above",
+"跟随系统": "System",
+"方圆": "Squircle",
+"正常": "Normal",
+"未设置 · 维持默认材质": "Not set · Default material",
+"上传中…": "Uploading…",
+"上传失败": "Upload failed",
+"网络错误": "Network error",
+"网络错误，请重试": "Network error, please try again",
+"请先扫码登录后再上传": "Sign in before uploading",
+"请先填写主题名称": "Enter a theme name first",
+"请选择预览图": "Select a preview image first",
+"生成二维码失败": "Failed to generate QR code",
+"登录状态丢失，请重新登录": "Sign-in state lost. Please sign in again.",
+"二维码已过期，请重新打开": "QR code expired. Please reopen it.",
+"已导出 .json 主题包，可在客户端「主题中心 → 导入」中使用": "Exported .json theme pack. Use it in the client via Theme Center → Import.",
+"单个资源请控制在 2MB 以内": "Each file must be 2MB or smaller",
+"预览图请控制在 8MB 以内": "Preview image must be 8MB or smaller",
+"已通过机审": "Passed machine review",
+"未通过机审": "Failed machine review",
+"等待管理员审核": "Pending admin review",
+
+  };
+
+  /* 动态插值文案（运行时前缀/数字），正则模式表（replacement 支持字符串或函数） */
+  function env(s) { return EN[s] !== undefined ? EN[s] : s; }
+  var EN_MODE = [
+    [/^(\d+) 首歌曲$/, '$1 tracks'],
+    [/^(\d+) 首$/, '$1 tracks'],
+    [/^我的歌单 (.+)$/, 'My Playlists $1'],
+    [/^(\d+) 小时 (\d+) 分钟$/, '$1 hr $2 min'],
+    [/^(\d+)\s*小时\s*(\d+)\s*分(?:钟)?$/, '$1 hr $2 min'],
+    [/^(\d+)分钟$/, '$1 min'],
+    [/^(\d+)人搜$/, '$1 searches'],
+    [/^（时长: (.+)）$/, '(Duration: $1)'],
+    [/^已登录：(.+)$/, 'Signed in: $1'],
+    [/^登录成功，欢迎 (.+)$/, 'Signed in. Welcome, $1'],
+    [/^当前将上传「(.+)」主题包$/, function (m, p) { return 'This will upload the "' + env(p) + '" theme pack'; }],
+    [/^上传成功（(.+)）$/, function (m, p) { return 'Upload succeeded (' + env(p) + ')'; }],
+    [/^图标槽位 · (.+)$/, function (m, p) { return 'Icon Slots · ' + env(p); }],
+    [/^贴纸槽位 · (.+)$/, function (m, p) { return 'Sticker Slots · ' + env(p); }],
+    [/^组件色块 · (.+)$/, function (m, p) { return 'Widget Color Blocks · ' + env(p); }],
+    [/^本页 · (.+)$/, function (m, p) { return 'This Page · ' + env(p); }],
+    [/^已设置 · (.+) · (\d+)%$/, 'Set · $1 · $2%'],
+    [/^公共色块设置一次、所有页面统一生效：mini 播放条（竖屏底部条 \+ 横屏悬浮胶囊）、搜索框胶囊（含横屏顶栏搜索条）、底部导航栏。$/, 'Set once per color, applies to all pages: mini player bar (portrait bottom + landscape floating pill), search pill (incl. landscape top bar), and bottom nav bar.'],
+    [/^公共色块设置一次、所有页面统一生效：mini 播放条（竖屏底部条 \+ 横屏悬浮胶囊）、搜索框胶囊（含横屏顶栏搜索条）。$/, 'Set once per color, applies to all pages: mini player bar (portrait bottom + landscape floating pill), search pill (incl. landscape top bar).'],
+    [/^(.+?)暂无组件色块，切到「公共通用」设置全局生效的槽位。$/, '$1: No widget color blocks yet. Switch to Common to set slots that apply globally.'],
+    [/^(.+?)暂无专属自定义项，切到「公共通用」设置全局生效的槽位。$/, '$1: No page-specific options yet. Switch to Common to set slots that apply globally.']
+  ];
+
+  function translate(s) {
+    if (!s || !hasCJK(s)) return s;
+    if (current === 'zh-TW') return toTraditional(s);
+    if (current === 'en') {
+      if (EN[s] !== undefined) return EN[s];
+      for (var mi = 0; mi < EN_MODE.length; mi++) {
+        if (EN_MODE[mi][0].test(s)) return s.replace(EN_MODE[mi][0], EN_MODE[mi][1]);
+      }
+      return s;
+    }
+    return s;
+  }
+
+  /* ============ DOM 应用 ============ */
+  var ATTRS = ['placeholder', 'title', 'aria-label', 'data-tip'];
+  var SKIP_TAGS = { SCRIPT: 1, STYLE: 1, CODE: 1, PRE: 1, TEXTAREA: 1, NOSCRIPT: 1 };
+
+  function apply(root) {
+    if (current === 'zh-CN' || !current) { restore(root); return; }
+    suppress = true;
+    try {
+      var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: function (n) {
+          if (!n.nodeValue || !n.nodeValue.trim()) return NodeFilter.FILTER_REJECT;
+          var p = n.parentElement;
+          if (p && SKIP_TAGS[p.tagName]) return NodeFilter.FILTER_REJECT;
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      });
+      var nodes = [];
+      while (w.nextNode()) nodes.push(w.currentNode);
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        var src = srcMap.has(n) ? srcMap.get(n) : n.nodeValue;
+        var out = src.replace(src.trim(), translate(src.trim()));
+        if (out !== n.nodeValue) { srcMap.set(n, src); n.nodeValue = out; }
+      }
+      var els = root.querySelectorAll ? root.querySelectorAll('[' + ATTRS.join('],[') + ']') : [];
+      for (var j = 0; j < els.length; j++) {
+        var el = els[j];
+        for (var k = 0; k < ATTRS.length; k++) {
+          var a = ATTRS[k];
+          if (!el.hasAttribute(a)) continue;
+          var v = el.getAttribute(a);
+          if (!v || !v.trim() || !hasCJK(v)) continue;
+          var tv = translate(v.trim());
+          if (tv && tv !== v) {
+            if (!el.__xy_src_a) el.__xy_src_a = {};
+            if (!(a in el.__xy_src_a)) el.__xy_src_a[a] = v;
+            el.setAttribute(a, tv);
+          }
+        }
+      }
+    } finally { setTimeout(function () { suppress = false; }, 0); }
+  }
+
+  function restore(root) {
+    suppress = true;
+    try {
+      var w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+      var nodes = [];
+      while (w.nextNode()) nodes.push(w.currentNode);
+      nodes.forEach(function (n) {
+        if (srcMap.has(n)) { n.nodeValue = srcMap.get(n); srcMap.delete(n); }
+      });
+      var els = root.querySelectorAll ? root.querySelectorAll('*') : [];
+      for (var j = 0; j < els.length; j++) {
+        var el = els[j];
+        if (el.__xy_src_a) {
+          for (var a in el.__xy_src_a) el.setAttribute(a, el.__xy_src_a[a]);
+          delete el.__xy_src_a;
+        }
+      }
+    } finally { setTimeout(function () { suppress = false; }, 0); }
+  }
+
+  /* ============ Observer：捕获动态渲染内容 ============ */
+  var mo = new MutationObserver(function (muts) {
+    if (suppress) return;
+    for (var i = 0; i < muts.length; i++) {
+      var m = muts[i];
+      if (m.type === 'characterData') { applyToText(m.target); continue; }
+      if (m.type === 'attributes') { applyAttrs(m.target); continue; }
+      for (var j = 0; j < m.addedNodes.length; j++) {
+        var nd = m.addedNodes[j];
+        if (nd.nodeType === 3) applyToText(nd);
+        else if (nd.nodeType === 1) { apply(nd); }
+      }
+    }
+  });
+
+  function applyToText(n) {
+    if (current === 'zh-CN' || !current || !n.nodeValue || !n.nodeValue.trim()) return;
+    var src = srcMap.has(n) ? srcMap.get(n) : n.nodeValue;
+    var tr = translate(src.trim());
+    var out = src.replace(src.trim(), tr);
+    if (out !== n.nodeValue) { srcMap.set(n, src); n.nodeValue = out; }
+  }
+  function applyAttrs(el) {
+    if (current === 'zh-CN' || !current || el.nodeType !== 1) return;
+    for (var k = 0; k < ATTRS.length; k++) {
+      var a = ATTRS[k];
+      if (!el.hasAttribute(a)) continue;
+      var v = el.getAttribute(a);
+      if (!v || !v.trim() || !hasCJK(v)) continue;
+      var tv = translate(v.trim());
+      if (tv && tv !== v) {
+        if (!el.__xy_src_a) el.__xy_src_a = {};
+        if (!(a in el.__xy_src_a)) el.__xy_src_a[a] = v;
+        el.setAttribute(a, tv);
+      }
+    }
+  }
+
+  /* ============ 语言切换 UI ============ */
+  var OPTS = [
+    { v: 'auto', label: { 'zh-CN': '跟随系统', 'zh-TW': '跟隨系統', 'en': 'System' } },
+    { v: 'zh-CN', label: { 'zh-CN': '简体中文', 'zh-TW': '简体中文', 'en': '简体中文' } },
+    { v: 'zh-TW', label: { 'zh-CN': '繁體中文', 'zh-TW': '繁體中文', 'en': '繁體中文' } },
+    { v: 'en', label: { 'zh-CN': 'English', 'zh-TW': 'English', 'en': 'English' } }
+  ];
+  function optLabel(o) { return o.label[current] || o.label['zh-CN']; }
+
+  function buildMenu(mount, mode) {
+    var wrap = document.createElement('div');
+    wrap.className = 'lang-switch lang-switch--' + mode;
+    var list = document.createElement('div');
+    list.className = 'lang-menu';
+    OPTS.forEach(function (o) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'lang-menu__item';
+      b.dataset.lang = o.v;
+      b.textContent = optLabel(o);
+      b.addEventListener('click', function (e) {
+        e.stopPropagation();
+        setLang(o.v);
+        if (mode === 'dropdown') wrap.classList.remove('open');
+      });
+      list.appendChild(b);
+    });
+    if (mode === 'dropdown') {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'lang-switch__btn';
+      btn.setAttribute('aria-label', 'Language');
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.7 2.6 4 5.6 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.6-4-9s1.3-6.4 4-9z"/></svg><span class="lang-switch__label"></span>';
+      btn.addEventListener('click', function (e) { e.stopPropagation(); wrap.classList.toggle('open'); });
+      document.addEventListener('click', function () { wrap.classList.remove('open'); });
+      wrap.appendChild(btn);
+      wrap.appendChild(list);
+    } else {
+      wrap.classList.add('lang-switch--inline');
+      while (list.firstChild) { var item = list.firstChild; list.removeChild(item); wrap.appendChild(item); }
+    }
+    mount.appendChild(wrap);
+    refreshMenu(wrap);
+    return wrap;
+  }
+  function refreshMenu(wrap) {
+    var curOpt = OPTS.filter(function (x) { return x.v === pref; })[0] || OPTS[0];
+    var lab = wrap.querySelector('.lang-switch__label');
+    if (lab) lab.textContent = optLabel(curOpt);
+    wrap.querySelectorAll('.lang-menu__item').forEach(function (b) {
+      var o = OPTS.filter(function (x) { return x.v === b.dataset.lang; })[0];
+      if (o) { b.textContent = optLabel(o); b.classList.toggle('active', o.v === pref); }
+    });
+  }
+
+  /* ============ API ============ */
+  function setLang(v) {
+    pref = v;
+    try { localStorage.setItem(LS_KEY, v); } catch (e) { }
+    current = resolve(v);
+    document.documentElement.lang = current === 'zh-CN' ? 'zh-CN' : (current === 'zh-TW' ? 'zh-TW' : 'en');
+    apply(document.body || document.documentElement);
+    document.querySelectorAll('.lang-switch').forEach(refreshMenu);
+    try { window.dispatchEvent(new CustomEvent('xylangchange', { detail: { lang: current, pref: pref } })); } catch (e) { }
+  }
+  function getLang() { return current; }
+  window.XYI18N = { setLang: setLang, getLang: getLang, t: translate };
+
+  /* ============ 启动 ============ */
+  pref = stored() || 'auto';
+  current = resolve(pref);
+  document.documentElement.lang = current === 'zh-CN' ? 'zh-CN' : (current === 'zh-TW' ? 'zh-TW' : 'en');
+
+  function boot() {
+    if (document.body) apply(document.body);
+    document.querySelectorAll('[data-i18n-mount]').forEach(function (m) {
+      buildMenu(m, m.dataset.i18nMount === 'inline' ? 'inline' : 'dropdown');
+    });
+    mo.observe(document.body || document.documentElement, {
+      childList: true, subtree: true, characterData: true,
+      attributes: true, attributeFilter: ATTRS
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else boot();
+})();
+
 </script>
 </body>
 </html>

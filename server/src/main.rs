@@ -155,13 +155,15 @@ async fn handle_api(
 
     let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
 
-    let no_sign: [&str; 22] = [
+    let no_sign: [&str; 23] = [
         "install", "check", "get_source_status", "upload_avatar",
         "deduct_master_quota", "get_master_quota_usage",
         "get_captcha", "verify_captcha", "email_send_code", "email_get_captcha_config", "email_get_turnstile_config", "email_register", "email_login", "email_reset_password", "email_get_profile",
         "open", "get_user_agreement", "get_deploy_doc", "get_site_logo", "share_download",
         // TV 扫码授权：网页编辑器等无签名能力的端复用（rate_limit 已有 auth/poll 专项配置）
         "generate_tv_login_code", "poll_tv_login_status",
+        // 版本检查：公开元数据且旧客户端密钥失配时会收不到更新提示（死锁），必须免签
+        "get_latest_version",
     ];
     if !state.config.local_debug_no_db && !no_sign.contains(&action.as_str()) {
         let timestamp = headers

@@ -18,10 +18,10 @@ fn sync_dir(ciyuanxi_id: &str) -> PathBuf {
     let digits: String = ciyuanxi_id.chars().filter(|c| c.is_ascii_digit()).collect();
     sync_root().join(digits)
 }
-
-fn sync_user_id(ciyuanxi_id: &str) -> String {
-    ciyuanxi_id.chars().filter(|c| c.is_ascii_digit()).collect()
-}
+// 注意：同步数据的存储 key 必须使用完整弦予号（可含字母）。
+// 历史版本曾把弦予号去掉字母只留数字当 key，导致数字部分相同的
+// 不同账号（如 abc123 与 123abc）歌单/插件互相串号，已废弃该逻辑，
+// 并在 backfill_legacy_sync_files 末尾对存量数据做唯一映射迁移。
 
 fn now_str() -> String {
     Utc::now().format("%Y-%m-%d %H:%M:%S").to_string()
@@ -33,10 +33,9 @@ fn now_ts() -> i64 {
 
 /// 整包读用户同步文件：先查 DB，未命中时尝试旧文件懒迁移（导入后删除旧文件）。
 async fn read_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str) -> Result<Value, ()> {
-    let uid = sync_user_id(ciyuanxi_id);
     let row: Option<(String,)> =
         sqlx::query_as("SELECT content FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?")
-            .bind(&uid)
+            .bind(ciyuanxi_id)
             .bind(name)
             .fetch_optional(pool)
             .await
@@ -52,7 +51,7 @@ async fn read_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str) -> Resul
     let content = std::fs::read_to_string(&file).map_err(|_| ())?;
     let v: Value = serde_json::from_str(&content).map_err(|_| ())?;
     let _ = sqlx::query("INSERT IGNORE INTO user_sync_files (ciyuanxi_id, file_name, content, content_size) VALUES (?, ?, ?, ?)")
-        .bind(&uid)
+        .bind(ciyuanxi_id)
         .bind(name)
         .bind(&content)
         .bind(content.len() as i64)
@@ -64,13 +63,12 @@ async fn read_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str) -> Resul
 
 /// 整包写用户同步文件（DB upsert），成功后清掉可能残留的旧文件。
 async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
-    let uid = sync_user_id(ciyuanxi_id);
     let content = serde_json::to_string(data).unwrap_or_default();
     let ok = sqlx::query(
         "INSERT INTO user_sync_files (ciyuanxi_id, file_name, content, content_size) VALUES (?, ?, ?, ?) \
          ON DUPLICATE KEY UPDATE content = VALUES(content), content_size = VALUES(content_size)",
     )
-    .bind(&uid)
+    .bind(ciyuanxi_id)
     .bind(name)
     .bind(&content)
     .bind(content.len() as i64)
@@ -85,13 +83,12 @@ async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, data: &
 
 /// 注销/清理用户时删除其全部同步数据（DB + 遗留目录兜底）。
 pub async fn delete_user_sync_data(pool: &MySqlPool, ciyuanxi_id: &str) {
-    let uid = sync_user_id(ciyuanxi_id);
     let _ = sqlx::query("DELETE FROM user_sync_files WHERE ciyuanxi_id = ?")
-        .bind(&uid)
+        .bind(ciyuanxi_id)
         .execute(pool)
         .await;
     let _ = sqlx::query("DELETE FROM user_sync_chunks WHERE ciyuanxi_id = ?")
-        .bind(&uid)
+        .bind(ciyuanxi_id)
         .execute(pool)
         .await;
     let _ = std::fs::remove_dir_all(sync_dir(ciyuanxi_id));
@@ -197,6 +194,62 @@ pub async fn backfill_legacy_sync_files(pool: &MySqlPool) {
     if migrated > 0 {
         tracing::info!("[sync] backfilled {} legacy sync items into db", migrated);
     }
+    migrate_digit_sync_keys(pool).await;
+}
+
+/// 历史版本曾用“弦予号去掉字母只留数字”作为同步 key，
+/// 数字部分相同的不同账号（如 abc123 与 123abc）会共用同一行导致串号。
+/// 启动时把能唯一映射回某个用户的数字 key 行迁移为完整弦予号；
+/// 有歧义（多个用户映射到同一数字串）的保持原样，待该用户下次同步覆盖。
+async fn migrate_digit_sync_keys(pool: &MySqlPool) {
+    let users: Vec<(String,)> =
+        sqlx::query_as("SELECT ciyuanxi_id FROM app_users WHERE ciyuanxi_id <> ''")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+    let mut groups: std::collections::HashMap<String, Vec<String>> = std::collections::HashMap::new();
+    for (id,) in users {
+        let id = id.trim().to_string();
+        let digits: String = id.chars().filter(|c| c.is_ascii_digit()).collect();
+        // 纯数字弦予号的 key 本就正确，无需迁移
+        if digits.is_empty() || digits == id {
+            continue;
+        }
+        groups.entry(digits).or_default().push(id);
+    }
+    let mut migrated = 0usize;
+    for (digits, ids) in groups {
+        if ids.len() != 1 {
+            continue;
+        }
+        let uid = &ids[0];
+        for table in ["user_sync_files", "user_sync_chunks"] {
+            // 目标完整弦予号下已有数据则跳过，避免覆盖与撞唯一键
+            let exists: i64 = sqlx::query_scalar(&format!(
+                "SELECT COUNT(*) FROM {table} WHERE ciyuanxi_id = ?"
+            ))
+            .bind(uid)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(1);
+            if exists > 0 {
+                continue;
+            }
+            let res = sqlx::query(&format!(
+                "UPDATE {table} SET ciyuanxi_id = ? WHERE ciyuanxi_id = ?"
+            ))
+            .bind(uid)
+            .bind(&digits)
+            .execute(pool)
+            .await;
+            if let Ok(r) = res {
+                migrated += r.rows_affected() as usize;
+            }
+        }
+    }
+    if migrated > 0 {
+        tracing::info!("[sync] remapped {} digit-key sync rows to full ciyuanxi_id", migrated);
+    }
 }
 
 pub async fn file_sync_upload_start(_body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
@@ -205,9 +258,8 @@ pub async fn file_sync_upload_start(_body: &str, ctx: ReqCtx, pool: &MySqlPool) 
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    let uid = sync_user_id(&ciyuanxi_id);
     let ok = sqlx::query("DELETE FROM user_sync_chunks WHERE ciyuanxi_id = ?")
-        .bind(&uid)
+        .bind(&ciyuanxi_id)
         .execute(pool)
         .await
         .is_ok();
@@ -226,7 +278,6 @@ pub async fn file_sync_upload_chunk(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    let uid = sync_user_id(&ciyuanxi_id);
     let payload = json!({
         "chunk_index": chunk_index,
         "total_chunks": total_chunks,
@@ -237,7 +288,7 @@ pub async fn file_sync_upload_chunk(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "INSERT INTO user_sync_chunks (ciyuanxi_id, chunk_index, total_chunks, content) VALUES (?, ?, ?, ?) \
          ON DUPLICATE KEY UPDATE total_chunks = VALUES(total_chunks), content = VALUES(content)",
     )
-    .bind(&uid)
+    .bind(&ciyuanxi_id)
     .bind(chunk_index)
     .bind(total_chunks)
     .bind(&content)
@@ -257,11 +308,10 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx, pool: &MySqlPool) 
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
-    let uid = sync_user_id(&ciyuanxi_id);
     let rows: Vec<(i64, String)> = match sqlx::query_as(
         "SELECT chunk_index, content FROM user_sync_chunks WHERE ciyuanxi_id = ? ORDER BY chunk_index ASC",
     )
-    .bind(&uid)
+    .bind(&ciyuanxi_id)
     .fetch_all(pool)
     .await
     {
@@ -280,7 +330,7 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx, pool: &MySqlPool) 
         }
     }
     let _ = sqlx::query("DELETE FROM user_sync_chunks WHERE ciyuanxi_id = ?")
-        .bind(&uid)
+        .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
     let mut map: std::collections::HashMap<String, Value> = std::collections::HashMap::new();
