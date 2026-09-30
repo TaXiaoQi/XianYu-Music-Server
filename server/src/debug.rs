@@ -641,24 +641,53 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             let exists = get_array(&state, "users").iter().any(|u| user_matches(u, &id));
             ctx.ok("ok", json!({ "exists": exists, "available": !exists, "debug": true }))
         }
-        "list_wallpapers" => ctx.ok("ok", json!({
-            "total": 2,
-            "list": [
-                { "id": 1, "title": "本地调试壁纸 1", "url": "", "status": "approved" },
-                { "id": 2, "title": "本地调试壁纸 2", "url": "", "status": "approved" }
-            ],
-            "debug": true
-        })),
-        "my_wallpapers" => ctx.ok("ok", json!({ "total": 0, "list": [], "debug": true })),
+        // 下列 list / my_* 桩必须返回**数组**（真实接口即数组，客户端走
+        // requestActionList，形状不符会导致列表恒为空），字段名对齐
+        // handlers::wallpaper::row_to_wallpaper / handlers::theme::row_to_theme。
+        "list_wallpapers" => ctx.ok("ok", json!([
+            {
+                "id": 1, "title": "本地调试壁纸 1", "description": "",
+                "mediaType": "image", "imageUrl": "", "thumbnailUrl": "",
+                "videoUrl": "", "videoPoster": "", "videoDuration": 0,
+                "videoSize": 0, "videoSha256": "", "category": "本地调试",
+                "platform": "mobile", "uploaderId": "", "uploaderNickname": "",
+                "status": "normal", "reviewedAt": null, "reviewedBy": "",
+                "createdAt": null, "debug": true
+            },
+            {
+                "id": 2, "title": "本地调试壁纸 2", "description": "",
+                "mediaType": "image", "imageUrl": "", "thumbnailUrl": "",
+                "videoUrl": "", "videoPoster": "", "videoDuration": 0,
+                "videoSize": 0, "videoSha256": "", "category": "本地调试",
+                "platform": "mobile", "uploaderId": "", "uploaderNickname": "",
+                "status": "normal", "reviewedAt": null, "reviewedBy": "",
+                "createdAt": null, "debug": true
+            }
+        ])),
+        "my_wallpapers" => ctx.ok("ok", json!([])),
         "upload_wallpaper" => ctx.ok("上传成功", json!({ "id": now_ts(), "status": "pending", "debug": true })),
-        "list_themes" => ctx.ok("ok", json!({
-            "total": 1,
-            "list": [
-                { "id": 1, "name": "本地调试主题", "platform": "mobile", "previewUrl": "", "status": "normal", "theme": null, "debug": true }
-            ],
-            "debug": true
-        })),
-        "my_themes" => ctx.ok("ok", json!({ "total": 0, "list": [], "debug": true })),
+        // 桩主题包必须是可直接导入的 v2 mobile 包：客户端 RemoteTheme.fromJson 在
+        // theme 非对象时会整条跳过，shape 对了但 theme 为 null 仍会显示为空列表。
+        "list_themes" => ctx.ok("ok", json!([
+            {
+                "id": 1, "name": "本地调试主题", "description": "调试模式示例主题",
+                "platform": "mobile",
+                "theme": {
+                    "version": 2, "platform": "mobile", "name": "本地调试主题",
+                    "author": "本地调试", "preview": "",
+                    "payload": {
+                        "accentColor": "#EC4141", "themeMode": "dark",
+                        "quickEntryShape": "circle", "icons": {}, "stickers": {},
+                        "surfaces": {}
+                    }
+                },
+                "previewUrl": "", "thumbnailUrl": "", "uploaderId": "",
+                "uploaderNickname": "本地调试", "status": "normal",
+                "reviewedAt": null, "reviewedBy": "", "createdAt": null,
+                "debug": true
+            }
+        ])),
+        "my_themes" => ctx.ok("ok", json!([])),
         "upload_theme" => ctx.ok("上传成功", json!({ "id": now_ts(), "status": "pending", "debug": true })),
         "delete_playlist" => ctx.ok("删除成功", json!({ "debug": true })),
         "file_sync_upload_start" => ctx.ok("ok", json!({ "chunk_dir_ready": true, "debug": true })),
