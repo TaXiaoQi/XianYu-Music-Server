@@ -5,6 +5,9 @@ import router from './router'
 import './styles/main.css'
 import { useThemeStore } from '@/stores/theme'
 import { initAdminIdleLogout } from '@/utils/adminIdleLogout'
+import { initI18n } from './i18n'
+
+initI18n()
 
 const app = createApp(App)
 const pinia = createPinia()

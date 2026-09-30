@@ -134,6 +134,25 @@
               </transition>
             </teleport>
           </div>
+          <div class="lang-wrap">
+            <button class="theme-toggle" :title="t('切换语言')" @click.stop="langOpen = !langOpen">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"/>
+                <path d="M3 12h18M12 3c2.7 2.6 4 5.6 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.6-4-9s1.3-6.4 4-9z"/>
+              </svg>
+              <span>{{ currentLangLabel }}</span>
+            </button>
+            <div v-if="langOpen" class="lang-pop" @click.stop>
+              <button
+                v-for="o in langOpts"
+                :key="o.v"
+                type="button"
+                class="lang-item"
+                :class="{ active: langPref === o.v }"
+                @click="pickLang(o.v)"
+              >{{ optLabel(o) }}</button>
+            </div>
+          </div>
           <button class="theme-toggle" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
             <svg v-if="theme.isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
@@ -177,6 +196,8 @@ import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
 import { loadSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
 import SensitiveNotice from '@/views/SensitiveNotice.vue'
+import { setLang, langPref, langCurrent, langOpts, optLabel, t } from '@/i18n'
+import type { LangPref } from '@/i18n'
 
 const route = useRoute()
 const router = useRouter()
@@ -188,7 +209,18 @@ const sidebarOpen = ref(false)
 const openMenu = ref<string | null>(null)
 const notifyOpen = ref(false)
 const panelStyle = ref<Record<string, string>>({})
+const langOpen = ref(false)
 const isDebugMode = import.meta.env.DEV
+
+const currentLangLabel = computed(() => {
+  const o = langOpts.find((x) => x.v === langPref.value) || langOpts[0]
+  return optLabel(o)
+})
+
+function pickLang(v: LangPref) {
+  setLang(v)
+  langOpen.value = false
+}
 
 const pageTitle = computed(() => (route.meta.title as string) || '仪表盘')
 const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
@@ -244,6 +276,9 @@ function onClickOutside(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target.closest('.notify-wrap')) {
     notifyOpen.value = false
+  }
+  if (!target.closest('.lang-wrap')) {
+    langOpen.value = false
   }
 }
 
@@ -481,6 +516,45 @@ const icons = {
   font-size: 12px;
   font-weight: 700;
   box-shadow: inset 0 0 0 1px rgba(236, 65, 65, 0.10);
+}
+/* ===== 语言切换 ===== */
+.lang-wrap {
+  position: relative;
+}
+.lang-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 150px;
+  padding: 6px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--card-solid, #ffffff);
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lang-item {
+  border: none;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.lang-item:hover {
+  background: var(--control-bg);
+}
+.lang-item.active {
+  color: var(--accent);
+  background: var(--accent-soft);
 }
 .theme-toggle {
   display: inline-flex;

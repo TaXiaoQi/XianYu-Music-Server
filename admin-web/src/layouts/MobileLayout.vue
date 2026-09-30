@@ -13,6 +13,12 @@
           </svg>
           <span v-if="notify.pendingTotal > 0" class="notify-badge">{{ notify.pendingTotal }}</span>
         </button>
+        <button class="icon-btn lang-btn" :title="t('切换语言')" @click="langOpen = true">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/>
+            <path d="M3 12h18M12 3c2.7 2.6 4 5.6 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.6-4-9s1.3-6.4 4-9z"/>
+          </svg>
+        </button>
         <button class="icon-btn theme-toggle" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
           <svg v-if="theme.isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
@@ -87,6 +93,29 @@
         </div>
       </div>
     </transition>
+    <!-- 语言切换弹窗 -->
+    <transition name="mobile-fade">
+      <div v-if="langOpen" class="notify-overlay" @click.self="langOpen = false">
+        <div class="notify-dialog lang-dialog">
+          <div class="notify-head">
+            <span class="notify-title">{{ t('切换语言') }}</span>
+          </div>
+          <div class="lang-list">
+            <button
+              v-for="o in langOpts"
+              :key="o.v"
+              type="button"
+              class="lang-item"
+              :class="{ active: langPref === o.v }"
+              @click="pickLang(o.v)"
+            >
+              <span>{{ optLabel(o) }}</span>
+              <svg v-if="langPref === o.v" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -98,6 +127,8 @@ import { useThemeStore } from '@/stores/theme'
 import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
 import SensitiveNotice from '@/views/SensitiveNotice.vue'
+import { setLang, langPref, langOpts, optLabel, t } from '@/i18n'
+import type { LangPref } from '@/i18n'
 
 const router = useRouter()
 const route = useRoute()
@@ -121,6 +152,12 @@ const notify = useNotificationStore()
 
 const notifyOpen = ref(false)
 const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
+const langOpen = ref(false)
+
+function pickLang(v: LangPref) {
+  setLang(v)
+  langOpen.value = false
+}
 
 const noticeItems = computed(() => [
   { label: '新壁纸审核', desc: '用户上传壁纸待审核', count: notify.totals.wallpaper || 0, to: '/m/wallpapers', className: 'wallpaper' },
@@ -584,5 +621,40 @@ html[data-theme='dark'] .notify-dialog {
 }
 html[data-theme='dark'] .notify-overlay {
   background: rgba(0, 0, 0, 0.56) !important;
+}
+/* ===== 语言切换弹窗 ===== */
+.lang-dialog {
+  width: min(320px, 86vw);
+}
+.lang-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 0 8px;
+}
+.lang-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border: 1px solid var(--border);
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--control-bg, #fafafa);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s, background 0.16s;
+}
+.lang-item:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.lang-item.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 </style>
