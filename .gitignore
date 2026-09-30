@@ -15,6 +15,9 @@ admin-web/dist/
 # 上传文件（用户生成内容）
 uploads/
 
+# 运行时数据（调试器状态等）
+server/data/
+
 # 数据库备份
 beifen/
 
