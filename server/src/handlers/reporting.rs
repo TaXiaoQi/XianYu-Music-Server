@@ -242,6 +242,23 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         return ctx.ok_empty("ok");
     }
 
+    // 当日物理约束：当日累计播放时长不可能超过当日已过的墙钟时间（+600 容差），
+    // 防止异常客户端用行为上报把挂机时间灌成听歌时长
+    let day_cap: i64 = sqlx::query_scalar(
+        "SELECT GREATEST(TIMESTAMPDIFF(SECOND, DATE(NOW() + INTERVAL 8 HOUR), NOW() + INTERVAL 8 HOUR) + 600 \
+         - COALESCE((SELECT listen_duration FROM listen_daily_stats \
+                     WHERE ciyuanxi_id = ? AND stat_date = DATE(NOW() + INTERVAL 8 HOUR)), 0), 0)",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(3600);
+    let duration = duration.min(day_cap);
+    if duration <= 0 {
+        tracing::info!("behavior listen dropped by day cap: id={}", ciyuanxi_id);
+        return ctx.ok_empty("ok");
+    }
+
     let result = sqlx::query(
         "UPDATE app_users SET listen_duration = listen_duration + ? WHERE ciyuanxi_id = ?",
     )

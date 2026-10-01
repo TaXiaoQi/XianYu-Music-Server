@@ -815,18 +815,42 @@ async fn report_listen_stats_delta(
         0
     };
     let server_max = if reported_at_sec > 0 {
-        (server_elapsed * 3 + 600).min(MAX_SINGLE_DELTA_SECS)
+        // 物理硬约束：播放时长增速不可能超过墙钟（+120 秒容差）。
+        // 旧的 ×3+600 倍速上限在客户端 baseline 丢失（每次把全量本地累计
+        // 当 delta 报）时，会被逐笔按 3 倍墙钟截断入库，数小时虚增出几十小时
+        (server_elapsed + 120).min(MAX_SINGLE_DELTA_SECS)
     } else {
-        7200
+        // 首报兜底：客户端 baseline 丢失时会把全量本地累计当 delta 报上来，
+        // 7200 的旧兜底曾造成单笔虚增 2 小时，收紧到 600 秒；
+        // 正常新设备登录后几分钟内就会首次上报，不会被误伤
+        600
     };
+    let has_client_elapsed = client_elapsed_secs >= 0;
     let cross_ok =
-        client_elapsed_secs >= 0 && (client_elapsed_secs - server_elapsed).abs() <= 120;
+        has_client_elapsed && (client_elapsed_secs - server_elapsed).abs() <= 120;
+    // 客户端报了 elapsed 但与服务端核算差超容差 = 两边账脱钩（baseline 丢失/
+    // 时钟异常），此时 delta 不可信：整笔丢弃，宁缺勿滥——虚增不可逆，
+    // 丢笔最多丢一两个心跳的真实播放
     let effective_max = if cross_ok {
-        server_max.min(client_elapsed_secs * 3 + 600)
+        // delta 是同窗播放秒数，不可能超过墙钟：超过客户端自报 elapsed 即自相矛盾
+        // （baseline 丢失/本地统计器虚涨），整笔丢弃——截断反而给虚报留下
+        // 每笔 +容差 的合法入账通道（+120 被 60s 高频心跳放大成 3 倍墙钟速）
+        if delta_total > client_elapsed_secs {
+            0
+        } else {
+            delta_total
+        }
+    } else if has_client_elapsed {
+        0
     } else {
+        // 客户端未带 elapsed（旧版本），退回服务端墙钟上限
         server_max
     };
     if delta_total > effective_max {
+        tracing::info!(
+            "listen delta clamped: id={} in_delta={} effective_max={} client_elapsed={} server_elapsed={}",
+            ciyuanxi_id, delta_total, effective_max, client_elapsed_secs, server_elapsed
+        );
         delta_total = effective_max;
     }
     if delta_daily > delta_total {
