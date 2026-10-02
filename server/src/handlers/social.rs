@@ -119,9 +119,6 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     })
     .to_string();
     let raw_images = data.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default();
-    if (feedback_type == "problem" || feedback_type == "beta") && !raw_images.is_empty() {
-        return ctx.err(400, "该反馈类型不支持上传图片");
-    }
     if raw_images.len() > MAX_FEEDBACK_IMAGES {
         return ctx.err(400, &format!("最多上传 {} 张图片", MAX_FEEDBACK_IMAGES));
     }

@@ -1,4 +1,5 @@
 use axum::response::Response;
+use ed25519_dalek::Signer;
 use serde_json::json;
 use serde_json::Value;
 use sqlx::MySqlPool;
@@ -305,6 +306,20 @@ async fn beta_device_allowed(pool: &MySqlPool, device_id: &str) -> bool {
         > 0
 }
 
+/// 内测资格有效期：签发后 24 小时内可离线凭缓存通过，过期必须重新联网验证。
+/// 同时决定移出名单的最迟生效时间（离线设备最多延迟一个 TTL 被锁）。
+const BETA_ACCESS_TTL_SECS: i64 = 24 * 3600;
+
+/// 与客户端 fallback_verify.rs::beta_access_message 逐字一致。
+fn beta_access_message(device_id: &str, allowed: bool, pending: bool, exp: i64) -> Vec<u8> {
+    format!(
+        "xianyu-beta-access-v1\x00{device_id}\x00{}\x00{}\x00{exp}",
+        allowed as u8,
+        pending as u8
+    )
+    .into_bytes()
+}
+
 pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let raw = parse_body(body);
     let device_id = str_of(&raw, "device_id").trim().to_string();
@@ -320,7 +335,16 @@ pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
         .unwrap_or(0)
             > 0;
     }
-    ctx.json(200, "ok", Some(json!({ "allowed": allowed, "pending": pending })))
+    // 响应签名：客户端 fail-closed 验签，无签名将被视为不可信而拒绝放行
+    let exp = chrono::Utc::now().timestamp() + BETA_ACCESS_TTL_SECS;
+    let signature = match crate::admin::fallback::load_signing_private_key() {
+        Some(key) => hex::encode(key.sign(&beta_access_message(&device_id, allowed, pending, exp)).to_bytes()),
+        None => {
+            tracing::warn!("未配置内测资格签名密钥（FALLBACK_SIGN_PRIVATE_KEY 或 api/fallback_sign_key.txt），check_beta_access 响应未签名");
+            String::new()
+        }
+    };
+    ctx.json(200, "ok", Some(json!({ "allowed": allowed, "pending": pending, "exp": exp, "device_id": device_id, "sig": signature })))
 }
 
 pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {

@@ -11,7 +11,7 @@ fn fallback_modules_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("fallback_modules.json")
 }
 
-fn load_signing_private_key() -> Option<SigningKey> {
+pub(crate) fn load_signing_private_key() -> Option<SigningKey> {
     let seed_hex = std::env::var("FALLBACK_SIGN_PRIVATE_KEY")
         .ok()
         .map(|s| s.trim().to_string())
