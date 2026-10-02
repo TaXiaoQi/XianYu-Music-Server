@@ -456,11 +456,14 @@ window.__SHARE_DATA__ = __SHARE_JSON__;
   window.__devicePlatform = detectPlatform();
 })();
 
-/* 下载渠道元数据 */
+/* 下载渠道元数据：按 平台+系统+架构 细分的下载入口 */
 var PLATFORM_META = [
-  { key: 'mobile',  label: '移动端', sub: 'Android / iOS' },
-  { key: 'desktop', label: '桌面端', sub: 'Windows / macOS / Linux' },
-  { key: 'watch',   label: '腕上端', sub: '手表' }
+  { key: 'desktop', system: 'windows', arch: 'x86',   label: '桌面端 Windows', sub: 'x86_64' },
+  { key: 'desktop', system: 'windows', arch: 'arm64', label: '桌面端 Windows', sub: 'ARM64' },
+  { key: 'mobile',  system: 'android', arch: 'arm64', label: '移动端 Android', sub: 'arm64' },
+  { key: 'watch',   system: 'wearos',  arch: 'arm32', label: '腕上端 WearOS',  sub: 'arm32' },
+  { key: 'watch',   system: 'wearos',  arch: 'arm64', label: '腕上端 WearOS',  sub: 'arm64' },
+  { key: 'watch',   system: 'ohos',    arch: 'arm64', label: '腕上端 鸿蒙',    sub: 'arm64' }
 ];
 function platformMeta(key){
   for (var i = 0; i < PLATFORM_META.length; i++) if (PLATFORM_META[i].key === key) return PLATFORM_META[i];
@@ -556,11 +559,11 @@ function copyLink(){
   }
 }
 
-/* 请求某平台的服务器发布版本（成员 auth 接口，返回 download_url）*/
-function requestDownload(platform, cb){
+/* 请求某平台+系统+架构的服务器发布版本（成员 auth 接口，返回 download_url）*/
+function requestDownload(platform, system, arch, cb){
   var d = window.__SHARE_DATA__ || {};
   if (!d.download_api) { cb(null); return; }
-  fetch(d.download_api, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ platform: platform }) })
+  fetch(d.download_api, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ platform: platform, system: system || '', arch: arch || '' }) })
     .then(function(r){ return r.json(); })
     .then(function(res){ cb(res && res.data && res.data.download_url ? res.data : null); })
     .catch(function(){ cb(null); });
@@ -569,7 +572,8 @@ function requestDownload(platform, cb){
 /* 主按钮：推当前设备的对应下载渠道 */
 function goDownload(){
   var key = window.__devicePlatform || 'desktop';
-  requestDownload(key, function(info){
+  var meta = platformMeta(key);
+  requestDownload(meta.key, meta.system, meta.arch, function(info){
     if (info && info.download_url) {
       window.location.href = info.download_url;
     } else {
@@ -608,7 +612,7 @@ function loadChannels(){
       item.appendChild(curBadge);
     }
     box.appendChild(item);
-    requestDownload(m.key, function(info){
+    requestDownload(m.key, m.system, m.arch, function(info){
       if (info && info.download_url) {
         item.href = info.download_url;
       } else {

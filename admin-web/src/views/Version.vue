@@ -15,6 +15,10 @@
             内测名单
             <span v-if="betaList.length" class="beta-count">{{ betaList.length }}</span>
           </button>
+          <button class="btn-beta" @click="batchModalVisible = true">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+            批量发布
+          </button>
           <button class="btn-add" @click="openDesktopModal">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
               <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
@@ -105,7 +109,7 @@
           <TransitionGroup name="card">
             <div
               v-for="(item, idx) in filteredList"
-              :key="`${item.platform || 'desktop'}-${systemOf(item)}-${item.version}`"
+              :key="`${item.platform || 'desktop'}-${systemOf(item)}-${archOf(item)}-${item.version}`"
               class="ann-card"
               :class="{ disabled: !item.enabled }"
               :style="{ animationDelay: `${idx * 60}ms` }"
@@ -115,6 +119,7 @@
                 <div class="card-top">
                   <div class="card-badges">
                     <span class="type-badge" :class="`badge-${systemOf(item)}`">{{ systemLabelOf(item) }}</span>
+                    <span class="type-badge badge-arch">{{ archLabelOf(item) }}</span>
                     <span v-if="channelOf(item) === 'beta'" class="type-badge badge-beta">测试版</span>
                   </div>
                   <label class="toggle-switch" :title="item.enabled ? '点击禁用' : '点击启用'">
@@ -184,12 +189,28 @@
                   class="type-option pick-platform"
                   :class="{ active: desktopDraftSystem === s.key, locked: !!desktopEditingVersion }"
                   :disabled="!!desktopEditingVersion"
-                  @click="desktopDraftSystem = s.key"
+                  @click="switchDraftSystem(s.key)"
                 >
                   <span class="pick-dot"></span>{{ s.label }}
                 </button>
               </div>
-              <p class="field-hint">{{ desktopDraftPlatform === 'desktop' ? '各系统可独立配置版本与下载渠道。' : '移动端按系统分发（Android / 鸿蒙 / iOS）。' }}</p>
+              <p class="field-hint">{{ desktopDraftPlatform === 'desktop' ? '各系统可独立配置版本与下载渠道。' : desktopDraftPlatform === 'watch' ? '腕上端按系统分发（WearOS / 鸿蒙 / watchOS）。' : '移动端按系统分发（Android / 鸿蒙 / iOS）。' }}</p>
+            </div>
+            <div class="field">
+              <label class="required">架构</label>
+              <div class="type-picker platform-picker">
+                <button
+                  v-for="a in ARCH_META[desktopDraftPlatform]"
+                  :key="a.key"
+                  class="type-option pick-platform"
+                  :class="{ active: desktopDraftArch === a.key, locked: watchArchLocked || desktopDraftPlatform === 'mobile' || !!desktopEditingVersion }"
+                  :disabled="watchArchLocked || desktopDraftPlatform === 'mobile' || !!desktopEditingVersion"
+                  @click="desktopDraftArch = a.key"
+                >
+                  <span class="pick-dot"></span>{{ a.label }}
+                </button>
+              </div>
+              <p v-if="watchArchLocked" class="field-hint">鸿蒙 / watchOS 仅支持 ARM64 架构。</p>
             </div>
             <div class="field">
               <label class="required">更新渠道</label>
@@ -290,10 +311,10 @@
             <div v-if="desktopChannelMode === 'upload'" class="field">
               <label class="required">安装包</label>
               <div class="package-dropzone" :class="{ dragging: desktopPackageDragging, selected: !!desktopPackageDraft.fileName }" @click="triggerDesktopFileInput" @dragover.prevent="desktopPackageDragging = true" @dragleave.prevent="desktopPackageDragging = false" @drop.prevent="onDesktopPackageDrop">
-                <input ref="desktopFileInputRef" type="file" accept=".exe,.msi,.zip,.7z,.rar,.dmg,.pkg,.apk" class="file-hidden" @change="onDesktopFileChange" />
+                <input ref="desktopFileInputRef" type="file" accept=".exe,.msi,.zip,.7z,.rar,.dmg,.pkg,.apk,.hap,.ipa,.deb,.appimage" class="file-hidden" @change="onDesktopFileChange" />
                 <div class="dropzone-icon">⬆</div>
                 <strong>{{ desktopPackageDraft.fileName ? '已选择安装包' : '点击或拖拽安装包到此处' }}</strong>
-                <span>支持 EXE / MSI / ZIP / 7Z / RAR / DMG / PKG / APK</span>
+                <span>支持 EXE / MSI / ZIP / 7Z / RAR / DMG / PKG / APK / HAP / IPA 等，自动识别平台</span>
               </div>
               <div v-if="desktopPackageDraft.fileName" class="file-info">已选择：{{ desktopPackageDraft.fileName }}（{{ formatFileSize(desktopPackageDraft.fileSize) }}）</div>
             </div>
@@ -472,6 +493,9 @@
       </div>
     </Transition>
 
+    <!-- 批量发布弹窗 -->
+    <BatchPublishModal v-if="batchModalVisible" @close="batchModalVisible = false" @saved="loadDesktop()" />
+
   </div>
 </template>
 
@@ -480,6 +504,8 @@ import { ref, computed, onMounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 import { formatOsVersion } from '@/utils/osVersion'
+import { detectPackageMeta, packageMetaLabel, PACKAGE_ALLOWED_EXT } from '@/utils/packageDetect'
+import BatchPublishModal from '@/components/BatchPublishModal.vue'
 
 type PlatformKey = 'desktop' | 'mobile' | 'watch'
 
@@ -513,12 +539,16 @@ const SYSTEM_META: Record<PlatformKey, { key: string; label: string }[]> = {
     { key: 'harmonyos', label: '鸿蒙' },
     { key: 'ios', label: 'iOS' },
   ],
-  watch: [],
+  watch: [
+    { key: 'wearos', label: 'WearOS' },
+    { key: 'ohos', label: '鸿蒙' },
+    { key: 'watchos', label: 'watchOS' },
+  ],
 }
 
 function defaultSystem(platform: PlatformKey): string {
   if (platform === 'mobile') return 'android'
-  if (platform === 'watch') return ''
+  if (platform === 'watch') return 'wearos'
   return 'windows'
 }
 
@@ -529,6 +559,36 @@ function systemOf(item: any): string {
 
 function systemLabelKey(platform: PlatformKey, system: string): string {
   return SYSTEM_META[platform]?.find(s => s.key === system)?.label || '默认'
+}
+
+const ARCH_META: Record<PlatformKey, { key: string; label: string }[]> = {
+  desktop: [
+    { key: 'x86', label: 'x86_64' },
+    { key: 'arm64', label: 'ARM64' },
+  ],
+  mobile: [
+    { key: 'arm64', label: 'ARM64' },
+  ],
+  watch: [
+    { key: 'arm32', label: 'ARM32' },
+    { key: 'arm64', label: 'ARM64' },
+  ],
+}
+
+function defaultArch(platform: PlatformKey): string {
+  if (platform === 'desktop') return 'x86'
+  return 'arm64'
+}
+
+function archOf(item: any): string {
+  const a = item?.arch
+  if (a === 'x86' || a === 'arm32' || a === 'arm64') return a
+  return defaultArch(platformOf(item))
+}
+
+function archLabelOf(item: any): string {
+  const a = archOf(item)
+  return a === 'x86' ? 'x86_64' : a === 'arm32' ? 'ARM32' : 'ARM64'
 }
 
 // ===== 版本配置 =====
@@ -580,10 +640,12 @@ async function loadDesktop() {
 }
 
 const desktopModalVisible = ref(false)
+const batchModalVisible = ref(false)
 const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string; storeUrl: string }>({ version: '', updateContent: '', downloadUrl: '', storeUrl: '' })
 const desktopDraftEnabled = ref(false)
 const desktopDraftPlatform = ref<PlatformKey>('desktop')
 const desktopDraftSystem = ref<string>('windows')
+const desktopDraftArch = ref<string>('x86')
 const desktopDraftChannel = ref<'stable' | 'beta'>('stable')
 const desktopDraftBetaNum = ref('')
 const desktopEditingVersion = ref('')
@@ -645,6 +707,7 @@ function openDesktopModal(item?: any) {
     desktopEditingChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraftPlatform.value = platformOf(item)
     desktopDraftSystem.value = systemOf(item)
+    desktopDraftArch.value = archOf(item)
     desktopDraftChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraft.value = {
       version: isBeta ? version.slice(0, betaIdx) : version,
@@ -659,6 +722,7 @@ function openDesktopModal(item?: any) {
     desktopEditingChannel.value = 'stable'
     desktopDraftPlatform.value = platformFilter.value
     desktopDraftSystem.value = systemFilter.value || defaultSystem(platformFilter.value)
+    desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
     desktopDraftChannel.value = 'stable'
     desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
     desktopDraftBetaNum.value = ''
@@ -676,6 +740,18 @@ function switchDraftPlatform(key: PlatformKey) {
   desktopDraftPlatform.value = key
   if (!SYSTEM_META[key]?.some(s => s.key === desktopDraftSystem.value)) {
     desktopDraftSystem.value = defaultSystem(key)
+  }
+  desktopDraftArch.value = defaultArch(key)
+}
+
+const watchArchLocked = computed(() =>
+  desktopDraftPlatform.value === 'watch' && (desktopDraftSystem.value === 'ohos' || desktopDraftSystem.value === 'watchos')
+)
+
+function switchDraftSystem(key: string) {
+  desktopDraftSystem.value = key
+  if (desktopDraftPlatform.value === 'watch' && (key === 'ohos' || key === 'watchos')) {
+    desktopDraftArch.value = 'arm64'
   }
 }
 
@@ -731,6 +807,7 @@ async function saveDesktop() {
   const res = await adminApi('save_desktop_version', {
     platform: desktopDraftPlatform.value,
     system: desktopDraftSystem.value,
+    arch: desktopDraftArch.value,
     channel: desktopDraftChannel.value,
     version,
     download_url: desktopDraft.value.downloadUrl?.trim() || '',
@@ -753,6 +830,7 @@ async function saveDesktop() {
       desktopEditingChannel.value = desktopDraftChannel.value
       desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
       desktopDraftBetaNum.value = ''
+      desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
       desktopDraftEnabled.value = false
       desktopPackageFile.value = null
       desktopPackageFileDraft.value = null
@@ -769,6 +847,7 @@ async function toggleDesktop(e: Event, item: any) {
   const res = await adminApi('save_desktop_version', {
     platform: platformOf(item),
     system: systemOf(item),
+    arch: archOf(item),
     channel: channelOf(item),
     version: item.version,
     download_url: item.downloadUrl || '',
@@ -789,7 +868,7 @@ async function toggleDesktop(e: Event, item: any) {
 async function deleteDesktop(item: any) {
   const ok = await webConfirm(`确认删除${systemLabelOf(item)}${platformLabelOf(item)} v${item.version} 的更新配置？`, { title: '删除配置', confirmText: '确认删除' })
   if (!ok) return
-  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), system: systemOf(item), version: item.version })
+  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), system: systemOf(item), arch: archOf(item), version: item.version })
   if (res.code === 200) {
     showToast('删除成功', 'success')
     loadDesktop()
@@ -826,8 +905,27 @@ function confirmDesktopChannel() {
     desktopPackageFile.value = desktopPackageFileDraft.value
     desktopDraft.value.downloadUrl = ''
     desktopChannelLinkDraft.value = ''
+    applyDetectedMeta(desktopPackageFile.value.name)
   }
   desktopChannelModalVisible.value = false
+}
+
+// 从安装包文件名识别平台/系统/架构，自动填入表单（识别结果仍可手动修正）
+function applyDetectedMeta(fileName: string) {
+  const meta = detectPackageMeta(fileName)
+  if (desktopEditingVersion.value) {
+    // 编辑模式维度锁定：仅提示识别结果，便于核对是否传错包
+    if (meta) showToast(`识别为 ${packageMetaLabel(meta)}，编辑模式不改变当前维度`)
+    return
+  }
+  if (meta) {
+    desktopDraftPlatform.value = meta.platform
+    desktopDraftSystem.value = meta.system
+    desktopDraftArch.value = meta.arch
+    showToast(`已识别：${packageMetaLabel(meta)}，可手动修改`, 'success')
+  } else {
+    showToast('无法识别安装包平台，请手动选择平台 / 系统 / 架构')
+  }
 }
 
 function onDesktopFileChange(e: Event) {
@@ -853,8 +951,7 @@ function onDesktopPackageDrop(e: DragEvent) {
 
 function setDesktopPackageFile(file: File) {
   const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  const allowed = ['exe', 'msi', 'zip', '7z', 'rar', 'dmg', 'pkg', 'apk']
-  if (!allowed.includes(ext)) {
+  if (!PACKAGE_ALLOWED_EXT.includes(ext)) {
     showToast('不支持该安装包格式')
     if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
     return
@@ -1336,6 +1433,10 @@ onMounted(() => {
 .badge-android { background: rgba(26, 188, 156, 0.14); color: #1abc9c; }
 .badge-harmonyos { background: rgba(59, 130, 246, 0.12); color: #2563eb; }
 .badge-ios { background: rgba(99, 102, 241, 0.13); color: #6366f1; }
+.badge-wearos { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
+.badge-ohos { background: rgba(59, 130, 246, 0.12); color: #2563eb; }
+.badge-watchos { background: rgba(99, 102, 241, 0.13); color: #6366f1; }
+.badge-arch { background: var(--track); color: var(--text-muted); }
 .badge-beta { background: rgba(245, 158, 11, 0.14); color: #d97706; }
 .badge-store { background: rgba(0, 122, 204, 0.14); color: #0078d4; }
 .channel-card-locked { opacity: 0.55; cursor: not-allowed; }

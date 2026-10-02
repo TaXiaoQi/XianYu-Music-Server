@@ -227,8 +227,23 @@ pub async fn get_version_status(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
 fn default_system(platform: &str) -> &'static str {
     match platform {
         "mobile" => "android",
-        "watch" => "",
+        "watch" => "wearos",
         _ => "windows",
+    }
+}
+
+fn arch_tier(item: &serde_json::Value, arch: &str) -> u8 {
+    let raw = item.get("arch").and_then(|v| v.as_str()).unwrap_or("").trim();
+    if raw.is_empty() {
+        // 未标注架构的旧记录：与请求一致或请求未指定架构时视为完全匹配
+        return if arch.is_empty() { 0 } else { 1 };
+    }
+    if raw == arch {
+        0
+    } else if arch.is_empty() {
+        2
+    } else {
+        u8::MAX // 架构不匹配，直接淘汰
     }
 }
 
@@ -246,13 +261,16 @@ fn system_label(platform: &str, system: &str) -> &'static str {
         ("mobile", "harmonyos") => "鸿蒙 HarmonyOS",
         ("mobile", "ios") => "iOS",
         ("mobile", _) => "Android",
+        ("watch", "wearos") => "WearOS",
+        ("watch", "ohos") => "鸿蒙 HarmonyOS",
+        ("watch", "watchos") => "watchOS",
         (_, "linux") => "Linux",
         (_, "macos") => "macOS",
         _ => "Windows",
     }
 }
 
-fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str) -> Option<serde_json::Value> {
+fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str, arch: &str) -> Option<serde_json::Value> {
     let path = std::path::Path::new("api").join("version.json");
     let content = std::fs::read_to_string(path).ok()?;
     let value: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -264,6 +282,7 @@ fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str) 
     };
     let effective_system = if system.is_empty() { default_system(platform) } else { system };
     let mut best: Option<serde_json::Value> = None;
+    let mut best_tier: u8 = u8::MAX;
     for item in arr {
         let item_platform = item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop");
         if item_platform != platform {
@@ -280,15 +299,23 @@ fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str) 
         if item_system(item, platform) != effective_system {
             continue;
         }
+        let tier = arch_tier(item, arch);
+        if tier == u8::MAX {
+            continue;
+        }
         let item_ver = item.get("version").and_then(|v| v.as_str()).unwrap_or("");
-        match &best {
-            Some(cur) => {
+        let take = match (&best, tier.cmp(&best_tier)) {
+            (_, std::cmp::Ordering::Less) => true,
+            (_, std::cmp::Ordering::Greater) => false,
+            (Some(cur), std::cmp::Ordering::Equal) => {
                 let cur_ver = cur.get("version").and_then(|v| v.as_str()).unwrap_or("");
-                if compare_version_code(item_ver, cur_ver) > 0 {
-                    best = Some(item.clone());
-                }
+                compare_version_code(item_ver, cur_ver) > 0
             }
-            None => best = Some(item.clone()),
+            (None, _) => true,
+        };
+        if take {
+            best = Some(item.clone());
+            best_tier = tier;
         }
     }
     best
@@ -351,12 +378,13 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     let raw = parse_body(body);
     let platform = str_of(&raw, "platform").trim().to_string();
     let system = str_of(&raw, "system").trim().to_string();
+    let arch = str_of(&raw, "arch").trim().to_string();
     let device_id = str_of(&raw, "device_id").trim().to_string();
 
     let mut selected: Option<serde_json::Value> =
-        latest_enabled_platform_version(&platform, "stable", &system);
+        latest_enabled_platform_version(&platform, "stable", &system, &arch);
     if beta_device_allowed(pool, &device_id).await {
-        if let Some(beta) = latest_enabled_platform_version(&platform, "beta", &system) {
+        if let Some(beta) = latest_enabled_platform_version(&platform, "beta", &system, &arch) {
             let beta_newer = match &selected {
                 Some(stable) => {
                     let bv = beta.get("version").and_then(|v| v.as_str()).unwrap_or("");
@@ -374,6 +402,7 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     if let Some(item) = selected {
         let is_beta = item.get("channel").and_then(|v| v.as_str()) == Some("beta");
         let version = item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let arch = item.get("arch").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let updated_at = item.get("updated_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -389,6 +418,7 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
                 "id": 0,
                 "app_name": app_name,
                 "version": version,
+                "arch": arch,
                 "content": content,
                 "download_url": url,
                 "file_size": 0,
@@ -438,6 +468,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     } else {
         req_platform
     };
+    let arch = str_of(&raw, "arch");
     let app_name = match platform.as_str() {
         "mobile" => "弦予音乐移动端",
         "watch" => "弦予音乐腕上端",
@@ -446,13 +477,13 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
 
     let system_keys: Vec<&str> = match platform.as_str() {
         "mobile" => vec!["android", "harmonyos", "ios"],
-        "watch" => vec![""],
+        "watch" => vec!["wearos", "ohos", "watchos"],
         _ => vec!["windows", "linux", "macos"],
     };
     let mut systems: Vec<serde_json::Value> = Vec::new();
     let mut first: Option<serde_json::Value> = None;
     for sys_key in &system_keys {
-        if let Some(item) = latest_enabled_platform_version(&platform, "stable", sys_key) {
+        if let Some(item) = latest_enabled_platform_version(&platform, "stable", sys_key, &arch) {
             let sys = if sys_key.is_empty() {
                 app_name.to_string()
             } else {
@@ -461,6 +492,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
             let entry = json!({
                 "system": sys_key,
                 "label": sys,
+                "arch": item.get("arch").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "version": item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "content": item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "download_url": item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string(),

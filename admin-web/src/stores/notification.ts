@@ -279,10 +279,15 @@ export const useNotificationStore = defineStore('notification', () => {
     }
   }
 
+  function onVisibilityChange() {
+    if (document.visibilityState === 'visible') pollOnce()
+  }
+
   function startPolling(intervalMs = 30000) {
     stopPolling()
     pollOnce()
     timer = window.setInterval(pollOnce, intervalMs)
+    document.addEventListener('visibilitychange', onVisibilityChange)
   }
 
   function stopPolling() {
@@ -290,6 +295,7 @@ export const useNotificationStore = defineStore('notification', () => {
       window.clearInterval(timer)
       timer = undefined
     }
+    document.removeEventListener('visibilitychange', onVisibilityChange)
   }
 
   return {
@@ -312,6 +318,7 @@ export const useNotificationStore = defineStore('notification', () => {
     openNotificationSettings,
     testNotification,
     checkStats,
+    refresh: pollOnce,
     startPolling,
     stopPolling,
   }

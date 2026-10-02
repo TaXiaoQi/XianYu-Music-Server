@@ -258,6 +258,7 @@ onUnmounted(() => {
 watch(notifyOpen, (open) => {
   if (open) {
     notify.refreshPermission()
+    notify.refresh()
     const btn = document.querySelector('.notify-btn') as HTMLElement | null
     if (btn) {
       const rect = btn.getBoundingClientRect()

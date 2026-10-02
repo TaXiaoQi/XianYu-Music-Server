@@ -243,6 +243,37 @@ fn normalize_platform(raw: &str) -> String {
     }
 }
 
+// CPU 架构：桌面端 x86/arm64，移动端 arm64，腕上端 arm32/arm64
+fn normalize_arch(platform: &str, raw: &str) -> String {
+    let allowed: &[&str] = match platform {
+        "watch" => &["arm32", "arm64"],
+        "mobile" => &["arm64"],
+        _ => &["x86", "arm64"],
+    };
+    let r = raw.trim();
+    if allowed.contains(&r) {
+        r.to_string()
+    } else {
+        match platform {
+            "watch" => "arm64".to_string(),
+            _ => "x86".to_string(),
+        }
+    }
+}
+
+fn item_arch(item: &Value, platform: &str) -> String {
+    let raw = item.get("arch").and_then(|v| v.as_str()).unwrap_or("").trim();
+    if raw.is_empty() {
+        match platform {
+            "watch" => "arm64".to_string(),
+            "mobile" => "arm64".to_string(),
+            _ => "x86".to_string(),
+        }
+    } else {
+        normalize_arch(platform, raw)
+    }
+}
+
 fn item_platform(item: &Value) -> String {
     normalize_platform(item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop").trim())
 }
@@ -273,7 +304,7 @@ fn normalize_channel(raw: &str) -> String {
 fn default_system(platform: &str) -> String {
     match platform {
         "mobile" => "android".to_string(),
-        "watch" => "".to_string(),
+        "watch" => "wearos".to_string(),
         _ => "windows".to_string(),
     }
 }
@@ -281,7 +312,7 @@ fn default_system(platform: &str) -> String {
 fn normalize_system(platform: &str, raw: &str) -> String {
     let allowed: &[&str] = match platform {
         "mobile" => &["android", "harmonyos", "ios"],
-        "watch" => &[""],
+        "watch" => &["wearos", "ohos", "watchos"],
         _ => &["windows", "linux", "macos"],
     };
     let r = raw.trim();
@@ -307,6 +338,9 @@ fn system_label(platform: &str, system: &str) -> &'static str {
         ("mobile", "harmonyos") => "鸿蒙 HarmonyOS",
         ("mobile", "ios") => "iOS",
         ("mobile", _) => "Android",
+        ("watch", "wearos") => "WearOS",
+        ("watch", "ohos") => "鸿蒙 HarmonyOS",
+        ("watch", "watchos") => "watchOS",
         (_, "linux") => "Linux",
         (_, "macos") => "macOS",
         _ => "Windows",
@@ -319,6 +353,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     let platform = normalize_platform(str_of(&data, "platform").trim());
     let system = normalize_system(&platform, str_of(&data, "system").trim());
     let channel = normalize_channel(str_of(&data, "channel").trim());
+    let arch = normalize_arch(&platform, str_of(&data, "arch").trim());
     let mut download_url = str_of(&data, "download_url").trim().to_string();
     let update_content = str_of(&data, "update_content").trim().to_string();
     let enabled = int_of(&data, "enabled") != 0;
@@ -352,6 +387,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
                 item_platform(item) == platform
                     && item_system(item) == system
                     && item_channel(item) == channel
+                    && item_arch(item, &platform) == arch
                     && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
             })
             .and_then(|item| item.get("downloadUrl").and_then(|v| v.as_str()))
@@ -388,12 +424,13 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         item_platform(item) == platform
             && item_system(item) == system
             && item_channel(item) == channel
+            && item_arch(item, &platform) == arch
             && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
     });
     if is_new {
         let mut max_ver: Option<&str> = None;
         for item in &list {
-            if item_platform(item) != platform || item_system(item) != system || item_channel(item) != channel {
+            if item_platform(item) != platform || item_system(item) != system || item_channel(item) != channel || item_arch(item, &platform) != arch {
                 continue;
             }
             let ver = item.get("version").and_then(|v| v.as_str()).unwrap_or("");
@@ -410,7 +447,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
             if compare_version_code(&version, mv) <= 0 {
                 let channel_label = if channel == "beta" { "测试版" } else { "正式版" };
                 let sys_label = system_label(&platform, &system);
-                return err(400, &format!("新版本 {} 必须大于{}{}已有的最高版本 {}", version, sys_label, channel_label, mv));
+                return err(400, &format!("新版本 {} 必须大于{}{}[{}]已有的最高版本 {}", version, sys_label, channel_label, arch, mv));
             }
         }
     }
@@ -419,6 +456,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         "platform": platform.clone(),
         "system": system.clone(),
         "channel": channel.clone(),
+        "arch": arch.clone(),
         "version": version.clone(),
         "downloadUrl": download_url,
         "updateContent": update_content,
@@ -431,6 +469,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         if item_platform(item) == platform
             && item_system(item) == system
             && item_channel(item) == channel
+            && item_arch(item, &platform) == arch
             && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
         {
             *item = new_item.clone();
@@ -478,6 +517,7 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     } else {
         normalize_system(&platform, &raw_system)
     };
+    let arch = normalize_arch(&platform, str_of(&data, "arch").trim());
     if version.is_empty() {
         return err(400, "版本号不能为空");
     }
@@ -486,6 +526,7 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     list.retain(|item| {
         !(item_platform(item) == platform
             && item_system(item) == system
+            && item_arch(item, &platform) == arch
             && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()))
     });
     if list.len() == before {

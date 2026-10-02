@@ -8,8 +8,11 @@ use crate::response::ReqCtx;
 
 const DEFAULT_THEME_UPLOAD_LIMIT: i64 = 20;
 const MAX_RESOURCE_BYTES_PER_FILE: usize = 2 * 1024 * 1024;
-const MAX_RESOURCE_BYTES_PER_THEME: usize = 5 * 1024 * 1024;
-const MAX_PAYLOAD_JSON_BYTES: usize = 512 * 1024;
+const MAX_RESOURCE_BYTES_PER_THEME: usize = 20 * 1024 * 1024;
+/// v3 页面壁纸：单张原图上限 / 单包壁纸总量上限（解码后字节数，落盘前压缩到 1080 宽）
+const MAX_WALLPAPER_BYTES_PER_FILE: usize = 8 * 1024 * 1024;
+const MAX_WALLPAPER_BYTES_PER_THEME: usize = 12 * 1024 * 1024;
+const MAX_PAYLOAD_JSON_BYTES: usize = 8 * 1024 * 1024;
 const MAX_PREVIEW_BYTES: usize = 8 * 1024 * 1024;
 
 pub(crate) fn themes_dir() -> std::path::PathBuf {
@@ -104,8 +107,10 @@ fn ext_for_data_url(data_url: &str, bytes: &[u8]) -> Option<&'static str> {
     }
 }
 
-/// 把 payload.icons / payload.stickers 中 data URL 形式的资源校验并落盘到
-/// uploads/themes/theme_{id}/ 并改写为服务端托管 URL；非 data URL 的值原样保留。
+/// 把 payload.icons / payload.stickers / payload.wallpapers 中 data URL 形式的资源
+/// 校验并落盘到 uploads/themes/theme_{id}/ 并改写为服务端托管 URL；
+/// 非 data URL 的值原样保留。icons/stickers 条目是字符串，wallpapers 条目是
+/// `{ ref, ...调整参数 }` 对象（仅改写 ref，参数原样保留，统一压缩为 1080 宽 JPEG）。
 /// id 为 None 时只做校验不落盘（dry-run）；返回完整主题包 JSON 文本。
 fn save_theme_resources(id: Option<i64>, payload: &Map<String, Value>) -> Result<String, String> {
     let theme_id = id.unwrap_or(0);
@@ -115,18 +120,25 @@ fn save_theme_resources(id: Option<i64>, payload: &Map<String, Value>) -> Result
     }
     let mut rewritten = payload.clone();
     let mut total_bytes: usize = 0;
-    for (group, prefix) in [("icons", "icon"), ("stickers", "sticker")] {
+    let mut wallpaper_bytes: usize = 0;
+    for (group, prefix) in [("icons", "icon"), ("stickers", "sticker"), ("wallpapers", "wallpaper")] {
+        let is_wallpaper = group == "wallpapers";
         let Some(entries) = payload.get(group).and_then(|v| v.as_object()).cloned() else {
             continue;
         };
         let mut out = Map::new();
         for (slot, value) in entries {
-            let url = match value.as_str() {
-                Some(u) => u,
-                None => {
-                    out.insert(slot, value.clone());
-                    continue;
+            let (entry_obj, url) = if is_wallpaper {
+                match value.as_object() {
+                    Some(obj) => (Some(obj.clone()), obj.get("ref").and_then(|v| v.as_str())),
+                    None => (None, None),
                 }
+            } else {
+                (None, value.as_str())
+            };
+            let Some(url) = url else {
+                out.insert(slot, value.clone());
+                continue;
             };
             if !url.starts_with("data:") {
                 out.insert(slot, value.clone());
@@ -135,22 +147,49 @@ fn save_theme_resources(id: Option<i64>, payload: &Map<String, Value>) -> Result
             let Some(bytes) = data_url_to_bytes(url) else {
                 return Err(format!("槽位 {} 的资源数据无效", slot));
             };
-            if bytes.len() > MAX_RESOURCE_BYTES_PER_FILE {
-                return Err(format!("槽位 {} 的资源过大，单个资源请控制在 2MB 以内", slot));
+            if is_wallpaper {
+                if bytes.len() > MAX_WALLPAPER_BYTES_PER_FILE {
+                    return Err(format!("页面 {} 的壁纸过大，单张请控制在 8MB 以内", slot));
+                }
+                wallpaper_bytes += bytes.len();
+                if wallpaper_bytes > MAX_WALLPAPER_BYTES_PER_THEME {
+                    return Err("页面壁纸总量过大，请控制在 12MB 以内".to_string());
+                }
+                match image::guess_format(&bytes) {
+                    Ok(f) if matches!(f, image::ImageFormat::Jpeg | image::ImageFormat::Png | image::ImageFormat::WebP) => {}
+                    _ => return Err(format!("页面 {} 的壁纸仅支持 JPG / PNG / WEBP", slot)),
+                }
+            } else {
+                if bytes.len() > MAX_RESOURCE_BYTES_PER_FILE {
+                    return Err(format!("槽位 {} 的资源过大，单个资源请控制在 2MB 以内", slot));
+                }
+                total_bytes += bytes.len();
+                if total_bytes > MAX_RESOURCE_BYTES_PER_THEME {
+                    return Err("主题资源总量过大，请控制在 20MB 以内".to_string());
+                }
+                let Some(ext) = ext_for_data_url(url, &bytes) else {
+                    return Err(format!("槽位 {} 的资源格式不支持（仅 PNG/JPG/WEBP/GIF/SVG）", slot));
+                };
+                let filename = format!("{}_{}.{}", prefix, sanitize_slot(&slot), ext);
+                if id.is_some() && std::fs::write(dir.join(&filename), &bytes).is_err() {
+                    let _ = std::fs::remove_dir_all(&dir);
+                    return Err("主题资源保存失败，请检查目录权限".to_string());
+                }
+                out.insert(slot, Value::String(format!("/uploads/themes/theme_{}/{}", theme_id, filename)));
+                continue;
             }
-            total_bytes += bytes.len();
-            if total_bytes > MAX_RESOURCE_BYTES_PER_THEME {
-                return Err("主题资源总量过大，请控制在 5MB 以内".to_string());
-            }
-            let Some(ext) = ext_for_data_url(url, &bytes) else {
-                return Err(format!("槽位 {} 的资源格式不支持（仅 PNG/JPG/WEBP/GIF/SVG）", slot));
-            };
-            let filename = format!("{}_{}.{}", prefix, sanitize_slot(&slot), ext);
-            if id.is_some() && std::fs::write(dir.join(&filename), &bytes).is_err() {
+            // 壁纸：压缩为 1080 宽 JPEG 落盘，改写 ref，保留其余调整参数
+            let filename = format!("{}_{}.jpg", prefix, sanitize_slot(&slot));
+            if id.is_some() && !compress_and_save_image(&bytes, &dir.join(&filename), 1080, 80) {
                 let _ = std::fs::remove_dir_all(&dir);
-                return Err("主题资源保存失败，请检查目录权限".to_string());
+                return Err("页面壁纸保存失败，请检查目录权限".to_string());
             }
-            out.insert(slot, Value::String(format!("/uploads/themes/theme_{}/{}", theme_id, filename)));
+            let mut entry = entry_obj.unwrap_or_default();
+            entry.insert(
+                "ref".to_string(),
+                Value::String(format!("/uploads/themes/theme_{}/{}", theme_id, filename)),
+            );
+            out.insert(slot, Value::Object(entry));
         }
         rewritten.insert(group.to_string(), Value::Object(out));
     }
@@ -173,12 +212,35 @@ fn save_theme_resources(id: Option<i64>, payload: &Map<String, Value>) -> Result
     Ok(text)
 }
 
+/// 把 payload.wallpapers 中服务端相对路径的 ref（/uploads/...）改写为绝对 URL，
+/// 与 previewUrl/thumbnailUrl 同一规则；data URL / 绝对 URL 原样保留。
+fn absolutize_wallpaper_refs(ctx: &ReqCtx, package: &mut Value) {
+    let Some(wps) = package
+        .get_mut("payload")
+        .and_then(|p| p.get_mut("wallpapers"))
+        .and_then(|w| w.as_object_mut())
+    else {
+        return;
+    };
+    for (_page, entry) in wps.iter_mut() {
+        let Some(obj) = entry.as_object_mut() else { continue };
+        let Some(ref_url) = obj.get("ref").and_then(|r| r.as_str()) else {
+            continue;
+        };
+        if ref_url.starts_with('/') {
+            let abs = public_url(ctx, ref_url.to_string());
+            obj.insert("ref".to_string(), Value::String(abs));
+        }
+    }
+}
+
 fn row_to_theme(ctx: &ReqCtx, row: &sqlx::mysql::MySqlRow) -> Value {
     let id: i64 = row.try_get::<i64, _>("id").unwrap_or_else(|_| {
         row.try_get::<i32, _>("id").map(|v| v as i64).unwrap_or_default()
     });
     let payload_raw: String = row.try_get::<String, _>("payload").unwrap_or_default();
-    let payload_json: Value = serde_json::from_str(&payload_raw).unwrap_or(Value::Null);
+    let mut payload_json: Value = serde_json::from_str(&payload_raw).unwrap_or(Value::Null);
+    absolutize_wallpaper_refs(ctx, &mut payload_json);
     let preview_url = public_url(ctx, row.try_get::<String, _>("preview_url").unwrap_or_default());
     let thumbnail_url = public_url(ctx, row.try_get::<String, _>("thumbnail_url").unwrap_or_default());
     json!({
@@ -245,6 +307,21 @@ pub async fn my_themes(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
 }
 
+/// 收集 payload.wallpapers 中仍为 data URL 的壁纸 ref（供机审）。
+fn wallpaper_data_urls(payload: &Map<String, Value>) -> Vec<String> {
+    payload
+        .get("wallpapers")
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.values()
+                .filter_map(|e| e.get("ref").and_then(|r| r.as_str()))
+                .filter(|u| u.starts_with("data:"))
+                .map(|u| u.to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// 客户端签名通道（upload_theme）与网页端点（POST /theme-editor/upload）共用的落库流程。
 /// 返回 (id, status, preview_url)；失败返回 (http_code, msg)。
 #[allow(clippy::too_many_arguments)]
@@ -283,12 +360,24 @@ pub(crate) async fn persist_new_theme(
     }
 
     let meta = json!({ "ciyuanxi_id": ciyuanxi_id, "kind": "theme", "platform": platform });
-    let audit = audit_policy::audit_text(pool, "wallpaper", name, meta.clone()).await;
-    let audit = if matches!(audit.decision, AuditDecision::Pass) {
-        audit_policy::audit_image(pool, "wallpaper", preview_data, meta).await
-    } else {
-        audit
-    };
+    let mut audit = audit_policy::audit_text(pool, "wallpaper", name, meta.clone()).await;
+    if matches!(audit.decision, AuditDecision::Pass) {
+        audit = audit_policy::audit_image(pool, "wallpaper", preview_data, meta.clone()).await;
+    }
+    // v3 页面壁纸逐张机审：任一拒绝→整包拒绝；无拒绝但有转人工→待审
+    if matches!(audit.decision, AuditDecision::Pass) {
+        for url in wallpaper_data_urls(payload) {
+            let wa = audit_policy::audit_image(pool, "wallpaper", &url, meta.clone()).await;
+            match wa.decision {
+                AuditDecision::Reject => {
+                    audit = wa;
+                    break;
+                }
+                AuditDecision::Manual => audit = wa,
+                AuditDecision::Pass => {}
+            }
+        }
+    }
     let initial_status = match audit.decision {
         AuditDecision::Pass => "normal",
         AuditDecision::Reject => "rejected",

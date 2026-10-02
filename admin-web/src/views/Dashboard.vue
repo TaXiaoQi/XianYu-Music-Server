@@ -96,10 +96,9 @@
         <router-link to="/announcements" class="btn btn-primary">公告管理</router-link>
         <router-link to="/version" class="btn btn-primary">版本管理</router-link>
         <router-link to="/about-config" class="btn">关于页设置</router-link>
-        <router-link to="/email-config" class="btn">邮箱机管理</router-link>
-        <router-link to="/turnstile-config" class="btn">审核设置</router-link>
-        <router-link to="/themes" class="btn">主题中心</router-link>
-        <router-link to="/database" class="btn">数据库管理</router-link>
+        <router-link to="/avatar-audit" class="btn">头像/昵称审核</router-link>
+        <router-link to="/wallpapers" class="btn">壁纸管理</router-link>
+        <router-link to="/themes" class="btn">主题管理</router-link>
       </div>
     </div>
     </Transition>

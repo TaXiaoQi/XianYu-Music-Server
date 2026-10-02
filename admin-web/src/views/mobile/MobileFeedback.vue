@@ -1591,7 +1591,7 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 .c-rejected { color: #dc2626; }
 .c-pending { color: #f59e0b; }
 
-.mfb-viewer { z-index: 11000; background: rgba(0, 0, 0, 0.9) !important; padding: 0; }
+.mfb-viewer { z-index: 11800; background: rgba(0, 0, 0, 0.9) !important; padding: 0; }
 .mfb-viewer-img { max-width: 92vw; max-height: 88vh; object-fit: contain; border-radius: 8px; }
 .mfb-viewer-close {
   position: absolute; top: 18px; right: 18px;

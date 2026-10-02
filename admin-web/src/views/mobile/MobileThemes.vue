@@ -103,11 +103,9 @@
           <div class="card-actions">
             <button class="act-btn act-detail" @click="openDetail(item)">详情</button>
             <template v-if="item.status === 'pending'">
-              <button class="act-btn act-approve" @click="changeStatus(item.id, 'normal')">通过</button>
-              <button class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">拒绝</button>
+              <button class="act-btn act-approve" @click="openInEditor(item)">编辑器审核</button>
             </template>
             <template v-else-if="item.status === 'rejected'">
-              <button class="act-btn act-approve" @click="changeStatus(item.id, 'normal')">通过</button>
               <button class="act-btn act-delete" @click="deleteTheme(item.id)">删除</button>
             </template>
             <template v-else-if="item.status === 'normal'">
@@ -182,6 +180,27 @@
           </div>
           <div class="modal-foot">
             <button class="modal-btn cancel" @click="closeDetail">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 编辑器审核弹层：后台内部调用，iframe 内嵌编辑器 -->
+    <Transition name="modal" @before-leave="removeBackdropBlur">
+      <div v-if="reviewVisible" class="modal-backdrop" @click.self="closeReview">
+        <div class="modal-dialog editor-dialog">
+          <div class="modal-head">
+            <h3>编辑器审核</h3>
+            <div class="review-head-actions">
+              <button class="review-btn review-btn--reject" @click="reviewAction('rejected')">拒绝</button>
+              <button class="review-btn review-btn--pass" @click="reviewAction('normal')">通过</button>
+              <button class="modal-close" @click="closeReview">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="editor-frame-wrap">
+            <iframe v-if="reviewVisible && reviewUrl" :src="reviewUrl" class="editor-frame" title="主题编辑器审核"></iframe>
           </div>
         </div>
       </div>
@@ -344,6 +363,30 @@ function openDetail(item: ThemeItem) {
 
 function closeDetail() {
   detailVisible.value = false
+}
+
+const reviewVisible = ref(false)
+const reviewUrl = ref('')
+const reviewId = ref(0)
+
+function openInEditor(item: ThemeItem) {
+  // 后台内部调用：弹层内嵌编辑器（同源 iframe），登录态随 URL 传递，embed=1 隐藏编辑器自有顶栏
+  const token = localStorage.getItem('admin_token') || ''
+  reviewId.value = item.id
+  reviewUrl.value = `/theme-editor?review_theme=${item.id}&admin_token=${encodeURIComponent(token)}&embed=1`
+  reviewVisible.value = true
+}
+
+function closeReview() {
+  reviewVisible.value = false
+  reviewUrl.value = ''
+  loadList(true)
+}
+
+async function reviewAction(status: 'normal' | 'rejected') {
+  reviewVisible.value = false
+  reviewUrl.value = ''
+  await changeStatus(reviewId.value, status)
 }
 
 function payloadText(item: ThemeItem): string {
@@ -581,6 +624,16 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   display: flex;
   flex-direction: column;
 }
+.editor-dialog { width: min(92vw, 82vh); max-width: min(92vw, 82vh); height: min(92vw, 82vh); }
+.editor-frame-wrap { flex: 1; min-height: 0; }
+.editor-frame { width: 100%; height: 100%; border: none; display: block; }
+.review-head-actions { display: flex; align-items: center; gap: 8px; }
+.review-btn {
+  height: 32px; padding: 0 14px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  cursor: pointer; border: 1px solid transparent; white-space: nowrap;
+}
+.review-btn--reject { background: transparent; border-color: #ec4141; color: #ec4141; }
+.review-btn--pass { background: #0a9d58; color: #fff; }
 .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 18px 20px 0; }
 .modal-head h3 { margin: 0; font-size: 16px; font-weight: 850; color: var(--text); }
 .modal-close { border: none; background: transparent; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 8px; display: flex; }

@@ -141,17 +141,12 @@
             <div class="card-actions">
               <button class="act-btn act-detail" @click="openDetail(item)">详情</button>
               <template v-if="item.status === 'pending'">
-                <button class="act-btn act-approve" @click="changeStatus(item.id, 'normal')">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                  通过
-                </button>
-                <button class="act-btn act-reject" @click="changeStatus(item.id, 'rejected')">
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                  拒绝
+                <button class="act-btn act-approve" @click="openInEditor(item)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  编辑器审核
                 </button>
               </template>
               <template v-else-if="item.status === 'rejected'">
-                <button class="act-btn act-approve" @click="changeStatus(item.id, 'normal')">通过</button>
                 <button class="act-btn act-delete" @click="deleteTheme(item.id)">删除</button>
               </template>
               <template v-else-if="item.status === 'normal'">
@@ -226,6 +221,26 @@
           </div>
           <div class="modal-foot">
             <button class="btn-cancel" @click="closeDetail">关闭</button>
+          </div>
+        </div>
+      </div>
+    </Transition>
+
+    <Transition name="modal">
+      <div v-if="reviewVisible" class="modal-backdrop" @click.self="closeReview">
+        <div class="modal-dialog editor-dialog">
+          <div class="modal-head">
+            <h3>编辑器审核</h3>
+            <div class="review-head-actions">
+              <button class="review-btn review-btn--reject" @click="reviewAction('rejected')">拒绝</button>
+              <button class="review-btn review-btn--pass" @click="reviewAction('normal')">通过</button>
+              <button class="modal-close" @click="closeReview">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="editor-frame-wrap">
+            <iframe v-if="reviewVisible && reviewUrl" :src="reviewUrl" class="editor-frame" title="主题编辑器审核"></iframe>
           </div>
         </div>
       </div>
@@ -388,6 +403,30 @@ const detailItem = ref<ThemeItem | null>(null)
 function openDetail(item: ThemeItem) {
   detailItem.value = item
   detailVisible.value = true
+}
+
+const reviewVisible = ref(false)
+const reviewUrl = ref('')
+const reviewId = ref(0)
+
+function openInEditor(item: ThemeItem) {
+  // 后台内部调用：弹层内嵌编辑器（同源 iframe），登录态随 URL 传递，embed=1 隐藏编辑器自有顶栏
+  const token = localStorage.getItem('admin_token') || ''
+  reviewId.value = item.id
+  reviewUrl.value = `/theme-editor?review_theme=${item.id}&admin_token=${encodeURIComponent(token)}&embed=1`
+  reviewVisible.value = true
+}
+
+function closeReview() {
+  reviewVisible.value = false
+  reviewUrl.value = ''
+  loadList(true)
+}
+
+async function reviewAction(status: 'normal' | 'rejected') {
+  reviewVisible.value = false
+  reviewUrl.value = ''
+  await changeStatus(reviewId.value, status)
 }
 
 function closeDetail() {
@@ -804,6 +843,18 @@ function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = 
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.16);
 }
 .detail-dialog { max-width: 640px; }
+.editor-dialog { width: min(88vh, 92vw, 780px); max-width: min(88vh, 92vw, 780px); height: min(88vh, 92vw, 780px); }
+.editor-frame-wrap { flex: 1; min-height: 0; }
+.editor-frame { width: 100%; height: 100%; border: none; display: block; }
+.review-head-actions { display: flex; align-items: center; gap: 10px; }
+.review-btn {
+  height: 34px; padding: 0 16px; border-radius: 999px; font-size: 13px; font-weight: 700;
+  cursor: pointer; border: 1px solid transparent; transition: all .2s; white-space: nowrap;
+}
+.review-btn--reject { background: transparent; border-color: #ec4141; color: #ec4141; }
+.review-btn--reject:hover { background: #ec4141; color: #fff; }
+.review-btn--pass { background: #0a9d58; color: #fff; }
+.review-btn--pass:hover { background: #08854b; }
 .modal-head {
   display: flex;
   justify-content: space-between;

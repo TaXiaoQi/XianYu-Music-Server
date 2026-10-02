@@ -295,9 +295,10 @@ pub async fn upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
 }
 
 const EDITOR_HTML: &str = r##"<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" translate="no" class="notranslate">
 <head>
 <meta charset="utf-8">
+<meta name="google" content="notranslate">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>弦予 · 主题编辑器</title>
 <link rel="icon" type="image/png" href="/logo.png">
@@ -344,15 +345,31 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 .brand__sub{ font-size:12.5px; color:var(--text-3); margin-top:2px; }
 .topbar__actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 .lang-switch{ position:relative; }
-.lang-switch__btn{ display:inline-flex; align-items:center; justify-content:center; gap:7px; height:40px; padding:0 13px; border-radius:12px; border:1px solid rgba(255,255,255,.14); background:rgba(255,255,255,.06); color:#e5e7eb; cursor:pointer; font-size:13px; font-weight:600; font-family:var(--font-body); white-space:nowrap; transition:background .18s,color .18s; }
-.lang-switch__btn svg{ flex:none; }
+.lang-switch__btn{ display:inline-flex; align-items:center; justify-content:center; gap:7px; height:34px; padding:0 13px; border-radius:999px; border:1px solid var(--border-soft); background:var(--card); color:var(--text-2); cursor:pointer; font-size:12.5px; font-weight:700; font-family:var(--font-body); white-space:nowrap; transition:transform .2s,background .2s,color .2s,box-shadow .2s; }
+.lang-switch__btn svg{ flex:none; width:15px; height:15px; }
 .lang-switch__label{ line-height:1; }
-.lang-switch__btn:hover{ background:rgba(255,255,255,.12); color:#fff; }
-.lang-menu{ position:absolute; top:calc(100% + 8px); right:0; min-width:150px; background:#202227; border:1px solid rgba(255,255,255,.12); border-radius:12px; padding:6px; box-shadow:0 16px 40px rgba(0,0,0,.4); display:none; z-index:999; }
-.lang-switch.open .lang-menu{ display:block; }
-.lang-menu__item{ display:block; width:100%; text-align:left; padding:9px 12px; border-radius:8px; border:none; background:none; color:#e5e7eb; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; }
-.lang-menu__item:hover{ background:rgba(255,255,255,.08); color:#fff; }
-.lang-menu__item.active{ color:#fff; background:rgba(236,65,65,.9); }
+.lang-switch__btn:hover{ transform:translateY(-1px); color:var(--accent); background:var(--accent-soft); box-shadow:var(--shadow); }
+.lang-menu{ position:absolute; top:calc(100% + 8px); right:0; min-width:150px; background:var(--card); border:1px solid var(--border-soft); border-radius:14px; padding:6px; box-shadow:0 18px 48px rgba(15,23,42,.18); display:none; flex-direction:column; gap:2px; z-index:9999; }
+.lang-switch.open .lang-menu{ display:flex; }
+.lang-menu__item{ display:block; width:100%; text-align:left; padding:9px 12px; border-radius:9px; border:none; background:transparent; color:var(--text); font-size:13px; font-weight:600; font-family:var(--font-body); cursor:pointer; white-space:nowrap; transition:background .15s,color .15s; }
+.lang-menu__item:hover{ background:var(--accent-soft); color:var(--accent); }
+.lang-menu__item.active{ color:var(--accent); background:var(--accent-soft); }
+/* ====== 内嵌审核（?embed=1）：隐藏编辑器 UI 只留预览舞台，满高布局防窄屏塌缩，缩放由画布 transform 接管 ====== */
+body.embed-mode .brand, body.embed-mode .brand__sub, body.embed-mode .lang-switch{ display:none !important; }
+body.embed-mode #reviewBox{ display:none !important; }
+body.embed-mode .topbar{ display:none !important; }
+body.embed-mode .panel{ display:none !important; }
+body.embed-mode{ height:100vh; display:flex; flex-direction:column; overflow:hidden; -webkit-user-select:none; user-select:none; }
+body.embed-mode .layout{ flex:1; min-height:0; height:100%; gap:0; }
+body.embed-mode .stage{ width:100%; flex:1; height:100%; overflow:hidden; position:relative; padding:10px 10px 0; cursor:grab; }
+body.embed-mode .stage.dragging{ cursor:grabbing; }
+body.embed-mode .stage-tabs{ position:relative; z-index:20; touch-action:pan-x; }
+body.embed-mode #mobileWrap{ position:absolute; left:50%; top:60px; transform:translateX(-50%); transform-origin:top center; z-index:1; }
+/* 横竖屏切换条：仅移动端主题显示 */
+body.embed-mode #rvOrientBar{ position:fixed; left:14px; bottom:14px; z-index:500; display:none; align-items:center; gap:2px; background:var(--card); border:1px solid var(--border-soft); border-radius:999px; padding:4px 8px; box-shadow:var(--shadow); white-space:nowrap; }
+#rvOrientBar button{ height:28px; border:none; background:transparent; border-radius:999px; padding:0 10px; cursor:pointer; color:var(--text-2); font-size:12.5px; font-weight:700; font-family:var(--font-body); }
+#rvOrientBar button:hover{ background:var(--accent-soft); color:var(--accent); }
+#rvOrientBar button.on{ background:var(--accent); color:#fff; box-shadow:0 2px 10px rgba(236,65,65,.35); }
 .login-state{ font-size:13px; color:var(--text-2); display:inline-flex; align-items:center; gap:6px; }
 .login-state.on{ color:#0a9d58; font-weight:600; }
 .login-state .dot{ width:7px; height:7px; border-radius:50%; background:var(--text-3); }
@@ -373,6 +390,11 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 .panel::-webkit-scrollbar-track,.stage::-webkit-scrollbar-track{ background:transparent; }
 .panel::-webkit-scrollbar-thumb,.stage::-webkit-scrollbar-thumb{ background:#d9dce1; border-radius:4px; }
 .panel::-webkit-scrollbar-thumb:hover,.stage::-webkit-scrollbar-thumb:hover{ background:#c3c7cd; }
+
+/* 审核模式（body.review-mode）：纯查看——隐藏编辑面板与登录/导出/上传入口 */
+body.review-mode .panel{ display:none !important; }
+body.review-mode #loginState, body.review-mode #btnLogin, body.review-mode #btnLogout,
+body.review-mode #btnExport, body.review-mode #btnUpload{ display:none !important; }
 .card{ background:var(--card); border:1px solid var(--border-soft); border-radius:var(--radius-lg); padding:20px; box-shadow:var(--shadow); }
 .card__head{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 .card__head h3{ font-family:var(--font-display); font-size:15.5px; font-weight:700; }
@@ -404,6 +426,20 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 .slot-thumb{ width:38px; height:38px; border-radius:11px; background:var(--bg-soft); border:1px solid var(--border-soft); display:flex; align-items:center; justify-content:center; overflow:hidden; flex:none; color:var(--text-2); }
 .slot-thumb img{ width:26px; height:26px; object-fit:contain; }
 .slot-thumb .ic-svg{ width:19px; height:19px; }
+/* v3 页面壁纸 */
+.pv-wallpaper{ position:absolute; inset:0; overflow:hidden; pointer-events:none; }
+.pv-wallpaper-inner{ position:absolute; left:50%; top:50%; transform-origin:center; background-size:100% 100%; background-position:center; will-change:transform; }
+.pv-wallpaper-mask{ position:absolute; inset:0; background:#000; pointer-events:none; }
+/* 壁纸/遮罩是 absolute，会压在普通流内容上：屏幕直接子元素（UI 层）统一提升，
+   保证 UI 画在壁纸与遮罩之上（与客户端 Stack 层级一致：壁纸在最底、组件在上） */
+.screen > *:not(.pv-wallpaper):not(.pv-wallpaper-mask){ position:relative; }
+.wp-fig{ border:1px solid var(--border-soft); border-radius:12px; overflow:hidden; background:var(--bg-soft); margin-bottom:10px; }
+.wp-fig img{ display:block; width:100%; max-height:150px; object-fit:cover; }
+.wp-row{ display:flex; align-items:center; gap:10px; padding:4px 2px; }
+.wp-row .wp-label{ flex:none; width:76px; font-size:12px; color:var(--text-2); }
+.wp-row input[type=range]{ flex:1; accent-color:var(--accent); }
+.wp-row .wp-val{ flex:none; width:38px; text-align:right; font-size:12px; color:var(--text-2); font-variant-numeric:tabular-nums; }
+.wp-ops{ display:flex; gap:8px; margin-top:10px; }
 .slot-meta{ flex:1; min-width:0; }
 .slot-meta .n{ font-size:13px; font-weight:600; }
 .slot-meta .id{ font-size:11px; color:var(--text-3); font-family:var(--font-mono); margin-top:1px; }
@@ -885,6 +921,7 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 </style>
 </head>
 <body>
+<script>try{if(/[?&]embed=1/.test(location.search))document.body.classList.add('embed-mode');}catch(e){}</script>
 <div class="bg-fx" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="grid-bg"></div></div>
 
 <header class="topbar">
@@ -897,12 +934,17 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
       </div>
     </div>
     <div class="topbar__actions">
+      <span id="reviewBox" style="display:none;align-items:center;gap:8px;padding:5px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;">
+        <span style="font-size:12px;font-weight:600;color:#9a3412;" id="reviewLabel">审核主题</span>
+        <button class="btn" id="btnReviewReject" onclick="reviewAct('rejected')" style="background:#fee2e2;color:#b91c1c;">拒绝</button>
+        <button class="btn" id="btnReviewApprove" onclick="reviewAct('normal')" style="background:#10b981;color:#fff;">通过</button>
+      </span>
       <span data-i18n-mount="dropdown"></span>
       <span class="login-state" id="loginState"><span class="dot"></span><span id="loginText">未登录（导出不需要登录）</span></span>
       <button class="btn" id="btnLogin" onclick="openLogin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg><span>扫码登录</span></button>
       <button class="btn" id="btnLogout" onclick="logout()" style="display:none">退出</button>
-      <button class="btn" onclick="exportJson()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>导出 JSON</span></button>
-      <button class="btn btn--primary" onclick="openUpload()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L8 7m4-4 4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>上传广场</span></button>
+      <button class="btn" id="btnExport" onclick="exportJson()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>导出 JSON</span></button>
+      <button class="btn btn--primary" id="btnUpload" onclick="openUpload()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L8 7m4-4 4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>上传广场</span></button>
     </div>
   </div>
 </header>
@@ -957,7 +999,14 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
     <div class="card" id="stickerCard">
       <div class="card__head"><h3 id="stickerCardTitle">贴纸槽位</h3></div>
       <div id="stickerSlots"></div>
-      <p class="hint" id="slotHint">图标建议 SVG 或高清 PNG（单文件 ≤2MB，主题资源总量 ≤5MB）。未设置的槽位在客户端回落默认图标，未知槽位将被忽略。</p>
+      <p class="hint" id="slotHint">图标建议 SVG 或高清 PNG（单文件 ≤2MB，主题资源总量 ≤20MB）。未设置的槽位在客户端回落默认图标，未知槽位将被忽略。</p>
+    </div>
+
+    <div class="card" id="wpCard">
+      <div class="card__head"><h3 id="wpCardTitle">页面壁纸</h3></div>
+      <div id="wpBody"></div>
+      <input type="file" id="wpFile" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="pickWallpaper(this)">
+      <p class="hint">为当前页面单独设置壁纸（JPG/PNG/WEBP ≤8MB，随包分发，客户端激活主题后立即生效；未设置的页面回落用户当前壁纸）。缩放 / 位移 / 模糊 / 不透明度 / 遮罩与客户端「自定义壁纸」调整一致，移动端另有横屏三参数。</p>
     </div>
 
     <div class="card" id="surfaceCard" style="display:none">
@@ -1109,7 +1158,7 @@ function iconHtml(slot, map, sizePx){
 }
 
 function defaultTheme() {
-  return { accentColor:'#EC4141', themeMode:'dark', wallpaperRef:null, quickEntryShape:'circle', icons:{}, stickers:{}, surfaces:{} };
+  return { accentColor:'#EC4141', themeMode:'dark', wallpaperRef:null, quickEntryShape:'circle', icons:{}, stickers:{}, surfaces:{}, wallpapers:{} };
 }
 const state = {
   name: '我的主题',
@@ -1206,6 +1255,159 @@ function renderSlotList(kind, mountId){
     $id('stickerCardTitle').textContent = '贴纸槽位 · ' + (slotScope === 'page' ? pageShortLabel() : '公共通用');
   }
 }
+/* ---------- v3 页面壁纸 ---------- */
+/* 参数与客户端 CustomBackground 对齐：百分比整数，blur 渲染 ×0.6，maskAlpha 为黑色遮罩不透明度 */
+function wpDefault(key){ return key === 'scale' || key === 'landscapeScale' ? 100 : key === 'maskAlpha' ? 40 : key === 'blur' ? 20 : key === 'opacity' ? 100 : 0; }
+function renderWallpaperCard(){
+  const body = $id('wpBody'); if(!body) return;
+  const page = pageShortLabel();
+  $id('wpCardTitle').textContent = '页面壁纸 · ' + (page || (platform === 'mobile' ? '移动端' : '桌面端'));
+  const wps = cur().wallpapers || (cur().wallpapers = {});
+  const wp = wps[previewPage];
+  if(!wp || !wp.ref){
+    body.innerHTML = '<div class="drop" style="padding:14px" onclick="document.getElementById(\'wpFile\').click()">为「'+esc(page || '本页')+'」上传壁纸</div>';
+    return;
+  }
+  /* 缩放/位移键跟随当前预览方向：竖屏预览调竖屏参数，横屏预览调横屏参数（客户端同语义） */
+  const isLs = platform === 'mobile' && orientation === 'landscape';
+  const sliders = [
+    [isLs ? 'landscapeScale' : 'scale','缩放',80,240],
+    [isLs ? 'landscapeTranslateX' : 'translateX','水平位移',-100,100],
+    [isLs ? 'landscapeTranslateY' : 'translateY','垂直位移',-100,100],
+    ['blur','模糊',0,100],['opacity','不透明度',0,100],['maskAlpha','遮罩',0,100],
+  ];
+  body.innerHTML =
+    '<div class="wp-fig"><img src="'+esc(wp.ref)+'" alt=""></div>'
+    + sliders.map(s => {
+        const v = wp[s[0]] == null ? wpDefault(s[0]) : wp[s[0]];
+        return '<div class="wp-row"><span class="wp-label">'+s[1]+'</span>'
+          + '<input type="range" min="'+s[2]+'" max="'+s[3]+'" step="1" value="'+v+'" oninput="setWp(\''+s[0]+'\', this.value)">'
+          + '<span class="wp-val" id="wpv_'+s[0]+'">'+v+'</span></div>';
+      }).join('')
+    + '<div class="wp-ops"><button class="btn" onclick="document.getElementById(\'wpFile\').click()">更换</button>'
+    + '<button class="btn danger" onclick="clearWallpaper()">清除</button></div>';
+}
+function setWp(key, value){
+  const wps = cur().wallpapers; if(!wps || !wps[previewPage]) return;
+  let v = parseInt(value, 10);
+  if(isNaN(v)) v = wpDefault(key);
+  wps[previewPage][key] = v;
+  const el = $id('wpv_'+key); if(el) el.textContent = String(v);
+  applyWallpaperLayer();
+}
+function pickWallpaper(inp){
+  const f = inp.files && inp.files[0];
+  inp.value = '';
+  if(!f) return;
+  if(!/^image\/(jpeg|png|webp)$/i.test(f.type)){ toast('壁纸仅支持 JPG / PNG / WEBP'); return; }
+  if(f.size > 8*1024*1024){ toast('壁纸请控制在 8MB 以内'); return; }
+  compressToDataUrl(f, 1080, 0.82, dataUrl => {
+    const wps = cur().wallpapers || (cur().wallpapers = {});
+    const wp = wps[previewPage] || {};
+    wp.ref = dataUrl;
+    ['blur','opacity','maskAlpha','scale','translateX','translateY',
+     'landscapeScale','landscapeTranslateX','landscapeTranslateY'].forEach(k => {
+      if(platform === 'desktop' && k.indexOf('landscape') === 0) return;
+      if(wp[k] == null) wp[k] = wpDefault(k);
+    });
+    wps[previewPage] = wp;
+    renderWallpaperCard();
+    renderPreview();
+    toast('壁纸已添加，可用滑杆调整观感');
+  });
+}
+function clearWallpaper(){
+  const wps = cur().wallpapers; if(!wps) return;
+  delete wps[previewPage];
+  renderWallpaperCard();
+  renderPreview();
+}
+function compressToDataUrl(file, maxW, quality, cb){
+  const img = new Image();
+  const url = URL.createObjectURL(file);
+  img.onload = () => {
+    const k = Math.min(1, maxW / (img.width || maxW));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round((img.width || maxW) * k));
+    c.height = Math.max(1, Math.round((img.height || maxW) * k));
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    URL.revokeObjectURL(url);
+    cb(c.toDataURL('image/jpeg', quality));
+  };
+  img.onerror = () => { URL.revokeObjectURL(url); toast('图片读取失败'); };
+  img.src = url;
+}
+/* 预览层：渲染函数重建 innerHTML 后统一叠加，公式与客户端渲染对齐（blur×0.6） */
+function applyWallpaperLayer(){
+  const scr = (platform==='mobile' && orientation==='landscape') || platform==='desktop' ? $id('dScreen') : $id('mScreen');
+  if(!scr) return;
+  const wps = cur().wallpapers || {};
+  const wp = wps[previewPage];
+  let layer = scr.querySelector('.pv-wallpaper');
+  let mask = scr.querySelector('.pv-wallpaper-mask');
+  if(!wp || !wp.ref){
+    if(layer) layer.remove();
+    if(mask) mask.remove();
+    return;
+  }
+  if(!layer){
+    layer = document.createElement('div');
+    layer.className = 'pv-wallpaper';
+    scr.insertBefore(layer, scr.firstChild);
+  }
+  let inner = layer.querySelector('.pv-wallpaper-inner');
+  if(!inner){
+    inner = document.createElement('div');
+    inner.className = 'pv-wallpaper-inner';
+    layer.appendChild(inner);
+  }
+  inner.style.backgroundImage = 'url("'+wp.ref+'")';
+  const blur = (wp.blur||0) * 0.6;
+  layer.style.filter = blur > 0 ? 'blur('+blur+'px)' : 'none';
+  layer.style.opacity = String((wp.opacity == null ? 100 : wp.opacity) / 100);
+  if(!mask){
+    mask = document.createElement('div');
+    mask.className = 'pv-wallpaper-mask';
+    scr.insertBefore(mask, layer.nextSibling);
+  }
+  const ma = wp.maskAlpha == null ? 0 : wp.maskAlpha;
+  mask.style.display = ma > 0 ? '' : 'none';
+  mask.style.opacity = String(ma / 100);
+  layoutWallpaperInner(scr, inner, wp);
+}
+/* 与客户端渲染语义对齐（custom_background.dart）：
+   box=按屏幕 cover 后的图片显示尺寸；scale/100 下限 1.0；
+   位移按屏幕宽高百分比换算 px，并钳制在 (box*s-屏)/2 内——永不露边。 */
+const _wpAspectCache = {};
+function wpNaturalAspect(ref, cb){
+  if(_wpAspectCache[ref] !== undefined){ cb(_wpAspectCache[ref]); return; }
+  const im = new Image();
+  im.onload = () => {
+    const a = (im.naturalWidth > 0 && im.naturalHeight > 0) ? im.naturalWidth / im.naturalHeight : 0;
+    _wpAspectCache[ref] = a; cb(a);
+  };
+  im.onerror = () => { _wpAspectCache[ref] = 0; cb(0); };
+  im.src = ref;
+}
+function layoutWallpaperInner(scr, inner, wp){
+  const draw = (aspect) => {
+    const w = scr.offsetWidth, h = scr.offsetHeight;
+    if(w <= 0 || h <= 0) return;
+    const s = Math.max(0.8, (wp.scale || 100) / 100);
+    let bw = w, bh = h;
+    if(aspect > 0){
+      if(aspect > w / h){ bw = h * aspect; } else { bh = w / aspect; }
+    }
+    const maxDx = Math.max(0, (bw * s - w) / 2);
+    const maxDy = Math.max(0, (bh * s - h) / 2);
+    const dx = Math.max(-maxDx, Math.min(maxDx, (wp.translateX || 0) / 100 * w));
+    const dy = Math.max(-maxDy, Math.min(maxDy, (wp.translateY || 0) / 100 * h));
+    inner.style.width = bw + 'px';
+    inner.style.height = bh + 'px';
+    inner.style.transform = 'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px)) scale(' + s + ')';
+  };
+  wpNaturalAspect(wp.ref, draw);
+}
 /* ---------- 组件色块（surfaces） ---------- */
 /* 预览经根容器 CSS 变量 --sf-<id> 驱动：调色块只更新根变量，不重建 DOM，杜绝闪烁 */
 function sfVar(id){ return '--sf-' + String(id).replace(/\./g, '-'); }
@@ -1294,6 +1496,7 @@ $id('scopeSeg').addEventListener('click', e => {
 /* —— 预览缩放：右下角大小条 + 直接滚轮（0.5x~2x）—— */
 let previewZoom = 1;
 function applyZoom(){
+  if(window.__rvEmbed) return; /* 内嵌审核：缩放由画布 transform 接管 */
   const z = Math.round(previewZoom*100)/100;
   $id('mobileWrap').style.zoom = z;
   $id('desktopWrap').style.zoom = z;
@@ -1309,6 +1512,7 @@ $id('zoomMinus').addEventListener('click', () => stepZoom(-0.1));
 $id('zoomPlus').addEventListener('click', () => stepZoom(0.1));
 $id('zoomReset').addEventListener('click', () => { previewZoom = 1; applyZoom(); });
 $id('stage').addEventListener('wheel', e => {
+  if(window.__rvEmbed) return;                            /* 内嵌审核画布接管缩放，避免 zoom 与 transform 双重叠加 */
   if(e.shiftKey) return;                                  /* Shift+滚轮 = 原生滚动，放大后看底部用 */
   if(window.matchMedia('(max-width:1080px)').matches) return; /* 窄屏上下堆叠布局：滚轮滚整页 */
   e.preventDefault();
@@ -1365,6 +1569,7 @@ function renderPreview(){
     renderPreviewDesktop();
   }
   applySurfaceVars();
+  applyWallpaperLayer();
   const scr = (platform==='mobile' && orientation==='landscape') || platform==='desktop' ? $id('dScreen') : $id('mScreen');
   scr.classList.remove('fade'); void scr.offsetWidth; scr.classList.add('fade');
 }
@@ -1395,6 +1600,7 @@ function switchPage(id){
   renderSlotList('icons','iconSlots');
   renderSlotList('stickers','stickerSlots');
   renderSurfaceList();
+  renderWallpaperCard();
   renderPreview();
 }
 function renderPreviewMobile(){
@@ -2162,6 +2368,7 @@ $id('platSeg').addEventListener('click', e => {
   renderSlotList('icons','iconSlots');
   renderSlotList('stickers','stickerSlots');
   renderSurfaceList();
+  renderWallpaperCard();
   renderPreview();
 });
 $id('oriSeg').addEventListener('click', e => {
@@ -2177,6 +2384,7 @@ $id('oriSeg').addEventListener('click', e => {
   renderSlotList('icons','iconSlots');
   renderSlotList('stickers','stickerSlots');
   renderSurfaceList();
+  renderWallpaperCard();
   renderPreview();
 });
 $id('modeSeg').addEventListener('click', e => {
@@ -2315,7 +2523,7 @@ async function doUpload(){
 function exportJson(){
   if(!state.name.trim()){ toast('请先填写主题名称'); return; }
   const pkg = {
-    version: 2,
+    version: 3,
     platform: platform,
     name: state.name.trim(),
     author: auth ? (auth.nickname || auth.ciyuanxi_id) : '',
@@ -2331,6 +2539,265 @@ function exportJson(){
   toast('已导出 .json 主题包，可在客户端「主题中心 → 导入」中使用');
 }
 
+/* ---------- 审核模式（/theme-editor?review_theme=<id>，从管理后台「编辑器查看」打开） ---------- */
+let reviewThemeId = 0;
+function adminAuthHeaders(){
+  const token = (localStorage.getItem('admin_token') || '').trim();
+  return token ? { 'Content-Type':'application/json', 'Authorization':'Bearer '+token } : null;
+}
+function applyThemePayload(t){
+  state.name = t.name || ('待审主题 #' + t.id);
+  state.description = t.description || '';
+  $id('themeName').value = state.name;
+  $id('themeDesc').value = state.description;
+  const p = t.platform === 'desktop' ? 'desktop' : 'mobile';
+  if(t.payload_json && typeof t.payload_json === 'object'){
+    state.themes[p] = Object.assign(defaultTheme(), t.payload_json);
+  }
+  platform = p;
+  [...$id('platSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.p===platform));
+  $id('wallpaperRef').value = cur().wallpaperRef ? cur().wallpaperRef.id : '';
+  $id('shapeCard').style.display = 'none';
+  $id('mobileWrap').style.display = (platform==='mobile' && orientation==='portrait') ? '' : 'none';
+  $id('desktopWrap').style.display = (platform==='desktop' || (platform==='mobile' && orientation==='landscape')) ? '' : 'none';
+  $id('oriField').style.display = platform==='mobile' ? '' : 'none';
+  previewPage = (visiblePages()[0] || {}).id || '';
+  slotScope = 'page';
+  renderStageTabs(); renderScopeSeg(); renderSwatches();
+  [...$id('modeSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.m===cur().themeMode));
+  [...$id('shapeSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.s===cur().quickEntryShape));
+  renderSlotList('icons','iconSlots'); renderSlotList('stickers','stickerSlots');
+  renderSurfaceList(); renderWallpaperCard(); renderPreview();
+  // embed：渲染后重新居中
+  try{ if(document.body.classList.contains('embed-mode') && window.__rvFitCenter) setTimeout(window.__rvFitCenter, 30); }catch(e){}
+  // 横竖屏条：仅移动端主题显示
+  try{
+    const ob = document.getElementById('rvOrientBar');
+    if(ob){
+      ob.style.display = platform==='mobile' ? 'flex' : 'none';
+      [...ob.children].forEach(x=>x.classList.toggle('on', x.dataset.o===orientation));
+    }
+  }catch(e){}
+  toast('已加载待审主题：' + state.name, 3500);
+}
+async function reviewAct(status){
+  const ok = status==='normal' ? confirm('确定通过审核并上架此主题吗？') : confirm('确定拒绝此主题吗？');
+  if(!ok) return;
+  const headers = adminAuthHeaders();
+  if(!headers){ showReviewError('缺少管理员登录态', '请从管理后台的「主题中心 → 编辑器审核」重新打开'); return; }
+  const btn = $id(status==='normal' ? 'btnReviewApprove' : 'btnReviewReject');
+  btn.disabled = true;
+  try{
+    const r = await fetch('/admin/api?action=change_theme_status', {
+      method:'POST', headers: headers,
+      body: JSON.stringify({ id: reviewThemeId, status: status })
+    });
+    const j = await r.json();
+    if(j.code === 200){
+      toast(status==='normal' ? '已通过并上架' : '已拒绝', 3000);
+      // iframe 内嵌审核：通知后台父页面关闭弹层并刷新列表
+      try{ if(window.parent && window.parent !== window){ window.parent.postMessage({ type:'theme_review_done', status: status, id: reviewThemeId }, '*'); } }catch(e){}
+      setTimeout(()=>{ try{ window.close(); }catch(e){} }, 900);
+    } else {
+      toast(j.msg || '操作失败', 4000);
+    }
+  }catch(e){ toast('网络错误，请重试'); }
+  btn.disabled = false;
+}
+// 内嵌审核画布：滚轮缩放 + 拖拽平移
+function setupReviewCanvas(){
+  const stage = document.getElementById('stage');
+  if(!stage) return;
+  // 画布接管缩放：embed 下 applyZoom 被门禁，style.zoom 恒为 1
+  window.__rvEmbed = true;
+  const mobile = document.getElementById('mobileWrap');
+  const desktop = document.getElementById('desktopWrap');
+  if(!mobile && !desktop) return;
+  let dev = mobile || desktop;
+  let z = 1, tx = 0, ty = 0;
+  const pick = () => {
+    if(mobile && mobile.style.display !== 'none') dev = mobile;
+    else if(desktop && desktop.style.display !== 'none') dev = desktop;
+    else dev = mobile || desktop;
+  };
+  const apply = () => {
+    if(!dev) return;
+    const base = dev === mobile ? 'translateX(-50%) ' : '';
+    dev.style.transform = base + 'translate(' + tx + 'px,' + ty + 'px) scale(' + z + ')';
+    // 同步自带 zoombar 的滑条与百分比
+    try{
+      const zr = document.getElementById('zoomRange');
+      if(zr) zr.value = Math.min(2, Math.max(0.5, z));
+      const zp = document.getElementById('zoomPct');
+      if(zp) zp.textContent = Math.round(z * 100) + '%';
+    }catch(e){}
+  };
+  const reset = () => { z = 1; tx = 0; ty = 0; fitCenter(); };
+  // 初始适配：在 tabs 下方可用区域内居中
+  function fitCenter(){
+    pick();
+    if(!dev) return;
+    z = 1; tx = 0; ty = 0; apply();
+    const s = stage.getBoundingClientRect();
+    const tabs = document.getElementById('stageTabs');
+    const topInset = tabs ? Math.max(0, tabs.getBoundingClientRect().bottom - s.top) + 8 : 0;
+    const availTop = s.top + topInset;
+    const availH = s.height - topInset - 10;
+    const d = dev.getBoundingClientRect();
+    if(!s.height || !d.height || availH <= 0) return;
+    ty = (availH - d.height) / 2 - (d.top - availTop);
+    if(d.height > availH - 16){
+      z = Math.max(0.4, Math.min(1, (availH - 16) / d.height));
+      apply();
+      const d2 = dev.getBoundingClientRect();
+      ty += (availH - d2.height) / 2 - (d2.top - availTop);
+    }
+    apply();
+  }
+  window.__rvFitCenter = fitCenter;
+  window.addEventListener('resize', fitCenter);
+  setTimeout(fitCenter, 60);
+  // 二次适配：壁纸/预览图异步加载后再居中一次
+  setTimeout(fitCenter, 450);
+  stage.addEventListener('wheel', (e) => {
+    if(e.target.closest && e.target.closest('.stage-tabs,#rvOrientBar')) return; // tabs 上的滚轮交给 tabs 横滑
+    e.preventDefault();
+    z = Math.min(3, Math.max(0.4, z + (e.deltaY < 0 ? 0.1 : -0.1)));
+    apply();
+  }, { passive: false });
+  let dragging = false, sx = 0, sy = 0, bx = 0, by = 0;
+  // 捕获阶段监听：防预览内部 stopPropagation 吞掉拖拽起点
+  stage.addEventListener('pointerdown', (e) => {
+    if(e.target.closest('#rvOrientBar') || e.target.closest('.stage-tabs')) return;
+    dragging = true; sx = e.clientX; sy = e.clientY; bx = tx; by = ty;
+    stage.classList.add('dragging');
+    try { stage.setPointerCapture(e.pointerId); } catch(err) {}
+  }, true);
+  stage.addEventListener('pointermove', (e) => {
+    if(!dragging) return;
+    tx = bx + (e.clientX - sx); ty = by + (e.clientY - sy); apply();
+  });
+  const stopDrag = () => { dragging = false; stage.classList.remove('dragging'); };
+  stage.addEventListener('pointerup', stopDrag);
+  stage.addEventListener('pointercancel', stopDrag);
+  // tabs 行：拖拽/滚轮横向滑动，拖动后吞掉点击防误触
+  const rvTabs = document.getElementById('stageTabs');
+  if(rvTabs){
+    let tDrag = false, tMoved = false, tX = 0, tL = 0, tSuppress = false;
+    rvTabs.addEventListener('pointerdown', (e) => {
+      tDrag = true; tMoved = false; tX = e.clientX; tL = rvTabs.scrollLeft;
+    });
+    rvTabs.addEventListener('pointermove', (e) => {
+      if(!tDrag) return;
+      const dx = e.clientX - tX;
+      if(!tMoved && Math.abs(dx) > 4) tMoved = true;
+      if(tMoved) rvTabs.scrollLeft = tL - dx;
+    });
+    const tUp = () => {
+      if(tDrag && tMoved){
+        tSuppress = true;
+        setTimeout(() => { tSuppress = false; }, 0);
+      }
+      tDrag = false;
+    };
+    rvTabs.addEventListener('pointerup', tUp);
+    rvTabs.addEventListener('pointercancel', tUp);
+    rvTabs.addEventListener('click', (e) => {
+      if(tSuppress){ e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    rvTabs.addEventListener('wheel', (e) => {
+      const max = rvTabs.scrollWidth - rvTabs.clientWidth;
+      if(max <= 0) return;
+      const d = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if(!d) return;
+      e.preventDefault();
+      rvTabs.scrollLeft += (d > 0 ? 1 : -1) * Math.max(30, Math.abs(d));
+    }, { passive: false });
+  }
+  const obar = document.createElement('div');
+  obar.id = 'rvOrientBar';
+  obar.innerHTML = '<button data-o="portrait" class="on">竖屏</button><button data-o="landscape">横屏</button>';
+  stage.appendChild(obar);
+  obar.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if(!b || b.dataset.o === orientation) return;
+    orientation = b.dataset.o;
+    [...obar.children].forEach(x=>x.classList.toggle('on', x===b));
+    previewPage = (visiblePages()[0] || {}).id || '';
+    slotScope = 'page';
+    $id('mobileWrap').style.display = orientation==='portrait' ? '' : 'none';
+    $id('desktopWrap').style.display = orientation==='landscape' ? '' : 'none';
+    renderStageTabs();
+    renderScopeSeg();
+    renderSlotList('icons','iconSlots');
+    renderSlotList('stickers','stickerSlots');
+    renderSurfaceList();
+    renderWallpaperCard();
+    renderPreview();
+    try{ if(window.__rvFitCenter) setTimeout(window.__rvFitCenter, 30); }catch(err){}
+  });
+  // 自带 zoombar 驱动画布缩放
+  const setRvZoom = (nz) => { z = Math.min(3, Math.max(0.4, nz)); apply(); };
+  const ezr = document.getElementById('zoomRange');
+  if(ezr) ezr.addEventListener('input', (e) => setRvZoom(parseFloat(e.target.value)));
+  const ezm = document.getElementById('zoomMinus');
+  if(ezm) ezm.addEventListener('click', () => setRvZoom(z - 0.1));
+  const ezp = document.getElementById('zoomPlus');
+  if(ezp) ezp.addEventListener('click', () => setRvZoom(z + 0.1));
+  const ezrs = document.getElementById('zoomReset');
+  if(ezrs) ezrs.addEventListener('click', reset);
+}
+function showReviewError(title, detail){
+  try{
+    $id('reviewBox').style.display = 'none';
+    const bar = $id('bottomBar');
+    if(bar) bar.style.display = 'none';
+    const tabs = $id('stageTabs');
+    if(tabs) tabs.style.display = 'none';
+    const stage = document.querySelector('.stage');
+    if(stage) stage.innerHTML = '<div style="margin:auto;text-align:center;padding:40px 24px;max-width:420px">'
+      + '<div style="font-size:44px;line-height:1;margin-bottom:14px">🔒</div>'
+      + '<div style="font-size:17px;font-weight:700;color:#1f2329;margin-bottom:8px">' + title + '</div>'
+      + '<div style="font-size:13.5px;color:#646a73;line-height:1.7">' + detail + '</div>'
+      + '<button class="btn btn--primary" style="margin-top:18px" onclick="location.reload()">重试</button>'
+      + '</div>';
+  }catch(e){}
+}
+(function initReviewMode(){
+  const qs = new URLSearchParams(location.search);
+  // 后台经 URL 传登录态：落地 localStorage 后立即从地址栏清除
+  const urlToken = (qs.get('admin_token') || '').trim();
+  if(urlToken){
+    try { localStorage.setItem('admin_token', urlToken); } catch(e){}
+    qs.delete('admin_token');
+    const rest = qs.toString();
+    try { history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash); } catch(e){}
+  }
+  reviewThemeId = qs.get('review_theme') ? (parseInt(qs.get('review_theme'), 10) || 0) : 0;
+  // 后台 iframe 内嵌模式：隐藏编辑器自有顶栏品牌与语言切换，只留审核按钮
+  if(qs.get('embed') === '1'){ document.body.classList.add('embed-mode'); setupReviewCanvas(); }
+  if(!reviewThemeId) return;
+  document.body.classList.add('review-mode');
+  const headers = adminAuthHeaders();
+  if(!headers){ showReviewError('缺少管理员登录态', '请先登录管理后台，再从「主题中心 → 编辑器审核」重新打开'); return; }
+  $id('reviewBox').style.display = 'inline-flex';
+  $id('reviewLabel').textContent = '审核主题 #' + reviewThemeId;
+  fetch('/admin/api?action=list_themes', { method:'POST', headers: headers, body:'{}' })
+    .then(r => r.json())
+    .then(j => {
+      if(j.code !== 200 || !Array.isArray(j.data)){
+        const expired = j.code === 401;
+        showReviewError(
+          expired ? '管理员登录态已失效' : '主题加载失败',
+          expired ? '后台登录已过期（有效期 24 小时）。请回到管理后台重新登录，再从「主题中心 → 编辑器审核」重新打开。' : (j.msg || '请稍后重试'));
+        return;
+      }
+      const t = j.data.find(x => x && x.id === reviewThemeId);
+      if(!t){ showReviewError('未找到主题 #' + reviewThemeId, '该主题可能已被删除，或链接已失效'); return; }
+      applyThemePayload(t);
+    })
+    .catch(() => showReviewError('网络错误', '无法连接服务器，请检查网络后点「重试」'));
+})();
+
 /* ---------- init ---------- */
 $id('themeName').value = state.name;
 $id('oriField').style.display = '';
@@ -2340,6 +2807,7 @@ renderScopeSeg();
 renderSlotList('icons','iconSlots');
 renderSlotList('stickers','stickerSlots');
 renderSurfaceList();
+renderWallpaperCard();
 renderPreview();
 syncLoginUi();
 </script>
@@ -2364,11 +2832,18 @@ syncLoginUi();
   }
   function detectSystem() {
     var langs = (navigator.languages && navigator.languages.length) ? navigator.languages : [navigator.language || 'zh-CN'];
+    // 中文优先：浏览器语言列表里 English 排前时也应显示中文（先简后繁，无中文再看英文）
+    for (var i = 0; i < langs.length; i++) {
+      var l = String(langs[i] || '').toLowerCase();
+      if (l === 'zh-cn' || l === 'zh-sg' || l === 'zh-my' || l.indexOf('zh-hans') === 0 || l === 'zh' || l.indexOf('zh-') === -1 && l.indexOf('zh') === 0) return 'zh-CN';
+    }
     for (var i = 0; i < langs.length; i++) {
       var l = String(langs[i] || '').toLowerCase();
       if (l === 'zh-tw' || l === 'zh-hk' || l === 'zh-mo' || l.indexOf('zh-hant') === 0 || /^zh-(hant|tw|hk|mo)/.test(l)) return 'zh-TW';
+    }
+    for (var i = 0; i < langs.length; i++) {
+      var l = String(langs[i] || '').toLowerCase();
       if (l.indexOf('en') === 0) return 'en';
-      if (l.indexOf('zh') === 0) return 'zh-CN';
     }
     return 'zh-CN';
   }
