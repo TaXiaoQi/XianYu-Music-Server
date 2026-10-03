@@ -162,6 +162,7 @@ const MODULE_LABELS: Record<string, string> = {
   lx_lyric: '逐字歌词解码',
   lx_cover: '歌曲封面提取',
   plugin_fallback: '插件宿主兜底',
+  playlist_import: '歌单导入',
 }
 
 const MODULE_METHODS: Record<string, string[]> = {
@@ -177,6 +178,13 @@ const MODULE_METHODS: Record<string, string[]> = {
     'hostAlbumSongsFallback',
     'isQqTrialMediaUrl',
     'fillSongDurations',
+  ],
+  playlist_import: [
+    'getListDetailKg',
+    'getListDetailWy',
+    'getListDetailTx',
+    'getListDetailKw',
+    'getListDetailQishui',
   ],
 }
 

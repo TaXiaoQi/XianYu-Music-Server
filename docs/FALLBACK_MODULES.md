@@ -1,6 +1,6 @@
 # 兜底模块下发说明
 
-桌面端把音源兜底行为（落雪歌曲搜索、专辑/歌单获取、时长补齐、逐字歌词、封面提取、插件宿主兜底）抽离为固定 key 的功能模块，内置默认实现即客户端现有代码。下发的代码在**桌面端 Rust QuickJS 沙箱**中执行（加载时完成验签 + 编译 + 硬校验，调用带超时与熔断）。服务端可通过后台「内容管理 → 兜底管理」下发新实现热修复线上问题，无需客户端发版。
+桌面端把音源兜底行为（落雪歌曲搜索、专辑/歌单获取、时长补齐、逐字歌词、封面提取、插件宿主兜底、歌单导入）抽离为固定 key 的功能模块，内置默认实现即客户端现有代码。下发的代码在**桌面端 Rust QuickJS 沙箱**中执行（加载时完成验签 + 编译 + 硬校验，调用带超时与熔断）。服务端可通过后台「内容管理 → 兜底管理」下发新实现热修复线上问题，无需客户端发版。
 
 ## 整体链路
 
@@ -64,7 +64,7 @@ ctx.utils.normalizeQualityKey(raw)          // → QualityKey | null
 ctx.utils.stripHtmlTags(html)
 ```
 
-## 六个模块的方法签名
+## 七个模块的方法签名
 
 | 模块 | 方法 | args | 返回值 |
 |---|---|---|---|
@@ -80,6 +80,28 @@ ctx.utils.stripHtmlTags(html)
 | | `hostAlbumSongsFallback` | `{ source, albumMid, page, limit }` | 曲目列表 |
 | | `isQqTrialMediaUrl` | `{ url }` | boolean |
 | | `fillSongDurations` | `{ source, platform, results }` | 补齐时长后的 results |
+| `playlist_import` | `getListDetailKg` | `{ rawId }` | `PlaylistImportResult` |
+| | `getListDetailWy` | `{ rawId }` | `PlaylistImportResult` |
+| | `getListDetailTx` | `{ rawId }` | `PlaylistImportResult` |
+| | `getListDetailKw` | `{ rawId }` | `PlaylistImportResult` |
+| | `getListDetailQishui` | `{ rawId }` | `PlaylistImportResult` |
+
+`playlist_import` 的入参 `rawId` 为原始歌单链接/ID/分享口令（与内置实现一致，方法内部自行提取 ID）。
+`PlaylistImportResult` 结构：
+
+```js
+{
+  source: string,                 // 'kg' | 'wy' | 'tx' | 'kw' | 'qishui'
+  songs: [{                       // 单项与内置实现的 PluginSearchResult 一致
+    id, title, artist, album, coverUrl, duration,
+    platform, platformId, rawData,
+  }],
+  total: number,
+  info: { name, img, desc, author, playCount },
+}
+```
+
+注意：内置实现里酷狗签名/网易 weapi 加密由客户端 Rust `host_crypto` 完成，**下发模块拿不到这些 IPC**——若热修酷狗/网易逻辑，需在模块 JS 内自带对应签名实现（酷狗为 MD5 排序拼接，网易 weapi/linuxapi 均为固定密钥 AES，社区有现成 JS 实现）。
 
 方法可以随意 async，也可写成同步函数（宿主统一按 Promise 处理）。但**返回值必须 JSON 可序列化**——结果要跨 Rust IPC 传回前端：
 
@@ -175,7 +197,7 @@ return {
 
 进入后台「内容管理 → 兜底管理」（移动端在「更多 → 兜底管理」）：
 
-- 六个模块卡片常驻展示，未配置的显示「使用内置默认实现」
+- 七个模块卡片常驻展示，未配置的显示「使用内置默认实现」
 - 编辑弹窗有「填入模板」按钮，按模块生成骨架代码
 - 弹窗底部「ctx 能力契约」可展开查看
 - 方法 chip 绿色高亮表示当前代码已覆盖该方法（文本探测，仅供参考）
