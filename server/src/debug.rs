@@ -718,6 +718,40 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             let v = get_map_value(&state, "file_sync", &ciyuanxi_id).unwrap_or_else(|| json!({ "playlists": [] }));
             ctx.ok("获取成功", v)
         }
+        "file_sync_v2_upload_start" => ctx.ok("ok", json!({ "chunk_dir_ready": true, "debug": true })),
+        "file_sync_v2_upload_chunk" => ctx.ok("ok", json!({
+            "chunk_index": data.get("chunk_index").cloned().unwrap_or(json!(0)),
+            "total_chunks": data.get("total_chunks").cloned().unwrap_or(json!(1)),
+            "debug": true
+        })),
+        "file_sync_v2_upload_finish" => {
+            let mut state = load_state();
+            let ciyuanxi_id = str_of(&data, "user_id");
+            let playlists = data.get("playlists").cloned().unwrap_or_else(|| json!([]));
+            let song_total = playlists.as_array().map(|arr| arr.iter().map(|pl| pl.get("songs").and_then(|s| s.as_array()).map(|s| s.len()).unwrap_or(0)).sum::<usize>()).unwrap_or(0);
+            let save = json!({
+                "version": 4,
+                "uploaded_at": now_string(),
+                "timestamp": now_ts(),
+                "stats": { "playlist_count": playlists.as_array().map(|a| a.len()).unwrap_or(0), "song_total": song_total },
+                "playlists": playlists
+            });
+            put_map_value(&mut state, "file_sync", &ciyuanxi_id, save);
+            let _ = save_state(&state);
+            ctx.ok("同步成功", json!({ "playlist_count": playlists.as_array().map(|a| a.len()).unwrap_or(0), "song_total": song_total, "debug": true }))
+        }
+        "file_sync_v2_download_ops" => {
+            let state = load_state();
+            let ciyuanxi_id = str_of(&data, "user_id");
+            let v = get_map_value(&state, "file_sync", &ciyuanxi_id).unwrap_or_else(|| json!({ "playlists": [] }));
+            let ts = v.get("timestamp").and_then(|t| t.as_i64()).unwrap_or(0);
+            let stats = v.get("stats").cloned().unwrap_or_else(|| json!({ "playlist_count": 0, "song_total": 0 }));
+            // debug 模式无 diff：全量走 create_playlist，客户端按既有合并逻辑幂等应用
+            let ops: Vec<Value> = v.get("playlists").and_then(|p| p.as_array()).map(|arr| {
+                arr.iter().map(|pl| json!({ "type": "create_playlist", "playlist": pl })).collect()
+            }).unwrap_or_default();
+            ctx.ok("获取成功", json!({ "ops": ops, "stats": stats, "snapshot_timestamp": ts, "debug": true }))
+        }
         "plugin_sync_upload_one" => {
             let mut state = load_state();
             let ciyuanxi_id = str_of(&data, "user_id");

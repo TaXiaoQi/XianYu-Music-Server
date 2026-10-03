@@ -72,6 +72,10 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "file_sync_upload_finish",
     "file_sync_download",
     "file_sync_delete_playlist",
+    "file_sync_v2_upload_start",
+    "file_sync_v2_upload_chunk",
+    "file_sync_v2_upload_finish",
+    "file_sync_v2_download_ops",
     "plugin_sync_upload_one",
     "plugin_sync_download",
     "plugin_sync_delete",
@@ -96,6 +100,7 @@ const USER_BOUND_ACTIONS: &[&str] = &[
 const VIEW_OTHER_ACTIONS: &[&str] = &[
     "favorites_sync_download",
     "file_sync_download",
+    "file_sync_v2_download_ops",
 ];
 
 pub async fn issue(pool: &MySqlPool, ciyuanxi_id: &str, device_id: &str) -> String {

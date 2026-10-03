@@ -8,6 +8,9 @@ pub mod settings;
 pub mod share;
 pub mod social;
 pub mod sync;
+pub mod sync_diff;
+pub mod sync_merge;
+pub mod sync_store;
 pub mod system;
 pub mod theme;
 pub mod theme_editor;
@@ -112,6 +115,10 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "file_sync_upload_finish" => sync::file_sync_upload_finish(body, ctx, pool).await,
         "file_sync_download" => sync::file_sync_download(body, ctx, pool).await,
         "file_sync_delete_playlist" => sync::file_sync_delete_playlist(body, ctx, pool).await,
+        "file_sync_v2_upload_start" => sync::file_sync_v2_upload_start(body, ctx, pool).await,
+        "file_sync_v2_upload_chunk" => sync::file_sync_v2_upload_chunk(body, ctx, pool).await,
+        "file_sync_v2_upload_finish" => sync::file_sync_v2_upload_finish(body, ctx, pool).await,
+        "file_sync_v2_download_ops" => sync::file_sync_v2_download_ops(body, ctx, pool).await,
         "plugin_sync_upload_one" => sync::plugin_sync_upload_one(body, ctx, pool).await,
         "plugin_sync_download" => sync::plugin_sync_download(body, ctx, pool).await,
         "plugin_sync_delete" => sync::plugin_sync_delete(body, ctx, pool).await,
