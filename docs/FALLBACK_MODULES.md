@@ -1,19 +1,19 @@
 # 兜底模块下发说明
 
-桌面端把音源兜底行为（落雪歌曲搜索、专辑/歌单获取、时长补齐、逐字歌词、封面提取、插件宿主兜底）抽离为固定 key 的功能模块，内置默认实现即客户端现有代码。服务端可通过后台「内容管理 → 兜底管理」下发新实现热修复线上问题，无需客户端发版。
+桌面端把音源兜底行为（落雪歌曲搜索、专辑/歌单获取、时长补齐、逐字歌词、封面提取、插件宿主兜底）抽离为固定 key 的功能模块，内置默认实现即客户端现有代码。下发的代码在**桌面端 Rust QuickJS 沙箱**中执行（加载时完成验签 + 编译 + 硬校验，调用带超时与熔断）。服务端可通过后台「内容管理 → 兜底管理」下发新实现热修复线上问题，无需客户端发版。
 
 ## 整体链路
 
 ```text
 后台兜底管理编辑代码 → 服务端保存并计算 sha256（代码变化时版本号 +1）
   → 客户端启动 / 每 30 分钟拉取 get_fallback_modules（带签名）
-  → 校验通过写入本地缓存 → 下一次调用生效（正在执行的调用不受影响）
+  → 校验通过写入本地缓存 → 预热进 Rust 宿主（下次调用零加载延迟）
   → 执行异常时该次调用立即回退内置实现
 ```
 
 ## 下发代码格式
 
-下发的**不是完整函数，是一段「函数体」**。客户端用 `new Function('ctx', '"use strict";' + code)(ctx)` 执行，`ctx` 是唯一入参，代码最后必须 `return` 一个实现对象：
+下发的**不是完整函数，是一段「函数体」**。客户端 Rust 宿主以 QuickJS 执行这段代码，`ctx` 是唯一入参，代码最后必须 `return` 一个实现对象：
 
 ```js
 // 注释、顶层 const/let 都可以写，只要最后 return
@@ -37,7 +37,7 @@ return {
 
 ### 四条硬校验
 
-不满足任意一条则整块代码被忽略、静默回退内置实现（客户端控制台有 `[FallbackModule]` 警告）：
+加载时在 Rust 宿主完成，不满足任意一条则整块代码被忽略、回退内置实现（客户端控制台有 `[FallbackModule]` 警告）：
 
 1. 语法可执行，不抛异常
 2. 返回值是对象
@@ -66,22 +66,26 @@ ctx.utils.stripHtmlTags(html)
 
 ## 六个模块的方法签名
 
-| 模块 | 方法 | args | 返回值 | 必须同步 |
-|---|---|---|---|---|
-| `lx_search` | `search` | `{ source, keyword, page, limit }` | `{ list, allPage, limit, total, source }` | 否 |
-| `lx_album` | `searchAlbums` | `{ keyword, page, limit }` | 原始专辑数组 | 否 |
-| | `getAlbumSongs` | `{ source, albumRawData, page, limit }` | `LxSearchResultItem[]` | 否 |
-| `lx_duration` | `batchTrackInterval` | `{ songIds }` | 普通对象 `{ songId: 秒 }`（客户端自动转 Map） | 否 |
-| `lx_lyric` | `fetchLyric` | `{ source, songInfo }` | `{ lyric, tlyric, rlyric, lxlyric }` 或 `null` | 否 |
-| `lx_cover` | `extractCoverUrl` | `{ item }` | 封面 URL 字符串 | **是** |
-| `plugin_fallback` | `isQqMusicPluginSource` | `{ source, platform }` | boolean | **是** |
-| | `hostSearchFallback` | `{ source, keyword, page, limit }` | 搜索结果 | 否 |
-| | `hostAlbumSearchFallback` | `{ source, keyword, page, limit }` | 专辑数组 | 否 |
-| | `hostAlbumSongsFallback` | `{ source, albumMid, page, limit }` | 曲目列表 | 否 |
-| | `isQqTrialMediaUrl` | `{ url }` | boolean | **是** |
-| | `fillSongDurations` | `{ source, platform, results }` | 补齐时长后的 results | 否 |
+| 模块 | 方法 | args | 返回值 |
+|---|---|---|---|
+| `lx_search` | `search` | `{ source, keyword, page, limit }` | `{ list, allPage, limit, total, source }` |
+| `lx_album` | `searchAlbums` | `{ keyword, page, limit }` | 原始专辑数组 |
+| | `getAlbumSongs` | `{ source, albumRawData, page, limit }` | `LxSearchResultItem[]` |
+| `lx_duration` | `batchTrackInterval` | `{ songIds }` | 普通对象 `{ songId: 秒 }`（客户端自动转 Map） |
+| `lx_lyric` | `fetchLyric` | `{ source, songInfo }` | `{ lyric, tlyric, rlyric, lxlyric }` 或 `null` |
+| `lx_cover` | `extractCoverUrl` | `{ item }` | 封面 URL 字符串 |
+| `plugin_fallback` | `isQqMusicPluginSource` | `{ source, platform }` | boolean |
+| | `hostSearchFallback` | `{ source, keyword, page, limit }` | 搜索结果 |
+| | `hostAlbumSearchFallback` | `{ source, keyword, page, limit }` | 专辑数组 |
+| | `hostAlbumSongsFallback` | `{ source, albumMid, page, limit }` | 曲目列表 |
+| | `isQqTrialMediaUrl` | `{ url }` | boolean |
+| | `fillSongDurations` | `{ source, platform, results }` | 补齐时长后的 results |
 
-**标注「必须同步」的三个方法不能返回 Promise**（客户端不 await 直接取值），因此内部**不能用 `ctx.http`**，只能做纯计算（字段提取、正则、URL 改写）。其余方法随意 async。
+方法可以随意 async，也可写成同步函数（宿主统一按 Promise 处理）。但**返回值必须 JSON 可序列化**——结果要跨 Rust IPC 传回前端：
+
+- 不能返回函数、Symbol、循环引用；`undefined` 序列化后会变成 `null`
+- `Map`/`Set` 会被宿主自动归一化为普通对象/数组再返回（如 `Map<songId, 秒>` → `{ songId: 秒 }`）
+- 大二进制/超长字符串会拖慢 IPC，`lx_duration` 这类批量结果建议控制在千项以内
 
 `lx_search` 的 list 单项结构（`LxSearchResultItem`）：
 
@@ -100,7 +104,7 @@ ctx.utils.stripHtmlTags(html)
 }
 ```
 
-## 实例一：封面提取（最简单的同步模块）
+## 实例一：封面提取（最简单的模块）
 
 典型用途：某插件改版后封面字段换了名字，热修复无需发版。
 
