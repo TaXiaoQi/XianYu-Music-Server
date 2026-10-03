@@ -90,9 +90,18 @@ pub fn aes_decrypt(ciphertext_b64: &str, iv_b64: &str, secret: &str) -> Option<S
     Some(String::from_utf8_lossy(pt).into_owned())
 }
 
-pub fn get_client_ip(x_forwarded_for: Option<&str>, x_real_ip: Option<&str>, remote_addr: Option<&str>) -> String {
-    // 信任顺序：X-Real-IP（应由反代覆盖设置，客户端伪造无效）>
-    // X-Forwarded-For 最后一段（直连反代追加的那跳，前面的段均可被客户端伪造）> TCP 对端
+pub fn get_client_ip(
+    x_forwarded_for: Option<&str>,
+    x_real_ip: Option<&str>,
+    remote_addr: Option<&str>,
+    trust_proxy: bool,
+) -> String {
+    // 直连部署（trust_proxy=false）时请求头可被任意伪造，只信 TCP 对端
+    if !trust_proxy {
+        return remote_addr.unwrap_or("").to_string();
+    }
+    // 受信反代之后的信任顺序：X-Real-IP（应由反代覆盖设置，客户端伪造无效）
+    // > X-Forwarded-For 最后一段（直连反代追加的那跳，前面的段均可被客户端伪造）> TCP 对端
     if let Some(ri) = x_real_ip {
         let t = ri.trim();
         if !t.is_empty() {

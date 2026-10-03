@@ -1,0 +1,168 @@
+const EDITOR_HTML: &str = r##"<!DOCTYPE html>
+<html lang="zh-CN" translate="no" class="notranslate">
+<head>
+<meta charset="utf-8">
+<meta name="google" content="notranslate">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>弦予 · 主题编辑器</title>
+<link rel="icon" type="image/png" href="/logo.png">
+<meta name="description" content="弦予音乐主题编辑器：调配强调色、深浅模式与图标贴纸槽位，导出主题包或上传到主题广场。">
+<link rel="preconnect" href="https://fonts.loli.net" crossorigin>
+<link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet"></noscript>
+<link rel="stylesheet" href="/theme-editor/style.css">
+</head>
+<body>
+<script>try{if(/[?&]embed=1/.test(location.search))document.body.classList.add('embed-mode');}catch(e){}</script>
+<div class="bg-fx" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="grid-bg"></div></div>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <div class="brand">
+      <div class="brand__mark" style="background:none;box-shadow:none;overflow:hidden"><img src="/logo.png" alt="弦予音乐" style="width:100%;height:100%;object-fit:cover"></div>
+      <div>
+        <div class="brand__name">弦予 · 主题编辑器</div>
+        <div class="brand__sub">调配配色与图标，导出或上传广场</div>
+      </div>
+    </div>
+    <div class="topbar__actions">
+      <span id="reviewBox" style="display:none;align-items:center;gap:8px;padding:5px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;">
+        <span style="font-size:12px;font-weight:600;color:#9a3412;" id="reviewLabel">审核主题</span>
+        <button class="btn" id="btnReviewReject" onclick="reviewAct('rejected')" style="background:#fee2e2;color:#b91c1c;">拒绝</button>
+        <button class="btn" id="btnReviewApprove" onclick="reviewAct('normal')" style="background:#10b981;color:#fff;">通过</button>
+      </span>
+      <span data-i18n-mount="dropdown"></span>
+      <span class="login-state" id="loginState"><span class="dot"></span><span id="loginText">未登录（导出不需要登录）</span></span>
+      <button class="btn" id="btnLogin" onclick="openLogin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg><span>扫码登录</span></button>
+      <button class="btn" id="btnLogout" onclick="logout()" style="display:none">退出</button>
+      <button class="btn" id="btnExport" onclick="exportJson()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>导出 JSON</span></button>
+      <button class="btn btn--primary" id="btnUpload" onclick="openUpload()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3m0 0L8 7m4-4 4 4"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>上传广场</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel">
+    <div class="card">
+      <div class="card__head"><h3>基本信息</h3></div>
+      <div class="field"><label>主题名称</label><input type="text" id="themeName" maxlength="64" oninput="state.name=this.value"></div>
+      <div class="field"><label>简介（可选）</label><textarea id="themeDesc" maxlength="200" oninput="state.description=this.value"></textarea></div>
+      <div class="field"><label>编辑平台（两端各自独立成包）</label>
+        <div class="seg" id="platSeg">
+          <button data-p="mobile" class="on">移动端</button>
+          <button data-p="desktop">桌面端</button>
+        </div>
+      </div>
+      <div class="field" id="oriField" style="display:none"><label>屏幕方向（横竖屏是两套 UI）</label>
+        <div class="seg" id="oriSeg">
+          <button data-o="portrait" class="on">竖屏</button>
+          <button data-o="landscape">横屏</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h3>外观</h3></div>
+      <div class="field"><label>强调色</label>
+        <div class="swatches" id="swatches"></div>
+        <div class="swatch-more">
+          <input type="color" id="accentPicker" oninput="setAccent(this.value)">
+          <span class="accent-hex" id="accentHex"></span>
+        </div>
+      </div>
+      <div class="field"><label>深浅模式</label>
+        <div class="seg" id="modeSeg">
+          <button data-m="dark" class="on">深色</button>
+          <button data-m="light">浅色</button>
+        </div>
+      </div>
+      <div class="field"><label>推荐壁纸 id（可选，广场壁纸编号）</label><input type="text" id="wallpaperRef" placeholder="如 123" oninput="setWallpaperRef(this.value)"></div>
+    </div>
+
+    <div class="card">
+      <div class="card__head"><h3 id="iconCardTitle">图标槽位</h3><span class="card__badge" id="slotCount">0</span></div>
+      <div class="seg seg--mini" id="scopeSeg" style="margin:0 0 10px">
+        <button data-scope="page" class="on">本页专属</button>
+        <button data-scope="shared">公共通用</button>
+      </div>
+      <div id="iconSlots"></div>
+    </div>
+
+    <div class="card" id="stickerCard">
+      <div class="card__head"><h3 id="stickerCardTitle">贴纸槽位</h3></div>
+      <div id="stickerSlots"></div>
+      <p class="hint" id="slotHint">图标建议 SVG 或高清 PNG（单文件 ≤2MB，主题资源总量 ≤20MB）。未设置的槽位在客户端回落默认图标，未知槽位将被忽略。</p>
+    </div>
+
+    <div class="card" id="wpCard">
+      <div class="card__head"><h3 id="wpCardTitle">页面壁纸</h3></div>
+      <div id="wpBody"></div>
+      <input type="file" id="wpFile" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="pickWallpaper(this)">
+      <p class="hint">为当前页面单独设置壁纸（JPG/PNG/WEBP ≤8MB，随包分发，客户端激活主题后立即生效；未设置的页面回落用户当前壁纸）。缩放 / 位移 / 模糊 / 不透明度 / 遮罩与客户端「自定义壁纸」调整一致，移动端另有横屏三参数。</p>
+    </div>
+
+    <div class="card" id="surfaceCard" style="display:none">
+      <div class="card__head"><h3 id="surfaceCardTitle">组件色块</h3></div>
+      <div id="surfaceSlots"></div>
+      <p class="hint">为组件设置底面色块与透明度（壁纸模式下的自定义材质效果）。颜色同主题色一样可选，透明度 0%~100%；未设置的组件维持默认材质。切换「本页专属 / 公共通用」同时作用于图标、贴纸与组件色块。</p>
+    </div>
+
+    <div class="card" id="shapeCard" style="display:none">
+      <div class="card__head"><h3>快捷入口形状</h3></div>
+      <div class="seg" id="shapeSeg">
+        <button data-s="circle" class="on">圆形</button>
+        <button data-s="squircle">方圆</button>
+        <button data-s="pill">胶囊</button>
+      </div>
+      <p class="hint" style="margin-top:6px">作用于「我的」页喜欢 / 最近 / 本地 / 下载四个快捷入口的底座形状。</p>
+    </div>
+  </aside>
+
+  <section class="stage" id="stage">
+    <div class="stage-tabs" id="stageTabs"></div>
+    <div class="device device--phone" id="mobileWrap"><div class="screen dark" id="mScreen"></div></div>
+    <div class="device device--desktop" id="desktopWrap" style="display:none"><div class="screen dark" id="dScreen"></div></div>
+  </section>
+
+  <div class="zoombar" id="zoombar">
+    <button id="zoomMinus" title="缩小">−</button>
+    <input type="range" id="zoomRange" min="0.5" max="2" step="0.05" value="1">
+    <button id="zoomPlus" title="放大">＋</button>
+    <span class="pct" id="zoomPct">100%</span>
+    <button id="zoomReset" title="重置为 100%">⟲</button>
+  </div>
+</main>
+
+<div class="modal" id="loginModal">
+  <div class="box">
+    <h2>扫码登录弦予号</h2>
+    <div class="qr-wrap">
+      <div id="qrBox"><div class="hint" style="text-align:center">正在生成二维码…</div></div>
+      <div class="qr-tip">打开弦予音乐 App（移动端）→ 扫一扫，确认登录后本页自动完成登录。<br>也可手动输入授权码：<span class="qr-code-text" id="qrCodeText"></span></div>
+    </div>
+    <div class="modal-foot"><button class="btn" onclick="closeLogin()">取消</button></div>
+  </div>
+</div>
+
+<div class="modal" id="uploadModal">
+  <div class="box">
+    <h2>上传到主题广场</h2>
+    <div class="field"><label>主题名称</label><input type="text" id="upName" maxlength="64"></div>
+    <div class="field"><label>简介</label><textarea id="upDesc" maxlength="200"></textarea></div>
+    <div class="field"><label>预览图（必选，JPG/PNG/WEBP/GIF ≤8MB）</label>
+      <div class="drop" id="previewDrop" onclick="document.getElementById('previewFile').click()">点击选择预览图</div>
+      <input type="file" id="previewFile" accept="image/jpeg,image/png,image/webp,image/gif" style="display:none" onchange="pickPreview(this)">
+    </div>
+    <p class="hint" id="upPlatformHint"></p>
+    <div class="modal-foot">
+      <button class="btn" onclick="closeUpload()">取消</button>
+      <button class="btn btn--primary" onclick="doUpload()">确认上传</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script src="/theme-editor/slots.js"></script>
+<script src="/theme-editor/app.js"></script>
+</body>
+</html>

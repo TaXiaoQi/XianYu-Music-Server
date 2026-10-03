@@ -37,10 +37,22 @@ pub struct Config {
     pub share_base_url: String,
     #[serde(default)]
     pub require_user_token: bool,
+    // 仅当服务端处于受信反向代理（nginx）之后时才置 true：直连部署下
+    // X-Forwarded-For / X-Real-IP 可被客户端任意伪造，会绕过限流与登录锁定
+    #[serde(default = "default_true")]
+    pub trust_proxy: bool,
+    // 允许跨域访问 API 的来源（逗号分隔，含协议）。默认空 = 不下发 CORS 头：
+    // 已知消费端（客户端原生 HTTP、admin-web 生产/开发代理、官网静态页）均为同源
+    #[serde(default)]
+    pub cors_origins: Vec<String>,
 }
 
 fn default_static_dir() -> String {
     "../admin-web/dist".into()
+}
+
+fn default_true() -> bool {
+    true
 }
 
 const KNOWN_DEFAULT_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
@@ -67,6 +79,17 @@ impl Config {
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
             .unwrap_or(cfg.local_debug_no_db);
+        cfg.trust_proxy = env::var("TRUST_PROXY")
+            .ok()
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+            .unwrap_or(cfg.trust_proxy);
+        if let Ok(v) = env::var("CORS_ORIGINS") {
+            cfg.cors_origins = v
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
+        }
         Ok(cfg)
     }
 
@@ -136,6 +159,16 @@ impl Config {
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
                 .unwrap_or(false),
+            trust_proxy: env::var("TRUST_PROXY")
+                .ok()
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
+                .unwrap_or(true),
+            cors_origins: env::var("CORS_ORIGINS")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
         }
     }
 }

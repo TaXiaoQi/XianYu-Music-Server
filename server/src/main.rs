@@ -11,7 +11,7 @@ mod sign;
 mod watch_relay;
 
 use axum::body::Body;
-use axum::extract::{Path, Query, State};
+use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
@@ -19,6 +19,7 @@ use axum::Router;
 use config::Config;
 use sqlx::MySqlPool;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tower_http::cors::CorsLayer;
@@ -71,11 +72,31 @@ async fn main() -> anyhow::Result<()> {
         rate_limiter: Arc::new(rate_limit::ApiRateLimiter::default()),
     };
 
-    let cors = CorsLayer::permissive();
+    // 默认不开放跨域：已知消费端均为同源（客户端走原生 HTTP 不受 CORS 约束）。
+    // 如需跨域嵌入，在 config.json 的 cors_origins（或环境变量 CORS_ORIGINS）配置来源白名单
+    let cors = {
+        let origins: Vec<axum::http::HeaderValue> = config
+            .cors_origins
+            .iter()
+            .filter_map(|o| axum::http::HeaderValue::from_str(o.trim()).ok())
+            .collect();
+        if origins.is_empty() {
+            CorsLayer::new()
+        } else {
+            CorsLayer::new()
+                .allow_origin(origins)
+                .allow_methods([axum::http::Method::GET, axum::http::Method::POST])
+                .allow_headers([
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::header::AUTHORIZATION,
+                ])
+        }
+    };
     let pool = state.pool.clone();
 
     let _ = std::fs::create_dir_all("uploads/wallpapers");
     let _ = std::fs::create_dir_all("uploads/covers");
+    let _ = std::fs::create_dir_all("uploads/avatars");
     let _ = std::fs::create_dir_all("uploads/themes");
 
     let app = Router::new()
@@ -84,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/s/:share_id", get(share_landing))
         .route("/s/:share_id/", get(share_landing))
         .route("/theme-editor", get(theme_editor_page))
+        .route("/theme-editor/:filename", get(theme_editor_static))
         .route("/theme-editor/qrcode", get(theme_editor_qrcode))
         .route("/theme-editor/upload", post(theme_editor_upload))
         .route(
@@ -127,13 +149,39 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
+}
+
+// 请求体上限按 action 分级：默认收紧到 16MB（主题 payload 8MB、反馈图、歌单同步均够用），
+// 仅视频/主题等确实需要大载荷的 action 保留大上限；防止少量并发大请求打爆内存
+fn user_body_limit(action: &str) -> usize {
+    const BIG_MB: usize = 128 * 1024 * 1024;
+    const DEFAULT_MB: usize = 16 * 1024 * 1024;
+    match action {
+        // 壁纸视频为 base64 data URL（约 4/3 膨胀），上限由后台 wallpaper_video_max_mb 配置
+        "upload_wallpaper" | "upload_theme" => BIG_MB,
+        _ => DEFAULT_MB,
+    }
+}
+
+fn admin_body_limit(action: &str) -> usize {
+    const BIG_MB: usize = 384 * 1024 * 1024;
+    const DEFAULT_MB: usize = 48 * 1024 * 1024;
+    match action {
+        "add_wallpaper" => BIG_MB,
+        _ => DEFAULT_MB,
+    }
 }
 
 async fn handle_api(
     State(state): State<AppState>,
     headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Query(params): Query<HashMap<String, String>>,
     req: Request<Body>,
 ) -> Response {
@@ -147,13 +195,14 @@ async fn handle_api(
             .into_response();
     }
 
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 128 * 1024 * 1024).await {
+    let peer_ip = peer.ip().to_string();
+    let body_bytes = match axum::body::to_bytes(req.into_body(), user_body_limit(&action)).await {
         Ok(b) => b.to_vec(),
         Err(_) => Vec::new(),
     };
     let raw_body = String::from_utf8_lossy(&body_bytes).into_owned();
 
-    let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
+    let ctx = response::ReqCtx::new((*state.config).clone(), &headers, Some(&peer_ip));
 
     let no_sign: [&str; 23] = [
         "install", "check", "get_source_status", "upload_avatar",
@@ -188,7 +237,7 @@ async fn handle_api(
             tracing::warn!(
                 "sign verify failed: action={} ip={} ua={} ts={:?} skew_s={} body_len={} has_iv={}",
                 action,
-                admin::client_ip(&headers),
+                admin::client_ip(&headers, state.config.trust_proxy, Some(&peer_ip)),
                 ua,
                 timestamp,
                 sign::now_ts() - timestamp.parse::<i64>().unwrap_or(0),
@@ -263,6 +312,7 @@ fn build_base_url(headers: &HeaderMap, config: &Config) -> String {
 async fn handle_admin_api(
     State(state): State<AppState>,
     headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Query(params): Query<HashMap<String, String>>,
     req: Request<Body>,
 ) -> Response {
@@ -271,15 +321,16 @@ async fn handle_admin_api(
         return admin::err(404, "未知操作");
     }
 
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 384 * 1024 * 1024).await {
+    let peer_ip = peer.ip().to_string();
+    let body_bytes = match axum::body::to_bytes(req.into_body(), admin_body_limit(&action)).await {
         Ok(b) => b.to_vec(),
         Err(_) => Vec::new(),
     };
     let raw_body = String::from_utf8_lossy(&body_bytes).into_owned();
-    let ip = admin::client_ip(&headers);
+    let ip = admin::client_ip(&headers, state.config.trust_proxy, Some(&peer_ip));
 
     if action == "admin_login" {
-        let req_ctx = response::ReqCtx::new((*state.config).clone(), &headers);
+        let req_ctx = response::ReqCtx::new((*state.config).clone(), &headers, Some(&peer_ip));
         let pool = if state.db_ready { Some(&state.pool) } else { None };
         if let Some(resp) =
             rate_limit::check_admin_login_rate_limit(&state.rate_limiter, pool, &raw_body, &req_ctx).await
@@ -445,8 +496,6 @@ fn mime_of(path: &str) -> &'static str {
         "txt" => "text/plain; charset=utf-8",
         "mp3" => "audio/mpeg",
         "mp4" => "video/mp4",
-        "exe" => "application/octet-stream",
-        "apk" => "application/vnd.android.package-archive",
         _ => "application/octet-stream",
     }
 }
@@ -458,14 +507,21 @@ async fn serve_cover(
     if filename.contains("..") || filename.contains('/') || filename.contains('\\') {
         return (StatusCode::NOT_FOUND, "not found").into_response();
     }
-    let file_path = std::path::Path::new("uploads/covers").join(&filename);
-    let Ok(bytes) = std::fs::read(&file_path) else {
-        return (StatusCode::NOT_FOUND, "not found").into_response();
-    };
     let w = params
         .get("w")
         .and_then(|s| s.parse::<u32>().ok())
         .unwrap_or(0);
+    // 阻塞 IO（读盘）+ CPU（缩放编码）移入阻塞线程池，避免占死 reactor worker
+    tokio::task::spawn_blocking(move || serve_cover_blocking(&filename, w))
+        .await
+        .unwrap_or_else(|_| (StatusCode::INTERNAL_SERVER_ERROR, "internal error").into_response())
+}
+
+fn serve_cover_blocking(filename: &str, w: u32) -> Response {
+    let file_path = std::path::Path::new("uploads/covers").join(filename);
+    let Ok(bytes) = std::fs::read(&file_path) else {
+        return (StatusCode::NOT_FOUND, "not found").into_response();
+    };
     if (1..=2000).contains(&w) {
         if let Ok(img) = image::load_from_memory(&bytes) {
             let (ow, oh) = (img.width(), img.height());
@@ -502,6 +558,7 @@ async fn serve_cover(
 async fn share_landing(
     State(state): State<AppState>,
     headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Path(share_id): Path<String>,
 ) -> Response {
     if !state.db_ready {
@@ -534,10 +591,14 @@ async fn share_landing(
         .unwrap_or("");
     let params_val = serde_json::from_str(params_str).unwrap_or(serde_json::Value::Null);
 
-    let base = response::ReqCtx::new((*state.config).clone(), &headers)
-        .base_url
-        .trim_end_matches('/')
-        .to_string();
+    let base = response::ReqCtx::new(
+        (*state.config).clone(),
+        &headers,
+        Some(peer.ip().to_string().as_str()),
+    )
+    .base_url
+    .trim_end_matches('/')
+    .to_string();
     let download_api = format!("{}/api?action=share_download", base);
     let html = handlers::share::render_landing_page(&row_val, &params_val, &download_api);
     (
@@ -560,8 +621,15 @@ fn share_404() -> Response {
         .into_response()
 }
 
-async fn theme_editor_page() -> Response {
-    handlers::theme_editor::render_editor_page()
+async fn theme_editor_page(State(state): State<AppState>) -> Response {
+    handlers::theme_editor::serve_page(&state.config.static_dir).await
+}
+
+async fn theme_editor_static(
+    State(state): State<AppState>,
+    Path(filename): Path<String>,
+) -> Response {
+    handlers::theme_editor::serve_asset(&state.config.static_dir, &filename).await
 }
 
 async fn theme_editor_qrcode(
@@ -588,13 +656,18 @@ async fn theme_editor_qrcode(
 async fn theme_editor_upload(
     State(state): State<AppState>,
     headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     req: Request<Body>,
 ) -> Response {
-    let ctx = response::ReqCtx::new((*state.config).clone(), &headers);
+    let ctx = response::ReqCtx::new(
+        (*state.config).clone(),
+        &headers,
+        Some(peer.ip().to_string().as_str()),
+    );
     if !state.db_ready {
         return ctx.err(503, "数据库不可用，请稍后重试");
     }
-    let body_bytes = match axum::body::to_bytes(req.into_body(), 64 * 1024 * 1024).await {
+    let body_bytes = match axum::body::to_bytes(req.into_body(), 24 * 1024 * 1024).await {
         Ok(b) => b.to_vec(),
         Err(_) => return ctx.err(400, "请求体过大或无效"),
     };

@@ -15,7 +15,7 @@ pub struct ReqCtx {
 }
 
 impl ReqCtx {
-    pub fn new(config: Config, headers: &HeaderMap) -> Self {
+    pub fn new(config: Config, headers: &HeaderMap, peer_ip: Option<&str>) -> Self {
         let encrypted = headers
             .get("x-encrypted-iv")
             .map(|v| !v.is_empty())
@@ -25,7 +25,8 @@ impl ReqCtx {
                 .get("x-forwarded-for")
                 .and_then(|v| v.to_str().ok()),
             headers.get("x-real-ip").and_then(|v| v.to_str().ok()),
-            None,
+            peer_ip,
+            config.trust_proxy,
         );
         let host = headers
             .get("x-forwarded-host")

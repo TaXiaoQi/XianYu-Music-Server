@@ -35,22 +35,36 @@ fn compress_and_save_image(bytes: &[u8], target: &std::path::Path, max_w: u32, q
         .is_ok()
 }
 
-fn public_url(ctx: &ReqCtx, url: String) -> String {
-    if url.starts_with("http://") || url.starts_with("https://") {
-        return url;
+/// /uploads/ 相对路径按请求来源补全为绝对 URL；data: 与 http(s): 原样透传
+pub(crate) fn absolutize_media_url_with(base_url: &str, config_public_base: &str, url: &str) -> String {
+    if url.is_empty()
+        || url.starts_with("http://")
+        || url.starts_with("https://")
+        || url.starts_with("data:")
+    {
+        return url.to_string();
     }
-    let base = if !ctx.base_url.is_empty() {
-        &ctx.base_url
-    } else if !ctx.config.public_base_url.is_empty() {
-        &ctx.config.public_base_url
+    let base = if !base_url.is_empty() {
+        base_url
+    } else if !config_public_base.is_empty() {
+        config_public_base
     } else {
-        return url;
+        return url.to_string();
     };
     format!("{}{}", base.trim_end_matches('/'), url)
 }
 
-pub async fn upload_cover(body: &str, ctx: ReqCtx, _pool: &MySqlPool) -> Response {
+fn public_url(ctx: &ReqCtx, url: String) -> String {
+    absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &url)
+}
+
+pub async fn upload_cover(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
+    // 请求携带 token 时必须有效；匿名上传仍允许（分享封面未登录可用），交由专项限流约束
+    let token = str_of(&data, "token").trim().to_string();
+    if !token.is_empty() && crate::handlers::token::resolve_owner(pool, &token).await.is_none() {
+        return ctx.err(401, "登录状态已失效，请重新登录");
+    }
     let image_data = str_of(&data, "image_data").to_string();
     if !image_data.starts_with("data:image/") {
         return ctx.err(400, "无效的图片数据格式");
@@ -133,12 +147,40 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     if avatar_data.len() > 200 * 1024 {
         return ctx.err(400, "图片数据过大，请使用更小的图片");
     }
+    let Some(bytes) = data_url_to_bytes(&avatar_data) else {
+        return ctx.err(400, "无效的图片数据");
+    };
+    let valid_ext = image::guess_format(&bytes)
+        .map(|f| {
+            matches!(
+                f,
+                image::ImageFormat::Jpeg
+                    | image::ImageFormat::Png
+                    | image::ImageFormat::WebP
+                    | image::ImageFormat::Gif
+            )
+        })
+        .unwrap_or(false);
+    if !valid_ext {
+        return ctx.err(400, "只支持 JPG / PNG / WEBP / GIF 格式");
+    }
     if !user_active(pool, &ciyuanxi_id).await {
         return ctx.err(404, "用户不存在");
     }
     if let Some(msg) = avatar_submit_block_message(pool, &ciyuanxi_id).await {
         return ctx.err(429, msg);
     }
+    // 头像落盘为文件，DB 只存相对 URL（存量 data: 头像读取时原样透传，兼容）
+    let dir = std::path::Path::new("uploads").join("avatars");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return ctx.err(500, "无法创建上传目录");
+    }
+    let file_name = format!("avatar_{}.jpg", random_hex(12));
+    let path = dir.join(&file_name);
+    if !compress_and_save_image(&bytes, &path, 256, 82) {
+        return ctx.err(500, "图片保存失败，请检查目录权限");
+    }
+    let avatar_ref = format!("/uploads/avatars/{}", file_name);
     let old_avatar: String = sqlx::query_scalar("SELECT COALESCE(avatar_url, '') FROM app_users WHERE ciyuanxi_id = ?")
         .bind(&ciyuanxi_id)
         .fetch_one(pool)
@@ -153,7 +195,7 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     .await;
     if audit.decision == AuditDecision::Pass {
         let _ = sqlx::query("UPDATE app_users SET avatar_url = ? WHERE ciyuanxi_id = ?")
-            .bind(&avatar_data)
+            .bind(&avatar_ref)
             .bind(&ciyuanxi_id)
             .execute(pool)
             .await;
@@ -164,7 +206,7 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
             .await;
         let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, old_avatar, status, reviewed_at, reviewed_by) VALUES (?, ?, ?, 'approved', NOW(), ?)")
             .bind(&ciyuanxi_id)
-            .bind(&avatar_data)
+            .bind(&avatar_ref)
             .bind(&old_avatar)
             .bind(format!("external:{}", audit.provider))
             .execute(pool)
@@ -178,7 +220,7 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
             .await;
         let _ = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, old_avatar, status, reviewed_at, reviewed_by) VALUES (?, ?, ?, 'rejected', NOW(), ?)")
             .bind(&ciyuanxi_id)
-            .bind(&avatar_data)
+            .bind(&avatar_ref)
             .bind(&old_avatar)
             .bind(format!("external:{}", audit.provider))
             .execute(pool)
@@ -191,7 +233,7 @@ pub async fn upload_avatar(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
         .await;
     let ins = sqlx::query("INSERT INTO user_avatar_pending (ciyuanxi_id, avatar_data, old_avatar, status) VALUES (?,?, ?, 'pending')")
         .bind(&ciyuanxi_id)
-        .bind(&avatar_data)
+        .bind(&avatar_ref)
         .bind(&old_avatar)
         .execute(pool)
         .await;

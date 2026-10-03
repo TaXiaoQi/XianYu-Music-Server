@@ -72,7 +72,7 @@ describe('邮箱 API 客户端', () => {
         expect.objectContaining({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: 'user@test.com' }),
+          body: JSON.stringify({ email: 'user@test.com', captcha_token: '', turnstile_token: '' }),
         }),
       )
       expect(res.code).toBe(200)

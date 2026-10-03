@@ -1,0 +1,136 @@
+// 槽位清单 v2：客户端版本化契约，未知槽位客户端忽略。
+// 图标槽位（icons）/贴纸槽位（stickers）按平台分组；page 标注归属页面
+// （home/player/main），global 表示跨页面全局生效，客户端按此过滤渲染。
+const SLOTS = {
+  "version": 2,
+  "platforms": {
+    "mobile": {
+      "pages": [
+        { "id": "home", "label": "首页" },
+        { "id": "mine", "label": "我的" },
+        { "id": "player", "label": "播放页" },
+        { "id": "recognize", "label": "听歌识曲" },
+        { "id": "search", "label": "在线搜索" },
+        { "id": "search_result", "label": "搜索结果" },
+        { "id": "settings", "label": "设置页" },
+        { "id": "ls-home", "label": "发现" },
+        { "id": "ls-mine", "label": "我的" },
+        { "id": "ls-player", "label": "播放页" },
+        { "id": "ls-local", "label": "本地音乐" },
+        { "id": "ls-fav", "label": "我的收藏" },
+        { "id": "ls-recent", "label": "最近播放" },
+        { "id": "ls-sheets", "label": "我的歌单" },
+        { "id": "ls-settings", "label": "设置页" }
+      ],
+      "icons": [
+        { "id": "entry.search", "label": "搜索框 · 放大镜", "page": "global" },
+        { "id": "entry.wallpaper", "label": "壁纸/皮肤中心按钮（竖屏首页右上角圆钮）", "page": "home" },
+        { "id": "entry.mic", "label": "搜索框 · 识曲钮", "page": "global" },
+        { "id": "mine.stat_listen", "label": "我的 · 统计·累计听歌", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.stat_today", "label": "我的 · 统计·今日时长", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.stat_count", "label": "我的 · 统计·今日首数", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.settings", "label": "我的 · 顶栏设置钮", "page": "mine" },
+        { "id": "entry.import", "label": "我的 · 导入歌单", "page": "mine" },
+        { "id": "mine.grid_favorite", "label": "我的 · 宫格喜欢", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.grid_recent", "label": "我的 · 宫格最近", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.grid_local", "label": "我的 · 宫格本地", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.grid_download", "label": "我的 · 快捷宫格「下载」图标", "page": "mine", "also": ["ls-mine"] },
+        { "id": "recognize.mic", "label": "识曲 · 主按钮麦克风", "page": "recognize" },
+        { "id": "nav.home", "label": "底部导航 · 首页", "page": "global" },
+        { "id": "nav.settings", "label": "底部导航 · 我的", "page": "global" },
+        { "id": "player.prev", "label": "播放条 · 上一首", "page": "global", "also": ["player", "ls-player"] },
+        { "id": "player.play", "label": "播放条 · 播放/暂停", "page": "global", "also": ["player", "ls-player"] },
+        { "id": "player.next", "label": "播放条 · 下一首", "page": "global", "also": ["player", "ls-player"] },
+        { "id": "player.queue", "label": "播放页 · 播放队列", "page": "player", "also": ["ls-player"] },
+        { "id": "player.mode", "label": "播放页 · 播放模式", "page": "player", "also": ["ls-player"] },
+        { "id": "action.favorite", "label": "播放页 · 收藏", "page": "player", "also": ["ls-player"] },
+        { "id": "action.download", "label": "播放页 · 下载", "page": "player", "also": ["ls-player"] },
+        { "id": "action.share", "label": "播放页 · 分享", "page": "player", "also": ["ls-player"] },
+        { "id": "action.more", "label": "播放页 · 更多", "page": "player", "also": ["ls-player"] },
+        { "id": "player.speed", "label": "播放页 · 倍速/音效", "page": "player", "also": ["ls-player"] },
+        { "id": "player.comment", "label": "播放页 · 评论", "page": "player", "also": ["ls-player"] },
+        { "id": "landscape.logo", "label": "横屏 · 侧栏品牌 Logo", "page": "global", "ls": true },
+        { "id": "landscape.wallpaper", "label": "横屏 · 顶栏皮肤钮", "page": "global", "ls": true },
+        { "id": "landscape.settings", "label": "横屏 · 顶栏设置钮", "page": "global", "ls": true },
+        { "id": "lib.drag", "label": "音乐库 · 长按拖拽把手（本地/收藏/最近播放）", "page": "ls-local", "also": ["ls-fav", "ls-recent"] }
+      ],
+      "stickers": [
+        { "id": "recognize.deco", "label": "识曲页 · 底部装饰贴纸", "page": "recognize" },
+        { "id": "ls-sidebar.bottom", "label": "横屏 · 侧栏左下角贴纸", "page": "global", "ls": true }
+      ],
+      "surfaces": [
+        { "id": "nav.bar", "label": "底部导航栏", "page": "global" },
+        { "id": "mini.bar", "label": "mini 播放条", "page": "global" },
+        { "id": "search.box", "label": "搜索框胶囊", "page": "global" },
+        { "id": "home.stat", "label": "统计大卡", "page": "home" },
+        { "id": "home.song", "label": "歌曲行卡", "page": "home" },
+        { "id": "mine.user", "label": "用户卡", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.stats", "label": "统计卡", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.grid", "label": "快捷宫格", "page": "mine", "also": ["ls-mine"] },
+        { "id": "mine.sheet", "label": "歌单行卡", "page": "mine" },
+        { "id": "recognize.hint", "label": "提示卡", "page": "recognize" },
+        { "id": "recognize.btn", "label": "识别主按钮", "page": "recognize" },
+        { "id": "search.panel", "label": "历史/榜单卡", "page": "search" },
+        { "id": "search.item", "label": "榜单行卡", "page": "search" },
+        { "id": "sr.chips", "label": "tab/音源条", "page": "search_result" },
+        { "id": "sr.pill", "label": "音源胶囊底色（应用到所有来源，文字不变）", "page": "search_result" },
+        { "id": "sr.item", "label": "歌曲行卡", "page": "search_result" },
+        { "id": "ls-home.daily", "label": "横屏 · 每日推荐", "page": "ls-home" },
+        { "id": "ls-home.most", "label": "横屏 · 播放最多", "page": "ls-home" },
+        { "id": "ls-lib.row", "label": "横屏 · 歌曲行卡（本地/收藏/最近播放）", "page": "ls-local", "also": ["ls-fav", "ls-recent"] },
+        { "id": "ls-sheets.card", "label": "横屏 · 歌单卡", "page": "ls-sheets" },
+        { "id": "settings.topbar", "label": "顶栏（返回 + 标题）", "page": "settings" },
+        { "id": "settings.group", "label": "设置分组卡", "page": "settings" },
+        { "id": "ls-settings.nav", "label": "横屏 · 左侧导航", "page": "ls-settings" },
+        { "id": "ls-settings.detail", "label": "横屏 · 详情行卡", "page": "ls-settings" },
+        { "id": "ls-mine.count", "label": "横屏 · 数量卡（收藏/歌单/历史）", "page": "ls-mine" }
+      ]
+    },
+    "desktop": {
+      "pages": [
+        { "id": "main", "label": "主窗口 · 首页" },
+        { "id": "playlist", "label": "歌单页" },
+        { "id": "player", "label": "播放页" },
+        { "id": "local", "label": "本地音乐" },
+        { "id": "fav", "label": "我的收藏" },
+        { "id": "settings", "label": "设置页" }
+      ],
+      "icons": [
+        { "id": "desktop.logo", "label": "侧栏 · 品牌 Logo", "page": "main" },
+        { "id": "nav.home", "label": "侧栏 · 首页" },
+        { "id": "nav.settings", "label": "侧栏 · 设置" },
+        { "id": "player.prev", "label": "播放 · 上一首" },
+        { "id": "player.play", "label": "播放 · 播放/暂停" },
+        { "id": "player.next", "label": "播放 · 下一首" },
+        { "id": "player.queue", "label": "播放 · 播放队列" },
+        { "id": "player.mode", "label": "播放 · 播放模式" },
+        { "id": "player.lyric", "label": "播放 · 歌词开关" },
+        { "id": "player.comment", "label": "播放 · 评论" },
+        { "id": "player.volume", "label": "播放 · 音量" },
+        { "id": "player.sound", "label": "播放 · 音效（均衡器）" },
+        { "id": "player.mv", "label": "播放 · MV" },
+        { "id": "player.visualizer", "label": "播放 · 可视化（频谱）" },
+        { "id": "player.progress", "label": "播放 · 进度条开关" },
+        { "id": "player.style", "label": "播放 · 页面样式" },
+        { "id": "player.pin", "label": "播放 · 固定状态栏" },
+        { "id": "action.search", "label": "顶栏 · 搜索" },
+        { "id": "action.mic", "label": "顶栏 · 识曲" },
+        { "id": "desktop.wallpaper", "label": "顶栏 · 皮肤钮" },
+        { "id": "desktop.settings", "label": "顶栏 · 设置钮" },
+        { "id": "page.playall", "label": "列表页 · 播放全部钮" },
+        { "id": "page.sort", "label": "列表页 · 排序钮" },
+        { "id": "page.more", "label": "列表页 · 更多钮" },
+        { "id": "page.fav", "label": "歌单/收藏 · 收藏合集钮" },
+        { "id": "action.favorite", "label": "操作 · 收藏" },
+        { "id": "action.download", "label": "操作 · 下载" },
+        { "id": "action.share", "label": "操作 · 分享" },
+        { "id": "action.more", "label": "操作 · 更多" },
+        { "id": "action.new_playlist", "label": "操作 · 新建歌单" }
+      ],
+      "stickers": [
+        { "id": "player.corner", "label": "右下角贴纸" },
+        { "id": "sidebar.bottom", "label": "侧栏底部贴纸" }
+      ]
+    }
+  }
+};

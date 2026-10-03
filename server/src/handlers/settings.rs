@@ -42,7 +42,11 @@ pub async fn get_user_info(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
         "username": user.get::<String,_>("nickname"),
         "email": email,
         "role": role,
-        "avatar_url": user.try_get::<Option<String>, _>("avatar_url").unwrap_or(None).unwrap_or_default(),
+        "avatar_url": crate::handlers::upload::absolutize_media_url_with(
+            &ctx.base_url,
+            &ctx.config.public_base_url,
+            &user.try_get::<Option<String>, _>("avatar_url").unwrap_or(None).unwrap_or_default(),
+        ),
         "ciyuanxi_id": user.get::<String,_>("ciyuanxi_id"),
     });
     ctx.json(200, "ok", Some(payload))
@@ -970,6 +974,10 @@ pub async fn deduct_master_quota(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     let data = parse_body(body);
     let ciyuanxi_id = extract_id(&data);
     let amount = data.get("amount").and_then(|v| v.as_i64()).unwrap_or(1);
+    // 负数或 0 会经 GREATEST 反向增加配额，必须拒绝；上限防单次刷穿
+    if !(1..=1000).contains(&amount) {
+        return ctx.err(400, "无效的扣减数量");
+    }
     let res = sqlx::query("UPDATE app_users SET master_quota = GREATEST(master_quota - ?, 0) WHERE ciyuanxi_id = ?")
         .bind(amount)
         .bind(&ciyuanxi_id)

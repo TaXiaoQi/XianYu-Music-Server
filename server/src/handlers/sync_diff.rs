@@ -91,16 +91,16 @@ pub fn compute_download_ops(snapshot: &Value, local: &[LocalPlaylistReport]) -> 
             })
             .unwrap_or_default();
         if !add.is_empty() {
-            ops.push(json!({ "type": "add_songs", "cloudId": cloud_id, "songs": add }));
+            ops.push(json!({ "type": "add_songs", "cloudId": cloud_id, "id": local_id, "songs": add }));
         }
 
         if !tombstones.is_empty() {
-            ops.push(json!({ "type": "remove_songs", "cloudId": cloud_id, "paths": tombstones }));
+            ops.push(json!({ "type": "remove_songs", "cloudId": cloud_id, "id": local_id, "paths": tombstones }));
         }
 
         let meta = compute_meta_patch(cloud_pl, report);
         if !meta.is_empty() {
-            let mut op = json!({ "type": "update_playlist_meta", "cloudId": cloud_id });
+            let mut op = json!({ "type": "update_playlist_meta", "cloudId": cloud_id, "id": local_id });
             for (k, v) in meta {
                 op[k] = v;
             }
@@ -269,6 +269,7 @@ mod tests {
         let ops = compute_download_ops(&snapshot, &[rep]);
         assert_eq!(ops.len(), 1);
         assert_eq!(ops[0]["type"], json!("update_playlist_meta"));
+        assert_eq!(ops[0]["id"], json!("l1"));
         // 下载方向：patch 携带云端值
         assert_eq!(ops[0]["cloudCoverUrl"], json!("http://cloud/cover.jpg"));
         assert_eq!(ops[0]["sourceUrl"], json!("http://s"));

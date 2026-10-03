@@ -500,586 +500,119 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { adminApi, showToast } from '@/api/client'
-import { webConfirm } from '@/utils/webDialog'
+import { onMounted } from 'vue'
 import { formatOsVersion } from '@/utils/osVersion'
-import { detectPackageMeta, packageMetaLabel, PACKAGE_ALLOWED_EXT } from '@/utils/packageDetect'
 import BatchPublishModal from '@/components/BatchPublishModal.vue'
+import {
+  ARCH_META,
+  PLATFORMS,
+  SYSTEM_META,
+  archLabelOf,
+  archOf,
+  channelOf,
+  platformLabelKey,
+  systemLabelOf,
+  systemOf,
+} from '@/composables/version/versionMeta'
+import { useVersionSaving } from '@/composables/version/useVersionSaving'
+import { useVersionList } from '@/composables/version/useVersionList'
+import { useVersionDraft } from '@/composables/version/useVersionDraft'
+import { useVersionChannel } from '@/composables/version/useVersionChannel'
+import { useVersionEditor } from '@/composables/version/useVersionEditor'
+import { useVersionBeta } from '@/composables/version/useVersionBeta'
 
-type PlatformKey = 'desktop' | 'mobile' | 'watch'
+const { desktopSaving } = useVersionSaving()
 
-const PLATFORMS: { key: PlatformKey; label: string }[] = [
-  { key: 'desktop', label: '桌面端' },
-  { key: 'mobile', label: '移动端' },
-  { key: 'watch', label: '腕上端' },
-]
+const {
+  desktopList,
+  desktopLoading,
+  batchModalVisible,
+  platformFilter,
+  systemFilter,
+  systemList,
+  currentPlatformLabel,
+  currentSubLabel,
+  filteredList,
+  enabledCount,
+  disabledCount,
+  loadDesktop,
+  switchPlatform,
+  switchSystem,
+  toggleDesktop,
+  deleteDesktop,
+} = useVersionList({ desktopSaving })
 
-function platformOf(item: any): PlatformKey {
-  const p = item?.platform
-  return p === 'mobile' || p === 'watch' ? p : 'desktop'
-}
+const draft = useVersionDraft()
+const channel = useVersionChannel(draft)
 
-function channelOf(item: any): 'stable' | 'beta' {
-  return item?.channel === 'beta' ? 'beta' : 'stable'
-}
+const {
+  desktopModalVisible,
+  openDesktopModal,
+  closeDesktopModal,
+  saveDesktop,
+} = useVersionEditor(draft, channel, { desktopSaving, loadDesktop, platformFilter, systemFilter })
 
-function platformLabelKey(key: string): string {
-  return PLATFORMS.find(p => p.key === key)?.label || '桌面端'
-}
+const {
+  desktopDraft,
+  desktopDraftEnabled,
+  desktopDraftPlatform,
+  desktopDraftSystem,
+  desktopDraftArch,
+  desktopDraftChannel,
+  desktopDraftBetaNum,
+  desktopEditingVersion,
+  watchArchLocked,
+  switchDraftPlatform,
+  switchDraftSystem,
+} = draft
 
-const SYSTEM_META: Record<PlatformKey, { key: string; label: string }[]> = {
-  desktop: [
-    { key: 'windows', label: 'Windows' },
-    { key: 'linux', label: 'Linux' },
-    { key: 'macos', label: 'macOS' },
-  ],
-  mobile: [
-    { key: 'android', label: 'Android' },
-    { key: 'harmonyos', label: '鸿蒙' },
-    { key: 'ios', label: 'iOS' },
-  ],
-  watch: [
-    { key: 'wearos', label: 'WearOS' },
-    { key: 'ohos', label: '鸿蒙' },
-    { key: 'watchos', label: 'watchOS' },
-  ],
-}
+const {
+  desktopChannelModalVisible,
+  desktopChannelMode,
+  desktopChannelLinkDraft,
+  desktopPackageDraft,
+  desktopPackageDragging,
+  desktopFileInputRef,
+  desktopChannelLabel,
+  desktopChannelDesc,
+  storeModalVisible,
+  storeDraftEnabled,
+  storeDraftUrl,
+  storeCardLabel,
+  storeCardDesc,
+  openDesktopChannelModal,
+  closeDesktopChannelModal,
+  confirmDesktopChannel,
+  openStoreModal,
+  confirmStore,
+  onDesktopFileChange,
+  triggerDesktopFileInput,
+  onDesktopPackageDrop,
+  formatFileSize,
+} = channel
 
-function defaultSystem(platform: PlatformKey): string {
-  if (platform === 'mobile') return 'android'
-  if (platform === 'watch') return 'wearos'
-  return 'windows'
-}
-
-function systemOf(item: any): string {
-  const s = item?.system
-  return s || defaultSystem(platformOf(item))
-}
-
-function systemLabelKey(platform: PlatformKey, system: string): string {
-  return SYSTEM_META[platform]?.find(s => s.key === system)?.label || '默认'
-}
-
-const ARCH_META: Record<PlatformKey, { key: string; label: string }[]> = {
-  desktop: [
-    { key: 'x86', label: 'x86_64' },
-    { key: 'arm64', label: 'ARM64' },
-  ],
-  mobile: [
-    { key: 'arm64', label: 'ARM64' },
-  ],
-  watch: [
-    { key: 'arm32', label: 'ARM32' },
-    { key: 'arm64', label: 'ARM64' },
-  ],
-}
-
-function defaultArch(platform: PlatformKey): string {
-  if (platform === 'desktop') return 'x86'
-  return 'arm64'
-}
-
-function archOf(item: any): string {
-  const a = item?.arch
-  if (a === 'x86' || a === 'arm32' || a === 'arm64') return a
-  return defaultArch(platformOf(item))
-}
-
-function archLabelOf(item: any): string {
-  const a = archOf(item)
-  return a === 'x86' ? 'x86_64' : a === 'arm32' ? 'ARM32' : 'ARM64'
-}
-
-// ===== 版本配置 =====
-const desktopList = ref<any[]>([])
-const desktopLoading = ref(true)
-const platformFilter = ref<PlatformKey>('desktop')
-const systemFilter = ref<string>('')
-const systemList = computed(() => SYSTEM_META[platformFilter.value] || [])
-const currentPlatformLabel = computed(() => platformLabelKey(platformFilter.value))
-const currentSubLabel = computed(() =>
-  systemFilter.value
-    ? `${systemLabelKey(platformFilter.value, systemFilter.value)}${currentPlatformLabel.value}`
-    : currentPlatformLabel.value
-)
-const platformList = computed(() => desktopList.value.filter(v => platformOf(v) === platformFilter.value))
-const filteredList = computed(() => {
-  if (!systemFilter.value) return platformList.value
-  return platformList.value.filter(v => systemOf(v) === systemFilter.value)
-})
-const enabledCount = computed(() => filteredList.value.filter(v => v.enabled).length)
-const disabledCount = computed(() => filteredList.value.length - enabledCount.value)
-
-function platformLabelOf(item: any): string {
-  return platformLabelKey(platformOf(item))
-}
-
-function systemLabelOf(item: any): string {
-  return systemLabelKey(platformOf(item), systemOf(item))
-}
-
-function switchPlatform(key: PlatformKey) {
-  if (platformFilter.value === key || desktopSaving.value) return
-  platformFilter.value = key
-  systemFilter.value = ''
-}
-
-function switchSystem(key: string) {
-  if (desktopSaving.value) return
-  systemFilter.value = key
-}
-
-async function loadDesktop() {
-  desktopLoading.value = true
-  const res = await adminApi<any>('get_desktop_version')
-  if (res.code === 200 && res.data) {
-    desktopList.value = Array.isArray(res.data.list) ? res.data.list : []
-  }
-  desktopLoading.value = false
-}
-
-const desktopModalVisible = ref(false)
-const batchModalVisible = ref(false)
-const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string; storeUrl: string }>({ version: '', updateContent: '', downloadUrl: '', storeUrl: '' })
-const desktopDraftEnabled = ref(false)
-const desktopDraftPlatform = ref<PlatformKey>('desktop')
-const desktopDraftSystem = ref<string>('windows')
-const desktopDraftArch = ref<string>('x86')
-const desktopDraftChannel = ref<'stable' | 'beta'>('stable')
-const desktopDraftBetaNum = ref('')
-const desktopEditingVersion = ref('')
-const desktopEditingChannel = ref<'stable' | 'beta'>('stable')
-const desktopSaving = ref(false)
-const desktopChannelModalVisible = ref(false)
-const desktopChannelMode = ref<'link' | 'upload'>('link')
-const desktopChannelLinkDraft = ref('')
-const desktopFileInputRef = ref<HTMLInputElement | null>(null)
-const desktopPackageFile = ref<File | null>(null)
-const desktopPackageFileDraft = ref<File | null>(null)
-const desktopPackageDraft = ref({ fileName: '', fileSize: 0, fileBase64: '' })
-const desktopPackageDragging = ref(false)
-
-const storeModalVisible = ref(false)
-const storeDraftEnabled = ref(false)
-const storeDraftUrl = ref('')
-
-const storeCardLabel = computed(() => {
-  if (storeModalVisible.value) return storeDraftEnabled.value ? '微软商店' : '未设置'
-  return desktopDraft.value.storeUrl ? '微软商店' : '未设置'
-})
-
-const storeCardDesc = computed(() => {
-  if (!storeCardLabel.value.startsWith('微软商店')) {
-    return desktopDraftPlatform.value === 'desktop' ? '点击设置商店分发渠道' : ''
-  }
-  return desktopDraft.value.storeUrl
-})
-
-const desktopChannelLabel = computed(() => {
-  if (desktopPackageFile.value?.name) return '上传安装包'
-  const url = desktopDraft.value.downloadUrl
-  if (url) return url.startsWith('/uploads/packages/') ? '服务器安装包' : '下载链接'
-  return '未选择下载渠道'
-})
-
-const desktopChannelDesc = computed(() => {
-  if (desktopPackageFile.value?.name) return `已选择：${desktopPackageFile.value.name}（${formatFileSize(desktopPackageFile.value.size)}）`
-  const url = desktopDraft.value.downloadUrl
-  if (url) return url
-  return desktopDraftEnabled.value ? '启用更新时，需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
-})
-
-const composedVersion = computed(() => {
-  if (desktopDraftChannel.value !== 'beta') return desktopDraft.value.version.trim()
-  const main = desktopDraft.value.version.trim()
-  const num = (parseInt(desktopDraftBetaNum.value, 10) || 0)
-  if (!main || num <= 0) return ''
-  return `${main}-beta-${num}`
-})
-
-function openDesktopModal(item?: any) {
-  if (item) {
-    const version = item.version || ''
-    const betaIdx = version.indexOf('-beta-')
-    const isBeta = betaIdx >= 0
-    desktopEditingVersion.value = version
-    desktopEditingChannel.value = isBeta ? 'beta' : 'stable'
-    desktopDraftPlatform.value = platformOf(item)
-    desktopDraftSystem.value = systemOf(item)
-    desktopDraftArch.value = archOf(item)
-    desktopDraftChannel.value = isBeta ? 'beta' : 'stable'
-    desktopDraft.value = {
-      version: isBeta ? version.slice(0, betaIdx) : version,
-      updateContent: item.updateContent || '',
-      downloadUrl: item.downloadUrl || '',
-      storeUrl: item.storeUrl || '',
-    }
-    desktopDraftBetaNum.value = isBeta ? version.slice(betaIdx + '-beta-'.length) : ''
-    desktopDraftEnabled.value = !!item.enabled
-  } else {
-    desktopEditingVersion.value = ''
-    desktopEditingChannel.value = 'stable'
-    desktopDraftPlatform.value = platformFilter.value
-    desktopDraftSystem.value = systemFilter.value || defaultSystem(platformFilter.value)
-    desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
-    desktopDraftChannel.value = 'stable'
-    desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
-    desktopDraftBetaNum.value = ''
-    desktopDraftEnabled.value = false
-  }
-  desktopPackageFile.value = null
-  desktopPackageFileDraft.value = null
-  desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
-  if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
-  desktopModalVisible.value = true
-}
-
-function switchDraftPlatform(key: PlatformKey) {
-  if (desktopEditingVersion.value) return
-  desktopDraftPlatform.value = key
-  if (!SYSTEM_META[key]?.some(s => s.key === desktopDraftSystem.value)) {
-    desktopDraftSystem.value = defaultSystem(key)
-  }
-  desktopDraftArch.value = defaultArch(key)
-}
-
-const watchArchLocked = computed(() =>
-  desktopDraftPlatform.value === 'watch' && (desktopDraftSystem.value === 'ohos' || desktopDraftSystem.value === 'watchos')
-)
-
-function switchDraftSystem(key: string) {
-  desktopDraftSystem.value = key
-  if (desktopDraftPlatform.value === 'watch' && (key === 'ohos' || key === 'watchos')) {
-    desktopDraftArch.value = 'arm64'
-  }
-}
-
-function closeDesktopModal() {
-  if (desktopSaving.value) return
-  desktopModalVisible.value = false
-}
-
-function openStoreModal() {
-  const current = desktopDraft.value.storeUrl
-  storeDraftEnabled.value = !!current
-  storeDraftUrl.value = current
-  storeModalVisible.value = true
-}
-
-function confirmStore() {
-  const url = storeDraftUrl.value.trim()
-  if (storeDraftEnabled.value && !url) {
-    showToast('请填写商店页链接')
-    return
-  }
-  if (storeDraftEnabled.value && !url.startsWith('https://')) {
-    showToast('商店页链接必须以 https:// 开头')
-    return
-  }
-  desktopDraft.value.storeUrl = storeDraftEnabled.value ? url : ''
-  storeModalVisible.value = false
-}
-
-async function saveDesktop() {
-  const version = composedVersion.value
-  if (!version) {
-    showToast(desktopDraftChannel.value === 'beta' ? '请填写版本号和 beta 号（正整数）' : '请填写版本号')
-    return
-  }
-  const hasPackage = !!desktopPackageFile.value
-  const hasUrl = !!desktopDraft.value.downloadUrl?.trim()
-  if (desktopDraftEnabled.value && !hasPackage && !hasUrl) {
-    showToast('启用更新时，请填写下载链接或选择安装包')
-    return
-  }
-  desktopSaving.value = true
-  let fileData = ''
-  if (desktopPackageFile.value) {
-    try {
-      fileData = await readFileAsBase64(desktopPackageFile.value)
-    } catch {
-      desktopSaving.value = false
-      showToast('安装包读取失败')
-      return
-    }
-  }
-  const res = await adminApi('save_desktop_version', {
-    platform: desktopDraftPlatform.value,
-    system: desktopDraftSystem.value,
-    arch: desktopDraftArch.value,
-    channel: desktopDraftChannel.value,
-    version,
-    download_url: desktopDraft.value.downloadUrl?.trim() || '',
-    update_content: desktopDraft.value.updateContent.trim(),
-    enabled: desktopDraftEnabled.value ? 1 : 0,
-    store_url: desktopDraft.value.storeUrl,
-    file_name: desktopPackageFile.value?.name || '',
-    file_data: fileData,
-  })
-  desktopSaving.value = false
-  if (res.code === 200) {
-    const replaced = !!desktopEditingVersion.value && desktopEditingVersion.value === version && desktopEditingChannel.value === desktopDraftChannel.value
-    loadDesktop()
-    if (replaced) {
-      showToast('修改成功', 'success')
-      desktopModalVisible.value = false
-    } else {
-      showToast('保存成功，可继续新增版本', 'success')
-      desktopEditingVersion.value = ''
-      desktopEditingChannel.value = desktopDraftChannel.value
-      desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
-      desktopDraftBetaNum.value = ''
-      desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
-      desktopDraftEnabled.value = false
-      desktopPackageFile.value = null
-      desktopPackageFileDraft.value = null
-      desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
-      if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
-    }
-  } else {
-    showToast(res.msg || '保存失败')
-  }
-}
-
-async function toggleDesktop(e: Event, item: any) {
-  const enabled = (e.target as HTMLInputElement).checked
-  const res = await adminApi('save_desktop_version', {
-    platform: platformOf(item),
-    system: systemOf(item),
-    arch: archOf(item),
-    channel: channelOf(item),
-    version: item.version,
-    download_url: item.downloadUrl || '',
-    update_content: item.updateContent || '',
-    enabled: enabled ? 1 : 0,
-    store_url: item.storeUrl || '',
-    file_name: '',
-    file_data: '',
-  })
-  if (res.code === 200) {
-    showToast(enabled ? '已启用' : '已禁用', 'success')
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-  loadDesktop()
-}
-
-async function deleteDesktop(item: any) {
-  const ok = await webConfirm(`确认删除${systemLabelOf(item)}${platformLabelOf(item)} v${item.version} 的更新配置？`, { title: '删除配置', confirmText: '确认删除' })
-  if (!ok) return
-  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), system: systemOf(item), arch: archOf(item), version: item.version })
-  if (res.code === 200) {
-    showToast('删除成功', 'success')
-    loadDesktop()
-  } else {
-    showToast(res.msg || '删除失败')
-  }
-}
-
-function openDesktopChannelModal() {
-  desktopChannelMode.value = desktopDraft.value.downloadUrl && !desktopPackageFile.value ? 'link' : 'upload'
-  desktopChannelLinkDraft.value = desktopDraft.value.downloadUrl || ''
-  desktopPackageFileDraft.value = desktopPackageFile.value
-  desktopPackageDraft.value = desktopPackageFile.value
-    ? { fileName: desktopPackageFile.value.name, fileSize: desktopPackageFile.value.size, fileBase64: '' }
-    : { fileName: '', fileSize: 0, fileBase64: '' }
-  desktopChannelModalVisible.value = true
-}
-
-function closeDesktopChannelModal() {
-  desktopChannelModalVisible.value = false
-}
-
-function confirmDesktopChannel() {
-  if (desktopChannelMode.value === 'link') {
-    const url = desktopChannelLinkDraft.value.trim()
-    if (!url) { showToast('请输入下载链接'); return }
-    desktopDraft.value.downloadUrl = url
-    desktopPackageFile.value = null
-    desktopPackageFileDraft.value = null
-    desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
-    if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
-  } else {
-    if (!desktopPackageFileDraft.value) { showToast('请选择安装包'); return }
-    desktopPackageFile.value = desktopPackageFileDraft.value
-    desktopDraft.value.downloadUrl = ''
-    desktopChannelLinkDraft.value = ''
-    applyDetectedMeta(desktopPackageFile.value.name)
-  }
-  desktopChannelModalVisible.value = false
-}
-
-// 从安装包文件名识别平台/系统/架构，自动填入表单（识别结果仍可手动修正）
-function applyDetectedMeta(fileName: string) {
-  const meta = detectPackageMeta(fileName)
-  if (desktopEditingVersion.value) {
-    // 编辑模式维度锁定：仅提示识别结果，便于核对是否传错包
-    if (meta) showToast(`识别为 ${packageMetaLabel(meta)}，编辑模式不改变当前维度`)
-    return
-  }
-  if (meta) {
-    desktopDraftPlatform.value = meta.platform
-    desktopDraftSystem.value = meta.system
-    desktopDraftArch.value = meta.arch
-    showToast(`已识别：${packageMetaLabel(meta)}，可手动修改`, 'success')
-  } else {
-    showToast('无法识别安装包平台，请手动选择平台 / 系统 / 架构')
-  }
-}
-
-function onDesktopFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (!input.files || input.files.length === 0) {
-    desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
-    desktopPackageFileDraft.value = null
-    return
-  }
-  setDesktopPackageFile(input.files[0])
-}
-
-function triggerDesktopFileInput() {
-  desktopFileInputRef.value?.click()
-}
-
-function onDesktopPackageDrop(e: DragEvent) {
-  desktopPackageDragging.value = false
-  const file = e.dataTransfer?.files?.[0]
-  if (!file) return
-  setDesktopPackageFile(file)
-}
-
-function setDesktopPackageFile(file: File) {
-  const ext = file.name.split('.').pop()?.toLowerCase() || ''
-  if (!PACKAGE_ALLOWED_EXT.includes(ext)) {
-    showToast('不支持该安装包格式')
-    if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
-    return
-  }
-  desktopPackageFileDraft.value = file
-  desktopPackageDraft.value = { fileName: file.name, fileSize: file.size, fileBase64: '' }
-  desktopChannelLinkDraft.value = ''
-}
-
-function formatFileSize(bytes: number): string {
-  if (!bytes) return '-'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-}
-
-function readFileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '')
-    reader.onerror = () => reject(new Error('文件读取失败'))
-    reader.readAsDataURL(file)
-  })
-}
-
-// ===== 内测名单 =====
-const betaModalVisible = ref(false)
-const betaList = ref<any[]>([])
-const betaLoading = ref(false)
-const betaSaving = ref(false)
-const betaDeviceIdDraft = ref('')
-const betaNoteDraft = ref('')
-
-async function loadBeta() {
-  betaLoading.value = true
-  const res = await adminApi<any>('list_beta_testers')
-  if (res.code === 200 && res.data) {
-    betaList.value = Array.isArray(res.data.list) ? res.data.list : []
-  }
-  betaLoading.value = false
-}
-
-function openBetaModal() {
-  betaModalVisible.value = true
-  if (!betaLoading.value && betaList.value.length === 0) loadBeta()
-}
-
-function closeBetaModal() {
-  betaModalVisible.value = false
-}
-
-async function addBetaTester() {
-  const deviceId = betaDeviceIdDraft.value.trim()
-  if (!deviceId) {
-    showToast('请输入设备ID')
-    return
-  }
-  betaSaving.value = true
-  const res = await adminApi('add_beta_tester', { device_id: deviceId, note: betaNoteDraft.value.trim() })
-  betaSaving.value = false
-  if (res.code === 200) {
-    showToast('已添加到内测名单', 'success')
-    betaDeviceIdDraft.value = ''
-    betaNoteDraft.value = ''
-    loadBeta()
-  } else {
-    showToast(res.msg || '添加失败')
-  }
-}
-
-async function removeBetaTester(t: any) {
-  const ok = await webConfirm(`确认将设备 ${t.device_id} 移出内测名单？`, { title: '移除内测设备', confirmText: '确认移除' })
-  if (!ok) return
-  const res = await adminApi('delete_beta_tester', { device_id: t.device_id })
-  if (res.code === 200) {
-    showToast('已移除', 'success')
-    loadBeta()
-  } else {
-    showToast(res.msg || '移除失败')
-  }
-}
-
-const betaDetailVisible = ref(false)
-const betaDetailLoading = ref(false)
-const betaDetail = ref<any>(null)
-const betaNoteEditDraft = ref('')
-const betaNoteSaving = ref(false)
-const hasBetaDetailDevice = computed(() => {
-  const d = betaDetail.value?.device || {}
-  return !!(d.brand || d.model || d.os_version || d.architecture || d.machine_name)
-})
-
-async function openBetaDetail(t: any) {
-  betaDetailVisible.value = true
-  betaDetail.value = null
-  betaDetailLoading.value = true
-  const res = await adminApi<any>('get_beta_tester_detail', { device_id: t.device_id })
-  betaDetailLoading.value = false
-  if (res.code === 200 && res.data) {
-    betaDetail.value = res.data
-    betaNoteEditDraft.value = res.data.tester?.note || ''
-  } else {
-    showToast(res.msg || '加载详情失败')
-    betaDetailVisible.value = false
-  }
-}
-
-async function saveBetaNote() {
-  const tester = betaDetail.value?.tester
-  if (!tester) return
-  const note = betaNoteEditDraft.value.trim()
-  betaNoteSaving.value = true
-  const res = await adminApi('update_beta_tester_note', { device_id: tester.device_id, note })
-  betaNoteSaving.value = false
-  if (res.code === 200) {
-    tester.note = note
-    showToast('已更新设备备注', 'success')
-    loadBeta()
-  } else {
-    showToast(res.msg || '保存失败')
-  }
-}
-
-function closeBetaDetail() {
-  betaDetailVisible.value = false
-  betaDetail.value = null
-  betaNoteEditDraft.value = ''
-}
+const {
+  betaModalVisible,
+  betaList,
+  betaLoading,
+  betaSaving,
+  betaDeviceIdDraft,
+  betaNoteDraft,
+  loadBeta,
+  openBetaModal,
+  closeBetaModal,
+  addBetaTester,
+  removeBetaTester,
+  betaDetailVisible,
+  betaDetailLoading,
+  betaDetail,
+  betaNoteEditDraft,
+  betaNoteSaving,
+  hasBetaDetailDevice,
+  openBetaDetail,
+  saveBetaNote,
+  closeBetaDetail,
+} = useVersionBeta()
 
 onMounted(() => {
   loadDesktop()

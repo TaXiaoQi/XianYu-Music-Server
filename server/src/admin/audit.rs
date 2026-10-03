@@ -147,7 +147,19 @@ pub async fn list_avatar_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     let list = match rows {
         Ok(rows) => rows
             .iter()
-            .map(|r| crate::admin::row_to_value(r))
+            .map(|r| {
+                let mut v = crate::admin::row_to_value(r);
+                for key in ["avatar_data", "current_avatar"] {
+                    if let Some(url) = v.get(key).and_then(|x| x.as_str()).map(str::to_string) {
+                        v[key] = Value::String(crate::handlers::upload::absolutize_media_url_with(
+                            &ctx.base_url,
+                            &ctx.config.public_base_url,
+                            &url,
+                        ));
+                    }
+                }
+                v
+            })
             .collect::<Vec<Value>>(),
         Err(_) => return err(500, "数据库错误"),
     };
@@ -206,7 +218,7 @@ pub async fn list_nickname_pending(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     }
 }
 
-pub async fn list_audit_records(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+pub async fn list_audit_records(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let status = str_of(&data, "status").trim().to_string();
     let status = if status.is_empty() { "pending".to_string() } else { status };
@@ -241,13 +253,23 @@ pub async fn list_audit_records(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     let mut list: Vec<Value> = Vec::new();
     if let Ok(rows) = avatar_rows {
         for r in rows.iter() {
+            let avatar_data = crate::handlers::upload::absolutize_media_url_with(
+                &ctx.base_url,
+                &ctx.config.public_base_url,
+                &r.try_get::<String, _>("avatar_data").unwrap_or_default(),
+            );
+            let current_avatar = crate::handlers::upload::absolutize_media_url_with(
+                &ctx.base_url,
+                &ctx.config.public_base_url,
+                &r.try_get::<String, _>("current_avatar").unwrap_or_default(),
+            );
             list.push(json!({
                 "type": "avatar",
                 "id": r.try_get::<i64, _>("id").unwrap_or(0),
                 "ciyuanxi_id": r.try_get::<String, _>("ciyuanxi_id").unwrap_or_default(),
                 "username": r.try_get::<String, _>("username").unwrap_or_default(),
-                "avatar_data": r.try_get::<String, _>("avatar_data").unwrap_or_default(),
-                "current_avatar": r.try_get::<String, _>("current_avatar").unwrap_or_default(),
+                "avatar_data": avatar_data,
+                "current_avatar": current_avatar,
                 "status": r.try_get::<String, _>("status").unwrap_or_default(),
                 "created_at": r.try_get::<String, _>("created_at").unwrap_or_default(),
                 "reviewed_at": r.try_get::<String, _>("reviewed_at").unwrap_or_default(),

@@ -788,931 +788,178 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { adminApi, showToast, getAdminUser } from '@/api/client'
-import { webConfirm, webInfo } from '@/utils/webDialog'
-import { webActionMenu } from '@/utils/webDialog'
+import { onMounted, onUnmounted } from 'vue'
 import { fmtTime } from '@/utils/time'
-import { formatOsVersion } from '@/utils/osVersion'
+import { useFeedbackList } from '@/composables/feedback/list'
+import { useFeedbackImageViewer } from '@/composables/feedback/images'
+import { useFeedbackCollab } from '@/composables/feedback/collab'
+import { useFeedbackLimitStats } from '@/composables/feedback/limit'
+import { useFeedbackCreateModal } from '@/composables/feedback/create'
+import { useFeedbackProcessingModals } from '@/composables/feedback/processing'
+import { useFeedbackLogs } from '@/composables/feedback/logs'
+import { useFeedbackBatchRecycle } from '@/composables/feedback/batch'
+import {
+  statusLabel,
+  platformLabel,
+  deviceIcon,
+  deviceInfoText,
+  formatLogSize,
+  hasErrorLogs,
+  hasAllLogs,
+  isBeta,
+} from '@/composables/feedback/shared'
 
-const currentAdminName = getAdminUser()?.username || ''
-function isMineFeedback(item: Feedback): boolean {
-  return !!item.assignee && item.assignee === currentAdminName
-}
+// ===== 列表与筛选 =====
+const {
+  loading,
+  feedbackList,
+  activeFilter,
+  stats,
+  searchKeyword,
+  typeFilter,
+  sortLabel,
+  filteredList,
+  handleSearch,
+  clearSearch,
+  openSortMenu,
+  setFilter,
+  setTypeFilter,
+  loadList,
+} = useFeedbackList()
 
-interface Feedback {
-  id: number
-  ciyuanxi_id: string
-  nickname: string
-  title: string
-  content: string
-  status: string
-  admin_reply: string | null
-  error_logs?: string | null
-  all_logs?: string | null
-  log_meta?: string | null
-  error_logs_chars?: number
-  all_logs_chars?: number
-  has_error_logs?: number | string | boolean
-  has_all_logs?: number | string | boolean
-  replied_at: string | null
-  replied_by: string
-  assignee: string
-  resolve_note: string | null
-  ip: string
-  created_at: string
-  updated_at: string
-  [key: string]: any
-}
+// ===== 图片与查看器 =====
+const {
+  imageViewerVisible,
+  imageViewerList,
+  imageViewerIndex,
+  imageViewerReady,
+  openImageViewer,
+  closeImageViewer,
+  nextImage,
+  prevImage,
+  onViewerKeydown,
+  itemImages,
+  resolveItemImages,
+  stackThumbStyle,
+} = useFeedbackImageViewer()
 
-interface FbStats {
-  total: number
-  pending: number
-  processing: number
-  resolved: number
-  rejected: number
-}
+// ===== 协作 =====
+const {
+  isParticipant,
+  getCollabCount,
+  getCompletedDisplay,
+  claimFeedback,
+  requestCollaborate,
+  pollFeedbackAlerts,
+  abandonFeedback,
+} = useFeedbackCollab({ feedbackList, loadList })
 
-interface FeedbackLimit {
-  feedback_daily_limit: number
-}
-
-// ===== 状态 =====
-const loading = ref(true)
-const feedbackList = ref<Feedback[]>([])
-const activeFilter = ref('all')
-const stats = ref<FbStats>({ total: 0, pending: 0, processing: 0, resolved: 0, rejected: 0 })
-const limitLoading = ref(false)
-const limitSaving = ref(false)
-const limitModalVisible = ref(false)
-const feedbackDailyLimit = ref(20)
-const feedbackLimitInput = ref(20)
-const searchKeyword = ref('')
-const appliedKeyword = ref('')
-function handleSearch() {
-  appliedKeyword.value = searchKeyword.value.trim().toLowerCase()
-  loadList()
-}
-function clearSearch() {
-  searchKeyword.value = ''
-  appliedKeyword.value = ''
-  loadList()
-}
-
-function openLimitModal() {
-  feedbackLimitInput.value = feedbackDailyLimit.value
-  limitModalVisible.value = true
-}
-function closeLimitModal() {
-  if (limitSaving.value) return
-  limitModalVisible.value = false
-}
-
-const statusMap: Record<string, string> = {
-  pending: '待处理',
-  processing: '处理中',
-  resolved: '已解决',
-  rejected: '已拒绝',
-}
-
-function statusLabel(s: string): string {
-  return statusMap[s] || s
-}
-
-const platformMap: Record<string, string> = {
-  desktop: '桌面版',
-  mobile: '移动版',
-  watch: '腕上版',
-}
-function platformLabel(p: string): string {
-  return platformMap[p] || ''
-}
-
-// ===== 类型筛选 + 排序 =====
-const typeFilter = ref('all')
-const sortMode = ref('post_time_desc')
-const sortOptions = [
-  { key: 'post_time_desc', label: '最新提交' },
-  { key: 'post_time_asc', label: '最早提交' },
-  { key: 'update_desc', label: '最近更新' },
-]
-const sortLabel = computed(() => sortOptions.find(o => o.key === sortMode.value)?.label || '排序')
-async function openSortMenu() {
-  const key = await webActionMenu('排序方式', sortOptions.map(o => ({ key: o.key, label: o.label })))
-  if (key && key !== sortMode.value) {
-    sortMode.value = key
-    loadList()
-  }
-}
-
-function setFilter(s: string) {
-  if (activeFilter.value === s) return
-  activeFilter.value = s
-  loadList()
-}
-function setTypeFilter(t: string) {
-  if (typeFilter.value === t) return
-  typeFilter.value = t
-  loadList()
-}
-
-// ===== 协同功能辅助 =====
-function parseJsonArray(v: string | null | undefined): any[] {
-  if (!v) return []
-  try {
-    const arr = JSON.parse(v)
-    return Array.isArray(arr) ? arr : []
-  } catch {
-    return []
-  }
-}
-function collaboratorsOf(item: Feedback): string[] {
-  return parseJsonArray(item.collaborators).filter((c): c is string => typeof c === 'string')
-}
-function completedOf(item: Feedback): Array<{ admin: string; note?: string }> {
-  return parseJsonArray(item.completed_by).filter((c): c is { admin: string; note?: string } => !!c && typeof c.admin === 'string')
-}
-function isCollaborator(item: Feedback): boolean {
-  return collaboratorsOf(item).includes(currentAdminName)
-}
-function isParticipant(item: Feedback): boolean {
-  return isMineFeedback(item) || isCollaborator(item)
-}
-function getCollabCount(item: Feedback): number {
-  return collaboratorsOf(item).length
-}
-function getCompletedDisplay(item: Feedback): string {
-  const done = completedOf(item).length
-  const total = 1 + collaboratorsOf(item).length
-  return `完成 ${done}/${total}`
-}
-
-// ===== 图片处理 =====
-function normalizeImgUrl(u: string): string {
-  if (u.startsWith('http://') || u.startsWith('https://')) {
-    try {
-      const parsed = new URL(u, window.location.origin)
-      if (parsed.origin !== window.location.origin) {
-        return window.location.origin + parsed.pathname + parsed.search
-      }
-      return u
-    } catch {
-      return u
-    }
-  }
-  return u
-}
-function itemImages(item: Feedback): string[] {
-  if (!item.images) return []
-  try {
-    const arr = JSON.parse(item.images)
-    return Array.isArray(arr)
-      ? arr.filter((u: string) => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))).map(normalizeImgUrl)
-      : []
-  } catch {
-    return []
-  }
-}
-function resolveItemImages(item: Feedback): string[] {
-  if (!item.resolve_images) return []
-  try {
-    const arr = JSON.parse(item.resolve_images)
-    return Array.isArray(arr)
-      ? arr.filter((u: string) => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/'))).map(normalizeImgUrl)
-      : []
-  } catch {
-    return []
-  }
-}
-function stackThumbStyle(i: number, total: number): Record<string, string> {
-  if (total <= 1) return {}
-  const offset = Math.min(i, 3) * 5
-  return {
-    left: `${offset}px`,
-    top: `${offset}px`,
-    zIndex: String(total - i),
-  }
-}
-
-// ===== 图片查看器 =====
-const imageViewerVisible = ref(false)
-const imageViewerList = ref<string[]>([])
-const imageViewerIndex = ref(0)
-const imageViewerReady = ref(false)
-
-function openImageViewer(imgs: string[], index: number) {
-  imageViewerList.value = imgs
-  imageViewerIndex.value = index
-  imageViewerReady.value = false
-  imageViewerVisible.value = true
-}
-function closeImageViewer() {
-  imageViewerVisible.value = false
-  imageViewerList.value = []
-}
-function nextImage() {
-  if (imageViewerList.value.length === 0) return
-  imageViewerIndex.value = (imageViewerIndex.value + 1) % imageViewerList.value.length
-  imageViewerReady.value = false
-}
-function prevImage() {
-  if (imageViewerList.value.length === 0) return
-  imageViewerIndex.value = (imageViewerIndex.value - 1 + imageViewerList.value.length) % imageViewerList.value.length
-  imageViewerReady.value = false
-}
-function onViewerKeydown(e: KeyboardEvent) {
-  if (!imageViewerVisible.value) return
-  if (e.key === 'Escape') closeImageViewer()
-  else if (e.key === 'ArrowRight') nextImage()
-  else if (e.key === 'ArrowLeft') prevImage()
-}
-
-// ===== 处理统计弹窗 =====
-const statsModalVisible = ref(false)
-const statsLoading = ref(false)
-const statsList = ref<Array<{ admin_name: string; total: number; processing: number; resolved: number; rejected: number; pending: number }>>([])
-const statsGrandTotal = ref(0)
-
-async function openStats() {
-  statsModalVisible.value = true
-  await loadStats()
-}
-async function loadStats() {
-  statsLoading.value = true
-  const res = await adminApi<{ list: Array<{ admin_name: string; total: number; processing: number; resolved: number; rejected: number; pending: number }>; grand_total: number }>('feedback_admin_stats')
-  statsLoading.value = false
-  if (res.code === 200 && res.data) {
-    statsList.value = res.data.list || []
-    statsGrandTotal.value = Number(res.data.grand_total ?? 0)
-  } else {
-    statsList.value = []
-    statsGrandTotal.value = 0
-    showToast(res.msg || '统计加载失败')
-  }
-}
-function closeStats() {
-  if (statsLoading.value) return
-  statsModalVisible.value = false
-}
+// ===== 限额与处理统计 =====
+const {
+  limitModalVisible,
+  limitSaving,
+  feedbackLimitInput,
+  openLimitModal,
+  closeLimitModal,
+  loadFeedbackLimit,
+  saveFeedbackLimit,
+  statsModalVisible,
+  statsLoading,
+  statsList,
+  statsGrandTotal,
+  openStats,
+  closeStats,
+} = useFeedbackLimitStats()
 
 // ===== 新建事项弹窗 =====
-const createModalVisible = ref(false)
-const createType = ref<'problem' | 'suggestion' | ''>('')
-const createPlatform = ref<'desktop' | 'mobile' | 'watch' | ''>('')
-const createTitle = computed(() => {
-  if (createType.value === 'suggestion') return '功能建议'
-  return '问题反馈'
-})
-const createContent = ref('')
-const createImages = ref<string[]>([])
-const createDragging = ref(false)
-const createSaving = ref(false)
-const createNotify = ref(false)
-const createFileInput = ref<HTMLInputElement | null>(null)
+const {
+  createModalVisible,
+  createType,
+  createPlatform,
+  createContent,
+  createImages,
+  createDragging,
+  createSaving,
+  createNotify,
+  createFileInput,
+  openCreateModal,
+  closeCreateModal,
+  onCreateDragOver,
+  onCreateDragLeave,
+  onCreateDrop,
+  onCreateFileChange,
+  removeCreateImage,
+  submitCreate,
+} = useFeedbackCreateModal({ loadList })
 
-function openCreateModal() {
-  createType.value = ''
-  createPlatform.value = ''
-  createContent.value = ''
-  createImages.value = []
-  createSaving.value = false
-  createDragging.value = false
-  createNotify.value = false
-  createModalVisible.value = true
-}
-function closeCreateModal() {
-  if (createSaving.value) return
-  createModalVisible.value = false
-}
-function onCreateDragOver(e: DragEvent) {
-  e.preventDefault()
-  createDragging.value = true
-}
-function onCreateDragLeave() {
-  createDragging.value = false
-}
-function onCreateDrop(e: DragEvent) {
-  e.preventDefault()
-  createDragging.value = false
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
-    handleCreateFiles(Array.from(files))
-  }
-}
-function onCreateFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (!input.files) return
-  handleCreateFiles(Array.from(input.files))
-  input.value = ''
-}
-function handleCreateFiles(files: File[]) {
-  const remaining = 6 - createImages.value.length
-  if (remaining <= 0) {
-    showToast('最多上传 6 张图片')
-    return
-  }
-  const accepted = files.slice(0, remaining)
-  for (const file of accepted) {
-    if (!file.type.startsWith('image/')) continue
-    if (file.size > 8 * 1024 * 1024) {
-      showToast(`图片 ${file.name} 超过 8MB，已跳过`)
-      continue
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      createImages.value.push(reader.result as string)
-    }
-    reader.onerror = () => showToast(`图片 ${file.name} 读取失败`)
-    reader.readAsDataURL(file)
-  }
-}
-function removeCreateImage(index: number) {
-  createImages.value.splice(index, 1)
-}
-async function submitCreate() {
-  if (createSaving.value) return
-  if (!createType.value) { showToast('请选择事项类型'); return }
-  if (!createPlatform.value) { showToast('请选择平台版本'); return }
-  if (!createContent.value.trim()) {
-    showToast('请填写内容')
-    return
-  }
-  createSaving.value = true
-  const res = await adminApi('create_feedback', {
-    feedback_type: createType.value,
-    platform: createPlatform.value,
-    title: createTitle.value.trim(),
-    content: createContent.value.trim(),
-    images: createImages.value,
-    notify_external: createNotify.value ? 1 : 0,
-  })
-  createSaving.value = false
-  if (res.code === 200) {
-    showToast('创建成功', 'success')
-    closeCreateModal()
-    await loadList()
-  } else {
-    showToast(res.msg || '创建失败')
-  }
-}
-
-// ===== 认领功能 =====
-async function claimFeedback(id: number) {
-  const item = feedbackList.value.find(f => f.id === id)
-  const isTransfer = item?.status === 'processing'
-  const ok = await webConfirm(isTransfer ? '确认将该反馈转认领到自己名下？认领后问题将转移到您的名下。' : '确认认领该反馈？认领后将自动划入您的名下并移入处理中。', {
-    title: '认领反馈',
-    confirmText: '认领',
-  })
-  if (!ok) return
-  const res = await adminApi('claim_feedback', { id })
-  if (res.code === 200) {
-    showToast(isTransfer ? '已转认领到自己名下' : '认领成功，已置为处理中', 'success')
-    await loadList()
-  } else {
-    showToast(res.msg || '认领失败')
-  }
-}
-
-// ===== 发起协同 =====
-async function requestCollaborate(item: Feedback) {
-  const ok = await webConfirm(`确认申请协同处理该反馈？需认领人 ${item.assignee} 弹窗同意后方可加入。`, {
-    title: '申请协同',
-    confirmText: '申请',
-  })
-  if (!ok) return
-  const res = await adminApi('add_collaborator', { id: item.id })
-  if (res.code === 200) {
-    showToast('协同请求已发送，等待认领人确认', 'success')
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-
-// ===== 处理协同请求（认领人同意/拒绝） =====
-async function respondCollabRequest(request: any, approve: boolean) {
-  const res = await adminApi('respond_collab_request', { request_id: request.id, approve: approve ? 1 : 0 })
-  if (res.code === 200) {
-    showToast(approve ? `已同意 ${request.requester} 协同处理` : `已拒绝 ${request.requester} 的协同请求`, 'success')
-    await loadList()
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-
-// ===== 轮询协同请求与通知（转认告知 / 协同结果） =====
-let alertPollTimer: ReturnType<typeof setInterval> | null = null
-let alertProcessing = false
-async function pollFeedbackAlerts() {
-  if (alertProcessing) return
-  alertProcessing = true
-  try {
-    const reqRes = await adminApi<any>('poll_collab_requests')
-    if (reqRes.code === 200 && reqRes.data?.list?.length) {
-      for (const req of reqRes.data.list) {
-        const approve = await webConfirm(`${req.requester} 请求协同处理反馈「${req.feedback_title || '无标题'}」，是否同意？`, {
-          title: '协同请求',
-          confirmText: '同意',
-          cancelText: '拒绝',
-        })
-        await respondCollabRequest(req, approve)
-      }
-    }
-    const notifRes = await adminApi<any>('poll_admin_notifications')
-    if (notifRes.code === 200 && notifRes.data?.list?.length) {
-      const list = notifRes.data.list
-      for (const n of list) {
-        await webInfo(n.content, { title: '反馈通知' })
-      }
-      await adminApi('mark_notifications_read', { ids: list.map((n: any) => n.id) })
-      await loadList()
-    }
-  } catch {
-  } finally {
-    alertProcessing = false
-  }
-}
-
-// ===== 放弃认领 =====
-async function abandonFeedback(id: number) {
-  const ok = await webConfirm('确认放弃认领该反馈？仅放弃自己的账号，其他参与人不受影响。', {
-    title: '放弃认领',
-    confirmText: '放弃',
-    danger: true,
-  })
-  if (!ok) return
-  const res = await adminApi('abandon_feedback', { id })
-  if (res.code === 200) {
-    showToast(res.msg || '已放弃', 'success')
-    await loadList()
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-
-// ===== 完成弹窗 =====
-const resolveModalVisible = ref(false)
-const resolveTarget = ref<Feedback | null>(null)
-const resolveNote = ref('')
-const resolveImages = ref<string[]>([])
-const resolveDragging = ref(false)
-const resolveFileInput = ref<HTMLInputElement | null>(null)
-const resolveSaving = ref(false)
-
-function openResolveModal(item: Feedback) {
-  resolveTarget.value = item
-  resolveNote.value = ''
-  resolveImages.value = []
-  resolveDragging.value = false
-  resolveSaving.value = false
-  resolveModalVisible.value = true
-}
-
-function closeResolveModal() {
-  if (resolveSaving.value) return
-  resolveModalVisible.value = false
-  resolveTarget.value = null
-  resolveNote.value = ''
-  resolveImages.value = []
-}
-
-function onResolveDragOver(e: DragEvent) {
-  e.preventDefault()
-  resolveDragging.value = true
-}
-function onResolveDragLeave() {
-  resolveDragging.value = false
-}
-function onResolveDrop(e: DragEvent) {
-  e.preventDefault()
-  resolveDragging.value = false
-  const files = e.dataTransfer?.files
-  if (files && files.length > 0) {
-    handleResolveFiles(Array.from(files))
-  }
-}
-function onResolveFileChange(e: Event) {
-  const input = e.target as HTMLInputElement
-  if (!input.files) return
-  handleResolveFiles(Array.from(input.files))
-  input.value = ''
-}
-function handleResolveFiles(files: File[]) {
-  const remaining = 6 - resolveImages.value.length
-  if (remaining <= 0) {
-    showToast('最多上传 6 张图片')
-    return
-  }
-  const accepted = files.slice(0, remaining)
-  for (const file of accepted) {
-    if (!file.type.startsWith('image/')) continue
-    if (file.size > 8 * 1024 * 1024) {
-      showToast(`图片 ${file.name} 超过 8MB，已跳过`)
-      continue
-    }
-    const reader = new FileReader()
-    reader.onload = () => {
-      resolveImages.value.push(reader.result as string)
-    }
-    reader.onerror = () => showToast(`图片 ${file.name} 读取失败`)
-    reader.readAsDataURL(file)
-  }
-}
-function removeResolveImage(index: number) {
-  resolveImages.value.splice(index, 1)
-}
-
-async function confirmResolve() {
-  if (!resolveTarget.value || !resolveNote.value.trim()) return
-  resolveSaving.value = true
-  const item = resolveTarget.value
-  const hasCollab = collaboratorsOf(item).length > 0
-  const res = await adminApi(hasCollab ? 'collaborator_complete' : 'resolve_feedback', {
-    id: item.id,
-    note: resolveNote.value.trim(),
-    images: resolveImages.value,
-  })
-  resolveSaving.value = false
-  if (res.code === 200) {
-    if (res.data?.resolved) {
-      showToast('协同反馈已全部完成', 'success')
-    } else {
-      showToast(`已确认完成（${res.data?.completed}/${res.data?.total}），等待其他参与人`, 'success')
-    }
-    closeResolveModal()
-    await loadList()
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-
-function deviceIcon(item: Feedback): 'desktop' | 'mobile' | 'watch' {
-  if (item.platform === 'mobile') return 'mobile'
-  if (item.platform === 'watch') return 'watch'
-  return 'desktop'
-}
-
-// ===== 留言详情弹窗 =====
-const contentModalVisible = ref(false)
-const contentModalItem = ref<Feedback | null>(null)
-
-function openContentModal(item: Feedback) {
-  contentModalItem.value = item
-  contentModalVisible.value = true
-}
-
-function closeContentModal() {
-  contentModalVisible.value = false
-  contentModalItem.value = null
-}
-
-// ===== 拒绝弹窗 =====
-const rejectModalVisible = ref(false)
-const rejectTarget = ref<Feedback | null>(null)
-const rejectNote = ref('')
-const rejectSaving = ref(false)
-
-function openRejectModal(item: Feedback) {
-  rejectTarget.value = item
-  rejectNote.value = ''
-  rejectSaving.value = false
-  rejectModalVisible.value = true
-}
-
-function closeRejectModal() {
-  if (rejectSaving.value) return
-  rejectModalVisible.value = false
-  rejectTarget.value = null
-  rejectNote.value = ''
-}
-
-async function confirmReject() {
-  if (!rejectTarget.value || !rejectNote.value.trim()) return
-  rejectSaving.value = true
-  const res = await adminApi('update_feedback_status', {
-    id: rejectTarget.value.id,
-    status: 'rejected',
-    reason: rejectNote.value.trim(),
-  })
-  rejectSaving.value = false
-  if (res.code === 200) {
-    showToast('已拒绝该反馈', 'success')
-    closeRejectModal()
-    await loadList()
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-
-function formatLogSize(chars?: number | string): string {
-  const n = Number(chars || 0)
-  if (n <= 0) return ''
-  if (n < 1024) return `${n} 字`
-  return `${(n / 1024).toFixed(1)}K 字`
-}
-
-function truthyFlag(value: unknown): boolean {
-  return value === true || value === 1 || value === '1'
-}
-
-function hasErrorLogs(item: Feedback): boolean {
-  return truthyFlag(item.has_error_logs) || !!item.error_logs
-}
-
-function hasAllLogs(item: Feedback): boolean {
-  return truthyFlag(item.has_all_logs) || !!item.all_logs
-}
-
-function deviceInfoText(item: Feedback): string {
-  const brand = item.device_brand || ''
-  const model = item.device_model || ''
-  const os = item.os_version || ''
-  const arch = item.architecture || ''
-  const machine = item.machine_name || ''
-  if (!brand && !model && !os && !arch && !machine) return ''
-  const parts: string[] = []
-  const dev = `${brand && model && brand !== model ? brand + ' · ' : ''}${model}`
-  if (dev.trim()) parts.push(dev.trim())
-  if (os) parts.push(formatOsVersion(os))
-  if (arch) parts.push(arch)
-  if (machine) parts.push('主机 ' + machine)
-  return parts.join(' ｜ ')
-}
-
-// ===== 内测申请（feedback_type='beta'）：仅有同意/拒绝两种处理 =====
-function isBeta(item: Feedback): boolean {
-  return item.category !== 'appeal' && item.feedback_type === 'beta'
-}
-
-const betaApproveModalVisible = ref(false)
-const betaApproveTarget = ref<Feedback | null>(null)
-const betaApproveNote = ref('')
-const betaApproveDeviceNote = ref('')
-const betaApproveSaving = ref(false)
-
-function openBetaApproveModal(item: Feedback) {
-  betaApproveTarget.value = item
-  betaApproveNote.value = ''
-  betaApproveDeviceNote.value = ''
-  betaApproveSaving.value = false
-  betaApproveModalVisible.value = true
-}
-
-function closeBetaApproveModal() {
-  if (betaApproveSaving.value) return
-  betaApproveModalVisible.value = false
-  betaApproveTarget.value = null
-  betaApproveNote.value = ''
-  betaApproveDeviceNote.value = ''
-}
-
-async function confirmBetaApprove() {
-  if (!betaApproveTarget.value || !betaApproveNote.value.trim()) return
-  betaApproveSaving.value = true
-  const res = await adminApi('resolve_beta_application', {
-    id: betaApproveTarget.value.id,
-    note: betaApproveNote.value.trim(),
-    device_note: betaApproveDeviceNote.value.trim(),
-  })
-  betaApproveSaving.value = false
-  if (res.code === 200) {
-    showToast(res.data?.device_added ? '已同意，设备已自动加入内测名单' : '已同意该内测申请', 'success')
-    closeBetaApproveModal()
-    await loadList()
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
-
-const filteredList = computed(() => {
-  let arr = feedbackList.value
-  if (activeFilter.value !== 'all') {
-    arr = arr.filter(f => f.status === activeFilter.value)
-  }
-  if (typeFilter.value === 'appeal') {
-    arr = arr.filter(f => f.category === 'appeal')
-  } else if (typeFilter.value === 'beta') {
-    arr = arr.filter(f => f.feedback_type === 'beta' && f.category !== 'appeal')
-  } else if (typeFilter.value !== 'all') {
-    arr = arr.filter(f => f.feedback_type === typeFilter.value && f.category !== 'appeal')
-  }
-  const kw = appliedKeyword.value
-  if (kw) {
-    arr = arr.filter(f =>
-      (f.content || '').toLowerCase().includes(kw) ||
-      (f.nickname || '').toLowerCase().includes(kw) ||
-      (f.title || '').toLowerCase().includes(kw)
-    )
-  }
-  return arr
-})
-
-// ===== 加载数据 =====
-async function loadList() {
-  loading.value = true
-  const res = await adminApi<{ list: Feedback[]; stats: FbStats }>('list_feedback', {
-    status_filter: activeFilter.value === 'all' ? '' : activeFilter.value,
-    sort: sortMode.value,
-  })
-  if (res.code === 200 && res.data) {
-    feedbackList.value = res.data.list || []
-    if (res.data.stats) {
-      stats.value = res.data.stats
-    }
-  } else {
-    feedbackList.value = []
-  }
-  loading.value = false
-}
-
-async function loadFeedbackLimit() {
-  limitLoading.value = true
-  const res = await adminApi<FeedbackLimit>('get_feedback_limit')
-  if (res.code === 200 && res.data) {
-    const limit = Number(res.data.feedback_daily_limit ?? 20)
-    feedbackDailyLimit.value = Number.isFinite(limit) ? limit : 20
-    feedbackLimitInput.value = feedbackDailyLimit.value
-  } else {
-    showToast(res.msg || '反馈上限加载失败')
-  }
-  limitLoading.value = false
-}
-
-async function saveFeedbackLimit() {
-  const limit = Number(feedbackLimitInput.value)
-  if (!Number.isInteger(limit) || limit < 0 || limit > 10000) {
-    showToast('每日上限需为 0 到 10000 的整数')
-    return
-  }
-  limitSaving.value = true
-  const res = await adminApi<FeedbackLimit>('update_feedback_limit', {
-    feedback_daily_limit: limit,
-  })
-  limitSaving.value = false
-  if (res.code === 200) {
-    feedbackDailyLimit.value = Number(res.data?.feedback_daily_limit ?? limit)
-    feedbackLimitInput.value = feedbackDailyLimit.value
-    limitModalVisible.value = false
-    showToast('反馈提交上限已保存', 'success')
-  } else {
-    showToast(res.msg || '保存失败')
-  }
-}
-
-// ===== 状态变更 =====
-async function changeStatus(id: number, status: string) {
-  const tips: Record<string, string> = {
-    resolved: '确认将此反馈标记为已解决？',
-    rejected: '确认拒绝此反馈？',
-  }
-  if (tips[status]) {
-    const ok = await webConfirm(tips[status], { title: '更新反馈状态', confirmText: '确认' })
-    if (!ok) return
-  }
-  const res = await adminApi('update_feedback_status', { id, status })
-  if (res.code === 200) {
-    showToast('状态已更新', 'success')
-    const item = feedbackList.value.find(f => f.id === id)
-    if (item) {
-      const oldStatus = item.status
-      item.status = status
-      if (stats.value[oldStatus as keyof FbStats] !== undefined) {
-        stats.value[oldStatus as keyof FbStats]--
-      }
-      if (stats.value[status as keyof FbStats] !== undefined) {
-        stats.value[status as keyof FbStats]++
-      }
-    }
-  } else {
-    showToast(res.msg || '操作失败')
-  }
-}
+// ===== 处理弹窗：完成 / 留言详情 / 拒绝 / 内测同意 =====
+const {
+  resolveModalVisible,
+  resolveTarget,
+  resolveNote,
+  resolveImages,
+  resolveDragging,
+  resolveFileInput,
+  resolveSaving,
+  openResolveModal,
+  closeResolveModal,
+  onResolveDragOver,
+  onResolveDragLeave,
+  onResolveDrop,
+  onResolveFileChange,
+  removeResolveImage,
+  confirmResolve,
+  contentModalVisible,
+  contentModalItem,
+  openContentModal,
+  closeContentModal,
+  rejectModalVisible,
+  rejectTarget,
+  rejectNote,
+  rejectSaving,
+  openRejectModal,
+  closeRejectModal,
+  confirmReject,
+  betaApproveModalVisible,
+  betaApproveTarget,
+  betaApproveNote,
+  betaApproveDeviceNote,
+  betaApproveSaving,
+  openBetaApproveModal,
+  closeBetaApproveModal,
+  confirmBetaApprove,
+} = useFeedbackProcessingModals({ loadList })
 
 // ===== 日志弹窗 =====
-const logModalVisible = ref(false)
-const logTarget = ref<Feedback | null>(null)
-const logLoading = ref(false)
-const activeLogTab = ref<'error' | 'all'>('error')
+const {
+  logModalVisible,
+  logTarget,
+  logLoading,
+  activeLogTab,
+  currentLogText,
+  openLogModal,
+  closeLogModal,
+} = useFeedbackLogs()
 
-const currentLogText = computed(() => {
-  if (!logTarget.value) return ''
-  return activeLogTab.value === 'error'
-    ? (logTarget.value.error_logs || '')
-    : (logTarget.value.all_logs || '')
-})
+// ===== 批量管理与回收站 =====
+const {
+  batchMode,
+  selectedIds,
+  allSelected,
+  enterBatchMode,
+  exitBatchMode,
+  toggleSelect,
+  toggleSelectAll,
+  confirmBatchDelete,
+  recycleModalVisible,
+  recycleLoading,
+  recycleList,
+  openRecycleBin,
+  closeRecycleBin,
+  restoreItem,
+} = useFeedbackBatchRecycle({ filteredList, loadList })
 
-async function openLogModal(item: Feedback) {
-  logModalVisible.value = true
-  logTarget.value = item
-  activeLogTab.value = hasErrorLogs(item) ? 'error' : 'all'
-  logLoading.value = true
-  const res = await adminApi<Feedback>('get_feedback_detail', { id: item.id })
-  logLoading.value = false
-  if (res.code === 200 && res.data) {
-    logTarget.value = res.data
-    activeLogTab.value = res.data.error_logs ? 'error' : 'all'
-  } else {
-    showToast(res.msg || '日志加载失败')
-  }
-}
-
-function closeLogModal() {
-  if (logLoading.value) return
-  logModalVisible.value = false
-  logTarget.value = null
-}
-
-// ===== 批量管理 =====
-const batchMode = ref(false)
-const selectedIds = ref<Set<number>>(new Set())
-
-const allSelected = computed(() => {
-  return filteredList.value.length > 0 && filteredList.value.every(f => selectedIds.value.has(f.id))
-})
-
-function enterBatchMode() {
-  batchMode.value = true
-  selectedIds.value.clear()
-}
-
-function exitBatchMode() {
-  batchMode.value = false
-  selectedIds.value.clear()
-}
-
-function toggleSelect(id: number) {
-  if (selectedIds.value.has(id)) {
-    selectedIds.value.delete(id)
-  } else {
-    selectedIds.value.add(id)
-  }
-  selectedIds.value = new Set(selectedIds.value)
-}
-
-function toggleSelectAll() {
-  if (allSelected.value) {
-    filteredList.value.forEach(f => selectedIds.value.delete(f.id))
-  } else {
-    filteredList.value.forEach(f => selectedIds.value.add(f.id))
-  }
-  selectedIds.value = new Set(selectedIds.value)
-}
-
-async function confirmBatchDelete() {
-  if (selectedIds.value.size === 0) return
-  const ok = await webConfirm(`确认将选中的 ${selectedIds.value.size} 条记录移入回收站？14 天内可恢复。`, {
-    title: '批量删除',
-    confirmText: '删除',
-  })
-  if (!ok) return
-  const ids = Array.from(selectedIds.value)
-  const res = await adminApi('batch_delete_feedback', { ids })
-  if (res.code === 200) {
-    showToast(`已删除 ${res.data?.deleted ?? ids.length} 条记录`, 'success')
-    exitBatchMode()
-    await loadList()
-  } else {
-    showToast(res.msg || '删除失败')
-  }
-}
-
-// ===== 回收站 =====
-const recycleModalVisible = ref(false)
-const recycleLoading = ref(false)
-const recycleList = ref<any[]>([])
-
-async function openRecycleBin() {
-  recycleModalVisible.value = true
-  await loadRecycleBin()
-}
-
-function closeRecycleBin() {
-  if (recycleLoading.value) return
-  recycleModalVisible.value = false
-}
-
-async function loadRecycleBin() {
-  recycleLoading.value = true
-  const res = await adminApi<{ list: any[] }>('list_recycle_bin')
-  recycleLoading.value = false
-  if (res.code === 200 && res.data) {
-    recycleList.value = res.data.list || []
-  } else {
-    recycleList.value = []
-    showToast(res.msg || '回收站加载失败')
-  }
-}
-
-async function restoreItem(id: number) {
-  const res = await adminApi('restore_feedback', { id })
-  if (res.code === 200) {
-    showToast('恢复成功', 'success')
-    recycleList.value = recycleList.value.filter(r => r.id !== id)
-    await loadList()
-  } else {
-    showToast(res.msg || '恢复失败')
-  }
-}
+let alertPollTimer: ReturnType<typeof setInterval> | null = null
 
 onMounted(() => {
   loadFeedbackLimit()

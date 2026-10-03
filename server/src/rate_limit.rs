@@ -330,6 +330,18 @@ fn profile_for_action(action: &str) -> RateProfile {
             block_seconds: 0,
             allow_temp_block: false,
         },
+        // 分享封面：客户端按歌曲缓存，正常用户频率极低；api_secret 为公开默认值时
+        // 匿名刷图是主要滥用面，专项收紧（60s 窗口 15 次，违规临时封禁）
+        "upload_cover" => RateProfile {
+            name: "cover",
+            window_seconds: 60,
+            warn_threshold: 10,
+            limit_threshold: 15,
+            cooldown_seconds: 60,
+            block_after_violations: 3,
+            block_seconds: 3600,
+            allow_temp_block: true,
+        },
         "file_sync_upload_start"
         | "file_sync_upload_chunk"
         | "file_sync_upload_finish"

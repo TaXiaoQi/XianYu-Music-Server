@@ -149,11 +149,12 @@ pub async fn log_operation(pool: &MySqlPool, ctx: &AdminCtx, action: &str, targe
     .await;
 }
 
-pub fn client_ip(headers: &HeaderMap) -> String {
+pub fn client_ip(headers: &HeaderMap, trust_proxy: bool, peer_ip: Option<&str>) -> String {
     crate::sign::get_client_ip(
         headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()),
         headers.get("x-real-ip").and_then(|v| v.to_str().ok()),
-        None,
+        peer_ip,
+        trust_proxy,
     )
 }
 

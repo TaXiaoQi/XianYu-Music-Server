@@ -1,10 +1,12 @@
 use axum::response::Response;
 use serde_json::Value;
+use sqlx::mysql::MySqlRow;
 use sqlx::{MySqlPool, Row};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::admin::fallback::sha256_hex;
 use crate::response::ReqCtx;
 
 const TOKEN_TTL_DAYS: i64 = 30;
@@ -113,7 +115,7 @@ pub async fn issue(pool: &MySqlPool, ciyuanxi_id: &str, device_id: &str) -> Stri
     let _ = sqlx::query(
         "INSERT INTO user_tokens (token, ciyuanxi_id, device_id, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))",
     )
-    .bind(&token)
+    .bind(sha256_hex(&token))
     .bind(ciyuanxi_id)
     .bind(device_id)
     .bind(TOKEN_TTL_DAYS)
@@ -128,6 +130,47 @@ pub async fn revoke_user(pool: &MySqlPool, ciyuanxi_id: &str) {
         .bind(ciyuanxi_id)
         .execute(pool)
         .await;
+}
+
+/// token 落库一律存 SHA-256 摘要（防拖库冒用），查询先按摘要、未命中再按存量明文并原地升级
+/// （sql 需含 id 列，且 token 占位符是唯一绑定参数）
+async fn find_by_token(pool: &MySqlPool, sql: &str, token: &str) -> Option<MySqlRow> {
+    let digest = sha256_hex(token);
+    if let Some(row) = sqlx::query(sql)
+        .bind(&digest)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()
+    {
+        return Some(row);
+    }
+    let row = sqlx::query(sql)
+        .bind(token)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten()?;
+    if let Ok(id) = row.try_get::<i64, _>("id") {
+        let _ = sqlx::query("UPDATE user_tokens SET token = ? WHERE id = ?")
+            .bind(&digest)
+            .bind(id)
+            .execute(pool)
+            .await;
+    }
+    Some(row)
+}
+
+/// 仅校验 token 有效性并返回归属用户，不比对身份
+/// （供请求体里没有 ciyuanxi_id/user_id 的 action 使用，如 upload_cover）
+pub async fn resolve_owner(pool: &MySqlPool, token: &str) -> Option<String> {
+    find_by_token(
+        pool,
+        "SELECT id, ciyuanxi_id FROM user_tokens WHERE token = ? AND expires_at > NOW() LIMIT 1",
+        token,
+    )
+    .await
+    .and_then(|row| row.try_get::<String, _>("ciyuanxi_id").ok())
 }
 
 async fn prune(pool: &MySqlPool, ciyuanxi_id: &str) {
@@ -155,6 +198,22 @@ enum OwnerState {
     Unknown,
 }
 
+async fn verify_lookup(pool: &MySqlPool, key: &str) -> Option<MySqlRow> {
+    sqlx::query(
+        "SELECT id, ciyuanxi_id, UNIX_TIMESTAMP(expires_at) AS expires_unix,
+                (expires_at < DATE_ADD(NOW(), INTERVAL ? DAY)) AS need_renew,
+                (last_used_at IS NULL OR last_used_at < DATE_SUB(NOW(), INTERVAL ? SECOND)) AS should_touch
+         FROM user_tokens WHERE token = ? AND expires_at > NOW() LIMIT 1",
+    )
+    .bind(TOKEN_RENEW_THRESHOLD_DAYS)
+    .bind(TOKEN_TOUCH_INTERVAL_SECONDS)
+    .bind(key)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
 async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerState {
     let now = now_unix();
     if let Some(cached) = token_cache().lock().unwrap().get(token).cloned() {
@@ -170,20 +229,22 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
         }
     }
 
-    let row = sqlx::query(
-        "SELECT ciyuanxi_id, UNIX_TIMESTAMP(expires_at) AS expires_unix,
-                (expires_at < DATE_ADD(NOW(), INTERVAL ? DAY)) AS need_renew,
-                (last_used_at IS NULL OR last_used_at < DATE_SUB(NOW(), INTERVAL ? SECOND)) AS should_touch
-         FROM user_tokens WHERE token = ? AND expires_at > NOW() LIMIT 1",
-    )
-    .bind(TOKEN_RENEW_THRESHOLD_DAYS)
-    .bind(TOKEN_TOUCH_INTERVAL_SECONDS)
-    .bind(token)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    let digest = sha256_hex(token);
+    let mut row = verify_lookup(pool, &digest).await;
+    if row.is_none() {
+        row = verify_lookup(pool, token).await;
+        if let Some(r) = &row {
+            if let Ok(id) = r.try_get::<i64, _>("id") {
+                let _ = sqlx::query("UPDATE user_tokens SET token = ? WHERE id = ?")
+                    .bind(&digest)
+                    .bind(id)
+                    .execute(pool)
+                    .await;
+            }
+        }
+    }
     if let Some(row) = row {
+        let id: i64 = row.try_get("id").unwrap_or(0);
         let owner: String = row.get("ciyuanxi_id");
         if owner != identity {
             return OwnerState::Mismatch;
@@ -193,15 +254,15 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
         let should_touch: i64 = row.try_get("should_touch").unwrap_or(1);
         if need_renew == 1 {
             let _ = sqlx::query(
-                "UPDATE user_tokens SET last_used_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE token = ?",
+                "UPDATE user_tokens SET last_used_at = NOW(), expires_at = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE id = ?",
             )
             .bind(TOKEN_TTL_DAYS)
-            .bind(token)
+            .bind(id)
             .execute(pool)
             .await;
         } else if should_touch == 1 {
-            let _ = sqlx::query("UPDATE user_tokens SET last_used_at = NOW() WHERE token = ?")
-                .bind(token)
+            let _ = sqlx::query("UPDATE user_tokens SET last_used_at = NOW() WHERE id = ?")
+                .bind(id)
                 .execute(pool)
                 .await;
         }
@@ -219,12 +280,8 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
         );
         return OwnerState::Valid;
     }
-    let exists = sqlx::query("SELECT id FROM user_tokens WHERE token = ? LIMIT 1")
-        .bind(token)
-        .fetch_optional(pool)
+    let exists = find_by_token(pool, "SELECT id FROM user_tokens WHERE token = ? LIMIT 1", token)
         .await
-        .ok()
-        .flatten()
         .is_some();
     if exists {
         OwnerState::Expired
@@ -283,14 +340,13 @@ pub async fn check_dispatch_auth(
 }
 
 async fn record_view_access(pool: &MySqlPool, token: &str, target: &str, action: &str) {
-    let viewer: Option<String> = sqlx::query_scalar(
-        "SELECT ciyuanxi_id FROM user_tokens WHERE token = ? LIMIT 1",
+    let viewer: Option<String> = find_by_token(
+        pool,
+        "SELECT id, ciyuanxi_id FROM user_tokens WHERE token = ? LIMIT 1",
+        token,
     )
-    .bind(token)
-    .fetch_optional(pool)
     .await
-    .ok()
-    .flatten();
+    .and_then(|row| row.try_get::<String, _>("ciyuanxi_id").ok());
     if let Some(viewer) = viewer {
         let _ = sqlx::query(
             "INSERT INTO view_access_log (viewer_ciyuanxi_id, target_ciyuanxi_id, action) VALUES (?, ?, ?)",
