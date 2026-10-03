@@ -129,17 +129,23 @@ fn tombstone_paths(cloud_pl: &Value) -> Vec<String> {
 /// cloudCoverUrl / sourcePluginId / sourceUrl；name / isFavorite / createdAt 不动。
 fn compute_meta_patch(cloud_pl: &Value, report: &LocalPlaylistReport) -> Map<String, Value> {
     let mut meta = Map::new();
+    // 下载方向：patch 携带云端值下发客户端；云端为空时与今日下载合并一致（不覆盖本地）。
     let cloud_cover = cloud_pl.get("cloudCoverUrl").and_then(Value::as_str).unwrap_or("");
-    if cloud_cover != report.cloud_cover_url.as_str() {
-        meta.insert("cloudCoverUrl".to_string(), json!(report.cloud_cover_url));
+    if !cloud_cover.is_empty() && cloud_cover != report.cloud_cover_url.as_str() {
+        meta.insert("cloudCoverUrl".to_string(), json!(cloud_cover));
     }
     for (key, local_v, cloud_key) in [
         ("sourcePluginId", &report.source_plugin_id, "sourcePluginId"),
         ("sourceUrl", &report.source_url, "sourceUrl"),
     ] {
-        let cloud_s = cloud_pl.get(cloud_key).and_then(Value::as_str);
-        if cloud_s != local_v.as_deref() {
-            meta.insert(key.to_string(), json!(local_v));
+        let cloud_s = cloud_pl
+            .get(cloud_key)
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty());
+        if let Some(cs) = cloud_s {
+            if Some(cs) != local_v.as_deref() {
+                meta.insert(key.to_string(), json!(cs));
+            }
         }
     }
     meta
@@ -252,24 +258,39 @@ mod tests {
     fn meta_patch_only_diff_fields() {
         let snapshot = json!({"playlists": [
             {"id": "l1", "cloudId": "c1", "name": "A",
-             "cloudCoverUrl": "http://old/cover.jpg",
+             "cloudCoverUrl": "http://cloud/cover.jpg",
              "sourcePluginId": "p1", "sourceUrl": "http://s",
              "isFavorite": true, "createdAt": 123, "songs": []}
         ]});
         let mut rep = report("l1", Some("c1"), &[]);
-        rep.cloud_cover_url = "http://new/cover.jpg".to_string();
+        rep.cloud_cover_url = "http://local/cover.jpg".to_string();
         rep.source_plugin_id = Some("p1".to_string());
-        rep.source_url = None;
+        rep.source_url = Some("http://stale".to_string());
         let ops = compute_download_ops(&snapshot, &[rep]);
         assert_eq!(ops.len(), 1);
         assert_eq!(ops[0]["type"], json!("update_playlist_meta"));
-        assert_eq!(ops[0]["cloudCoverUrl"], json!("http://new/cover.jpg"));
-        // sourceUrl 云端有、本地无 → patch 为 null
-        assert_eq!(ops[0]["sourceUrl"], json!(null));
+        // 下载方向：patch 携带云端值
+        assert_eq!(ops[0]["cloudCoverUrl"], json!("http://cloud/cover.jpg"));
+        assert_eq!(ops[0]["sourceUrl"], json!("http://s"));
+        // sourcePluginId 本地与云端一致 → 不入 patch
+        assert!(ops[0].get("sourcePluginId").is_none());
         // name / isFavorite / createdAt 不在 patch 语义内
         assert!(ops[0].get("name").is_none());
         assert!(ops[0].get("isFavorite").is_none());
         assert!(ops[0].get("createdAt").is_none());
+    }
+
+    #[test]
+    fn meta_patch_skips_empty_cloud_values() {
+        // 云端封面/来源为空时与今日下载合并一致：不覆盖本地
+        let snapshot = json!({"playlists": [
+            {"id": "l1", "cloudId": "c1", "cloudCoverUrl": "", "songs": []}
+        ]});
+        let mut rep = report("l1", Some("c1"), &[]);
+        rep.cloud_cover_url = "http://local/cover.jpg".to_string();
+        rep.source_plugin_id = Some("p1".to_string());
+        let ops = compute_download_ops(&snapshot, &[rep]);
+        assert!(ops.is_empty());
     }
 
     #[test]
