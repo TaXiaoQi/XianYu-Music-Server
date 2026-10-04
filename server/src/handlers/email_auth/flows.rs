@@ -1,5 +1,57 @@
 use super::*;
 
+// 验证码/登录爆破防护阈值：复用 auth_rate_limits 表（ip 固定存 '' 作账号级计数行，跨 IP 共享）
+const VERIFY_LOCK_THRESHOLD: i64 = 5;
+const VERIFY_LOCK_MINUTES: i64 = 15;
+const VERIFY_FAILURE_WINDOW_MINUTES: i64 = 15;
+
+async fn rate_limit_locked(action: &str, email: &str, pool: &MySqlPool) -> bool {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM auth_rate_limits WHERE action = ? AND identifier = ? AND ip = '' AND locked_until IS NOT NULL AND locked_until > NOW()",
+    )
+    .bind(action)
+    .bind(email.trim().to_lowercase())
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0)
+        > 0
+}
+
+async fn record_rate_failure(action: &str, email: &str, pool: &MySqlPool) {
+    let key = email.trim().to_lowercase();
+    let current: i64 = sqlx::query_scalar(
+        "SELECT failed_count FROM auth_rate_limits WHERE action = ? AND identifier = ? AND ip = '' AND updated_at > DATE_SUB(NOW(), INTERVAL ? MINUTE) LIMIT 1",
+    )
+    .bind(action)
+    .bind(&key)
+    .bind(VERIFY_FAILURE_WINDOW_MINUTES)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    let next = current + 1;
+    let lock = if next >= VERIFY_LOCK_THRESHOLD { 1 } else { 0 };
+    let _ = sqlx::query(
+        "INSERT INTO auth_rate_limits (action, identifier, ip, failed_count, locked_until, last_failed_at)
+         VALUES (?, ?, '', ?, IF(? = 1, DATE_ADD(NOW(), INTERVAL ? MINUTE), NULL), NOW())
+         ON DUPLICATE KEY UPDATE failed_count = VALUES(failed_count), locked_until = VALUES(locked_until), last_failed_at = NOW()",
+    )
+    .bind(action)
+    .bind(&key)
+    .bind(next)
+    .bind(lock)
+    .bind(VERIFY_LOCK_MINUTES)
+    .execute(pool)
+    .await;
+}
+
+async fn clear_rate_failures(action: &str, email: &str, pool: &MySqlPool) {
+    let _ = sqlx::query("DELETE FROM auth_rate_limits WHERE action = ? AND identifier = ?")
+        .bind(action)
+        .bind(email.trim().to_lowercase())
+        .execute(pool)
+        .await;
+}
+
 pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
@@ -40,6 +92,12 @@ pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
 
     let code = format!("{:06}", random_int(0, 999999));
+
+    // 新码下发即作废同邮箱全部旧码：任一时刻只有一个有效码，缩小爆破窗口
+    let _ = sqlx::query("UPDATE email_test_codes SET used = 1 WHERE email = ? AND used = 0")
+        .bind(&email)
+        .execute(pool)
+        .await;
 
     let _ = sqlx::query(
         "INSERT INTO email_test_codes (email, code, type, expired_at) VALUES (?, ?, 'register', DATE_ADD(NOW(), INTERVAL 5 MINUTE))",
@@ -85,6 +143,10 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "两次输入的密码不一致");
     }
 
+    if rate_limit_locked("email_code_verify", &email, pool).await {
+        return ctx.err(429, "验证码错误次数过多，请 15 分钟后再试");
+    }
+
     let code_row = sqlx::query(
         "SELECT id FROM email_test_codes WHERE email = ? AND code = ? AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
     )
@@ -96,6 +158,7 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     .flatten();
 
     let Some(code_row) = code_row else {
+        record_rate_failure("email_code_verify", &email, pool).await;
         return ctx.err(400, "验证码不正确或已过期");
     };
     let code_id: i64 = code_row.try_get("id").unwrap_or(0);
@@ -129,6 +192,7 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
                 .bind(code_id)
                 .execute(pool)
                 .await;
+            clear_rate_failures("email_code_verify", &email, pool).await;
             log_action(pool, uid, &email, "register", &ctx.client_ip).await;
 
             ctx.ok("注册成功", Value::Null)
@@ -146,6 +210,10 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "请输入邮箱和密码");
     }
 
+    if rate_limit_locked("email_login", &email, pool).await {
+        return ctx.err(429, "登录失败次数过多，请 15 分钟后再试");
+    }
+
     let row = sqlx::query("SELECT id, email, password, nickname, status FROM email_test_users WHERE email = ?")
         .bind(&email)
         .fetch_optional(pool)
@@ -154,11 +222,13 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         .flatten();
 
     let Some(row) = row else {
+        record_rate_failure("email_login", &email, pool).await;
         return ctx.err(400, "邮箱或密码不正确");
     };
 
     let hash: String = row.try_get("password").unwrap_or_default();
     if !bcrypt::verify(&password, &hash).unwrap_or(false) {
+        record_rate_failure("email_login", &email, pool).await;
         return ctx.err(400, "邮箱或密码不正确");
     }
 
@@ -194,6 +264,7 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         .execute(pool)
         .await;
 
+    clear_rate_failures("email_login", &email, pool).await;
     log_action(pool, uid, &user_email, "login", &ctx.client_ip).await;
 
     let token = sign_email_token(&ctx.config, uid, &user_email);
@@ -231,6 +302,10 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         return ctx.err(400, "两次输入的密码不一致");
     }
 
+    if rate_limit_locked("email_code_verify", &email, pool).await {
+        return ctx.err(429, "验证码错误次数过多，请 15 分钟后再试");
+    }
+
     let code_row = sqlx::query(
         "SELECT id FROM email_test_codes WHERE email = ? AND code = ? AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
     )
@@ -242,6 +317,7 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     .flatten();
 
     let Some(code_row) = code_row else {
+        record_rate_failure("email_code_verify", &email, pool).await;
         return ctx.err(400, "验证码不正确或已过期");
     };
     let code_id: i64 = code_row.try_get("id").unwrap_or(0);
@@ -272,6 +348,7 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         .execute(pool)
         .await;
 
+    clear_rate_failures("email_code_verify", &email, pool).await;
     log_action(pool, user_id, &email, "reset_password", &ctx.client_ip).await;
 
     ctx.ok("密码已重置成功", Value::Null)
