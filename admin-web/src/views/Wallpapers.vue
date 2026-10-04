@@ -165,7 +165,7 @@
 
             <!-- hover 遮罩 -->
             <div class="thumb-overlay">
-              <a v-if="item.image_url" :href="item.image_url" target="_blank" class="overlay-btn" title="查看原图">
+              <a v-if="item.image_url" :href="safeUrl(item.image_url)" target="_blank" rel="noopener noreferrer" class="overlay-btn" title="查看原图">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>
               </a>
             </div>
@@ -395,6 +395,11 @@ function statusLabel(s: string): string {
 
 function isUserUpload(item: Wallpaper): boolean {
   return !!item.uploaded_by && item.uploaded_by !== 'admin'
+}
+
+// image_url 来自用户上传，仅放行 http/https 防 javascript: 等伪协议
+function safeUrl(url: string): string {
+  return /^https?:\/\//i.test(url) ? url : '#'
 }
 
 function uploaderText(item: Wallpaper): string {
