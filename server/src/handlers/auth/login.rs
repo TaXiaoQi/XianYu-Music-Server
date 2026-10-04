@@ -9,11 +9,11 @@ async fn check_login_cooldown(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) 
     if key.is_empty() {
         return None;
     }
+    // 锁定键为纯 identifier（ip 固定存 ''）：跨 IP 共享失败计数，防换 IP 绕过爆破
     let row = sqlx::query(
-        "SELECT TIMESTAMPDIFF(SECOND, NOW(), locked_until) AS remain_seconds FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ? AND ip = ? AND locked_until IS NOT NULL AND locked_until > NOW() LIMIT 1",
+        "SELECT TIMESTAMPDIFF(SECOND, NOW(), locked_until) AS remain_seconds FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ? AND ip = '' AND locked_until IS NOT NULL AND locked_until > NOW() LIMIT 1",
     )
     .bind(&key)
-    .bind(&ctx.client_ip)
     .fetch_optional(pool)
     .await
     .ok()
@@ -26,16 +26,15 @@ async fn check_login_cooldown(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) 
     None
 }
 
-async fn record_login_failure(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) {
+async fn record_login_failure(identifier: &str, pool: &MySqlPool) {
     let key = normalize_rate_identifier(identifier);
     if key.is_empty() {
         return;
     }
     let current: i64 = sqlx::query(
-        "SELECT failed_count FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ? AND ip = ? AND updated_at > DATE_SUB(NOW(), INTERVAL ? MINUTE) LIMIT 1",
+        "SELECT failed_count FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ? AND ip = '' AND updated_at > DATE_SUB(NOW(), INTERVAL ? MINUTE) LIMIT 1",
     )
     .bind(&key)
-    .bind(&ctx.client_ip)
     .bind(LOGIN_FAILURE_WINDOW_MINUTES)
     .fetch_optional(pool)
     .await
@@ -47,11 +46,9 @@ async fn record_login_failure(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) 
     let lock = next >= LOGIN_LOCK_THRESHOLD;
     let _ = sqlx::query(
         "INSERT INTO auth_rate_limits (action, identifier, ip, failed_count, locked_until, last_failed_at)
-         VALUES ('user_login', ?, ?, ?, IF(? = 1, DATE_ADD(NOW(), INTERVAL ? MINUTE), NULL), NOW())
+         VALUES ('user_login', ?, '', ?, IF(? = 1, DATE_ADD(NOW(), INTERVAL ? MINUTE), NULL), NOW())
          ON DUPLICATE KEY UPDATE failed_count = VALUES(failed_count), locked_until = VALUES(locked_until), last_failed_at = NOW()",
     )
-    .bind(&key)
-    .bind(&ctx.client_ip)
     .bind(next)
     .bind(if lock { 1 } else { 0 })
     .bind(LOGIN_LOCK_MINUTES)
@@ -59,14 +56,14 @@ async fn record_login_failure(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) 
     .await;
 }
 
-async fn clear_login_failures(identifier: &str, ctx: &ReqCtx, pool: &MySqlPool) {
+async fn clear_login_failures(identifier: &str, pool: &MySqlPool) {
     let key = normalize_rate_identifier(identifier);
     if key.is_empty() {
         return;
     }
-    let _ = sqlx::query("DELETE FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ? AND ip = ?")
+    // 成功登录清掉该账号全部计数行（含历史真实 ip 行）
+    let _ = sqlx::query("DELETE FROM auth_rate_limits WHERE action = 'user_login' AND identifier = ?")
         .bind(&key)
-        .bind(&ctx.client_ip)
         .execute(pool)
         .await;
 }
@@ -251,7 +248,7 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         (row, account_input.clone())
     };
     let Some(user) = user else {
-        record_login_failure(&matched, &ctx, pool).await;
+        record_login_failure(&matched, pool).await;
         return ctx.err(401, "弦予号/邮箱或密码错误");
     };
     let stored: String = user.get("password");
@@ -270,7 +267,7 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         }
     }
     if !password_ok {
-        record_login_failure(&matched, &ctx, pool).await;
+        record_login_failure(&matched, pool).await;
         return ctx.err(401, "弦予号/邮箱或密码错误");
     }
     let status: i64 = user.get("status");
@@ -299,7 +296,7 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let ciyuanxi_id: String = user.try_get::<String, _>("ciyuanxi_id").unwrap_or_default();
     let master_quota: i64 = user.try_get::<i64, _>("master_quota").unwrap_or(0);
     let token = token::issue(pool, &ciyuanxi_id, &login_device_id).await;
-    clear_login_failures(&matched, &ctx, pool).await;
+    clear_login_failures(&matched, pool).await;
 
     let mut log_device_model = str_of(&data, "device_model").trim().to_string();
     let mut log_app_version = str_of(&data, "app_version").trim().to_string();
