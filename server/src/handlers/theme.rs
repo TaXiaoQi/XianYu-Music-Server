@@ -90,6 +90,34 @@ fn sanitize_slot(slot: &str) -> String {
         .collect()
 }
 
+/// SVG 脚本黑名单校验（非完整 sanitizer，配合响应 attachment 头兜底）：
+/// 拒绝 script/foreignObject/事件处理器/javascript: 协议/内嵌 data: 引用
+fn svg_has_script(bytes: &[u8]) -> bool {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return true;
+    };
+    let lower = text.to_ascii_lowercase();
+    if lower.contains("<script")
+        || lower.contains("<foreignobject")
+        || lower.contains("javascript:")
+        || lower.contains("href=\"data:")
+        || lower.contains("src=\"data:")
+    {
+        return true;
+    }
+    // 事件处理器：on*=
+    lower
+        .match_indices(" on")
+        .any(|(i, _)| {
+            let rest = &lower[i + 3..];
+            let name_len = rest
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .unwrap_or(rest.len());
+            name_len > 0
+                && rest[name_len..].trim_start().starts_with('=')
+        })
+}
+
 fn ext_for_data_url(data_url: &str, bytes: &[u8]) -> Option<&'static str> {
     let lower = data_url.split(';').next().unwrap_or("").to_ascii_lowercase();
     if lower.starts_with("data:image/svg") {
@@ -170,6 +198,9 @@ fn save_theme_resources(id: Option<i64>, payload: &Map<String, Value>) -> Result
                 let Some(ext) = ext_for_data_url(url, &bytes) else {
                     return Err(format!("槽位 {} 的资源格式不支持（仅 PNG/JPG/WEBP/GIF/SVG）", slot));
                 };
+                if ext == "svg" && svg_has_script(&bytes) {
+                    return Err(format!("槽位 {} 的 SVG 包含脚本内容，已拒绝", slot));
+                }
                 let filename = format!("{}_{}.{}", prefix, sanitize_slot(&slot), ext);
                 if id.is_some() && std::fs::write(dir.join(&filename), &bytes).is_err() {
                     let _ = std::fs::remove_dir_all(&dir);

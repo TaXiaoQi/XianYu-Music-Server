@@ -9,16 +9,20 @@
 //!   同角色重复连接踢旧留新（旧连接收 `{"op":"replaced"}`）；
 //! - XYW1 二进制帧（客户端帧编解码后的完整帧字节）以 WS Binary 消息原样转发给对端，
 //!   服务端不解析帧内容（无隐私暴露面）；心跳沿用 XYW1 的手表 3s ping（兼作 NAT 保活）；
-//! - 房间（每 key 一间）数量上限 [MAX_ROOMS]，防连接滥用。
+//! - 房间（每 key 一间）数量上限 [MAX_ROOMS]，防连接滥用；单 IP 并发连接上限
+//!   [MAX_CONNS_PER_IP] + 空闲超时 [IDLE_TIMEOUT] 防假 key 恶意占满房间表。
 //!
 //! 部署：nginx 需为本路由加 WebSocket upgrade 反代（见仓库 nginx.conf `/watch-relay`）。
 
 use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
-use axum::response::Response;
+use axum::extract::ConnectInfo;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::mpsc;
@@ -28,6 +32,12 @@ const MAX_ROOMS: usize = 4096;
 const HELLO_TIMEOUT: Duration = Duration::from_secs(10);
 
 const CHANNEL_CAPACITY: usize = 256;
+
+/// 单 IP 并发连接上限：防单源用假 key 恶意占满房间表
+const MAX_CONNS_PER_IP: usize = 16;
+
+/// 空闲超时：超时未收到任何帧即断开（手表 3s ping 兼作心跳，正常连接不会触发）
+const IDLE_TIMEOUT: Duration = Duration::from_secs(600);
 
 // ===================== 房间状态 =====================
 
@@ -53,10 +63,48 @@ fn rooms() -> &'static Mutex<HashMap<String, Room>> {
     ROOMS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn conn_counts() -> &'static Mutex<HashMap<IpAddr, usize>> {
+    static CONNS: OnceLock<Mutex<HashMap<IpAddr, usize>>> = OnceLock::new();
+    CONNS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn conn_acquire(ip: IpAddr) -> bool {
+    let mut g = match conn_counts().lock() {
+        Ok(g) => g,
+        Err(_) => return false,
+    };
+    let count = g.entry(ip).or_insert(0);
+    if *count >= MAX_CONNS_PER_IP {
+        return false;
+    }
+    *count += 1;
+    true
+}
+
+fn conn_release(ip: IpAddr) {
+    if let Ok(mut g) = conn_counts().lock() {
+        if let Some(c) = g.get_mut(&ip) {
+            *c = c.saturating_sub(1);
+            if *c == 0 {
+                g.remove(&ip);
+            }
+        }
+    }
+}
+
 // ===================== 路由入口 =====================
 
-pub async fn watch_relay_handler(ws: WebSocketUpgrade) -> Response {
-    ws.on_upgrade(handle_socket)
+pub async fn watch_relay_handler(
+    ws: WebSocketUpgrade,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Response {
+    if !conn_acquire(addr.ip()) {
+        return (StatusCode::TOO_MANY_REQUESTS, "too many connections").into_response();
+    }
+    ws.on_upgrade(move |socket| async move {
+        handle_socket(socket).await;
+        conn_release(addr.ip());
+    })
 }
 
 struct Hello {
@@ -181,8 +229,12 @@ async fn handle_socket(socket: WebSocket) {
             .ok();
     }
 
-    // ---- 收循环：Binary 原样转发，Text 仅处理应用层 ping ----
-    while let Some(Ok(msg)) = receiver.next().await {
+    // ---- 收循环：Binary 原样转发，Text 仅处理应用层 ping；空闲超时统一走清理 ----
+    loop {
+        let msg = match tokio::time::timeout(IDLE_TIMEOUT, receiver.next()).await {
+            Ok(Some(Ok(m))) => m,
+            _ => break,
+        };
         match msg {
             WsMessage::Binary(bytes) => {
                 let peer_tx = {

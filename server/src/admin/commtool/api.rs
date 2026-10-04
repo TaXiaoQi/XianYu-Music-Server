@@ -81,6 +81,10 @@ pub async fn comm_http_client(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     if url.is_empty() {
         return err(400, "请输入请求地址");
     }
+    // 防 SSRF：仅允许公网 http(s) 目标
+    if let Err(e) = crate::audit_policy::validate_external_endpoint(&url).await {
+        return err(400, &format!("地址不可用: {}", e));
+    }
     let method = str_of(&data, "method").trim().to_uppercase();
     let method = if method.is_empty() { "GET".to_string() } else { method };
     let headers_raw = str_of(&data, "headers");
@@ -247,9 +251,13 @@ pub async fn comm_auth_config(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
 pub async fn comm_auth_save_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let token = str_of(&data, "token").trim().to_string();
+    // 连接鉴权 fail-closed：不允许清空 token（服务监听 0.0.0.0，空 token 等于向公网开放）
+    if token.is_empty() {
+        return err(400, "token 不能为空，请设置后保存");
+    }
     *comm_state().token.lock().unwrap() = token.clone();
-    upsert_setting(pool, "commtool_token", &token, "通信工具连接鉴权令牌（空=不鉴权）").await;
-    super::log_operation(pool, ctx, "更新连接鉴权配置", "", if token.is_empty() { "关闭鉴权" } else { "设置鉴权令牌" }).await;
+    upsert_setting(pool, "commtool_token", &token, "通信工具连接鉴权令牌").await;
+    super::log_operation(pool, ctx, "更新连接鉴权配置", "", "设置鉴权令牌").await;
     ok("已保存", Value::Null)
 }
 

@@ -8,6 +8,10 @@ use crate::handlers::helpers::{bool_of, int_of, parse_body, str_of};
 
 pub const NOTIFY_MODULES: [&str; 4] = ["wallpaper", "avatar", "nickname", "feedback"];
 
+// 邮件 HTML 模板独立成文件（{{}} 占位符，编译期 include_str! 内嵌保留单二进制部署）
+const REVIEW_NOTICE_TEMPLATE: &str = include_str!("email_templates/review_notice.html");
+const VERIFY_CODE_TEMPLATE: &str = include_str!("email_templates/verify_code.html");
+
 async fn ensure_email_tables(pool: &MySqlPool) {
     for t in crate::schema::table_statements() {
         if t.contains("`notification_emails`") || t.contains("`email_test_users`") {
@@ -98,8 +102,6 @@ pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_u
     } else {
         login_url_base.trim_end_matches('/').to_string()
     };
-    let esc_title = html_escape(title);
-    let esc_body = html_escape(body);
     let img_html = if image_url.trim().is_empty() {
         String::new()
     } else {
@@ -110,70 +112,23 @@ pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_u
             html_escape(image_url)
         )
     };
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-</head>
-<body style="margin:0;padding:0;background:#f2f3f5;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;">
-  <div style="max-width:560px;margin:0 auto;padding:24px 16px;">
-    <div style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);">
-      <div style="background:linear-gradient(135deg,#EC4141,#ff6b6b);padding:26px 30px;">
-        <div style="font-size:20px;font-weight:700;color:#ffffff;">弦予音乐 · 后台</div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.9);margin-top:4px;">{title}</div>
-      </div>
-      <div style="padding:26px 30px;">
-        <div style="font-size:14px;line-height:1.9;color:#333333;white-space:pre-wrap;word-break:break-word;">{body}</div>
-        {img}
-        <div style="text-align:center;margin-top:26px;">
-          <a href="{link}" style="display:inline-block;background:#EC4141;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 34px;border-radius:10px;box-shadow:0 4px 14px rgba(236,65,65,0.3);">前往审核</a>
-        </div>
-        <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:20px;">此邮件由弦予音乐系统自动发送，请勿直接回复。</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>"#,
-        title = esc_title,
-        body = esc_body,
-        img = img_html,
-        link = html_escape(&login_url),
-    )
+    [
+        ("{{title}}", html_escape(title)),
+        ("{{body}}", html_escape(body)),
+        ("{{img}}", img_html),
+        ("{{link}}", html_escape(&login_url)),
+    ]
+    .into_iter()
+    .fold(REVIEW_NOTICE_TEMPLATE.to_string(), |acc, (k, v)| acc.replace(k, &v))
 }
 
 pub fn build_verify_code_email_html(type_label: &str, code: &str) -> String {
-    let esc_label = html_escape(type_label);
-    let esc_code = html_escape(code);
-    format!(
-        r#"<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-</head>
-<body style="margin:0;padding:0;background:#f2f3f5;font-family:-apple-system,'PingFang SC','Microsoft YaHei',sans-serif;">
-  <div style="max-width:560px;margin:0 auto;padding:24px 16px;">
-    <div style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,0.06);">
-      <div style="background:linear-gradient(135deg,#EC4141,#ff6b6b);padding:26px 30px;">
-        <div style="font-size:20px;font-weight:700;color:#ffffff;">弦予音乐</div>
-        <div style="font-size:13px;color:rgba(255,255,255,0.9);margin-top:4px;">{label}验证码</div>
-      </div>
-      <div style="padding:30px;text-align:center;">
-        <div style="font-size:14px;color:#666;margin-bottom:16px;">您正在进行弦予音乐 APP 的{label}操作，验证码为：</div>
-        <div style="font-size:36px;font-weight:700;letter-spacing:8px;color:#EC4141;background:#fef2f2;border-radius:12px;padding:18px 0;margin:0 20px;">{code}</div>
-        <div style="font-size:13px;color:#9ca3af;margin-top:18px;">验证码 10 分钟内有效，请勿泄露给他人。</div>
-        <div style="font-size:13px;color:#9ca3af;margin-top:6px;">如非本人操作，请忽略此邮件。</div>
-        <div style="text-align:center;font-size:12px;color:#9ca3af;margin-top:24px;border-top:1px solid #f0f0f0;padding-top:18px;">此邮件由弦予音乐系统自动发送，请勿直接回复。</div>
-      </div>
-    </div>
-  </div>
-</body>
-</html>"#,
-        label = esc_label,
-        code = esc_code,
-    )
+    [
+        ("{{label}}", html_escape(type_label)),
+        ("{{code}}", html_escape(code)),
+    ]
+    .into_iter()
+    .fold(VERIFY_CODE_TEMPLATE.to_string(), |acc, (k, v)| acc.replace(k, &v))
 }
 
 pub async fn list_notification_emails(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {

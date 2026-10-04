@@ -99,6 +99,11 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "watch_phone_query",
 ];
 
+/// 该 action 是否要求用户 token（供限流等模块判定请求可否匿名发起）
+pub(crate) fn requires_user_token(action: &str) -> bool {
+    USER_BOUND_ACTIONS.contains(&action)
+}
+
 const VIEW_OTHER_ACTIONS: &[&str] = &[
     "favorites_sync_download",
     "file_sync_download",

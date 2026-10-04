@@ -402,10 +402,11 @@ function renderSurfaceList(){
     const v = map[s.id];
     const c = v && v.c ? v.c : '#EC4141';
     const o = v ? Math.round(Math.max(0, Math.min(1, typeof v.o === 'number' ? v.o : 0.5)) * 100) : 50;
+    const cEsc = esc(c);
     return '<div class="srow" data-sid="'+s.id+'">'
       + '<div class="srow__info"><div class="srow__n">'+esc(s.label)+'</div>'
-      + '<div class="srow__sub">'+surfaceRowSub(v, c, o)+'</div></div>'
-      + '<input type="color" value="'+c+'" oninput="setSurface(\''+s.id+'\', this.value)">'
+      + '<div class="srow__sub">'+surfaceRowSub(v, cEsc, o)+'</div></div>'
+      + '<input type="color" value="'+cEsc+'" oninput="setSurface(\''+s.id+'\', this.value)">'
       + '<input type="range" min="0" max="100" value="'+o+'" oninput="setSurface(\''+s.id+'\', null, Number(this.value))">'
       + '<button class="srow__x" title="清除" onclick="clearSurface(\''+s.id+'\')">✕</button>'
       + '</div>';

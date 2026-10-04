@@ -148,6 +148,36 @@ pub async fn upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if payload.get("accentColor").and_then(|v| v.as_str()).unwrap_or("").is_empty() {
         return ctx.err(400, "主题缺少强调色配置");
     }
+    // surfaces 值格式白名单：c=hex 颜色、o=0~1 透明度（审核编辑器会把 c 插入
+    // innerHTML，这里挡住任意字符串注入）
+    if let Some(surfaces) = payload.get("surfaces").and_then(|v| v.as_object()) {
+        for (slot, v) in surfaces {
+            let Some(obj) = v.as_object() else {
+                return ctx.err(400, &format!("组件色块 {} 数据无效", slot));
+            };
+            for (k, val) in obj {
+                match k.as_str() {
+                    "c" => {
+                        let c = val.as_str().unwrap_or("");
+                        let hex = c.strip_prefix('#').unwrap_or("*");
+                        let ok = c.is_empty()
+                            || matches!(hex.len(), 3 | 4 | 6 | 8)
+                                && hex.bytes().all(|b| b.is_ascii_hexdigit());
+                        if !ok {
+                            return ctx.err(400, &format!("组件色块 {} 颜色格式无效", slot));
+                        }
+                    }
+                    "o" => {
+                        let o = val.as_f64().unwrap_or(-1.0);
+                        if !(0.0..=1.0).contains(&o) {
+                            return ctx.err(400, &format!("组件色块 {} 透明度无效", slot));
+                        }
+                    }
+                    _ => return ctx.err(400, &format!("组件色块 {} 含未知字段 {}", slot, k)),
+                }
+            }
+        }
+    }
     let preview = data
         .get("preview")
         .and_then(|v| v.as_str())

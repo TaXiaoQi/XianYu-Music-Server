@@ -55,6 +55,12 @@ pub async fn save_webhook_config(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -
     if enabled && url.is_empty() {
         return err(400, "启用 Webhook 时请输入回调地址");
     }
+    // 防 SSRF：仅允许公网 http(s) 目标
+    if !url.is_empty() {
+        if let Err(e) = crate::audit_policy::validate_external_endpoint(&url).await {
+            return err(400, &format!("回调地址不可用: {}", e));
+        }
+    }
     let mut modules_on: Vec<String> = Vec::new();
     if let Some(mods) = data.get("modules").and_then(|v| v.as_object()) {
         for (k, v) in mods {
@@ -97,6 +103,9 @@ pub async fn test_webhook(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
     if url.is_empty() {
         return err(400, "请输入回调地址");
     }
+    if let Err(e) = crate::audit_policy::validate_external_endpoint(&url).await {
+        return err(400, &format!("回调地址不可用: {}", e));
+    }
     let payload = if body_template.trim().is_empty() {
         json!({
             "event": "test",
@@ -131,7 +140,9 @@ pub async fn test_webhook(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
         Ok(resp) => {
             let status = resp.status().as_u16();
             let resp_body = resp.text().await.unwrap_or_default();
-            super::log_operation(pool, ctx, "测试Webhook", &url, &format!("{} {}", status, resp_body)).await;
+            // 日志只留响应体摘要，防内网数据经操作日志外泄/膨胀
+            let log_body: String = resp_body.chars().take(512).collect();
+            super::log_operation(pool, ctx, "测试Webhook", &url, &format!("{} {}", status, log_body)).await;
             ok("", json!({ "status": status, "body": resp_body }))
         }
         Err(e) => { tracing::error!("请求失败: {e}"); err(500, "请求失败") },
@@ -171,6 +182,11 @@ pub async fn notify_webhook(
     }
     let url = read_setting(pool, WH_KEY_URL).await;
     if url.is_empty() {
+        return;
+    }
+    // 运行时兜底：存量配置若指向内网则跳过外呼
+    if crate::audit_policy::validate_external_endpoint(&url).await.is_err() {
+        tracing::warn!("webhook 地址未通过公网校验，跳过推送: {}", url);
         return;
     }
     let method = read_setting(pool, WH_KEY_METHOD).await;
@@ -261,4 +277,4 @@ pub async fn broadcast_event(
 }
 
 // ===================== WS 客户端自动重连配置 =====================
-
+

@@ -365,6 +365,10 @@ async fn migrate_feedback(pool: &MySqlPool, state: &Value) -> (usize, usize) {
 }
 
 pub async fn migrate_local_cache_to_database(_body: &str, ctx: &AdminCtx) -> Response {
+    // 会批量覆盖用户密码/设置，与 save 同级：仅 super_admin 可触发
+    if ctx.role != "super_admin" {
+        return err(403, "仅超级管理员可执行迁移");
+    }
     let config_value = read_config_value(ctx);
     let cfg: crate::config::Config = match serde_json::from_value(config_value.clone()) {
         Ok(v) => v,

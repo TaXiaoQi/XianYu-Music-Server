@@ -380,14 +380,25 @@ fn profile_for_action(action: &str) -> RateProfile {
 }
 
 fn extract_identity(action: &str, data: &Value, ip: &str) -> RateIdentity {
-    if let Some(device_id) = first_non_empty(data, &["device_id", "deviceId", "last_device_id", "lastDeviceId"]) {
-        return build_identity(action, "device_id", device_id);
-    }
-    if let Some(user_id) = first_non_empty(data, &["ciyuanxi_id", "ciyuanxiId", "user_id", "userId", "uid", "id"]) {
-        return build_identity(action, "user_id", user_id);
+    // 无需用户 token 的 action 一律按 IP 计数：device_id/uid/email 等 body 字段
+    // 客户端可任意轮换，作为限流键等于没有限流（邮件轰炸/注册垃圾绕过）
+    if crate::handlers::token::requires_user_token(action) {
+        if let Some(device_id) =
+            first_non_empty(data, &["device_id", "deviceId", "last_device_id", "lastDeviceId"])
+        {
+            return build_identity(action, "device_id", device_id);
+        }
+        if let Some(user_id) =
+            first_non_empty(data, &["ciyuanxi_id", "ciyuanxiId", "user_id", "userId", "uid", "id"])
+        {
+            return build_identity(action, "user_id", user_id);
+        }
     }
     if let Some(identifier) = first_non_empty(data, &["email", "username", "account", "identifier", "phone"]) {
-        return build_identity(action, "identifier", identifier);
+        // identifier 仅在需 token 的 action 里作辅助键，匿名 action 已走 IP 分支
+        if crate::handlers::token::requires_user_token(action) {
+            return build_identity(action, "identifier", identifier);
+        }
     }
     let fallback_ip = if ip.trim().is_empty() { "unknown" } else { ip.trim() };
     build_identity(action, "ip", fallback_ip.to_string())

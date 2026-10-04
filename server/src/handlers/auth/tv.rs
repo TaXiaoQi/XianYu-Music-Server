@@ -84,6 +84,14 @@ pub async fn scan_tv_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     if code.is_empty() || ciyuanxi_id.is_empty() {
         return ctx.err(400, "code 和 ciyuanxi_id 不能为空");
     }
+    // 扫码必须由本人发起：token 归属校验（fail-closed，防冒领任意账号）
+    let owner = token::resolve_owner(pool, str_of(&data, "token").trim()).await.unwrap_or_default();
+    if owner.is_empty() {
+        return ctx.err(401, "请先登录后再扫码");
+    }
+    if owner != ciyuanxi_id {
+        return ctx.err(403, "登录状态与账号不匹配，请重新登录");
+    }
     let row = sqlx::query("SELECT * FROM tv_login_codes WHERE code = ? LIMIT 1")
         .bind(&code)
         .fetch_optional(pool)
@@ -138,6 +146,14 @@ pub async fn confirm_tv_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
     if code.is_empty() || ciyuanxi_id.is_empty() {
         return ctx.err(400, "code 和 ciyuanxi_id 不能为空");
+    }
+    // 确认登录必须由本人发起：token 归属校验（fail-closed，防冒领任意账号）
+    let owner = token::resolve_owner(pool, str_of(&data, "token").trim()).await.unwrap_or_default();
+    if owner.is_empty() {
+        return ctx.err(401, "请先登录后再确认");
+    }
+    if owner != ciyuanxi_id {
+        return ctx.err(403, "登录状态与账号不匹配，请重新登录");
     }
     let row = sqlx::query("SELECT * FROM tv_login_codes WHERE code = ? LIMIT 1")
         .bind(&code)

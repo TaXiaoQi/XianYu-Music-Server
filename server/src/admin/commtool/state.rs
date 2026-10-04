@@ -60,8 +60,9 @@ pub fn comm_state() -> &'static CommState {
 
 pub(crate) fn check_token(query: &HashMap<String, String>, headers: &HeaderMap) -> bool {
     let expected = comm_state().token.lock().unwrap().clone();
+    // fail-closed：未设置 token 时拒绝一切连接（0.0.0.0 监听下空 token 等于向公网开放）
     if expected.is_empty() {
-        return true;
+        return false;
     }
     if let Some(t) = query.get("token") {
         if t == &expected {
@@ -123,4 +124,4 @@ pub(crate) async fn read_setting(pool: &MySqlPool, key: &str) -> String {
         .flatten()
         .and_then(|r| r.try_get::<Option<String>, _>(0).ok().flatten())
         .unwrap_or_default()
-}
+}

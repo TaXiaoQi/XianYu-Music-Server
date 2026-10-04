@@ -119,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
         .nest_service("/uploads", ServeDir::new("uploads"))
         .fallback(spa_fallback)
         .layer(cors)
+        .layer(axum::middleware::from_fn(svg_no_inline_guard))
         .with_state(state);
 
     let addr = config.listen_addr.clone();
@@ -405,6 +406,26 @@ async fn serve_apple_app_site_association() -> Response {
         .into_response()
 }
 
+/// uploads 下的 SVG 一律以 attachment 下发：直接导航不再内联执行（SVG 存储型 XSS
+/// 的兜底防线；客户端 <img> 引用不受 Content-Disposition 影响）
+async fn svg_no_inline_guard(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let is_svg = {
+        let path = req.uri().path().to_ascii_lowercase();
+        path.starts_with("/uploads/") && path.ends_with(".svg")
+    };
+    let mut resp = next.run(req).await;
+    if is_svg {
+        resp.headers_mut().insert(
+            axum::http::header::CONTENT_DISPOSITION,
+            axum::http::HeaderValue::from_static("attachment"),
+        );
+    }
+    resp
+}
+
 async fn spa_fallback(State(state): State<AppState>, req: Request<Body>) -> Response {
     let static_dir = state.config.static_dir.clone();
     let index_file = format!(
@@ -419,7 +440,7 @@ async fn spa_fallback(State(state): State<AppState>, req: Request<Body>) -> Resp
             if seg.is_empty() || seg == "." {
                 continue;
             }
-            if seg == ".." {
+            if seg == ".." || seg.contains('\\') {
                 return (
                     StatusCode::BAD_REQUEST,
                     [(axum::http::header::CONTENT_TYPE, "text/plain; charset=utf-8")],
