@@ -14,7 +14,18 @@ pub async fn view_share_detail(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
     }
     match sqlx::query("SELECT * FROM share_log WHERE id = ?").bind(id).fetch_optional(pool).await {
         Ok(Some(row)) => {
-            let map = crate::admin::row_to_value(&row);
+            let mut map = crate::admin::row_to_value(&row);
+            // request_params 是用户原始请求体，含登录 token——脱敏后再返回
+            if let Some(Value::String(raw)) = map.get("request_params") {
+                if let Ok(mut params) = serde_json::from_str::<Value>(raw) {
+                    if let Some(obj) = params.as_object_mut() {
+                        obj.remove("token");
+                        if let Ok(cleaned) = serde_json::to_string(&params) {
+                            map["request_params"] = Value::String(cleaned);
+                        }
+                    }
+                }
+            }
             log_operation(pool, ctx, "查看分享详情", &format!("id={}", id), "").await;
             ok("", map)
         }
