@@ -477,6 +477,7 @@
             <pre v-else class="log-content">{{ currentLogText || '暂无日志内容' }}</pre>
           </div>
           <div class="modal-foot">
+            <button class="btn-cancel" :disabled="logLoading || !currentLogText" @click="copyCurrentLog">复制</button>
             <button class="btn-cancel" @click="closeLogModal">关闭</button>
           </div>
         </div>
@@ -939,6 +940,7 @@ const {
   currentLogText,
   openLogModal,
   closeLogModal,
+  copyCurrentLog,
 } = useFeedbackLogs()
 
 // ===== 批量管理与回收站 =====

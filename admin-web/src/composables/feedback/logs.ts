@@ -39,6 +39,17 @@ export function useFeedbackLogs() {
     logTarget.value = null
   }
 
+  async function copyCurrentLog() {
+    const text = currentLogText.value
+    if (!text) return
+    try {
+      await navigator.clipboard.writeText(text)
+      showToast('已复制到剪贴板')
+    } catch {
+      showToast('复制失败，请手动复制')
+    }
+  }
+
   return {
     logModalVisible,
     logTarget,
@@ -47,5 +58,6 @@ export function useFeedbackLogs() {
     currentLogText,
     openLogModal,
     closeLogModal,
+    copyCurrentLog,
   }
 }
