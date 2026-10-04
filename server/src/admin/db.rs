@@ -688,13 +688,9 @@ pub async fn download_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
     };
     log_operation(pool, ctx, "下载备份", &filename, "").await;
     let cd = format!("attachment; filename=\"{}\"", filename);
-    (
-        axum::http::StatusCode::OK,
-        [
-            ("content-type", "application/sql"),
-            ("content-disposition", Box::leak(cd.into_boxed_str())),
-        ],
-        axum::body::Body::from(content),
-    )
-        .into_response()
+    let mut resp = (axum::http::StatusCode::OK, axum::body::Body::from(content)).into_response();
+    if let Ok(hv) = axum::http::HeaderValue::from_str(&cd) {
+        resp.headers_mut().insert(axum::http::header::CONTENT_DISPOSITION, hv);
+    }
+    resp
 }
