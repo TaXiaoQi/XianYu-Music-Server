@@ -105,6 +105,9 @@ pub async fn add_admin(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response
     if username.is_empty() || password.is_empty() {
         return err(400, "用户名和密码不能为空");
     }
+    if password.len() < 6 {
+        return err(400, "密码长度至少 6 位");
+    }
     if !email.is_empty() && !super::is_valid_email(&email) {
         return err(400, "邮箱格式不正确");
     }
@@ -201,14 +204,28 @@ pub async fn change_admin_role(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> 
         return err(404, "账号不存在");
     };
     if role == "super_admin" {
-        let _ = sqlx::query("UPDATE admin_users SET role = 'admin', token_invalid_before = UNIX_TIMESTAMP() WHERE id = ?")
-            .bind(ctx.id)
-            .execute(pool)
-            .await;
-        let _ = sqlx::query("UPDATE admin_users SET role = 'super_admin', token_invalid_before = UNIX_TIMESTAMP() WHERE id = ?")
+        let target_status: i64 = sqlx::query_scalar("SELECT status FROM admin_users WHERE id = ?")
             .bind(id)
-            .execute(pool)
-            .await;
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(0);
+        if target_status == 0 {
+            return err(400, "目标账号已被禁用，不可接管超级管理");
+        }
+        // 单条 UPDATE 原子完成双向角色交换，避免两条 UPDATE 间失败出现双超管/零超管
+        let result = sqlx::query(
+            "UPDATE admin_users SET role = CASE WHEN id = ? THEN 'admin' ELSE 'super_admin' END, token_invalid_before = UNIX_TIMESTAMP() WHERE id IN (?, ?)",
+        )
+        .bind(id)
+        .bind(ctx.id)
+        .bind(id)
+        .execute(pool)
+        .await;
+        if result.is_err() {
+            return err(500, "转让失败，请稍后重试");
+        }
         log_operation(pool, ctx, "转让超级管理", &format!("目标账号ID:{}", id), "当前超管降为一级管理").await;
         return ok("已转让超级管理，当前账号降为一级管理", serde_json::Value::Null);
     }
