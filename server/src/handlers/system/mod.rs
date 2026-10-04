@@ -28,29 +28,13 @@ pub use leaderboard::get_leaderboard;
 pub use version::{check_beta_access, get_latest_version, get_version_status, share_download};
 
 pub async fn get_source_status(ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let _ = sqlx::query("DELETE FROM music_source_config")
-        .execute(pool)
-        .await;
-    let sources = [
-        ("酷狗音乐", "kg"),
-        ("QQ音乐", "tx"),
-        ("酷我音乐", "kw"),
-        ("咪咕音乐", "mg"),
-        ("网易音乐", "wy"),
-    ];
-    for (name, code) in sources.iter() {
-        let _ = sqlx::query("INSERT IGNORE INTO music_source_config (source_name, source_code, is_enabled) VALUES (?, ?, 1)")
-            .bind(name)
-            .bind(code)
-            .execute(pool)
-            .await;
-    }
-
+    // 纯只读：种子行由管理端 source 配置维护，此处不得重置（原 DELETE+INSERT
+    // 会把管理员的音源启停配置抹回全启用）
     match sqlx::query("SELECT source_name, source_code, is_enabled FROM music_source_config")
         .fetch_all(pool)
         .await
     {
-        Ok(rows) => {
+        Ok(rows) if !rows.is_empty() => {
             let mut map = serde_json::Map::new();
             let mut kg_enabled = true;
             for row in rows {
@@ -76,7 +60,7 @@ pub async fn get_source_status(ctx: ReqCtx, pool: &MySqlPool) -> Response {
                 })),
             )
         }
-        Err(_) => ctx.json(
+        _ => ctx.json(
             200,
             "ok",
             Some(json!({
