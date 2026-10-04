@@ -410,10 +410,10 @@ const reviewUrl = ref('')
 const reviewId = ref(0)
 
 function openInEditor(item: ThemeItem) {
-  // 后台内部调用：弹层内嵌编辑器（同源 iframe），登录态随 URL 传递，embed=1 隐藏编辑器自有顶栏
-  const token = localStorage.getItem('admin_token') || ''
+  // 后台内部调用：弹层内嵌编辑器（同源 iframe），登录态经共享 localStorage 读取，
+  // 不经 URL 传 token（防落浏览器历史/Referer/访问日志），embed=1 隐藏编辑器自有顶栏
   reviewId.value = item.id
-  reviewUrl.value = `/theme-editor?review_theme=${item.id}&admin_token=${encodeURIComponent(token)}&embed=1`
+  reviewUrl.value = `/theme-editor?review_theme=${item.id}&embed=1`
   reviewVisible.value = true
 }
 

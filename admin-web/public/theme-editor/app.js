@@ -1691,14 +1691,7 @@ function showReviewError(title, detail){
 }
 (function initReviewMode(){
   const qs = new URLSearchParams(location.search);
-  // 后台经 URL 传登录态：落地 localStorage 后立即从地址栏清除
-  const urlToken = (qs.get('admin_token') || '').trim();
-  if(urlToken){
-    try { localStorage.setItem('admin_token', urlToken); } catch(e){}
-    qs.delete('admin_token');
-    const rest = qs.toString();
-    try { history.replaceState(null, '', location.pathname + (rest ? '?' + rest : '') + location.hash); } catch(e){}
-  }
+  // 登录态由管理端与编辑器同源共享 localStorage，不再从 URL 接收 token
   reviewThemeId = qs.get('review_theme') ? (parseInt(qs.get('review_theme'), 10) || 0) : 0;
   // 后台 iframe 内嵌模式：隐藏编辑器自有顶栏品牌与语言切换，只留审核按钮
   if(qs.get('embed') === '1'){ document.body.classList.add('embed-mode'); setupReviewCanvas(); }
