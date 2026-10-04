@@ -1,5 +1,5 @@
 use axum::response::Response;
-use serde_json::{json, Value};
+use serde_json::json;
 use sqlx::MySqlPool;
 use sqlx::Row;
 
@@ -211,7 +211,6 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "pending_avatars": pending_avatars,
         "pending_nicknames": pending_nicknames,
         "pending_feedback": pending_feedback,
-        "api_secret": Value::String(ctx.config.api_secret.clone()),
     });
 
     ok("ok", stats)

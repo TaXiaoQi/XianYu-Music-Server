@@ -122,31 +122,6 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     if raw_images.len() > MAX_FEEDBACK_IMAGES {
         return ctx.err(400, &format!("最多上传 {} 张图片", MAX_FEEDBACK_IMAGES));
     }
-    let mut image_urls: Vec<String> = Vec::new();
-    if !raw_images.is_empty() {
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        for (i, img_val) in raw_images.iter().enumerate() {
-            let data_url = img_val.as_str().unwrap_or("");
-            if data_url.is_empty() {
-                continue;
-            }
-            if data_url.len() > MAX_FEEDBACK_IMAGE_BYTES {
-                continue;
-            }
-            let bytes = match data_url_to_bytes(data_url) {
-                Some(b) if b.len() <= MAX_FEEDBACK_IMAGE_BYTES => b,
-                _ => continue,
-            };
-            let name = format!("feedback_{}_{}.jpg", ts, i);
-            if let Some(url) = compress_and_save_feedback_image(&bytes, &name, 1600, 82) {
-                image_urls.push(public_feedback_img_url(&ctx, url));
-            }
-        }
-    }
-    let images_json = json!(image_urls).to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "请先登录");
     }
@@ -178,6 +153,32 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
             );
         }
     }
+    // 图片解码+落盘放在身份校验与每日限额之后，防止匿名请求把它当免费算力/存储
+    let mut image_urls: Vec<String> = Vec::new();
+    if !raw_images.is_empty() {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        for (i, img_val) in raw_images.iter().enumerate() {
+            let data_url = img_val.as_str().unwrap_or("");
+            if data_url.is_empty() {
+                continue;
+            }
+            if data_url.len() > MAX_FEEDBACK_IMAGE_BYTES {
+                continue;
+            }
+            let bytes = match data_url_to_bytes(data_url) {
+                Some(b) if b.len() <= MAX_FEEDBACK_IMAGE_BYTES => b,
+                _ => continue,
+            };
+            let name = format!("feedback_{}_{}.jpg", ts, i);
+            if let Some(url) = compress_and_save_feedback_image(&bytes, &name, 1600, 82) {
+                image_urls.push(public_feedback_img_url(&ctx, url));
+            }
+        }
+    }
+    let images_json = json!(image_urls).to_string();
     if nickname.is_empty() {
         let row = sqlx::query("SELECT username FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
             .bind(&ciyuanxi_id)

@@ -44,6 +44,11 @@ pub async fn save_audit_external_config(body: &str, ctx: &AdminCtx, pool: &MySql
     if cfg.api_key.is_empty() {
         cfg.api_key = current.api_key;
     }
+    if !cfg.endpoint.is_empty() {
+        if let Err(e) = audit_policy::validate_external_endpoint(&cfg.endpoint).await {
+            return err(400, &format!("外部审核地址不可用: {}", e));
+        }
+    }
     if let Err(e) = audit_policy::save_config(pool, &cfg).await {
         { tracing::error!("保存审核配置失败: {e}"); return err(500, "保存审核配置失败"); }
     }

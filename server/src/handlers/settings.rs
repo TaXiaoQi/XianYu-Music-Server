@@ -34,8 +34,23 @@ pub async fn get_user_info(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respons
     let Some(user) = user else {
         return ctx.err(404, "用户不存在");
     };
-    let email: String = user.try_get("email").unwrap_or_default();
-    let role = crate::handlers::helpers::resolve_role_by_email(pool, &email).await;
+    // email/role 仅在请求 token 能核验为本人时返回，防止遍历弦予号探测他人邮箱
+    let token = str_of(&data, "token");
+    let owner = crate::handlers::token::resolve_owner(pool, &token)
+        .await
+        .unwrap_or_default();
+    let self_ciyuanxi_id: String = user.get("ciyuanxi_id");
+    let owned = !owner.is_empty() && (owner == self_ciyuanxi_id || owner == ciyuanxi_id);
+    let email: String = if owned {
+        user.try_get("email").unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let role = if owned {
+        crate::handlers::helpers::resolve_role_by_email(pool, &email).await
+    } else {
+        "member".to_string()
+    };
     let payload = json!({
         "user_id": user.get::<i64,_>("id"),
         "nickname": user.get::<String,_>("nickname"),

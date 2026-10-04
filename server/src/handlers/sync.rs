@@ -37,6 +37,13 @@ pub async fn file_sync_upload_chunk(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "参数错误");
     }
+    // 客户端 maxSongsPerChunk=1500/块，256 块足够 38 万首歌；防恶意刷行数
+    if !(1..=256).contains(&total_chunks) {
+        return ctx.err(400, "total_chunks 超出范围");
+    }
+    if !(0..total_chunks).contains(&chunk_index) {
+        return ctx.err(400, "chunk_index 超出范围");
+    }
     let payload = json!({
         "chunk_index": chunk_index,
         "total_chunks": total_chunks,

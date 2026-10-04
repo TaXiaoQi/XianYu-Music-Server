@@ -197,9 +197,70 @@ fn module_enabled(cfg: &AuditExternalConfig, scene: &str) -> bool {
     }
 }
 
+// 机审地址仅允许指向公网 http(s) 服务，防止借审核请求探测内网（SSRF）
+pub async fn validate_external_endpoint(url: &str) -> Result<(), String> {
+    let rest = match url.split_once("://") {
+        Some(("http", rest)) | Some(("https", rest)) => rest,
+        _ => return Err("仅支持 http/https 地址".to_string()),
+    };
+    let host_port = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_port = host_port.rsplit('@').next().unwrap_or(host_port);
+    let host = if let Some(stripped) = host_port.strip_prefix('[') {
+        stripped.split(']').next().unwrap_or("")
+    } else {
+        host_port.split(':').next().unwrap_or("")
+    };
+    let host = host.trim().trim_end_matches('.').to_lowercase();
+    if host.is_empty() {
+        return Err("主机名为空".to_string());
+    }
+    if host == "localhost" || host.ends_with(".localhost") || host.ends_with(".local") || host.ends_with(".internal") {
+        return Err("不允许指向内网主机名".to_string());
+    }
+    let addrs: Vec<std::net::IpAddr> = match host.parse::<std::net::IpAddr>() {
+        Ok(ip) => vec![ip],
+        Err(_) => match tokio::net::lookup_host((host.as_str(), 443)).await {
+            Ok(iter) => iter.map(|s| s.ip()).collect(),
+            Err(_) => return Err("主机解析失败".to_string()),
+        },
+    };
+    if addrs.is_empty() {
+        return Err("主机解析失败".to_string());
+    }
+    for ip in addrs {
+        if is_private_ip(ip) {
+            return Err("不允许指向内网地址".to_string());
+        }
+    }
+    Ok(())
+}
+
+fn is_private_ip(ip: std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_private()
+                || v4.is_loopback()
+                || v4.is_link_local()
+                || v4.is_unspecified()
+                || v4.is_broadcast()
+                || v4.octets()[0] == 0
+                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 64)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+        }
+    }
+}
+
 async fn call_external(cfg: &AuditExternalConfig, payload: Value) -> AuditResult {
     if cfg.endpoint.trim().is_empty() {
         return AuditResult::manual("外部审核地址为空");
+    }
+    if let Err(e) = validate_external_endpoint(cfg.endpoint.trim()).await {
+        return AuditResult::manual(format!("外部审核地址不可用: {}", e));
     }
 
     let timeout = Duration::from_millis(cfg.timeout_ms.clamp(1000, 30000));
