@@ -33,7 +33,7 @@ pub async fn proxy_api_test(body: &str, ctx: &AdminCtx, _pool: &MySqlPool) -> Re
     if api_action.is_empty() {
         return err(400, "缺少接口名称");
     }
-    let url = format!("{}/api?action={}", local_api_base(ctx), api_action);
+    let url = format!("{}/api", local_api_base(ctx));
     let secret = &ctx.config.api_secret;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
@@ -44,6 +44,7 @@ pub async fn proxy_api_test(body: &str, ctx: &AdminCtx, _pool: &MySqlPool) -> Re
     let result = if method == "POST" {
         let mut req = client
             .post(&url)
+            .query(&[("action", api_action.as_str())])
             .body(req_body.clone())
             .header("content-type", "application/json; charset=utf-8");
         if need_sign {
@@ -55,7 +56,7 @@ pub async fn proxy_api_test(body: &str, ctx: &AdminCtx, _pool: &MySqlPool) -> Re
         }
         req.send().await
     } else {
-        let mut req = client.get(&url);
+        let mut req = client.get(&url).query(&[("action", api_action.as_str())]);
         if need_sign {
             let ts = sign::now_ts().to_string();
             let n = nonce();
