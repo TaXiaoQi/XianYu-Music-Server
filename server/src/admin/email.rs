@@ -440,9 +440,12 @@ pub async fn email_users_delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
             for pl in &playlists {
                 let cover: String = pl.try_get("cover_path").unwrap_or_default();
                 if !cover.is_empty() {
-                    let abs = std::path::Path::new("uploads").join("playlists").join(cover);
-                    if abs.is_file() {
-                        let _ = std::fs::remove_file(&abs);
+                    // 只取文件名段再拼接：防遗留脏数据含路径分隔符导致任意文件删除
+                    if let Some(name) = std::path::Path::new(&cover).file_name() {
+                        let abs = std::path::Path::new("uploads").join("playlists").join(name);
+                        if abs.is_file() {
+                            let _ = std::fs::remove_file(&abs);
+                        }
                     }
                 }
                 let pid: i64 = pl.get("id");

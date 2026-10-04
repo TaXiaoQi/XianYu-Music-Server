@@ -26,8 +26,11 @@ pub async fn delete_playlist(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
 
     let cover_path: String = row.try_get("cover_path").unwrap_or_default();
     if !cover_path.is_empty() {
-        let abs = std::path::Path::new("uploads/playlists").join(&cover_path);
-        let _ = std::fs::remove_file(abs);
+        // 只取文件名段再拼接：防遗留脏数据含路径分隔符导致任意文件删除
+        if let Some(name) = std::path::Path::new(&cover_path).file_name() {
+            let abs = std::path::Path::new("uploads/playlists").join(name);
+            let _ = std::fs::remove_file(abs);
+        }
     }
 
     let _ = sqlx::query("DELETE FROM user_playlist_songs WHERE playlist_id = ?")
