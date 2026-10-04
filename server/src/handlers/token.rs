@@ -52,6 +52,10 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "get_master_quota_usage",
     // recommend
     "get_daily_recommend",
+    "report_daily_like",
+    "report_daily_dislike",
+    // 行为上报：写入用户播放历史/听歌时长，必须绑定本人（防匿名冒名投毒榜单）
+    "report_user_behavior",
     // social
     "submit_feedback",
     "submit_appeal",
