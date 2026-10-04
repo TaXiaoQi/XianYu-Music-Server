@@ -206,19 +206,29 @@ pub async fn report_user_behavior(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     if duration >= 10 {
         let song_name = str_of(&data, "song_name");
         if !song_name.is_empty() {
-            let _ = sqlx::query(
-                "INSERT INTO play_history (user_id, ciyuanxi_id, song_hash, song_name, singer, source, duration, played_at) \
-                 VALUES (?,?,?,?,?,?,?, NOW() + INTERVAL 8 HOUR)",
+            // 单用户当日行数上限：play_history 按天封顶，防脚本刷行（时长另有 day_cap）
+            let today_rows: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM play_history WHERE ciyuanxi_id = ? AND played_at >= (NOW() + INTERVAL 8 HOUR) - INTERVAL 1 DAY",
             )
-            .bind(int_of(&data, "user_id").max(0))
             .bind(&ciyuanxi_id)
-            .bind(str_of(&data, "song_hash"))
-            .bind(&song_name)
-            .bind(str_of(&data, "singer"))
-            .bind(str_of(&data, "source"))
-            .bind(duration)
-            .execute(pool)
-            .await;
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+            if today_rows < 2000 {
+                let _ = sqlx::query(
+                    "INSERT INTO play_history (user_id, ciyuanxi_id, song_hash, song_name, singer, source, duration, played_at) \
+                     VALUES (?,?,?,?,?,?,?, NOW() + INTERVAL 8 HOUR)",
+                )
+                .bind(int_of(&data, "user_id").max(0))
+                .bind(&ciyuanxi_id)
+                .bind(str_of(&data, "song_hash"))
+                .bind(&song_name)
+                .bind(str_of(&data, "singer"))
+                .bind(str_of(&data, "source"))
+                .bind(duration)
+                .execute(pool)
+                .await;
+            }
 
             let _ = sqlx::query(
                 "DELETE FROM play_history WHERE ciyuanxi_id = ? AND played_at < (NOW() + INTERVAL 8 HOUR) - INTERVAL 180 DAY",
