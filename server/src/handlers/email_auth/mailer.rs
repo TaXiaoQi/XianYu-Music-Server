@@ -190,6 +190,19 @@ fn general_smtp_account(cfg: &EmailRuntimeConfig) -> Option<SmtpAccount> {
     })
 }
 
+// reqwest 错误的 Display 会带完整 URL（query 里含 SMTP 授权码），只能落类别化描述
+fn describe_http_error(e: &reqwest::Error) -> String {
+    if let Some(status) = e.status() {
+        format!("HTTP {}", status.as_u16())
+    } else if e.is_timeout() {
+        "请求超时".to_string()
+    } else if e.is_connect() {
+        "网络连接失败".to_string()
+    } else {
+        "请求失败".to_string()
+    }
+}
+
 async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, plain: &str, html_opts: Option<&str>, recipient: &str) -> Result<(), String> {
     if cfg.api_primary.is_empty() && cfg.api_backup.is_empty() {
         return Err("外部邮箱机 API 地址未配置".to_string());
@@ -218,14 +231,15 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, plain: &str, h
             Ok(r) => r.text().await.unwrap_or_default(),
             Err(e) => {
                 if cfg.api_backup.is_empty() {
-                    return Err(format!("邮箱 API 主地址请求失败，且备用地址未配置: {}", e));
+                    return Err(format!("邮箱 API 主地址请求失败，且备用地址未配置: {}", describe_http_error(&e)));
                 }
                 match client.get(&cfg.api_backup).query(&params).send().await {
                     Ok(r) => r.text().await.unwrap_or_default(),
                     Err(e2) => {
                         return Err(format!(
                             "主地址和备用地址均请求失败。主: {}; 备: {}",
-                            e, e2
+                            describe_http_error(&e),
+                            describe_http_error(&e2)
                         ))
                     }
                 }
@@ -234,16 +248,17 @@ async fn send_via_http_api(cfg: &EmailRuntimeConfig, title: &str, plain: &str, h
     } else {
         match client.get(&cfg.api_backup).query(&params).send().await {
             Ok(r) => r.text().await.unwrap_or_default(),
-            Err(e) => return Err(format!("邮箱 API 备用地址请求失败: {}", e)),
+            Err(e) => return Err(format!("邮箱 API 备用地址请求失败: {}", describe_http_error(&e))),
         }
     };
 
     let ok_signals = ["success", "ok", "true", "1", "200", "发送成功"];
     let lower = body.to_lowercase();
-    if ok_signals.iter().any(|s| lower.contains(s)) || !body.is_empty() {
+    if ok_signals.iter().any(|s| lower.contains(s)) {
         Ok(())
     } else {
-        Err(format!("邮箱 API 返回未包含成功标识: {}", &body[..body.len().min(200)]))
+        let short: String = body.chars().take(200).collect();
+        Err(format!("邮箱 API 返回未包含成功标识: {}", short))
     }
 }
 
