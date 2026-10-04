@@ -101,7 +101,9 @@ pub async fn watch_relay_handler(
     if !conn_acquire(addr.ip()) {
         return (StatusCode::TOO_MANY_REQUESTS, "too many connections").into_response();
     }
-    ws.on_upgrade(move |socket| async move {
+    // 升级失败（握手未完成即断开）不会走 on_upgrade 闭包，需在此释放计数防泄漏占满配额
+    let ip = addr.ip();
+    ws.on_failed_upgrade(move |_| conn_release(ip)).on_upgrade(move |socket| async move {
         handle_socket(socket).await;
         conn_release(addr.ip());
     })
