@@ -384,8 +384,8 @@ pub async fn report_daily_dislike(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     if ciyuanxi_id.is_empty() {
         return ctx.err(401, "请先登录后使用每日推荐");
     }
-    let song_name = str_of(&data, "song_name");
-    let singer = str_of(&data, "singer");
+    let song_name = clip(str_of(&data, "song_name").trim(), 200);
+    let singer = clip(str_of(&data, "singer").trim(), 200);
     if song_name.is_empty() {
         return ctx.err(400, "缺少歌曲信息");
     }
