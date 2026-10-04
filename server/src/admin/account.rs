@@ -250,7 +250,8 @@ pub async fn reset_listen_duration(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     if reason.is_empty() {
         return err(400, "请填写清除原因");
     }
-    let _ = sqlx::query("UPDATE app_users SET listen_duration = 0, unique_songs_count = 0, listen_stats_reset_at = NOW(), listen_duration_offset = 0, unique_songs_offset = 0 WHERE ciyuanxi_id = ?")
+    let _ = sqlx::query("UPDATE app_users SET listen_duration = 0, unique_songs_count = 0, listen_stats_reset_at = NOW(), listen_stats_reset_reason = ?, listen_duration_offset = 0, unique_songs_offset = 0 WHERE ciyuanxi_id = ?")
+        .bind(&reason)
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
@@ -258,7 +259,6 @@ pub async fn reset_listen_duration(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
-    crate::handlers::sync::write_listen_stats_reset(pool, &ciyuanxi_id, &reason).await;
     log_operation(pool, ctx, "重置听歌时长", &format!("ciyuanxi_id={}, reason={}", ciyuanxi_id, reason), "").await;
     ok("重置成功", serde_json::Value::Null)
 }

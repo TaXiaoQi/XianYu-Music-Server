@@ -272,29 +272,6 @@ pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx, pool: &MySqlPool
     }
 }
 
-pub async fn write_listen_stats_reset(pool: &MySqlPool, ciyuanxi_id: &str, reason: &str) -> bool {
-    let trimmed = reason.trim();
-    let save = json!({
-        "version": 2,
-        "uploaded_at": now_str(),
-        "timestamp": now_ts(),
-        "merged": true,
-        "cleared": true,
-        "reset_at": now_ts(),
-        "reason": if trimmed.is_empty() { "违规" } else { trimmed },
-        "listen_stats": {
-            "global": {
-                "total_play_count": 0,
-                "total_play_time_ms": 0,
-                "first_played_at": null,
-                "last_played_at": null
-            },
-            "daily": []
-        }
-    });
-    write_snapshot(pool, ciyuanxi_id, "listen_stats.json", &save).await
-}
-
 fn sanitize_subscriptions(raw: &Value) -> Option<Vec<Value>> {
     let arr = raw.as_array()?;
     let list: Vec<Value> = arr
@@ -572,65 +549,5 @@ pub async fn favorites_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) 
     match read_snapshot(pool, &ciyuanxi_id, "favorites.json").await {
         Ok(v) => ctx.ok("获取成功", v),
         Err(_) => ctx.ok("暂无同步数据", json!({ "favorites": [] })),
-    }
-}
-
-pub async fn listen_stats_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
-    if ciyuanxi_id.is_empty() {
-        return ctx.err(400, "参数错误");
-    }
-    let stats = data.get("listen_stats").cloned().unwrap_or_else(|| json!(null));
-    if stats.is_null() {
-        return ctx.err(400, "listen_stats 不能为空");
-    }
-    let merged = matches!(data.get("merged"), Some(Value::Bool(true)));
-    let cleared = matches!(data.get("cleared"), Some(Value::Bool(true)));
-    let mut reset_at = data.get("reset_at").and_then(Value::as_i64).unwrap_or(0);
-    if reset_at == 0 {
-        reset_at = read_snapshot(pool, &ciyuanxi_id, "listen_stats.json")
-            .await
-            .ok()
-            .and_then(|v| v.get("reset_at").and_then(Value::as_i64))
-            .unwrap_or(0);
-    }
-    let mut reason = data
-        .get("reason")
-        .and_then(Value::as_str)
-        .map(str::to_string)
-        .unwrap_or_default();
-    if reason.trim().is_empty() {
-        reason = read_snapshot(pool, &ciyuanxi_id, "listen_stats.json")
-            .await
-            .ok()
-            .and_then(|v| v.get("reason").and_then(Value::as_str).map(String::from))
-            .unwrap_or_default();
-    }
-    let save = json!({
-        "version": 2,
-        "uploaded_at": now_str(),
-        "timestamp": now_ts(),
-        "merged": merged,
-        "cleared": cleared,
-        "reset_at": reset_at,
-        "reason": reason,
-        "listen_stats": stats
-    });
-    if !write_snapshot(pool, &ciyuanxi_id, "listen_stats.json", &save).await {
-        return ctx.err(500, "同步数据写入失败");
-    }
-    ctx.ok("上传成功", json!({ "updated": true }))
-}
-
-pub async fn listen_stats_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
-    if ciyuanxi_id.is_empty() {
-        return ctx.err(400, "参数错误");
-    }
-    match read_snapshot(pool, &ciyuanxi_id, "listen_stats.json").await {
-        Ok(v) => ctx.ok("获取成功", v),
-        Err(_) => ctx.ok("暂无同步数据", json!({ "listen_stats": null })),
     }
 }

@@ -778,7 +778,7 @@ async fn report_listen_stats_delta(
         .max(0);
 
     let reset_row = sqlx::query(
-        "SELECT listen_stats_reset_at, listen_reported_at FROM app_users WHERE ciyuanxi_id = ?",
+        "SELECT listen_stats_reset_at, listen_stats_reset_reason, listen_reported_at FROM app_users WHERE ciyuanxi_id = ?",
     )
     .bind(ciyuanxi_id)
     .fetch_optional(pool)
@@ -799,8 +799,9 @@ async fn report_listen_stats_delta(
         use sqlx::Row;
         let reset: Option<String> = r.try_get("listen_stats_reset_at").unwrap_or(None);
         if let Some(ts) = reset {
+            let reason: String = r.try_get("listen_stats_reset_reason").unwrap_or_default();
             let _ = sqlx::query(
-                "UPDATE app_users SET listen_stats_reset_at = NULL, listen_duration = 0, unique_songs_count = 0, listen_duration_offset = 0, unique_songs_offset = 0, listen_reported_at = 0 WHERE ciyuanxi_id = ?",
+                "UPDATE app_users SET listen_stats_reset_at = NULL, listen_stats_reset_reason = '', listen_duration = 0, unique_songs_count = 0, listen_duration_offset = 0, unique_songs_offset = 0, listen_reported_at = 0 WHERE ciyuanxi_id = ?",
             )
             .bind(ciyuanxi_id)
             .execute(pool)
@@ -813,7 +814,7 @@ async fn report_listen_stats_delta(
                 .bind(ciyuanxi_id)
                 .execute(pool)
                 .await;
-            return ctx.ok("ok", Some(json!({ "reset_at": ts })));
+            return ctx.ok("ok", Some(json!({ "reset_at": ts, "reason": reason })));
         }
     } else {
         return ctx.err(404, "用户不存在");
@@ -954,6 +955,16 @@ async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySql
             "server_weekly_duration": weekly.max(0),
         })),
     )
+}
+
+/// 登录/同步后主动拉取云端现算听歌统计（总/今日/近七日），替代已删除的快照下发。
+pub async fn get_listen_stats_summary(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = extract_id(&data);
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "弦予号不能为空");
+    }
+    read_listen_stats_snapshot(&ciyuanxi_id, ctx, pool).await
 }
 
 pub async fn get_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {

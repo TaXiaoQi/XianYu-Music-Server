@@ -31,6 +31,7 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "app_users", "background_url", "LONGTEXT NULL").await;
     ensure_column(pool, "app_users", "signature", "varchar(255) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "listen_stats_reset_at", "datetime NULL").await;
+    ensure_column(pool, "app_users", "listen_stats_reset_reason", "varchar(128) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "app_users", "listen_reported_at", "bigint(20) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "unique_songs_offset", "int(11) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "app_users", "ciyuanxi_id_updated_at", "datetime NULL").await;
