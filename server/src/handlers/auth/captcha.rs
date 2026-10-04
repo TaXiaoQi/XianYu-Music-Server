@@ -102,6 +102,13 @@ pub async fn verify_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
 
     let expected: String = row.get("answer");
     let ip: String = row.get("ip");
+    // 一次性消费：无论对错本题即废（对齐 require_captcha），防反复枚举答案；
+    // 通过时保留 used=0 供业务请求二次消费后作废
+    let id: i64 = row.get("id");
+    let _ = sqlx::query("UPDATE human_captcha_challenges SET used = 1 WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await;
     if ip != ctx.client_ip || expected.trim() != captcha_answer {
         return ctx.err(400, "人机验证错误，请重新输入");
     }
