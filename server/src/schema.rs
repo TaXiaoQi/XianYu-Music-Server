@@ -40,7 +40,7 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_app_users_email_nullable(pool).await;
     ensure_column(pool, "admin_users", "avatar_url", "varchar(512) NOT NULL DEFAULT ''").await;
     ensure_column(pool, "admin_users", "email", "varchar(128) NOT NULL DEFAULT ''").await;
-    ensure_column(pool, "admin_users", "token_invalid_before", "bigint(20) NULL DEFAULT NULL").await;
+    ensure_column(pool, "admin_users", "token_invalid_before", "bigint(20) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "notification_emails", "notify_wallpaper", "tinyint(1) NOT NULL DEFAULT 1").await;
     ensure_column(pool, "notification_emails", "notify_avatar", "tinyint(1) NOT NULL DEFAULT 1").await;
     ensure_column(pool, "notification_emails", "notify_nickname", "tinyint(1) NOT NULL DEFAULT 1").await;

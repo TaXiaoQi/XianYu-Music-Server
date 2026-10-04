@@ -84,14 +84,13 @@ pub async fn verify_token(cfg: &crate::config::Config, header: Option<&str>, poo
     .ok()?;
     let claims = data.claims;
     if let Some(pool) = pool {
-        // 账号不存在（已删除）时拒绝：失效标记查不到不能当作免检
+        // 账号不存在（已删除）时拒绝；NULL 失效标记视为 0（不拦截），不可与"行不存在"混判
         let invalid_before: Option<i64> =
-            sqlx::query_scalar("SELECT token_invalid_before FROM admin_users WHERE id = ?")
+            sqlx::query_scalar("SELECT COALESCE(token_invalid_before, 0) FROM admin_users WHERE id = ?")
                 .bind(claims.sub)
                 .fetch_optional(pool)
                 .await
                 .ok()
-                .flatten()
                 .flatten();
         let Some(ts) = invalid_before else {
             return None;
