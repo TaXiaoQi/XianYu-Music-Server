@@ -240,6 +240,7 @@ const MODULE_METHODS: Record<string, string[]> = {
   lx_duration: ['batchTrackInterval'],
   lx_lyric: ['fetchLyric'],
   lx_cover: ['extractCoverUrl'],
+  lx_toplist: ['getTopLists', 'getTopListDetail'],
   plugin_fallback: [
     'isQqMusicPluginSource',
     'hostSearchFallback',
@@ -263,6 +264,7 @@ const MODULE_LABELS: Record<string, string> = {
   lx_duration: '歌曲时长加载',
   lx_lyric: '逐字歌词解码',
   lx_cover: '歌曲封面提取',
+  lx_toplist: '落雪音源榜单',
   plugin_fallback: '插件宿主兜底',
   playlist_import: '歌单导入',
 }

@@ -51,6 +51,7 @@ pub const VALID_MODULE_KEYS: &[(&str, &str)] = &[
     ("lx_duration", "歌曲时长加载"),
     ("lx_lyric", "逐字歌词解码"),
     ("lx_cover", "歌曲封面提取"),
+    ("lx_toplist", "落雪音源榜单"),
     ("plugin_fallback", "插件宿主兜底"),
     ("playlist_import", "歌单导入"),
 ];

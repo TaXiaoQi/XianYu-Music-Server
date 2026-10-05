@@ -64,7 +64,7 @@ ctx.utils.normalizeQualityKey(raw)          // → QualityKey | null
 ctx.utils.stripHtmlTags(html)
 ```
 
-## 七个模块的方法签名
+## 八个模块的方法签名
 
 | 模块 | 方法 | args | 返回值 |
 |---|---|---|---|
@@ -74,6 +74,8 @@ ctx.utils.stripHtmlTags(html)
 | `lx_duration` | `batchTrackInterval` | `{ songIds }` | 普通对象 `{ songId: 秒 }`（客户端自动转 Map） |
 | `lx_lyric` | `fetchLyric` | `{ source, songInfo }` | `{ lyric, tlyric, rlyric, lxlyric }` 或 `null` |
 | `lx_cover` | `extractCoverUrl` | `{ item }` | 封面 URL 字符串 |
+| `lx_toplist` | `getTopLists` | `{ sources }` | 单分组数组 `[{ title, data: [{ id, title, coverImg, description, source }] }]` |
+| | `getTopListDetail` | `{ source, id, page, limit }` | `{ list: LxSearchItem[], isEnd }` |
 | `plugin_fallback` | `isQqMusicPluginSource` | `{ source, platform }` | boolean |
 | | `hostSearchFallback` | `{ source, keyword, page, limit }` | 搜索结果 |
 | | `hostAlbumSearchFallback` | `{ source, keyword, page, limit }` | 专辑数组 |
@@ -197,7 +199,7 @@ return {
 
 进入后台「内容管理 → 兜底管理」（移动端在「更多 → 兜底管理」）：
 
-- 七个模块卡片常驻展示，未配置的显示「使用内置默认实现」
+- 八个模块卡片常驻展示，未配置的显示「使用内置默认实现」
 - 编辑弹窗有「填入模板」按钮，按模块生成骨架代码
 - 弹窗底部「ctx 能力契约」可展开查看
 - 方法 chip 绿色高亮表示当前代码已覆盖该方法（文本探测，仅供参考）
