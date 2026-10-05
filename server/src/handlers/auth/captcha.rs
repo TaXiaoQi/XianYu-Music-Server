@@ -87,7 +87,7 @@ pub async fn verify_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     }
 
     let row = sqlx::query(
-        "SELECT answer, ip FROM human_captcha_challenges WHERE captcha_id = ? AND purpose = ? AND used = 0 AND expires_at > NOW() LIMIT 1",
+        "SELECT id, answer, ip FROM human_captcha_challenges WHERE captcha_id = ? AND purpose = ? AND used = 0 AND expires_at > NOW() LIMIT 1",
     )
     .bind(&captcha_id)
     .bind(&purpose)
@@ -102,17 +102,17 @@ pub async fn verify_captcha(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
 
     let expected: String = row.get("answer");
     let ip: String = row.get("ip");
-    // 一次性消费：无论对错本题即废（对齐 require_captcha），防反复枚举答案；
-    // 通过时保留 used=0 供业务请求二次消费后作废
     let id: i64 = row.get("id");
-    let _ = sqlx::query("UPDATE human_captcha_challenges SET used = 1 WHERE id = ?")
-        .bind(id)
-        .execute(pool)
-        .await;
     if ip != ctx.client_ip || expected.trim() != captcha_answer {
+        // 错误即作废（对齐 require_captcha），防反复枚举答案
+        let _ = sqlx::query("UPDATE human_captcha_challenges SET used = 1 WHERE id = ?")
+            .bind(id)
+            .execute(pool)
+            .await;
         return ctx.err(400, "人机验证错误，请重新输入");
     }
 
+    // 通过时保留 used=0，供业务请求 require_captcha 二次消费后作废
     ctx.ok("验证通过", json!({ "verified": true }))
 }
 
