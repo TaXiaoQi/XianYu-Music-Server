@@ -97,10 +97,14 @@ fn row_to_wallpaper(ctx: &ReqCtx, row: &sqlx::mysql::MySqlRow) -> Value {
     let id: i64 = row.try_get::<i64, _>("id").unwrap_or_else(|_| {
         row.try_get::<i32, _>("id").map(|v| v as i64).unwrap_or_default()
     });
-    let image_url = public_url(ctx, row.try_get::<String, _>("image_url").unwrap_or_default());
-    let thumbnail_url = public_url(ctx, row.try_get::<String, _>("thumbnail_url").unwrap_or_default());
+    // 存量视频壁纸 image_url/thumbnail_url 为空，回退到视频封面
+    let image_raw: String = row.try_get::<String, _>("image_url").unwrap_or_default();
+    let thumb_raw: String = row.try_get::<String, _>("thumbnail_url").unwrap_or_default();
+    let poster_raw: String = row.try_get::<String, _>("video_poster").unwrap_or_default();
+    let image_url = public_url(ctx, if image_raw.is_empty() { poster_raw.clone() } else { image_raw });
+    let thumbnail_url = public_url(ctx, if thumb_raw.is_empty() { poster_raw.clone() } else { thumb_raw });
+    let video_poster = public_url(ctx, poster_raw);
     let video_url = public_url(ctx, row.try_get::<String, _>("video_url").unwrap_or_default());
-    let video_poster = public_url(ctx, row.try_get::<String, _>("video_poster").unwrap_or_default());
     json!({
         "id": id,
         "title": row.try_get::<String, _>("title").unwrap_or_default(),
@@ -228,6 +232,11 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
 
     let video_data = str_of(&data, "video_data").trim().to_string();
     if !video_data.is_empty() {
+        // 展示模式：缺省 video 兼容旧客户端
+        let media_type = match data.get("media_type").and_then(|v| v.as_str()).map(str::trim) {
+            Some("image") => "image",
+            _ => "video",
+        };
         return upload_wallpaper_video(
             ctx,
             pool,
@@ -240,6 +249,7 @@ pub async fn upload_wallpaper(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
             &image_data,
             &video_data,
             data.get("video_duration").and_then(|v| v.as_i64()).unwrap_or(0),
+            media_type,
         )
         .await;
     }
@@ -357,6 +367,7 @@ async fn upload_wallpaper_video(
     image_data: &str,
     video_data: &str,
     video_duration: i64,
+    media_type: &str,
 ) -> Response {
     let Some(video_bytes) = data_url_to_bytes(video_data) else {
         return ctx.err(400, "无效的视频数据");
@@ -409,12 +420,13 @@ async fn upload_wallpaper_video(
     };
 
     let ins = sqlx::query(
-        "INSERT INTO wallpapers (title, description, category, platform, media_type, video_url, video_poster, video_duration, video_size, video_sha256, image_url, thumbnail_url, status, uploaded_by, uploaded_by_nickname, reviewed_at, reviewed_by) VALUES (?, ?, ?, ?, 'video', '', '', ?, ?, ?, '', '', ?, ?, ?, IF(? = 'pending', NULL, NOW()), ?)",
+        "INSERT INTO wallpapers (title, description, category, platform, media_type, video_url, video_poster, video_duration, video_size, video_sha256, image_url, thumbnail_url, status, uploaded_by, uploaded_by_nickname, reviewed_at, reviewed_by) VALUES (?, ?, ?, ?, ?, '', '', ?, ?, ?, '', '', ?, ?, ?, IF(? = 'pending', NULL, NOW()), ?)",
     )
     .bind(title)
     .bind(description)
     .bind(category)
     .bind(platform)
+    .bind(media_type)
     .bind(video_duration)
     .bind(video_bytes.len() as i64)
     .bind(sha256_hex(&video_bytes))
@@ -448,9 +460,13 @@ async fn upload_wallpaper_video(
 
     let video_url = format!("/uploads/wallpapers/wallpaper_{}.mp4", wp_id);
     let poster_url = format!("/uploads/wallpapers/poster_{}.jpg", wp_id);
-    let _ = sqlx::query("UPDATE wallpapers SET video_url = ?, video_poster = ? WHERE id = ?")
+    let thumb_url = format!("/uploads/wallpapers/thumb_{}.jpg", wp_id);
+    // image_url/thumbnail_url 指向封面与缩略图，保证「展示图片」模式下客户端可下载静帧
+    let _ = sqlx::query("UPDATE wallpapers SET video_url = ?, video_poster = ?, image_url = ?, thumbnail_url = ? WHERE id = ?")
         .bind(&video_url)
         .bind(&poster_url)
+        .bind(&poster_url)
+        .bind(&thumb_url)
         .bind(wp_id)
         .execute(pool)
         .await;
