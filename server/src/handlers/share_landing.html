@@ -3,6 +3,47 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<!-- 深浅模式：手动切换（浅色/深色/跟随浏览器，localStorage 持久化），早期引导脚本写 html[data-theme] 防闪烁，color-scheme 让 UA 原生控件同步适配 -->
+<meta name="color-scheme" content="light dark">
+<script>
+/* 深浅模式早期引导：先于首帧渲染解析目标主题（跟随浏览器时读系统偏好），避免深色用户看到白屏闪烁。
+   与后台/主题编辑器同款三态循环：跟随浏览器 → 浅色 → 深色。 */
+(function(){
+  var KEY = 'xy-share-theme-mode';
+  var mq = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  function sysDark(){ return mq ? mq.matches : false; }
+  function resolve(m){ return m === 'light' || m === 'dark' ? m : (sysDark() ? 'dark' : 'light'); }
+  var mode;
+  try { mode = localStorage.getItem(KEY) || 'system'; } catch (e) { mode = 'system'; }
+  if (mode !== 'light' && mode !== 'dark' && mode !== 'system') mode = 'system';
+  function apply(){
+    var r = resolve(mode), b = document.getElementById('btnThemeMode');
+    document.documentElement.setAttribute('data-theme', r);
+    document.documentElement.style.colorScheme = r;
+    if (b) {
+      var lab = mode === 'system' ? '跟随浏览器' : (mode === 'dark' ? '深色' : '浅色');
+      var t = b.querySelector('span'); if (t) t.textContent = lab;
+      var sun = b.querySelector('.tt-sun'), moon = b.querySelector('.tt-moon');
+      if (sun) sun.style.display = r === 'dark' ? 'none' : '';
+      if (moon) moon.style.display = r === 'dark' ? '' : 'none';
+      b.title = '当前：' + lab;
+    }
+  }
+  function cycle(){
+    mode = mode === 'system' ? 'light' : (mode === 'light' ? 'dark' : 'system');
+    try { localStorage.setItem(KEY, mode); } catch (e) { }
+    apply();
+  }
+  if (mq) {
+    var onSys = function(){ if (mode === 'system') apply(); };
+    if (mq.addEventListener) mq.addEventListener('change', onSys);
+    else if (mq.addListener) mq.addListener(onSys);
+  }
+  window.__xyShareTheme = { apply: apply, cycle: cycle };
+  apply();
+  document.addEventListener('DOMContentLoaded', function(){ apply(); });
+})();
+</script>
 <title>__TITLE__</title>
 <!-- 浏览器标签页 favicon：与官网一致使用站点 logo（绝对地址，避免 https 落地页混合内容） -->
 <link rel="icon" type="image/png" href="__FAVICON__">
@@ -74,14 +115,35 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans G
 .channel-link .channel-tag{font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;background:rgba(236,65,65,.1);color:var(--accent);margin-left:8px;flex-shrink:0}
 .channel-link .channel-cur{font-size:10px;font-weight:800;padding:1px 7px;border-radius:999px;background:linear-gradient(135deg,#ec4141,#d63b3b);color:#fff;flex-shrink:0}
 .channel-link.is-cur{background:rgba(236,65,65,.08);color:#c03434;box-shadow:inset 0 0 0 1px rgba(236,65,65,.25)}
-.share-lang{position:fixed;top:14px;right:14px;z-index:999}
-.share-lang .lang-switch__btn{display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:50%;border:1px solid rgba(15,23,42,.08);background:rgba(255,255,255,.9);color:#353a3e;cursor:pointer;box-shadow:0 4px 16px rgba(15,23,42,.12);transition:background .18s,color .18s}
-.share-lang .lang-switch__btn:hover{color:#ec4141;background:#fff}
+/* 顶栏按钮对：语言胶囊 + 主题胶囊（与后台顶栏同款） */
+.share-top{position:fixed;top:14px;right:14px;z-index:999;display:flex;align-items:center;gap:10px}
+.share-lang{display:inline-flex}
+.share-lang .lang-switch{position:relative}
+.share-lang .lang-switch__btn,.share-theme{display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 13px;border-radius:999px;border:1px solid rgba(15,23,42,.08);background:rgba(255,255,255,.9);color:#353a3e;font-size:12.5px;font-weight:700;font-family:inherit;cursor:pointer;box-shadow:0 4px 16px rgba(15,23,42,.12);transition:background .18s,color .18s,transform .18s}
+.share-lang .lang-switch__btn:hover,.share-theme:hover{color:#ec4141;background:#fff;transform:translateY(-1px)}
+.share-lang .lang-switch__btn svg,.share-theme svg{flex:none;width:15px;height:15px}
 .share-lang .lang-menu{position:absolute;top:calc(100% + 8px);right:0;min-width:150px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:6px;box-shadow:0 16px 40px rgba(15,23,42,.18);display:none;z-index:999}
 .share-lang .lang-switch.open .lang-menu{display:block}
 .share-lang .lang-menu__item{display:block;width:100%;text-align:left;padding:9px 12px;border-radius:8px;border:none;background:none;color:#353a3e;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
 .share-lang .lang-menu__item:hover{background:#f3f4f6}
 .share-lang .lang-menu__item.active{color:#ec4141;background:rgba(236,65,65,.08)}
+/* ====== 深色模式：html[data-theme="dark"]（手动切换，早期引导脚本按解析结果写入） ====== */
+html[data-theme="dark"]{--text:#e7e9ec;--text-2:#9aa1ab;--border:#2a2e35}
+html[data-theme="dark"] body{background:#0e1013}
+html[data-theme="dark"] .bg-layer{background:#0d0f13}
+html[data-theme="dark"] .bg-mask{background:linear-gradient(180deg,rgba(14,16,19,.55) 0%,rgba(14,16,19,.92) 80%)}
+html[data-theme="dark"] .cover{background:#1a1d23;box-shadow:0 20px 60px rgba(0,0,0,.5),0 6px 18px rgba(0,0,0,.4)}
+html[data-theme="dark"] .btn-ghost{background:rgba(30,34,41,.85);color:#c9ced6;border-color:var(--border)}
+html[data-theme="dark"] .modal{background:#171a20;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+html[data-theme="dark"] .modal .btn-cancel{background:#23272f;color:#9aa1ab}
+html[data-theme="dark"] .channel-link{background:#1e222a;color:#9aa1ab}
+html[data-theme="dark"] .channel-link:hover{background:#262b34}
+html[data-theme="dark"] .channel-link.is-cur{background:rgba(236,65,65,.12);color:#f87171}
+html[data-theme="dark"] .share-lang .lang-switch__btn,html[data-theme="dark"] .share-theme{background:rgba(23,26,31,.9);color:#e7e9ec;border-color:rgba(255,255,255,.08)}
+html[data-theme="dark"] .share-lang .lang-switch__btn:hover,html[data-theme="dark"] .share-theme:hover{background:#171a20}
+html[data-theme="dark"] .share-lang .lang-menu{background:#171a20;border-color:#2a2e35}
+html[data-theme="dark"] .share-lang .lang-menu__item{color:#e7e9ec}
+html[data-theme="dark"] .share-lang .lang-menu__item:hover{background:#23272f}
 </style>
 </head>
 <body>
@@ -89,7 +151,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans G
 window.__SHARE_DATA__ = __SHARE_JSON__;
 </script>
 <div class="bg-layer"><div class="bg-blur"></div><div class="bg-mask"></div></div>
-<div class="share-lang" data-i18n-mount="dropdown"></div>
+<div class="share-top">
+  <div class="share-lang" data-i18n-mount="dropdown"></div>
+  <button class="share-theme" id="btnThemeMode" type="button" onclick="__xyShareTheme.cycle()" title="当前：跟随浏览器"><svg class="tt-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="tt-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg><span>跟随浏览器</span></button>
+</div>
 <div class="app">
   <div class="brand">弦予音乐</div>
   <div class="sub-brand">分享 · 打开客户端听全部</div>
@@ -404,7 +469,7 @@ if (inTencentWebview()) {
     ['上传', '上傳'], ['下载', '下載'], ['邮箱', '信箱'], ['邮件', '郵件'],
     ['设备', '裝置'], ['数据', '資料'], ['信息', '資訊'], ['链接', '連結'],
     ['菜单', '選單'], ['优化', '最佳化'], ['搜索', '搜尋'],
-    ['导入', '匯入'], ['导出', '匯出'], ['刷新', '重新整理'],
+    ['导入', '匯入'], ['导出', '匯出'], ['刷新', '重新整理'], ['跟随', '跟隨'],
     ['评论', '留言'], ['回复', '回覆'], ['用户', '使用者'], ['权限', '權限'],
     ['日志', '日誌'], ['筛选', '篩選'], ['当前', '目前'], ['实时', '即時'],
     ['性能', '效能'], ['字体', '字型'], ['图片', '圖片'],
@@ -513,7 +578,13 @@ if (inTencentWebview()) {
 "未检测到弦予音乐": "XianYu Music not detected",
 "弦予音乐": "XianYu Music",
 "在弦予音乐中打开": "Open in XianYu Music",
-"暂不": "Not Now"
+"暂不": "Not Now",
+"跟随浏览器": "Auto",
+"浅色": "Light",
+"深色": "Dark",
+"当前：浅色": "Current: Light",
+"当前：深色": "Current: Dark",
+"当前：跟随浏览器": "Current: Auto"
 
   };
 
@@ -657,7 +728,7 @@ if (inTencentWebview()) {
       btn.type = 'button';
       btn.className = 'lang-switch__btn';
       btn.setAttribute('aria-label', 'Language');
-      btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.7 2.6 4 5.6 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.6-4-9s1.3-6.4 4-9z"/></svg>';
+      btn.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.7 2.6 4 5.6 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.6-4-9s1.3-6.4 4-9z"/></svg><span class="lang-switch__label"></span>';
       btn.addEventListener('click', function (e) { e.stopPropagation(); wrap.classList.toggle('open'); });
       document.addEventListener('click', function () { wrap.classList.remove('open'); });
       wrap.appendChild(btn);
@@ -675,6 +746,11 @@ if (inTencentWebview()) {
       var o = OPTS.filter(function (x) { return x.v === b.dataset.lang; })[0];
       if (o) { b.textContent = optLabel(o); b.classList.toggle('active', o.v === pref); }
     });
+    var lab = wrap.querySelector('.lang-switch__label');
+    if (lab) {
+      var cur = OPTS.filter(function (x) { return x.v === pref; })[0] || OPTS[0];
+      lab.textContent = optLabel(cur);
+    }
   }
 
   /* ============ API ============ */
