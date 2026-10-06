@@ -51,7 +51,7 @@ export function useVersionChannel(draft: VersionDraft) {
 
   const desktopChannelDesc = computed(() => {
     if (desktopPackageFile.value?.name) {
-      if (desktopUploading.value) return `正在上传安装包 ${desktopUploadProgress.value}%`
+      if (desktopUploading.value) return '正在上传安装包…'
       return `已选择：${desktopPackageFile.value.name}（${formatFileSize(desktopPackageFile.value.size)}）`
     }
     const url = desktopDraft.value.downloadUrl

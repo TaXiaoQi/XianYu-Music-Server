@@ -244,6 +244,7 @@
                       <div class="progress-bar-fill" :style="{ width: desktopUploadProgress + '%' }"></div>
                     </div>
                     <span class="progress-text">{{ desktopUploadProgress }}%</span>
+                    <button type="button" class="upload-cancel-btn" @click="abortDesktopUpload">取消</button>
                   </div>
                   <p v-if="desktopUploadError" class="upload-error">{{ desktopUploadError }}</p>
                 </div>
@@ -583,6 +584,7 @@ const {
   desktopUploading,
   desktopUploadProgress,
   desktopUploadError,
+  abortDesktopUpload,
   desktopChannelLabel,
   desktopChannelDesc,
   storeModalVisible,
@@ -1580,6 +1582,17 @@ onMounted(() => {
   color: var(--text-muted);
   min-width: 36px;
   text-align: right;
+}
+.upload-cancel-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: #ef4444;
+  cursor: pointer;
+}
+.upload-cancel-btn:hover {
+  text-decoration: underline;
 }
 
 .upload-error {
