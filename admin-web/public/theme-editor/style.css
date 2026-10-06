@@ -45,6 +45,10 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 .lang-menu__item{ display:block; width:100%; text-align:left; padding:9px 12px; border-radius:9px; border:none; background:transparent; color:var(--text); font-size:13px; font-weight:600; font-family:var(--font-body); cursor:pointer; white-space:nowrap; transition:background .15s,color .15s; }
 .lang-menu__item:hover{ background:var(--accent-soft); color:var(--accent); }
 .lang-menu__item.active{ color:var(--accent); background:var(--accent-soft); }
+/* 主题模式按钮：与语言按钮同款胶囊（对齐后台 AdminLayout .theme-toggle） */
+#btnThemeMode{ height:34px; padding:0 13px; font-size:12.5px; font-weight:700; color:var(--text-2); }
+#btnThemeMode svg{ flex:none; width:15px; height:15px; }
+#btnThemeMode:hover{ transform:translateY(-1px); color:var(--accent); background:var(--accent-soft); box-shadow:var(--shadow); }
 /* ====== 内嵌审核（?embed=1）：隐藏编辑器 UI 只留预览舞台，满高布局防窄屏塌缩，缩放由画布 transform 接管 ====== */
 body.embed-mode .brand, body.embed-mode .brand__sub, body.embed-mode .lang-switch{ display:none !important; }
 body.embed-mode #reviewBox{ display:none !important; }
@@ -609,3 +613,24 @@ body.review-mode #btnExport, body.review-mode #btnUpload{ display:none !importan
   .d-now{ width:120px; }
   .zoombar{ display:none; }
 }
+
+/* ====== 编辑器深色模式（html[data-theme="dark"]） ======
+   组件色全部引用 :root 变量，此处只覆写变量 + 少量硬编码色。
+   .screen.*（被编辑主题的预览区）与 .device 外壳不参与编辑器换肤，保持原样。 */
+html[data-theme="dark"]{
+  --bg:#0e1013; --bg-soft:#161920; --card:#161920;
+  --text:#e7e9ee; --text-2:#9aa1ab; --text-3:#6f7680;
+  --border:#2a2f39; --border-soft:#21252d;
+  --shadow:0 4px 24px rgba(0,0,0,.4); --shadow-lg:0 16px 48px rgba(0,0,0,.55);
+}
+html[data-theme="dark"] .topbar{ background:rgba(15,17,21,.92); }
+html[data-theme="dark"] .grid-bg{ background-image:linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px); }
+html[data-theme="dark"] .panel::-webkit-scrollbar-thumb,html[data-theme="dark"] .stage::-webkit-scrollbar-thumb{ background:#343a46; }
+html[data-theme="dark"] .panel::-webkit-scrollbar-thumb:hover,html[data-theme="dark"] .stage::-webkit-scrollbar-thumb:hover{ background:#414855; }
+html[data-theme="dark"] .lang-menu{ box-shadow:0 18px 48px rgba(0,0,0,.6); }
+html[data-theme="dark"] #toast{ border:1px solid var(--border); }
+/* 登录态绿色在深色下提亮一档保证对比度 */
+html[data-theme="dark"] .login-state.on{ color:#34d399; }
+/* 审核框为内联浅橙样式，深色下需 !important 覆写为暗橙 */
+html[data-theme="dark"] #reviewBox{ background:#3a2410 !important; border-color:#7c4a12 !important; }
+html[data-theme="dark"] #btnReviewReject{ background:#431b1b !important; color:#fca5a5 !important; }

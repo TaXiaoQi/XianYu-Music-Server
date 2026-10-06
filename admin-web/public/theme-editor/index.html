@@ -1,4 +1,4 @@
-const EDITOR_HTML: &str = r##"<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN" translate="no" class="notranslate">
 <head>
 <meta charset="utf-8">
@@ -11,6 +11,45 @@ const EDITOR_HTML: &str = r##"<!DOCTYPE html>
 <link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
 <noscript><link href="https://fonts.loli.net/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Serif+SC:wght@500;600;700&display=swap" rel="stylesheet"></noscript>
 <link rel="stylesheet" href="/theme-editor/style.css">
+<script>
+/* 编辑器深浅模式：light | dark | system（默认跟随系统），localStorage 持久化。
+   机制与后台 admin-web stores/theme.ts 一致：html[data-theme] + matchMedia 监听。
+   放在 <head> 内尽早执行，避免深色用户先看到浅色闪屏。 */
+(function () {
+  var KEY = 'xy-editor-theme-mode';
+  var mq = window.matchMedia('(prefers-color-scheme: dark)');
+  var mode = 'system';
+  try { var v = localStorage.getItem(KEY); if (v === 'light' || v === 'dark' || v === 'system') mode = v; } catch (e) {}
+  function resolved() { return mode === 'system' ? (mq.matches ? 'dark' : 'light') : mode; }
+  function apply() {
+    var r = resolved();
+    var de = document.documentElement;
+    de.dataset.theme = r;
+    de.dataset.themeMode = mode;
+    de.style.colorScheme = r;
+    var b = document.getElementById('btnThemeMode');
+    if (b) {
+      var lab = mode === 'system' ? '跟随浏览器' : (mode === 'dark' ? '深色' : '浅色');
+      var t = b.querySelector('span'); if (t) t.textContent = lab;
+      var sun = b.querySelector('.tt-sun'), moon = b.querySelector('.tt-moon');
+      if (sun) sun.style.display = r === 'dark' ? 'none' : '';
+      if (moon) moon.style.display = r === 'dark' ? '' : 'none';
+      b.title = '当前：' + lab;
+    }
+  }
+  window.__xyEditorTheme = {
+    get: function () { return mode; },
+    cycle: function () {
+      mode = mode === 'system' ? 'light' : (mode === 'light' ? 'dark' : 'system');
+      try { localStorage.setItem(KEY, mode); } catch (e) {}
+      apply();
+    }
+  };
+  mq.addEventListener('change', function () { if (mode === 'system') apply(); });
+  apply();
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', apply);
+})();
+</script>
 </head>
 <body>
 <script>try{if(/[?&]embed=1/.test(location.search))document.body.classList.add('embed-mode');}catch(e){}</script>
@@ -32,6 +71,7 @@ const EDITOR_HTML: &str = r##"<!DOCTYPE html>
         <button class="btn" id="btnReviewApprove" onclick="reviewAct('normal')" style="background:#10b981;color:#fff;">通过</button>
       </span>
       <span data-i18n-mount="dropdown"></span>
+      <button class="btn" id="btnThemeMode" onclick="__xyEditorTheme.cycle()" title="当前：跟随浏览器"><svg class="tt-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="tt-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg><span>跟随浏览器</span></button>
       <span class="login-state" id="loginState"><span class="dot"></span><span id="loginText">未登录（导出不需要登录）</span></span>
       <button class="btn" id="btnLogin" onclick="openLogin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg><span>扫码登录</span></button>
       <button class="btn" id="btnLogout" onclick="logout()" style="display:none">退出</button>
