@@ -28,7 +28,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
     desktopEditingChannel,
     composedVersion,
   } = draft
-  const { desktopPackageFile, desktopPackageFileDraft, desktopPackageDraft, desktopFileInputRef, readFileAsBase64 } = channel
+  const { desktopPackageFile, desktopPackageFileDraft, desktopPackageDraft, desktopFileInputRef, abortDesktopUpload, waitDesktopUpload, desktopUploadError } = channel
   const { desktopSaving, loadDesktop, platformFilter, systemFilter } = deps
 
   const desktopModalVisible = ref(false)
@@ -66,6 +66,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
     desktopPackageFile.value = null
     desktopPackageFileDraft.value = null
     desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
+    abortDesktopUpload()
     if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
     desktopModalVisible.value = true
   }
@@ -88,13 +89,12 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
       return
     }
     desktopSaving.value = true
-    let fileData = ''
-    if (desktopPackageFile.value) {
-      try {
-        fileData = await readFileAsBase64(desktopPackageFile.value)
-      } catch {
+    // 安装包在渠道弹窗确认时已后台上传；若仍在传输则等它完成，失败则中止保存
+    if (hasPackage) {
+      const uploadOk = await waitDesktopUpload()
+      if (!uploadOk) {
         desktopSaving.value = false
-        showToast('安装包读取失败')
+        showToast(desktopUploadError.value || '安装包上传失败，请重新选择')
         return
       }
     }
@@ -104,16 +104,17 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
       arch: desktopDraftArch.value,
       channel: desktopDraftChannel.value,
       version,
+      original_version: desktopEditingVersion.value || '',
       download_url: desktopDraft.value.downloadUrl?.trim() || '',
       update_content: desktopDraft.value.updateContent.trim(),
       enabled: desktopDraftEnabled.value ? 1 : 0,
       store_url: desktopDraft.value.storeUrl,
-      file_name: desktopPackageFile.value?.name || '',
-      file_data: fileData,
+      file_name: '',
+      file_data: '',
     })
     desktopSaving.value = false
     if (res.code === 200) {
-      const replaced = !!desktopEditingVersion.value && desktopEditingVersion.value === version && desktopEditingChannel.value === desktopDraftChannel.value
+      const replaced = !!desktopEditingVersion.value
       loadDesktop()
       if (replaced) {
         showToast('修改成功', 'success')
@@ -129,6 +130,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
         desktopPackageFile.value = null
         desktopPackageFileDraft.value = null
         desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
+        abortDesktopUpload()
         if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
       }
     } else {

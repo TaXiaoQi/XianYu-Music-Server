@@ -77,7 +77,7 @@ export interface PackageMeta {
 }
 
 // 支持的安装包扩展名（含压缩包壳与常见移动端格式）
-export const PACKAGE_ALLOWED_EXT = ['exe', 'msi', 'zip', '7z', 'rar', 'dmg', 'pkg', 'apk', 'hap', 'ipa', 'deb', 'appimage']
+export const PACKAGE_ALLOWED_EXT = ['exe', 'msi', 'zip', '7z', 'rar', 'dmg', 'pkg', 'apk', 'hap', 'app', 'ipa', 'deb', 'rpm', 'appimage']
 
 export function packageMetaLabel(meta: PackageMeta): string {
   return `${platformLabelOf(meta.platform)} · ${systemLabelOf(meta.platform, meta.system)} · ${archLabelOf(meta.platform, meta.arch)}`
@@ -106,13 +106,19 @@ export function detectPackageMeta(fileName: string): PackageMeta | null {
   } else if (ext === 'msi' || ext === 'exe' || has('windows')) {
     platform = 'desktop'
     system = 'windows'
-  } else if (ext === 'deb' || ext === 'appimage' || has('linux')) {
+  } else if (ext === 'deb' || ext === 'rpm' || ext === 'appimage' || has('linux')) {
     platform = 'desktop'
     system = 'linux'
-  } else if (ext === 'apk' || ext === 'hap' || has('android', 'wearos')) {
+  } else if (ext === 'apk' || ext === 'hap' || ext === 'app' || has('android', 'wearos')) {
     if (has('ohos', 'harmony')) {
-      system = 'ohos'
       platform = has('watch', 'wear') ? 'watch' : 'mobile'
+      // 移动端系统枚举是 harmonyos，腕上端是 ohos（与服务端 normalize_system 对齐）
+      system = platform === 'watch' ? 'ohos' : 'harmonyos'
+    } else if ((ext === 'hap' || ext === 'app') && !has('watch', 'wear')) {
+      // .hap/.app 是鸿蒙安装包格式（.app 为多 HAP 上架包）：不带 watch/wear 关键词时
+      // 按移动端鸿蒙处理，避免被误归入 Android 槽位后与同版本 apk 冲突
+      platform = 'mobile'
+      system = 'harmonyos'
     } else if (has('watch', 'wear')) {
       platform = 'watch'
       system = 'wearos'

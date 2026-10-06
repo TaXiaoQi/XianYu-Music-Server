@@ -1,5 +1,5 @@
-import { adminApi } from './client'
-import type { ApiResponse } from './client'
+import { adminApi, adminApiUpload } from './client'
+import type { ApiResponse, UploadHandle } from './client'
 
 // 版本管理（在线更新配置）相关接口
 
@@ -9,6 +9,7 @@ export interface DesktopVersionSavePayload {
   arch: string
   channel: 'stable' | 'beta'
   version: string
+  original_version?: string
   download_url: string
   update_content: string
   enabled: number
@@ -51,6 +52,14 @@ export async function fetchDesktopVersions(): Promise<ApiResponse<DesktopVersion
 
 export async function saveDesktopVersion(payload: DesktopVersionSavePayload): Promise<ApiResponse> {
   return adminApi('save_desktop_version', payload)
+}
+
+// 安装包独立上传：渠道弹窗确认后即调用，返回下发链接与进度句柄
+export function uploadPackage(
+  payload: { file_name: string; file_data: string },
+  onProgress?: (percent: number) => void,
+): UploadHandle {
+  return adminApiUpload('upload_package', payload, onProgress)
 }
 
 export async function deleteDesktopVersion(payload: DesktopVersionDeletePayload): Promise<ApiResponse> {

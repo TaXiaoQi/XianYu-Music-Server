@@ -74,3 +74,48 @@ export function showToast(msg: string, type: 'success' | 'error' = 'error'): voi
     setTimeout(() => t.remove(), 300)
   }, 3000)
 }
+
+// fetch 拿不到上传进度，大文件上传改用 XHR；返回 promise + abort 以支持后台取消
+export interface UploadHandle {
+  promise: Promise<ApiResponse>
+  abort: () => void
+}
+
+export function adminApiUpload(
+  action: string,
+  data: Record<string, any>,
+  onProgress?: (percent: number) => void,
+): UploadHandle {
+  const xhr = new XMLHttpRequest()
+  const promise = new Promise<ApiResponse>((resolve) => {
+    const token = getToken()
+    xhr.open('POST', `${ADMIN_API}?action=${encodeURIComponent(action)}`)
+    xhr.setRequestHeader('Content-Type', 'application/json')
+    if (token) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    }
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+    }
+    xhr.onload = () => {
+      try {
+        const json: ApiResponse = JSON.parse(xhr.responseText)
+        if (json.code === 401) {
+          clearToken()
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login'
+          }
+        }
+        resolve(json)
+      } catch {
+        resolve({ code: 500, msg: '网络错误，请检查服务是否启动', data: null })
+      }
+    }
+    xhr.onerror = () => resolve({ code: 500, msg: '网络错误，请检查服务是否启动', data: null })
+    xhr.onabort = () => resolve({ code: 499, msg: '上传已取消', data: null })
+    xhr.send(JSON.stringify(data))
+  })
+  return { promise, abort: () => xhr.abort() }
+}

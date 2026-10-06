@@ -1,6 +1,8 @@
 import { computed, ref } from 'vue'
 import { showToast } from '@/api/client'
+import type { ApiResponse } from '@/api/client'
 import { detectPackageMeta, packageMetaLabel, PACKAGE_ALLOWED_EXT } from '@/utils/packageDetect'
+import { uploadPackage } from '@/api/version'
 import type { VersionDraft } from './useVersionDraft'
 
 // 下载渠道 / 安装包上传 / 商店分发：配置弹窗的状态与操作
@@ -15,6 +17,14 @@ export function useVersionChannel(draft: VersionDraft) {
   const desktopPackageFileDraft = ref<File | null>(null)
   const desktopPackageDraft = ref({ fileName: '', fileSize: 0, fileBase64: '' })
   const desktopPackageDragging = ref(false)
+
+  // 后台上传状态：渠道弹窗确认后立即上传，配置弹窗内可继续编辑公告等字段
+  const desktopUploading = ref(false)
+  const desktopUploadProgress = ref(0)
+  const desktopUploadError = ref('')
+  let uploadSeq = 0
+  let uploadHandle: { abort: () => void } | null = null
+  let uploadTask: Promise<ApiResponse> | null = null
 
   const storeModalVisible = ref(false)
   const storeDraftEnabled = ref(false)
@@ -40,7 +50,10 @@ export function useVersionChannel(draft: VersionDraft) {
   })
 
   const desktopChannelDesc = computed(() => {
-    if (desktopPackageFile.value?.name) return `已选择：${desktopPackageFile.value.name}（${formatFileSize(desktopPackageFile.value.size)}）`
+    if (desktopPackageFile.value?.name) {
+      if (desktopUploading.value) return `正在上传安装包 ${desktopUploadProgress.value}%`
+      return `已选择：${desktopPackageFile.value.name}（${formatFileSize(desktopPackageFile.value.size)}）`
+    }
     const url = desktopDraft.value.downloadUrl
     if (url) return url
     return desktopDraftEnabled.value ? '启用更新时，需要选择下载链接或上传安装包' : '点击选择下载链接或上传安装包'
@@ -85,6 +98,7 @@ export function useVersionChannel(draft: VersionDraft) {
     if (desktopChannelMode.value === 'link') {
       const url = desktopChannelLinkDraft.value.trim()
       if (!url) { showToast('请输入下载链接'); return }
+      abortDesktopUpload()
       desktopDraft.value.downloadUrl = url
       desktopPackageFile.value = null
       desktopPackageFileDraft.value = null
@@ -96,8 +110,69 @@ export function useVersionChannel(draft: VersionDraft) {
       desktopDraft.value.downloadUrl = ''
       desktopChannelLinkDraft.value = ''
       applyDetectedMeta(desktopPackageFile.value.name)
+      // 确认即后台上传：不阻塞弹窗，保存配置前会自动等待上传完成
+      startDesktopUpload(desktopPackageFile.value)
     }
     desktopChannelModalVisible.value = false
+  }
+
+  // ==================== 安装包后台上传 ====================
+
+  function startDesktopUpload(file: File) {
+    const seq = ++uploadSeq
+    uploadHandle?.abort()
+    uploadHandle = null
+    uploadTask = null
+    desktopUploading.value = true
+    desktopUploadProgress.value = 0
+    desktopUploadError.value = ''
+    const task = (async (): Promise<ApiResponse> => {
+      let fileData = ''
+      try {
+        fileData = await readFileAsBase64(file)
+      } catch {
+        if (seq !== uploadSeq) return { code: 499, msg: '上传已取消', data: null }
+        desktopUploading.value = false
+        desktopUploadError.value = '安装包读取失败'
+        return { code: 500, msg: '安装包读取失败', data: null }
+      }
+      if (seq !== uploadSeq) return { code: 499, msg: '上传已取消', data: null }
+      const handle = uploadPackage({ file_name: file.name, file_data: fileData }, (p) => {
+        if (seq === uploadSeq) desktopUploadProgress.value = p
+      })
+      uploadHandle = handle
+      const res = await handle.promise
+      if (seq !== uploadSeq) return res
+      desktopUploading.value = false
+      if (res.code === 200 && res.data?.download_url) {
+        desktopUploadProgress.value = 100
+        desktopDraft.value.downloadUrl = res.data.download_url
+        showToast('安装包上传完成', 'success')
+      } else if (res.code !== 499) {
+        desktopUploadError.value = res.msg || '安装包上传失败'
+      }
+      return res
+    })()
+    uploadTask = task
+  }
+
+  function abortDesktopUpload() {
+    uploadSeq++
+    uploadHandle?.abort()
+    uploadHandle = null
+    uploadTask = null
+    desktopUploading.value = false
+    desktopUploadProgress.value = 0
+    desktopUploadError.value = ''
+  }
+
+  // 保存配置前调用：上传中则等待完成；失败返回 false
+  async function waitDesktopUpload(): Promise<boolean> {
+    if (uploadTask) {
+      const res = await uploadTask
+      return res.code === 200
+    }
+    return !desktopUploadError.value
   }
 
   // 从安装包文件名识别平台/系统/架构，自动填入表单（识别结果仍可手动修正）
@@ -176,6 +251,9 @@ export function useVersionChannel(draft: VersionDraft) {
     desktopPackageFileDraft,
     desktopPackageDraft,
     desktopPackageDragging,
+    desktopUploading,
+    desktopUploadProgress,
+    desktopUploadError,
     storeModalVisible,
     storeDraftEnabled,
     storeDraftUrl,
@@ -188,6 +266,8 @@ export function useVersionChannel(draft: VersionDraft) {
     openDesktopChannelModal,
     closeDesktopChannelModal,
     confirmDesktopChannel,
+    abortDesktopUpload,
+    waitDesktopUpload,
     applyDetectedMeta,
     onDesktopFileChange,
     triggerDesktopFileInput,

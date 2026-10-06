@@ -239,6 +239,13 @@
                 <div>
                   <strong>{{ desktopChannelLabel }}</strong>
                   <p>{{ desktopChannelDesc }}</p>
+                  <div v-if="desktopUploading" class="upload-progress">
+                    <div class="progress-bar-track">
+                      <div class="progress-bar-fill" :style="{ width: desktopUploadProgress + '%' }"></div>
+                    </div>
+                    <span class="progress-text">{{ desktopUploadProgress }}%</span>
+                  </div>
+                  <p v-if="desktopUploadError" class="upload-error">{{ desktopUploadError }}</p>
                 </div>
                 <span>选择渠道</span>
               </button>
@@ -573,6 +580,9 @@ const {
   desktopPackageDraft,
   desktopPackageDragging,
   desktopFileInputRef,
+  desktopUploading,
+  desktopUploadProgress,
+  desktopUploadError,
   desktopChannelLabel,
   desktopChannelDesc,
   storeModalVisible,
@@ -1570,6 +1580,13 @@ onMounted(() => {
   color: var(--text-muted);
   min-width: 36px;
   text-align: right;
+}
+
+.upload-error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #ef4444;
+  line-height: 1.5;
 }
 
 .modal-foot {

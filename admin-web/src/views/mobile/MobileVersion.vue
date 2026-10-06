@@ -680,6 +680,7 @@ async function saveDesktop() {
     arch: desktopDraftArch.value,
     channel: desktopDraftChannel.value,
     version,
+    original_version: desktopEditingVersion.value || '',
     download_url: desktopDraft.value.downloadUrl?.trim() || '',
     update_content: desktopDraft.value.updateContent?.trim() || '',
     enabled: desktopDraftEnabled.value ? 1 : 0,

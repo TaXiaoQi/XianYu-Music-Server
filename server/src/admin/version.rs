@@ -134,15 +134,21 @@ fn safe_file_ext(file_name: &str) -> String {
     if ext.is_empty() { "bin".to_string() } else { ext }
 }
 
+// 保留中文等 Unicode 字符（安装包原始名如「弦子音乐v1.0.3-...」），仅替换路径分隔符 /
+// Windows 非法字符 / 控制字符；URL 访问时由浏览器与 HTTP 客户端自动百分号编码。
 fn safe_file_stem(file_name: &str) -> String {
     let base = file_name.rsplit(|c| c == '/' || c == '\\').next().unwrap_or("");
     let stem = base.rsplit_once('.').map(|(s, _)| s).unwrap_or(base);
     let s: String = stem
         .chars()
         .take(80)
-        .map(|c| if c.is_ascii_alphanumeric() || c == '.' || c == '_' || c == '-' { c } else { '_' })
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            c if c.is_control() => '_',
+            c => c,
+        })
         .collect();
-    s.trim_matches(|c| c == '.' || c == '_' || c == '-').to_string()
+    s.trim().trim_matches(|c| c == '.' || c == '_' || c == '-').to_string()
 }
 
 pub async fn update_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
@@ -359,6 +365,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     let enabled = int_of(&data, "enabled") != 0;
     let file_data = str_of(&data, "file_data").trim().to_string();
     let file_name = str_of(&data, "file_name").trim().to_string();
+    let original_version = str_of(&data, "original_version").trim().to_string();
     let store_url = str_of(&data, "store_url").trim().to_string();
     if !store_url.is_empty() && !store_url.starts_with("https://") {
         return err(400, "商店页链接必须以 https:// 开头");
@@ -427,7 +434,13 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
             && item_arch(item, &platform) == arch
             && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
     });
-    if is_new {
+    // 编辑改名：original_version 指向被替换的旧版本号（如把 1.0.3-beta2 改名为 1.0.3-beta1）
+    let renaming = !original_version.is_empty() && original_version != version;
+    if renaming && !is_new {
+        return err(400, &format!("版本 {} 在当前维度已存在，无法改为重复版本", version));
+    }
+    // 仅在「新增版本」时校验版本号递增；改名是显式操作，允许下调
+    if is_new && original_version.is_empty() {
         let mut max_ver: Option<&str> = None;
         for item in &list {
             if item_platform(item) != platform || item_system(item) != system || item_channel(item) != channel || item_arch(item, &platform) != arch {
@@ -465,20 +478,39 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         "updated_at": now,
     });
     let mut replaced = false;
-    for item in list.iter_mut() {
-        if item_platform(item) == platform
-            && item_system(item) == system
-            && item_channel(item) == channel
-            && item_arch(item, &platform) == arch
-            && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
-        {
-            *item = new_item.clone();
-            replaced = true;
-            break;
+    if !original_version.is_empty() {
+        // 编辑/改名：按 original_version 定位被替换项，保证旧版本条目不残留
+        for item in list.iter_mut() {
+            if item_platform(item) == platform
+                && item_system(item) == system
+                && item_channel(item) == channel
+                && item_arch(item, &platform) == arch
+                && item.get("version").and_then(|v| v.as_str()) == Some(original_version.as_str())
+            {
+                *item = new_item.clone();
+                replaced = true;
+                break;
+            }
         }
-    }
-    if !replaced {
-        list.push(new_item);
+        if !replaced {
+            return err(404, "原版本不存在或已被修改，请刷新后重试");
+        }
+    } else {
+        for item in list.iter_mut() {
+            if item_platform(item) == platform
+                && item_system(item) == system
+                && item_channel(item) == channel
+                && item_arch(item, &platform) == arch
+                && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
+            {
+                *item = new_item.clone();
+                replaced = true;
+                break;
+            }
+        }
+        if !replaced {
+            list.push(new_item);
+        }
     }
     if !write_desktop_versions(&list) {
         return err(500, "写入文件失败，请检查 api 目录权限");
@@ -493,6 +525,55 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     };
     log_operation(pool, ctx, &action_label, &version, if enabled { "启用" } else { "禁用" }).await;
     ok("保存成功", json!({ "version": version, "platform": platform, "system": system, "channel": channel }))
+}
+
+const PACKAGE_ALLOWED_EXT: &[&str] = &[
+    "exe", "msi", "zip", "7z", "rar", "dmg", "pkg", "apk", "hap", "app", "ipa", "deb", "rpm", "appimage",
+];
+
+// 独立上传接口：管理端在渠道弹窗确认后即后台上传安装包，拿到下发链接后再保存版本配置，
+// 避免保存配置请求内联几十 MB base64 且无进度反馈。
+pub async fn upload_package(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let file_name = str_of(&data, "file_name").trim().to_string();
+    let file_data = str_of(&data, "file_data").trim().to_string();
+    if file_name.is_empty() {
+        return err(400, "文件名不能为空");
+    }
+    let ext = safe_file_ext(&file_name);
+    if !PACKAGE_ALLOWED_EXT.contains(&ext.as_str()) {
+        return err(400, "不支持该安装包格式");
+    }
+    let file_bytes = match base64::engine::general_purpose::STANDARD.decode(&file_data) {
+        Ok(b) => b,
+        Err(_) => return err(400, "安装包数据解码失败"),
+    };
+    if file_bytes.is_empty() {
+        return err(400, "安装包文件为空");
+    }
+    let upload_dir = std::path::Path::new("uploads").join("packages");
+    if let Err(e) = std::fs::create_dir_all(&upload_dir) {
+        { tracing::error!("无法创建安装包目录: {e}"); return err(500, "无法创建安装包目录"); }
+    }
+    let stem = safe_file_stem(&file_name);
+    let ts = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
+    let new_filename = if stem.is_empty() {
+        format!("package_{ts}.{ext}")
+    } else {
+        let candidate = format!("{}.{}", stem, ext);
+        if upload_dir.join(&candidate).exists() {
+            format!("{}_{}.{}", stem, ts, ext)
+        } else {
+            candidate
+        }
+    };
+    let target_path = upload_dir.join(&new_filename);
+    if std::fs::write(&target_path, &file_bytes).is_err() {
+        return err(500, "安装包保存失败，请检查目录权限");
+    }
+    let download_url = format!("/uploads/packages/{}", new_filename);
+    log_operation(pool, ctx, "上传安装包", &file_name, &new_filename).await;
+    ok("上传成功", json!({ "download_url": download_url, "file_size": file_bytes.len() }))
 }
 
 fn item_channel(item: &Value) -> String {
