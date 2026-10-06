@@ -83,6 +83,24 @@ export function packageMetaLabel(meta: PackageMeta): string {
   return `${platformLabelOf(meta.platform)} · ${systemLabelOf(meta.platform, meta.system)} · ${archLabelOf(meta.platform, meta.arch)}`
 }
 
+export interface PackageVersionInfo {
+  main: string      // 主版本号，如 1.0.3
+  betaNum: number   // beta 号，0 表示正式版
+  version: string   // 完整版本号（beta 归一为表单的 -beta-N 格式）
+}
+
+// 从文件名提取版本号与渠道（正式版 / 测试版）：
+//   XianYu-Music_1.0.3-beta3.apk     → 1.0.3 + beta 3
+//   XianYu-Music_1.0.3-beta-3.apk    → 1.0.3 + beta 3
+//   XianYu-Music_1.2.0_x64-setup.exe → 1.2.0 正式版
+export function detectPackageVersion(fileName: string): PackageVersionInfo | null {
+  const m = fileName.match(/(\d+)\.(\d+)\.(\d+)(?:[-._]beta[-._]?(\d+))?/i)
+  if (!m) return null
+  const main = `${m[1]}.${m[2]}.${m[3]}`
+  const betaNum = m[4] ? parseInt(m[4], 10) : 0
+  return { main, betaNum, version: betaNum > 0 ? `${main}-beta-${betaNum}` : main }
+}
+
 // 从文件名识别平台/系统/架构；无法识别平台时返回 null（由调用方提示手动选择）
 export function detectPackageMeta(fileName: string): PackageMeta | null {
   const name = fileName.toLowerCase()

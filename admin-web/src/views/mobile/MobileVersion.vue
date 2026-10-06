@@ -411,7 +411,7 @@ import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
 import { fmtDateTime } from '@/utils/time'
 import { formatOsVersion } from '@/utils/osVersion'
-import { detectPackageMeta, packageMetaLabel, PACKAGE_ALLOWED_EXT } from '@/utils/packageDetect'
+import { detectPackageMeta, detectPackageVersion, packageMetaLabel, PACKAGE_ALLOWED_EXT } from '@/utils/packageDetect'
 import BatchPublishModal from '@/components/BatchPublishModal.vue'
 
 type PlatformKey = 'desktop' | 'mobile' | 'watch'
@@ -774,9 +774,10 @@ function onDesktopFileChange(e: Event) {
   applyDetectedMeta(file.name)
 }
 
-// 从安装包文件名识别平台/系统/架构，自动填入表单（识别结果仍可手动修正）
+// 从安装包文件名识别平台/系统/架构与版本号/渠道，自动填入表单（识别结果仍可手动修正）
 function applyDetectedMeta(fileName: string) {
   const meta = detectPackageMeta(fileName)
+  const ver = detectPackageVersion(fileName)
   if (desktopEditingVersion.value) {
     // 编辑模式维度锁定：仅提示识别结果，便于核对是否传错包
     if (meta) showToast(`识别为 ${packageMetaLabel(meta)}，编辑模式不改变当前维度`)
@@ -786,10 +787,21 @@ function applyDetectedMeta(fileName: string) {
     desktopDraftPlatform.value = meta.platform
     desktopDraftSystem.value = meta.system
     desktopDraftArch.value = meta.arch
-    showToast(`已识别：${packageMetaLabel(meta)}，可手动修改`, 'success')
-  } else {
-    showToast('无法识别安装包平台，请手动选择平台 / 系统 / 架构')
   }
+  if (ver) {
+    desktopDraft.value.version = ver.main
+    if (ver.betaNum > 0) {
+      desktopDraftChannel.value = 'beta'
+      desktopDraftBetaNum.value = String(ver.betaNum)
+    } else {
+      desktopDraftChannel.value = 'stable'
+      desktopDraftBetaNum.value = ''
+    }
+  }
+  if (meta && ver) showToast(`已识别：${packageMetaLabel(meta)}，版本 ${ver.version}，可手动修改`, 'success')
+  else if (meta) showToast(`已识别：${packageMetaLabel(meta)}，可手动修改`, 'success')
+  else if (ver) showToast(`已识别版本 ${ver.version}，可手动修改`, 'success')
+  else showToast('无法识别安装包平台，请手动选择平台 / 系统 / 架构')
 }
 
 function triggerDesktopFileInput() { desktopFileInputRef.value?.click() }

@@ -114,25 +114,10 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
     })
     desktopSaving.value = false
     if (res.code === 200) {
-      const replaced = !!desktopEditingVersion.value
       loadDesktop()
-      if (replaced) {
-        showToast('修改成功', 'success')
-        desktopModalVisible.value = false
-      } else {
-        showToast('保存成功，可继续新增版本', 'success')
-        desktopEditingVersion.value = ''
-        desktopEditingChannel.value = desktopDraftChannel.value
-        desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
-        desktopDraftBetaNum.value = ''
-        desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
-        desktopDraftEnabled.value = false
-        desktopPackageFile.value = null
-        desktopPackageFileDraft.value = null
-        desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
-        abortDesktopUpload()
-        if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
-      }
+      // 新增/编辑成功后直接关闭弹窗（下次打开时 openDesktopModal 会全量重置表单）
+      showToast(desktopEditingVersion.value ? '修改成功' : '保存成功', 'success')
+      desktopModalVisible.value = false
     } else {
       showToast(res.msg || '保存失败')
     }

@@ -235,7 +235,7 @@
             </div>
             <div class="field">
               <label>下载渠道</label>
-              <button type="button" class="channel-card" @click="openDesktopChannelModal">
+              <button type="button" class="channel-card" @click="desktopUploading ? abortDesktopUpload() : openDesktopChannelModal()">
                 <div>
                   <strong>{{ desktopChannelLabel }}</strong>
                   <p>{{ desktopChannelDesc }}</p>
@@ -244,11 +244,11 @@
                       <div class="progress-bar-fill" :style="{ width: desktopUploadProgress + '%' }"></div>
                     </div>
                     <span class="progress-text">{{ desktopUploadProgress }}%</span>
-                    <button type="button" class="upload-cancel-btn" @click="abortDesktopUpload">取消</button>
                   </div>
                   <p v-if="desktopUploadError" class="upload-error">{{ desktopUploadError }}</p>
                 </div>
-                <span>选择渠道</span>
+                <span v-if="desktopUploading" class="upload-cancel-btn">取消</span>
+                <span v-else>选择渠道</span>
               </button>
             </div>
             <div class="field">
@@ -1588,10 +1588,13 @@ onMounted(() => {
   background: none;
   padding: 0;
   font-size: 12px;
+  font-weight: 700;
+}
+.channel-card > .upload-cancel-btn {
   color: #ef4444;
   cursor: pointer;
 }
-.upload-cancel-btn:hover {
+.channel-card > .upload-cancel-btn:hover {
   text-decoration: underline;
 }
 

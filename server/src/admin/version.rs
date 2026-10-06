@@ -604,6 +604,23 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     }
     let mut list = read_desktop_versions();
     let before = list.len();
+    // 先收集被删卡片引用的本站安装包文件名（仅 /uploads/packages/ 落盘路径，外链跳过）
+    let removed_files: Vec<String> = list
+        .iter()
+        .filter(|item| {
+            item_platform(item) == platform
+                && item_system(item) == system
+                && item_arch(item, &platform) == arch
+                && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
+        })
+        .filter_map(|item| {
+            item.get("downloadUrl")
+                .and_then(|v| v.as_str())
+                .and_then(|u| u.strip_prefix("/uploads/packages/"))
+                .map(|p| p.rsplit('/').next().unwrap_or("").to_string())
+                .filter(|name| !name.is_empty() && !name.contains(".."))
+        })
+        .collect();
     list.retain(|item| {
         !(item_platform(item) == platform
             && item_system(item) == system
@@ -615,6 +632,11 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     }
     if !write_desktop_versions(&list) {
         return err(500, "写入文件失败，请检查 api 目录权限");
+    }
+    // 配置写成功后级联删除安装包文件，避免垃圾残留
+    let packages_dir = std::path::Path::new("uploads").join("packages");
+    for name in &removed_files {
+        let _ = std::fs::remove_file(packages_dir.join(name));
     }
     log_operation(pool, ctx, &format!("删除{}{}更新配置", system_label(&platform, &system), platform_label(&platform)), &version, "").await;
     ok("删除成功", Value::Null)
