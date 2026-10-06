@@ -128,15 +128,12 @@ export function detectPackageMeta(fileName: string): PackageMeta | null {
     platform = 'desktop'
     system = 'linux'
   } else if (ext === 'apk' || ext === 'hap' || ext === 'app' || has('android', 'wearos')) {
-    if (has('ohos', 'harmony')) {
+    if (ext === 'hap' || ext === 'app' || has('ohos', 'harmony')) {
+      // .hap/.app 始终是鸿蒙安装包格式（.app 为多 HAP 上架包），文件名里的
+      // watch/wear 只决定归属腕上端还是移动端，不会被误归入 WearOS/Android 槽位
       platform = has('watch', 'wear') ? 'watch' : 'mobile'
       // 移动端系统枚举是 harmonyos，腕上端是 ohos（与服务端 normalize_system 对齐）
       system = platform === 'watch' ? 'ohos' : 'harmonyos'
-    } else if ((ext === 'hap' || ext === 'app') && !has('watch', 'wear')) {
-      // .hap/.app 是鸿蒙安装包格式（.app 为多 HAP 上架包）：不带 watch/wear 关键词时
-      // 按移动端鸿蒙处理，避免被误归入 Android 槽位后与同版本 apk 冲突
-      platform = 'mobile'
-      system = 'harmonyos'
     } else if (has('watch', 'wear')) {
       platform = 'watch'
       system = 'wearos'
