@@ -263,6 +263,7 @@ fn is_read_action(action: &str) -> bool {
             // 日志类一律不放行（报错日志/登录日志等涉密读取，访客及低级别不可见）
             | "view_share_detail"
             | "get_user_playlists"
+            | "get_user_favorites"
     )
 }
 
@@ -364,6 +365,9 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "delete_user_avatar" => users::delete_user_avatar(body, &ctx, pool).await,
         "change_user_nickname" => users::change_user_nickname(body, &ctx, pool).await,
         "get_user_plugins" => users::get_user_plugins(body, &ctx, pool).await,
+        "get_user_playlists" => users::get_user_playlists(body, &ctx, pool).await,
+        "delete_user_sync_playlist" => users::delete_user_sync_playlist(body, &ctx, pool).await,
+        "get_user_favorites" => users::get_user_favorites(body, &ctx, pool).await,
         "replace_user_id_to_ciyuanxi" => users::replace_user_id_to_ciyuanxi(body, &ctx, pool).await,
         "change_user_email" => account::change_user_email(body, &ctx, pool).await,
         "reset_listen_duration" => account::reset_listen_duration(body, &ctx, pool).await,
@@ -389,6 +393,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "delete_backup" => db::delete_backup(body, &ctx, pool).await,
         "list_tables" => db::list_tables(body, &ctx, pool).await,
         "list_backups" => db::list_backups(body, &ctx, pool).await,
+        "list_data_groups" => db::list_data_groups(body, &ctx, pool).await,
+        "clear_data_group" => db::clear_data_group(body, &ctx, pool).await,
         "import_db" => db::import_db(body, &ctx, pool).await,
         "get_auto_backup_config" => db::get_auto_backup_config(body, &ctx, pool).await,
         "save_auto_backup_config" => db::save_auto_backup_config(body, &ctx, pool).await,
@@ -531,7 +537,6 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "get_turnstile_config" => turnstile::get_turnstile_config(body, &ctx, pool).await,
         "save_turnstile_config" => turnstile::save_turnstile_config(body, &ctx, pool).await,
         // playlist
-        "get_user_playlists" => playlist::get_user_playlists(body, &ctx, pool).await,
         "delete_user_playlist" => playlist::delete_user_playlist(body, &ctx, pool).await,
         "delete_empty_favorite_playlists" => playlist::delete_empty_favorite_playlists(body, &ctx, pool).await,
         // proxy

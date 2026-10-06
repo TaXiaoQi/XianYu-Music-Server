@@ -140,6 +140,11 @@ async fn main() -> anyhow::Result<()> {
         tokio::spawn(async move {
             admin::db::auto_backup_loop(&auto_pool).await;
         });
+        let retention_pool = pool.clone();
+        tokio::spawn(async move {
+            admin::db::migrate_backups_to_gzip();
+            admin::db::log_retention_loop(&retention_pool).await;
+        });
         let comm_pool = pool.clone();
         tokio::spawn(async move {
             admin::commtool::comm_server_loop(comm_pool).await;

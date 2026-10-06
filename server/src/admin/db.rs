@@ -45,10 +45,11 @@ pub async fn upsert_setting(pool: &MySqlPool, key: &str, value: &str, desc: &str
 }
 
 fn sanitize_filename(name: &str) -> bool {
+    let valid_ext = name.ends_with(".sql") || name.ends_with(".sql.gz");
     name.len() > 8
         && name.len() <= MAX_FILENAME
         && name.starts_with("backup_")
-        && name.ends_with(".sql")
+        && valid_ext
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
@@ -106,13 +107,277 @@ pub async fn list_tables(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respo
     ok("ok", json!({ "tables": result }))
 }
 
+// ===== 数据大类：业务视角分组与一键清空（不暴露真实表名，表名全部在服务端白名单内） =====
+
+/// 统计若干白名单表的行数总和
+async fn sum_counts(pool: &MySqlPool, tables: &[&str]) -> i64 {
+    let mut total = 0i64;
+    for t in tables {
+        total += sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM `{}`", t))
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+    }
+    total
+}
+
+/// 删除白名单表全部数据，返回受影响行数
+async fn del_table(pool: &MySqlPool, table: &str) -> u64 {
+    sqlx::query(&format!("DELETE FROM `{}`", table))
+        .execute(pool)
+        .await
+        .map(|r| r.rows_affected())
+        .unwrap_or(0)
+}
+
+/// 清空目录下所有文件（不递归子目录），返回删除数
+fn remove_dir_files(dir: std::path::PathBuf) -> usize {
+    let mut n = 0;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() && std::fs::remove_file(&p).is_ok() {
+                n += 1;
+            }
+        }
+    }
+    n
+}
+
+/// 统计某表按条件的行数
+async fn count_where(pool: &MySqlPool, table: &str, cond: &str) -> i64 {
+    sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM `{}` WHERE {}", table, cond))
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0)
+}
+
+pub async fn list_data_groups(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let mut groups: Vec<Value> = Vec::new();
+    let mut push = |key: &str, name: &str, desc: &str, count: i64| {
+        groups.push(json!({ "key": key, "name": name, "desc": desc, "count": count }));
+    };
+    // ---- 用户数据 ----
+    push(
+        "playlists",
+        "用户歌单",
+        "云端保存的歌单与歌曲",
+        sum_counts(pool, &["user_playlists", "user_playlist_songs"]).await,
+    );
+    push(
+        "plugins",
+        "插件快照",
+        "客户端上传的插件脚本备份",
+        count_where(pool, "user_sync_files", "file_name = 'plugins.json'").await,
+    );
+    push(
+        "favorites",
+        "收藏快照",
+        "客户端同步的收藏歌曲备份",
+        count_where(pool, "user_sync_files", "file_name = 'favorites.json'").await,
+    );
+    push(
+        "sync_snapshots",
+        "同步快照备份",
+        "歌单/插件/收藏/设置等全部同步备份与分块数据",
+        sum_counts(pool, &["user_sync_files", "user_sync_chunks"]).await,
+    );
+    let avatar_users: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM app_users WHERE avatar_url IS NOT NULL AND avatar_url != ''")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+    let avatar_pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM user_avatar_pending")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    push("avatars", "用户头像", "用户上传的头像文件与待审记录", avatar_users + avatar_pending);
+    push(
+        "nicknames",
+        "昵称审核",
+        "待审核的改名申请与改名通知记录",
+        sum_counts(pool, &["user_nickname_pending", "nickname_change_notices"]).await,
+    );
+    let stat_users: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM app_users WHERE listen_duration != 0 OR unique_songs_count != 0 OR listen_duration_offset != 0 OR unique_songs_offset != 0",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    push(
+        "listen_stats",
+        "听歌统计",
+        "累计听歌时长与每日听歌统计，清空后归零重新累计",
+        stat_users + sum_counts(pool, &["listen_daily_stats"]).await,
+    );
+    push(
+        "play_history",
+        "播放历史",
+        "播放记录与每日推荐喜欢/不喜欢反馈",
+        sum_counts(pool, &["play_history", "daily_like", "daily_dislike"]).await,
+    );
+    push(
+        "feedback",
+        "用户反馈",
+        "意见反馈、协作请求与随附截图",
+        sum_counts(pool, &["user_feedback", "feedback_collab_requests", "feedback_admin_notifications"]).await,
+    );
+    push("beta_testers", "内测申请", "内测资格申请记录", sum_counts(pool, &["beta_testers"]).await);
+    push(
+        "tokens",
+        "登录令牌",
+        "客户端登录态，清空后所有用户需重新登录",
+        sum_counts(pool, &["user_tokens"]).await,
+    );
+    push(
+        "announce_confirms",
+        "公告已读记录",
+        "用户对公告的已读确认，清空后公告会重新弹出",
+        sum_counts(pool, &["user_announcement_confirmations"]).await,
+    );
+    // ---- 日志与统计 ----
+    push("errors", "客户端错误日志", "客户端上报的运行错误记录", sum_counts(pool, &["error_log"]).await);
+    push(
+        "login_logs",
+        "登录日志",
+        "客户端与后台的登录流水",
+        sum_counts(pool, &["login_log", "admin_login_log", "admin_app_login_log"]).await,
+    );
+    push("admin_ops", "后台操作日志", "后台管理的操作审计记录", sum_counts(pool, &["admin_operation_log"]).await);
+    push("call_stats", "曲源调用统计", "各音乐来源的调用流水记录", sum_counts(pool, &["source_call_log"]).await);
+    push(
+        "access_logs",
+        "访问与打开日志",
+        "App 打开记录与主页访问流水",
+        sum_counts(pool, &["app_open_log", "view_access_log"]).await,
+    );
+    push("quota_logs", "配额使用记录", "大师配额扣减流水", sum_counts(pool, &["master_quota_usage_log"]).await);
+    push("shares", "分享记录", "歌曲分享链接与浏览统计", sum_counts(pool, &["share_log", "share_views", "share_actions"]).await);
+    push(
+        "email_logs",
+        "邮件与验证码",
+        "邮件发送记录与邮箱验证码",
+        sum_counts(pool, &["email_send_log", "email_verify_codes", "email_test_logs", "email_test_codes"]).await,
+    );
+    push(
+        "device_status",
+        "设备状态与指令",
+        "设备在线状态与远程控制指令队列",
+        sum_counts(pool, &["device_presence", "watch_commands"]).await,
+    );
+    push(
+        "temp_data",
+        "验证与限流临时数据",
+        "人机验证、限流计数与 TV 授权码",
+        sum_counts(pool, &["human_captcha_challenges", "auth_rate_limits", "api_rate_events", "api_temp_blocks", "tv_login_codes"]).await,
+    );
+    ok("ok", json!({ "groups": groups }))
+}
+
+pub async fn clear_data_group(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let key = str_of(&data, "key").trim().to_string();
+    let mut cleared: u64 = 0;
+    let mut files_removed: usize = 0;
+    match key.as_str() {
+        "playlists" => {
+            cleared = del_table(pool, "user_playlists").await + del_table(pool, "user_playlist_songs").await;
+        }
+        "plugins" => {
+            cleared = sqlx::query("DELETE FROM user_sync_files WHERE file_name = 'plugins.json'")
+                .execute(pool)
+                .await
+                .map(|r| r.rows_affected())
+                .unwrap_or(0);
+        }
+        "favorites" => {
+            cleared = sqlx::query("DELETE FROM user_sync_files WHERE file_name = 'favorites.json'")
+                .execute(pool)
+                .await
+                .map(|r| r.rows_affected())
+                .unwrap_or(0);
+        }
+        "sync_snapshots" => {
+            cleared = del_table(pool, "user_sync_files").await + del_table(pool, "user_sync_chunks").await;
+        }
+        "avatars" => {
+            cleared = sqlx::query("UPDATE app_users SET avatar_url = '' WHERE avatar_url IS NOT NULL AND avatar_url != ''")
+                .execute(pool)
+                .await
+                .map(|r| r.rows_affected())
+                .unwrap_or(0);
+            cleared += del_table(pool, "user_avatar_pending").await;
+            files_removed = remove_dir_files(std::path::Path::new("uploads").join("avatars"));
+        }
+        "nicknames" => {
+            cleared = del_table(pool, "user_nickname_pending").await + del_table(pool, "nickname_change_notices").await;
+        }
+        "listen_stats" => {
+            cleared = sqlx::query(
+                "UPDATE app_users SET listen_duration = 0, unique_songs_count = 0, listen_duration_offset = 0, unique_songs_offset = 0 WHERE listen_duration != 0 OR unique_songs_count != 0 OR listen_duration_offset != 0 OR unique_songs_offset != 0",
+            )
+            .execute(pool)
+            .await
+            .map(|r| r.rows_affected())
+            .unwrap_or(0);
+            cleared += del_table(pool, "listen_daily_stats").await;
+        }
+        "play_history" => {
+            cleared = del_table(pool, "play_history").await + del_table(pool, "daily_like").await + del_table(pool, "daily_dislike").await;
+        }
+        "feedback" => {
+            cleared = del_table(pool, "user_feedback").await
+                + del_table(pool, "feedback_collab_requests").await
+                + del_table(pool, "feedback_admin_notifications").await;
+            files_removed = remove_dir_files(std::path::Path::new("uploads").join("feedback"));
+        }
+        "beta_testers" => cleared = del_table(pool, "beta_testers").await,
+        "tokens" => cleared = del_table(pool, "user_tokens").await,
+        "announce_confirms" => cleared = del_table(pool, "user_announcement_confirmations").await,
+        "errors" => cleared = del_table(pool, "error_log").await,
+        "login_logs" => {
+            cleared = del_table(pool, "login_log").await + del_table(pool, "admin_login_log").await + del_table(pool, "admin_app_login_log").await;
+        }
+        "admin_ops" => cleared = del_table(pool, "admin_operation_log").await,
+        "call_stats" => cleared = del_table(pool, "source_call_log").await,
+        "access_logs" => {
+            cleared = del_table(pool, "app_open_log").await + del_table(pool, "view_access_log").await;
+        }
+        "quota_logs" => cleared = del_table(pool, "master_quota_usage_log").await,
+        "shares" => {
+            cleared = del_table(pool, "share_log").await + del_table(pool, "share_views").await + del_table(pool, "share_actions").await;
+        }
+        "email_logs" => {
+            for t in ["email_send_log", "email_verify_codes", "email_test_logs", "email_test_codes"] {
+                cleared += del_table(pool, t).await;
+            }
+        }
+        "device_status" => {
+            cleared = del_table(pool, "device_presence").await + del_table(pool, "watch_commands").await;
+        }
+        "temp_data" => {
+            for t in ["human_captcha_challenges", "auth_rate_limits", "api_rate_events", "api_temp_blocks", "tv_login_codes"] {
+                cleared += del_table(pool, t).await;
+            }
+        }
+        _ => return err(400, "未知的数据类别"),
+    }
+    let detail = if files_removed > 0 {
+        format!("清除 {} 条记录、{} 个文件", cleared, files_removed)
+    } else {
+        format!("清除 {} 条记录", cleared)
+    };
+    log_operation(pool, ctx, "清空数据", &format!("类别:{}", key), &detail).await;
+    ok("清空完成", json!({ "cleared": cleared, "files_removed": files_removed }))
+}
+
 pub async fn list_backups(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
     let dir = backup_dir();
     let mut backups: Vec<Value> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir) {
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().to_string();
-            if name.starts_with("backup_") && name.ends_with(".sql") {
+            if name.starts_with("backup_") && (name.ends_with(".sql") || name.ends_with(".sql.gz")) {
                 let meta = entry.metadata().ok();
                 let size = meta.as_ref().map(|m| m.len()).unwrap_or(0);
                 let size_str = if size >= 1024 * 1024 {
@@ -257,8 +522,7 @@ pub struct BackupOutcome {
     pub skipped: bool,
 }
 
-fn write_sql(file: &mut std::fs::File, s: &str) -> Result<(), String> {
-    use std::io::Write;
+fn write_sql<W: std::io::Write>(file: &mut W, s: &str) -> Result<(), String> {
     file.write_all(s.as_bytes())
         .map_err(|e| format!("写入备份文件失败: {}", e))
 }
@@ -267,7 +531,8 @@ pub async fn perform_backup(pool: &MySqlPool, mode: &str) -> Result<BackupOutcom
     let dir = backup_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建备份目录: {}", e))?;
     let now = chrono::Local::now();
-    let filename = format!("backup_{}.sql", now.format("%Y%m%d_%H%M%S"));
+    // 备份文件 gzip 压缩落盘，节省磁盘体积；旧的 .sql 文件仍可读取/恢复
+    let filename = format!("backup_{}.sql.gz", now.format("%Y%m%d_%H%M%S"));
     let filepath = dir.join(&filename);
 
     let tables: Vec<String> = sqlx::query("SHOW TABLES")
@@ -320,7 +585,8 @@ pub async fn perform_backup(pool: &MySqlPool, mode: &str) -> Result<BackupOutcom
         }
     }
 
-    let mut file = std::fs::File::create(&filepath).map_err(|e| format!("创建备份文件失败: {}", e))?;
+    let raw = std::fs::File::create(&filepath).map_err(|e| format!("创建备份文件失败: {}", e))?;
+    let mut file = flate2::write::GzEncoder::new(raw, flate2::Compression::default());
     write_sql(&mut file, &format!(
         "-- XiaYu Database Backup\n-- Generated: {}\n-- Mode: {}\n",
         now.format("%Y-%m-%d %H:%M:%S"),
@@ -377,7 +643,9 @@ pub async fn perform_backup(pool: &MySqlPool, mode: &str) -> Result<BackupOutcom
         write_sql(&mut file, "\n")?;
     }
     write_sql(&mut file, "SET FOREIGN_KEY_CHECKS=1;\n")?;
-    drop(file);
+    // 显式收尾 gzip 流，确保压缩数据完整落盘
+    let raw = file.finish().map_err(|e| format!("压缩备份文件失败: {}", e))?;
+    drop(raw);
 
     let size = std::fs::metadata(&filepath).map(|m| m.len()).unwrap_or(0);
     let size_str = if size >= 1024 * 1024 {
@@ -507,6 +775,75 @@ pub async fn auto_backup_loop(pool: &MySqlPool) {
     }
 }
 
+/// 日志自动保留：每日清理过期流水日志，控制磁盘与表体积（业务数据不清理）
+pub async fn log_retention_loop(pool: &MySqlPool) {
+    // (表名, 时间列, 保留天数)
+    const RULES: &[(&str, &str, i64)] = &[
+        ("error_log", "error_time", 7),
+        ("source_call_log", "call_time", 30),
+        ("app_open_log", "created_at", 30),
+        ("view_access_log", "created_at", 30),
+        ("login_log", "login_time", 90),
+        ("admin_login_log", "created_at", 90),
+        ("admin_app_login_log", "created_at", 90),
+        ("email_send_log", "created_at", 90),
+    ];
+    loop {
+        let mut total: u64 = 0;
+        for (table, col, days) in RULES {
+            let sql = format!(
+                "DELETE FROM `{}` WHERE `{}` < NOW() - INTERVAL {} DAY",
+                table, col, days
+            );
+            match sqlx::query(&sql).execute(pool).await {
+                Ok(r) => total += r.rows_affected(),
+                Err(e) => tracing::warn!("log_retention: 清理 {} 失败: {}", table, e),
+            }
+        }
+        if total > 0 {
+            tracing::info!("log_retention: 已清理过期日志 {} 行", total);
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(24 * 3600)).await;
+    }
+}
+
+/// 一次性把历史 .sql 备份压缩为 .sql.gz（服务启动时调用）
+pub fn migrate_backups_to_gzip() {
+    let dir = backup_dir();
+    let Ok(entries) = std::fs::read_dir(&dir) else { return };
+    let mut count = 0usize;
+    let mut saved_total: u64 = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.starts_with("backup_") || !name.ends_with(".sql") {
+            continue;
+        }
+        let Ok(raw) = std::fs::read(&path) else { continue };
+        let gz_name = format!("{}.gz", name);
+        let gz_path = dir.join(&gz_name);
+        if gz_path.exists() {
+            continue;
+        }
+        let Ok(out) = std::fs::File::create(&gz_path) else { continue };
+        let mut enc = flate2::write::GzEncoder::new(out, flate2::Compression::default());
+        let write_ok = std::io::Write::write_all(&mut enc, &raw).is_ok();
+        let finish_ok = enc.finish().is_ok();
+        let gz_size = std::fs::metadata(&gz_path).map(|m| m.len()).unwrap_or(0);
+        if !(write_ok && finish_ok) || gz_size == 0 {
+            let _ = std::fs::remove_file(&gz_path);
+            continue;
+        }
+        if std::fs::remove_file(&path).is_ok() {
+            count += 1;
+            saved_total += raw.len() as u64 - gz_size;
+        }
+    }
+    if count > 0 {
+        tracing::info!("backup_gzip_migration: 已压缩 {} 个历史备份，节省 {} 字节", count, saved_total);
+    }
+}
+
 fn sql_to_literal(v: &Value) -> String {
     match v {
         Value::Null => "NULL".to_string(),
@@ -517,6 +854,21 @@ fn sql_to_literal(v: &Value) -> String {
     }
 }
 
+/// 读取备份文件文本内容，.sql.gz 自动解压
+fn read_backup_text(filepath: &std::path::Path) -> Result<String, String> {
+    let raw = std::fs::read(filepath).map_err(|_| "备份文件不存在".to_string())?;
+    if filepath.extension().map(|e| e == "gz").unwrap_or(false) {
+        use std::io::Read;
+        let mut s = String::new();
+        flate2::read::GzDecoder::new(&raw[..])
+            .read_to_string(&mut s)
+            .map_err(|e| format!("解压备份文件失败: {}", e))?;
+        Ok(s)
+    } else {
+        String::from_utf8(raw).map_err(|_| "备份文件编码异常".to_string())
+    }
+}
+
 pub async fn view_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let filename = str_of(&data, "filename").trim().to_string();
@@ -524,7 +876,7 @@ pub async fn view_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
         return err(400, "无效的文件名");
     }
     let filepath = backup_dir().join(&filename);
-    match std::fs::read_to_string(&filepath) {
+    match read_backup_text(&filepath) {
         Ok(content) => {
             log_operation(pool, ctx, "查看备份", &filename, "").await;
             ok("success", json!({ "content": content }))
@@ -543,7 +895,7 @@ pub async fn restore_backup(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
         return err(400, "无效的文件名");
     }
     let filepath = backup_dir().join(&filename);
-    let content = match std::fs::read_to_string(&filepath) {
+    let content = match read_backup_text(&filepath) {
         Ok(c) => c,
         Err(_) => return err(404, "备份文件不存在"),
     };

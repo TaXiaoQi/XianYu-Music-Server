@@ -41,8 +41,8 @@
           {{ importing ? '导入中...' : '导入数据库' }}
         </button>
         <input ref="importFileInput" type="file" accept=".sql,.txt" class="hidden-input" @change="onImportFile" />
-        <button class="btn-refresh" @click="reloadAll" :disabled="loadingTables || loadingBackups || repairing || backingUp">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ spinning: loadingTables || loadingBackups }">
+        <button class="btn-refresh" @click="reloadAll" :disabled="loadingTables || loadingBackups || loadingGroups || repairing || backingUp">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ spinning: loadingTables || loadingBackups || loadingGroups }">
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" /><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
           </svg>
           刷新
@@ -80,68 +80,32 @@
       </div>
     </Transition>
 
-    <!-- 数据库表状态 -->
+    <!-- 数据清理：按业务大类聚合，不展示真实表名 -->
     <Transition name="fade-up" appear>
       <div class="section-card">
         <div class="section-head">
-          <h3 class="section-title">数据库表状态</h3>
-          <span class="section-sub">{{ existingCount }}/{{ tables.length }} 存在</span>
+          <h3 class="section-title">数据清理</h3>
+          <span class="section-sub">按类别一键清空，操作不可恢复</span>
         </div>
 
-        <div v-if="loadingTables" class="state-box">
+        <div v-if="loadingGroups" class="state-box">
           <div class="spinner"></div>
           <span>加载中...</span>
         </div>
-        <div v-else-if="tables.length === 0" class="state-box">暂无表数据</div>
-        <div v-else class="table-scroll">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>表名</th>
-                <th>状态</th>
-                <th>行数</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(t, idx) in pagedTables" :key="t.name" class="row-anim" :style="{ animationDelay: `${idx * 40}ms` }">
-                <td>
-                  <span
-                    class="table-name"
-                    :class="{ clickable: t.exists }"
-                    :title="t.exists ? '点击查看表内容' : ''"
-                    @click="t.exists && openTableViewer(t.name)"
-                  >{{ t.name }}</span>
-                </td>
-                <td>
-                  <span class="badge" :class="t.exists ? 'badge-success' : 'badge-error'">
-                    {{ t.exists ? '存在' : '缺失' }}
-                  </span>
-                </td>
-                <td>{{ t.exists ? t.row_count : '-' }}</td>
-                <td>
-                  <button v-if="t.exists" class="btn btn-sm" @click="openTableViewer(t.name)">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" /></svg>
-                    查看内容
-                  </button>
-                  <span v-else class="muted">-</span>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <!-- 表分页 -->
-        <div v-if="!loadingTables && tables.length > 0" class="pagination">
-          <button :disabled="tablePage <= 1" @click="goTableListPage(tablePage - 1)">上一页</button>
-          <button
-            v-for="p in tablePageNumbers"
-            :key="p"
-            :class="{ active: p === tablePage }"
-            @click="goTableListPage(p)"
-          >{{ p }}</button>
-          <button :disabled="tablePage >= tableTotalPages" @click="goTableListPage(tablePage + 1)">下一页</button>
-          <span>共 {{ tables.length }} 条</span>
+        <div v-else-if="groups.length === 0" class="state-box">暂无数据类别</div>
+        <div v-else class="group-list">
+          <div v-for="(g, idx) in groups" :key="g.key" class="group-row" :style="{ animationDelay: `${idx * 40}ms` }">
+            <div class="group-info">
+              <span class="group-name">{{ g.name }}</span>
+              <span class="group-desc">{{ g.desc }}</span>
+            </div>
+            <div class="group-meta">
+              <span class="group-count">{{ g.count }} 条</span>
+              <button class="btn btn-sm btn-danger" :disabled="clearingKey !== ''" @click="doClearGroup(g)">
+                {{ clearingKey === g.key ? '清空中...' : '清空' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </Transition>
@@ -200,62 +164,6 @@
           >{{ p }}</button>
           <button :disabled="backupPage >= backupTotalPages" @click="goBackupPage(backupPage + 1)">下一页</button>
           <span>共 {{ backups.length }} 条</span>
-        </div>
-      </div>
-    </Transition>
-
-    <!-- 表内容查看弹窗 -->
-    <Transition name="modal">
-      <div v-if="showTableModal" class="modal-backdrop" @click.self="closeTableModal">
-        <div class="modal-dialog modal-lg">
-          <div class="modal-head">
-            <h3>表内容 - {{ tableData?.table || '' }}</h3>
-            <button class="modal-close" @click="closeTableModal">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div v-if="tableLoading" class="state-box">
-              <div class="spinner"></div>
-              <span>加载中...</span>
-            </div>
-            <template v-else-if="tableData">
-              <div class="table-meta">
-                共 {{ tableData.total }} 行 · 第 {{ tableData.page }}/{{ viewerTotalPages }} 页 · 每页 {{ tableData.pageSize }} 行
-              </div>
-              <div v-if="tableData.rows.length" class="table-scroll">
-                <table class="data-table compact">
-                  <thead>
-                    <tr>
-                      <th v-for="c in tableData.columns" :key="c">{{ c }}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="(row, i) in tableData.rows" :key="i">
-                      <td v-for="c in tableData.columns" :key="c" :title="formatCell(row[c])">{{ formatCell(row[c]) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-              <div v-else class="state-box">该表暂无数据</div>
-            </template>
-            <div v-else class="state-box">该表不存在或无法读取，请点击「修复数据库」后刷新重试，或点击空白处关闭。</div>
-          </div>
-          <div class="modal-foot">
-            <div class="pagination" v-if="tableData && tableData.total > 0">
-              <button :disabled="tableLoading || (tableData?.page ?? 1) <= 1" @click="goViewerPage((tableData?.page ?? 1) - 1)">上一页</button>
-              <button
-                v-for="p in viewerPageNumbers"
-                :key="p"
-                :class="{ active: p === (tableData?.page ?? 1) }"
-                :disabled="tableLoading"
-                @click="goViewerPage(p)"
-              >{{ p }}</button>
-              <button :disabled="tableLoading || (tableData?.page ?? 1) >= viewerTotalPages" @click="goViewerPage((tableData?.page ?? 1) + 1)">下一页</button>
-              <span>共 {{ tableData?.total ?? 0 }} 条</span>
-            </div>
-            <button class="btn-cancel" @click="closeTableModal">关闭</button>
-          </div>
         </div>
       </div>
     </Transition>
@@ -409,20 +317,21 @@ interface BackupResult {
   tables: number
 }
 
-interface TableData {
-  table: string
-  columns: string[]
-  rows: Record<string, any>[]
-  total: number
-  page: number
-  pageSize: number
+interface DataGroup {
+  key: string
+  name: string
+  desc: string
+  count: number
 }
 
 // ===== 列表数据 =====
 const tables = ref<TableInfo[]>([])
 const backups = ref<BackupInfo[]>([])
+const groups = ref<DataGroup[]>([])
 const loadingTables = ref(true)
 const loadingBackups = ref(true)
+const loadingGroups = ref(true)
+const clearingKey = ref('')
 const repairing = ref(false)
 const backingUp = ref(false)
 
@@ -431,15 +340,7 @@ const missingCount = computed(() => tables.value.filter(t => !t.exists).length)
 
 // ===== 分页（每页 20 条） =====
 const PAGE_SIZE = 20
-const tablePage = ref(1)
 const backupPage = ref(1)
-
-const pagedTables = computed(() => {
-  const start = (tablePage.value - 1) * PAGE_SIZE
-  return tables.value.slice(start, start + PAGE_SIZE)
-})
-const tableTotalPages = computed(() => Math.max(1, Math.ceil(tables.value.length / PAGE_SIZE)))
-const tablePageNumbers = computed(() => calcPageNumbers(tablePage.value, tableTotalPages.value))
 
 const pagedBackups = computed(() => {
   const start = (backupPage.value - 1) * PAGE_SIZE
@@ -462,11 +363,6 @@ function calcPageNumbers(cur: number, total: number): number[] {
   return pages
 }
 
-function goTableListPage(p: number) {
-  if (p < 1 || p > tableTotalPages.value || p === tablePage.value) return
-  tablePage.value = p
-}
-
 function goBackupPage(p: number) {
   if (p < 1 || p > backupTotalPages.value || p === backupPage.value) return
   backupPage.value = p
@@ -482,7 +378,6 @@ async function loadTables() {
     tables.value = []
     showToast(res.msg || '表列表加载失败')
   }
-  if (tablePage.value > tableTotalPages.value) tablePage.value = tableTotalPages.value
   loadingTables.value = false
 }
 
@@ -499,8 +394,39 @@ async function loadBackups() {
   loadingBackups.value = false
 }
 
+async function loadGroups() {
+  loadingGroups.value = true
+  const res = await adminApi<{ groups: DataGroup[] }>('list_data_groups')
+  if (res.code === 200 && res.data) {
+    groups.value = res.data.groups || []
+  } else {
+    groups.value = []
+    showToast(res.msg || '数据类别加载失败')
+  }
+  loadingGroups.value = false
+}
+
+async function doClearGroup(g: DataGroup) {
+  if (clearingKey.value) return
+  const ok = await webConfirm(
+    `确定清空「${g.name}」吗？\n\n共 ${g.count} 条数据将被永久删除，且不可恢复！`,
+    { title: '清空数据', confirmText: '确认清空' }
+  )
+  if (!ok) return
+  clearingKey.value = g.key
+  const res = await adminApi<{ cleared: number; files_removed: number }>('clear_data_group', { key: g.key })
+  clearingKey.value = ''
+  if (res.code === 200 && res.data) {
+    const files = res.data.files_removed > 0 ? `、${res.data.files_removed} 个文件` : ''
+    showToast(`已清空 ${res.data.cleared} 条记录${files}`, 'success')
+    loadGroups()
+  } else {
+    showToast(res.msg || '清空失败')
+  }
+}
+
 async function reloadAll() {
-  await Promise.all([loadTables(), loadBackups()])
+  await Promise.all([loadTables(), loadBackups(), loadGroups()])
 }
 
 // ===== 修复数据库 =====
@@ -649,62 +575,6 @@ async function onImportFile(e: Event) {
   }
 }
 
-// ===== 表内容查看 =====
-const showTableModal = ref(false)
-const tableLoading = ref(false)
-const tableData = ref<TableData | null>(null)
-
-const viewerTotalPages = computed(() => {
-  if (!tableData.value) return 1
-  return Math.max(1, Math.ceil(tableData.value.total / tableData.value.pageSize))
-})
-
-const viewerPageNumbers = computed(() => {
-  const max = 7
-  const pages: number[] = []
-  const total = viewerTotalPages.value
-  const cur = tableData.value?.page ?? 1
-  if (total <= max) {
-    for (let i = 1; i <= total; i++) pages.push(i)
-  } else {
-    let start = Math.max(1, cur - 3)
-    let end = Math.min(total, start + max - 1)
-    if (end - start < max - 1) start = Math.max(1, end - max + 1)
-    for (let i = start; i <= end; i++) pages.push(i)
-  }
-  return pages
-})
-
-async function openTableViewer(name: string) {
-  showTableModal.value = true
-  tableData.value = null
-  await fetchTable(name, 1)
-}
-
-async function fetchTable(name: string, page: number) {
-  tableLoading.value = true
-  const res = await adminApi<TableData>('view_table', { table_name: name, page })
-  tableLoading.value = false
-  if (res.code === 200 && res.data) {
-    tableData.value = res.data
-  } else {
-    showToast(res.msg || '表内容加载失败')
-    tableData.value = null
-  }
-}
-
-function goViewerPage(p: number) {
-  if (!tableData.value) return
-  if (p < 1 || p > viewerTotalPages.value || p === tableData.value.page) return
-  fetchTable(tableData.value.table, p)
-}
-
-function closeTableModal() {
-  if (tableLoading.value) return
-  showTableModal.value = false
-  tableData.value = null
-}
-
 // ===== 备份内容查看 =====
 const showBackupModal = ref(false)
 const backupLoading = ref(false)
@@ -802,24 +672,11 @@ async function deleteBackup(item: BackupInfo) {
   }
 }
 
-// ===== 工具函数 =====
-function formatCell(val: any): string {
-  if (val === null || val === undefined) return 'NULL'
-  if (typeof val === 'boolean') return val ? '1' : '0'
-  if (typeof val === 'object') {
-    try {
-      return JSON.stringify(val)
-    } catch {
-      return String(val)
-    }
-  }
-  return String(val)
-}
-
 // ===== 初始化 =====
 onMounted(() => {
   loadTables()
   loadBackups()
+  loadGroups()
 })
 </script>
 
@@ -1014,6 +871,54 @@ onMounted(() => {
 .section-sub {
   font-size: 12px;
   color: var(--text-muted);
+}
+
+/* ===== 数据大类列表 ===== */
+.group-list {
+  display: flex;
+  flex-direction: column;
+}
+.group-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 6px;
+  border-bottom: 1px solid #f5f5f5;
+  border-radius: 8px;
+  transition: background 0.15s;
+  animation: rowIn 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.group-row:last-child { border-bottom: none; }
+.group-row:hover { background: var(--table-row-hover); }
+.group-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.group-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+.group-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.group-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.group-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-light);
+  min-width: 72px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ===== 表格 ===== */
