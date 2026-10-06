@@ -10,13 +10,15 @@ interface RowActionOptions {
   openEmailModal: (u: User) => void
   openResetModal: (u: User) => void
   viewPlugins: (u: User) => Promise<void>
+  viewPlaylists: (u: User) => Promise<void>
+  viewFavorites: (u: User) => Promise<void>
   openDeviceModal: (u: User) => Promise<void>
 }
 
 // 行内操作菜单与账号状态操作（跨子域分发由视图注入）
 export function useRowActions(options: RowActionOptions) {
   const auth = useAuthStore()
-  const { loadUsers, openNicknameModal, openEmailModal, openResetModal, viewPlugins, openDeviceModal } = options
+  const { loadUsers, openNicknameModal, openEmailModal, openResetModal, viewPlugins, viewPlaylists, viewFavorites, openDeviceModal } = options
 
   async function openRowMenu(u: User) {
     if (auth.isGuest) {
@@ -30,6 +32,8 @@ export function useRowActions(options: RowActionOptions) {
       { key: 'email', label: '修改邮箱' },
       { key: 'reset', label: '重置听歌时长' },
       { key: 'plugins', label: '查看插件' },
+      { key: 'playlists', label: '查看歌单' },
+      { key: 'favorites', label: '查看收藏' },
       { key: 'device', label: '设备信息' },
       { key: 'avatar', label: '删除头像', danger: true, show: !!u.avatar_url },
       { key: 'delete', label: '删除用户', danger: true },
@@ -42,6 +46,8 @@ export function useRowActions(options: RowActionOptions) {
       case 'email': openEmailModal(u); break
       case 'reset': openResetModal(u); break
       case 'plugins': await viewPlugins(u); break
+      case 'playlists': await viewPlaylists(u); break
+      case 'favorites': await viewFavorites(u); break
       case 'device': await openDeviceModal(u); break
       case 'avatar': await deleteAvatar(u); break
       case 'delete': await deleteUser(u); break

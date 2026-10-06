@@ -735,16 +735,12 @@ pub async fn get_device_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
         return ok("ok", json!({ "device_id": device_id, "nickname": nickname, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null }));
     }
 
-    let clean_id: String = ciyuanxi_id.chars().filter(|c| c.is_ascii_digit()).collect();
-    let dir = std::path::Path::new("data").join("sync").join(&clean_id);
-    let file = dir.join("plugins.json");
-    let content = match std::fs::read_to_string(&file) {
-        Ok(c) => c,
-        Err(_) => return ok("ok", json!({ "device_id": device_id, "nickname": nickname, "ciyuanxi_id": ciyuanxi_id, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null })),
-    };
-    let save_data: Value = match serde_json::from_str(&content) {
+    // 插件快照已迁入 user_sync_files 表，经 read_snapshot 读取（含旧文件懒迁移）
+    let save_data = match crate::handlers::sync_store::read_snapshot(pool, &ciyuanxi_id, "plugins.json").await {
         Ok(v) => v,
-        Err(_) => return err(500, "数据解析失败"),
+        Err(_) => {
+            return ok("ok", json!({ "device_id": device_id, "nickname": nickname, "ciyuanxi_id": ciyuanxi_id, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null }));
+        }
     };
     let mut plugins: Vec<Value> = Vec::new();
     let uploaded_at = save_data.get("uploaded_at").cloned().unwrap_or(Value::Null);

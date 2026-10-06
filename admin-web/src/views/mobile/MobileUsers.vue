@@ -148,6 +148,93 @@
     </div>
     </Transition>
 
+    <!-- 歌单查看弹窗 -->
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
+    <div v-if="showPlaylistsModal" class="mobile-dialog-overlay" @click.self="closePlaylists">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:460px;max-height:88vh;">
+        <div class="mobile-dialog-head">
+          <span class="mobile-dialog-head-title">用户歌单 - {{ playlistsData.nickname || playlistsData.username || '-' }}</span>
+          <button class="mobile-dialog-close" @click="closePlaylists">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="mobile-dialog-body popup-body">
+          <div v-if="playlistsLoading" class="mobile-empty">加载中...</div>
+          <template v-else>
+            <div class="popup-meta">
+              <span>歌单数量：{{ playlistsData.playlist_count || 0 }}</span>
+              <span>歌曲总数：{{ playlistsData.song_total || 0 }}</span>
+              <span v-if="playlistsData.uploaded_at">更新时间：{{ fmtDateTime(playlistsData.uploaded_at) }}</span>
+              <span v-if="playlistsData.ciyuanxi_id">弦予号：{{ playlistsData.ciyuanxi_id }}</span>
+            </div>
+            <div v-if="playlistsData.playlists && playlistsData.playlists.length > 0" class="popup-table-wrap">
+              <table class="popup-table">
+                <thead>
+                  <tr><th>歌单名</th><th>类型</th><th>歌曲数</th><th>创建时间</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(p, i) in playlistsData.playlists" :key="i">
+                    <td>
+                      {{ p.name || '(未命名)' }}
+                      <div v-if="p.songPaths && p.songPaths.length > 0" class="td-desc">歌曲路径：{{ p.songPaths.join('、') }}</div>
+                    </td>
+                    <td><span class="badge badge-info">{{ formatPlaylistType(p.type) }}</span></td>
+                    <td>{{ p.songCount || 0 }}</td>
+                    <td>{{ p.createdAt ? fmtDateTime(p.createdAt) : '-' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="mobile-empty">该用户暂无歌单数据</div>
+          </template>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
+    <!-- 收藏查看弹窗 -->
+    <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
+    <div v-if="showFavoritesModal" class="mobile-dialog-overlay" @click.self="closeFavorites">
+      <div class="mobile-dialog" style="display:flex;flex-direction:column;max-width:460px;max-height:88vh;">
+        <div class="mobile-dialog-head">
+          <span class="mobile-dialog-head-title">用户收藏 - {{ favoritesData.nickname || favoritesData.username || '-' }}</span>
+          <button class="mobile-dialog-close" @click="closeFavorites">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="mobile-dialog-body popup-body">
+          <div v-if="favoritesLoading" class="mobile-empty">加载中...</div>
+          <template v-else>
+            <div class="popup-meta">
+              <span>收藏数量：{{ favoritesData.favorite_count || 0 }}</span>
+              <span v-if="favoritesData.uploaded_at">更新时间：{{ fmtDateTime(favoritesData.uploaded_at) }}</span>
+              <span v-if="favoritesData.ciyuanxi_id">弦予号：{{ favoritesData.ciyuanxi_id }}</span>
+            </div>
+            <div v-if="favoritesData.favorites && favoritesData.favorites.length > 0" class="popup-table-wrap">
+              <table class="popup-table">
+                <thead>
+                  <tr><th>歌曲</th><th>歌手</th><th>专辑</th><th>收藏时间</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(f, i) in favoritesData.favorites" :key="i">
+                    <td>
+                      {{ f.name || '(未知)' }}
+                      <div v-if="f.path" class="td-desc">{{ f.path }}</div>
+                    </td>
+                    <td>{{ f.artist || '-' }}</td>
+                    <td>{{ f.album || '-' }}</td>
+                    <td>{{ formatFavTime(f.addedAt) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div v-else class="mobile-empty">该用户暂无收藏数据</div>
+          </template>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
     <!-- 设备信息弹窗 -->
     <Transition name="mobile-fade" @before-leave="removeBackdropBlur">
     <div v-if="showDeviceModal" class="mobile-dialog-overlay" @click.self="closeDevice">
@@ -456,6 +543,8 @@ async function openActionMenu(u: any) {
     { key: 'email', label: '修改邮箱' },
     { key: 'reset', label: '重置听歌时长' },
     { key: 'plugins', label: '查看插件' },
+    { key: 'playlists', label: '查看歌单' },
+    { key: 'favorites', label: '查看收藏' },
     { key: 'device', label: '设备信息' },
     { key: 'avatar', label: '删除头像', danger: true, show: !!u.avatar_url },
     { key: 'delete', label: '删除用户', danger: true },
@@ -468,6 +557,8 @@ async function openActionMenu(u: any) {
     case 'email': await changeEmail(u); break
     case 'reset': await resetDuration(u); break
     case 'plugins': await loadPlugins(u); break
+    case 'playlists': await loadPlaylists(u); break
+    case 'favorites': await loadFavorites(u); break
     case 'device': await openDeviceInfo(u); break
     case 'avatar': await deleteAvatar(u); break
     case 'delete': await deleteUser(u); break
@@ -573,6 +664,63 @@ function formatScriptSize(size: number | string | undefined): string {
   if (n < 1024) return `${n} B`
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   return `${(n / (1024 * 1024)).toFixed(2)} MB`
+}
+
+// ===== 歌单查看 =====
+const showPlaylistsModal = ref(false)
+const playlistsLoading = ref(false)
+const playlistsData = ref<any>({})
+
+async function loadPlaylists(u: any) {
+  showPlaylistsModal.value = true
+  playlistsLoading.value = true
+  playlistsData.value = { nickname: u.nickname || u.username, username: u.username }
+  const res = await adminApi<any>('get_user_playlists', { user_id: u.id })
+  playlistsLoading.value = false
+  if (res.code === 200 && res.data) {
+    playlistsData.value = res.data
+  } else {
+    showToast(res.msg || '加载歌单失败')
+  }
+}
+function closePlaylists() {
+  if (!playlistsLoading.value) showPlaylistsModal.value = false
+}
+function formatPlaylistType(t: string | undefined): string {
+  switch (t) {
+    case 'local': return '本地'
+    case 'online': return '在线'
+    case 'mixed': return '混合'
+    default: return '-'
+  }
+}
+
+// ===== 收藏查看 =====
+const showFavoritesModal = ref(false)
+const favoritesLoading = ref(false)
+const favoritesData = ref<any>({})
+
+async function loadFavorites(u: any) {
+  showFavoritesModal.value = true
+  favoritesLoading.value = true
+  favoritesData.value = { nickname: u.nickname || u.username, username: u.username }
+  const res = await adminApi<any>('get_user_favorites', { user_id: u.id })
+  favoritesLoading.value = false
+  if (res.code === 200 && res.data) {
+    favoritesData.value = res.data
+  } else {
+    showToast(res.msg || '加载收藏失败')
+  }
+}
+function closeFavorites() {
+  if (!favoritesLoading.value) showFavoritesModal.value = false
+}
+function formatFavTime(ms: number | undefined): string {
+  const n = Number(ms) || 0
+  if (n <= 0) return '-'
+  const d = new Date(n)
+  const p = (x: number) => String(x).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
 }
 async function openDeviceInfo(u: any) {
   showDeviceModal.value = true

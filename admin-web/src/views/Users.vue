@@ -321,6 +321,94 @@
     </div>
     </Transition>
 
+    <!-- 查看歌单弹窗 -->
+    <Transition name="modal">
+    <div v-if="showPlaylistsModal" class="modal-overlay">
+      <div class="modal" style="max-width:900px;">
+        <div class="modal-head-bar">
+          <h3>用户歌单 - {{ playlistsData.nickname || playlistsData.username }}</h3>
+          <button class="modal-close-btn" @click="showPlaylistsModal = false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div v-if="playlistsLoading" class="empty">加载中...</div>
+        <div v-else>
+          <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;flex-wrap:wrap;">
+            <span>歌单数量: {{ playlistsData.playlist_count || 0 }}</span>
+            <span>歌曲总数: {{ playlistsData.song_total || 0 }}</span>
+            <span v-if="playlistsData.uploaded_at">更新时间: {{ fmtDateTime(playlistsData.uploaded_at) }}</span>
+            <span v-if="playlistsData.ciyuanxi_id">弦予号: {{ playlistsData.ciyuanxi_id }}</span>
+          </div>
+          <div v-if="playlistsData.playlists && playlistsData.playlists.length > 0" class="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>歌单名</th><th>类型</th><th>歌曲数量</th><th>歌曲路径（前5条）</th><th>创建时间</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(p, i) in playlistsData.playlists" :key="i">
+                  <td>{{ p.name || '(未命名)' }}</td>
+                  <td><span class="badge badge-info">{{ formatPlaylistType(p.type) }}</span></td>
+                  <td>{{ p.songCount || 0 }}</td>
+                  <td style="font-size:11px;color:#999;word-break:break-all;">
+                    {{ (p.songPaths && p.songPaths.length > 0) ? p.songPaths.join('、') : '-' }}
+                  </td>
+                  <td>{{ p.createdAt ? fmtDateTime(p.createdAt) : '-' }}</td>
+                  <td>
+                    <button
+                      class="btn btn-sm btn-danger"
+                      :disabled="playlistDeleting >= 0"
+                      @click="removePlaylist(p, i)"
+                    >{{ playlistDeleting === i ? '删除中...' : '删除' }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="empty">该用户暂无歌单数据</div>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
+    <!-- 查看收藏弹窗 -->
+    <Transition name="modal">
+    <div v-if="showFavoritesModal" class="modal-overlay">
+      <div class="modal" style="max-width:900px;">
+        <div class="modal-head-bar">
+          <h3>用户收藏 - {{ favoritesData.nickname || favoritesData.username }}</h3>
+          <button class="modal-close-btn" @click="showFavoritesModal = false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div v-if="favoritesLoading" class="empty">加载中...</div>
+        <div v-else>
+          <div style="display:flex;gap:16px;margin-bottom:16px;font-size:13px;color:#666;flex-wrap:wrap;">
+            <span>收藏数量: {{ favoritesData.favorite_count || 0 }}</span>
+            <span v-if="favoritesData.uploaded_at">更新时间: {{ fmtDateTime(favoritesData.uploaded_at) }}</span>
+            <span v-if="favoritesData.ciyuanxi_id">弦予号: {{ favoritesData.ciyuanxi_id }}</span>
+          </div>
+          <div v-if="favoritesData.favorites && favoritesData.favorites.length > 0" class="table-wrapper">
+            <table>
+              <thead>
+                <tr><th>歌曲</th><th>歌手</th><th>专辑</th><th>收藏时间</th><th>路径</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="(f, i) in favoritesData.favorites" :key="i">
+                  <td>{{ f.name || '(未知)' }}</td>
+                  <td>{{ f.artist || '-' }}</td>
+                  <td>{{ f.album || '-' }}</td>
+                  <td>{{ formatFavTime(f.addedAt) }}</td>
+                  <td style="font-size:11px;color:#999;word-break:break-all;">{{ f.path || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div v-else class="empty">该用户暂无收藏数据</div>
+        </div>
+      </div>
+    </div>
+    </Transition>
+
     <!-- 头像大图查看弹窗 -->
     <Transition name="modal">
     <div v-if="showAvatarModal" class="modal-overlay">
@@ -473,6 +561,8 @@ import { fmtDateTime } from '@/utils/time'
 import { useUserList } from '@/composables/users/useUserList'
 import { useAccountModals } from '@/composables/users/useAccountModals'
 import { usePluginsModal } from '@/composables/users/usePluginsModal'
+import { usePlaylistsModal } from '@/composables/users/usePlaylistsModal'
+import { useFavoritesModal } from '@/composables/users/useFavoritesModal'
 import { useUserDevices } from '@/composables/users/useUserDevices'
 import { useBannedDevices } from '@/composables/users/useBannedDevices'
 import { useAvatarModal } from '@/composables/users/useAvatarModal'
@@ -493,8 +583,10 @@ const {
   showResetModal, resetLoading, resetForm, openResetModal, submitReset,
 } = useAccountModals({ loadUsers })
 
-// 插件查看 / 设备信息 / 封禁设备 / 头像查看
+// 插件查看 / 歌单查看 / 收藏查看 / 设备信息 / 封禁设备 / 头像查看
 const { showPluginsModal, pluginsLoading, pluginsData, viewPlugins, formatScriptSize } = usePluginsModal()
+const { showPlaylistsModal, playlistsLoading, playlistsData, viewPlaylists, removePlaylist, playlistDeleting, formatPlaylistType } = usePlaylistsModal()
+const { showFavoritesModal, favoritesLoading, favoritesData, viewFavorites, formatFavTime } = useFavoritesModal()
 const {
   showDeviceModal, deviceLoading, deviceData, userDevices,
   userDeviceIcon, userDevicePlatformLabel, userDeviceMeta,
@@ -507,7 +599,7 @@ const {
 const { showAvatarModal, avatarViewUser, avatarDeleting, openAvatarView, confirmDeleteAvatar } = useAvatarModal({ loadUsers })
 
 // 行操作菜单（跨子域分发）
-const { openRowMenu } = useRowActions({ loadUsers, openNicknameModal, openEmailModal, openResetModal, viewPlugins, openDeviceModal })
+const { openRowMenu } = useRowActions({ loadUsers, openNicknameModal, openEmailModal, openResetModal, viewPlugins, viewPlaylists, viewFavorites, openDeviceModal })
 
 // 批量管理模式
 const {

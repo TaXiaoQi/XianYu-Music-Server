@@ -6,6 +6,8 @@ use sqlx::Row;
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
 
+// 旧版歌单读取（user_playlists 表，该表已停止写入，仅保留兼容历史数据查看）
+#[allow(dead_code)]
 pub async fn get_user_playlists(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let mut ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();

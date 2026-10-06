@@ -131,7 +131,7 @@ pub async fn delete_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
     if id <= 0 {
         return err(400, "参数错误");
     }
-    let user = sqlx::query("SELECT nickname FROM app_users WHERE id = ?")
+    let user = sqlx::query("SELECT nickname, avatar_url FROM app_users WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -141,6 +141,15 @@ pub async fn delete_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Respon
         return err(404, "用户不存在");
     };
     let nickname: String = user.get("nickname");
+    // 级联删除头像文件（仅本站落盘路径，外链跳过），再删用户记录
+    if let Ok(avatar_url) = user.try_get::<String, _>("avatar_url") {
+        if let Some(name) = avatar_url.strip_prefix("/uploads/avatars/") {
+            let name = name.rsplit('/').next().unwrap_or("");
+            if !name.is_empty() && !name.contains("..") {
+                let _ = std::fs::remove_file(std::path::Path::new("uploads").join("avatars").join(name));
+            }
+        }
+    }
     let _ = sqlx::query("DELETE FROM app_users WHERE id = ?").bind(id).execute(pool).await;
     log_operation(pool, ctx, "删除用户", &format!("用户ID:{}", id), &format!("昵称:{}", nickname)).await;
     ok("删除成功", Value::Null)
@@ -152,7 +161,7 @@ pub async fn delete_user_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
     if id <= 0 {
         return err(400, "参数错误");
     }
-    let user = sqlx::query("SELECT nickname FROM app_users WHERE id = ?")
+    let user = sqlx::query("SELECT nickname, avatar_url FROM app_users WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await
@@ -162,6 +171,15 @@ pub async fn delete_user_avatar(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
         return err(404, "用户不存在");
     };
     let nickname: String = user.get("nickname");
+    // 先删头像文件（仅本站落盘路径，外链跳过），再清空引用字段
+    if let Ok(avatar_url) = user.try_get::<String, _>("avatar_url") {
+        if let Some(name) = avatar_url.strip_prefix("/uploads/avatars/") {
+            let name = name.rsplit('/').next().unwrap_or("");
+            if !name.is_empty() && !name.contains("..") {
+                let _ = std::fs::remove_file(std::path::Path::new("uploads").join("avatars").join(name));
+            }
+        }
+    }
     let _ = sqlx::query("UPDATE app_users SET avatar_url = '' WHERE id = ?").bind(id).execute(pool).await;
     let _ = sqlx::query("UPDATE user_feedback SET nickname = (SELECT nickname FROM app_users WHERE id = ?) WHERE ciyuanxi_id = (SELECT ciyuanxi_id FROM app_users WHERE id = ?)")
         .bind(id)
@@ -330,16 +348,12 @@ pub async fn get_user_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
     if ciyuanxi_id.is_empty() {
         return ok("ok", json!({ "nickname": username, "plugins": [], "uploaded_at": Value::Null }));
     }
-    let clean_id: String = ciyuanxi_id.chars().filter(|c| c.is_ascii_digit()).collect();
-    let dir = std::path::Path::new("data").join("sync").join(&clean_id);
-    let file = dir.join("plugins.json");
-    let content = match std::fs::read_to_string(&file) {
-        Ok(c) => c,
-        Err(_) => return ok("ok", json!({ "nickname": username, "ciyuanxi_id": ciyuanxi_id, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null })),
-    };
-    let save_data: Value = match serde_json::from_str(&content) {
+    // 插件快照已迁入 user_sync_files 表，经 read_snapshot 读取（含旧文件懒迁移）
+    let save_data = match crate::handlers::sync_store::read_snapshot(pool, &ciyuanxi_id, "plugins.json").await {
         Ok(v) => v,
-        Err(_) => return err(500, "数据解析失败"),
+        Err(_) => {
+            return ok("ok", json!({ "nickname": username, "ciyuanxi_id": ciyuanxi_id, "plugins": [], "plugin_count": 0, "uploaded_at": Value::Null }));
+        }
     };
     let mut plugins: Vec<Value> = Vec::new();
     let uploaded_at = save_data.get("uploaded_at").cloned().unwrap_or(Value::Null);
@@ -365,6 +379,181 @@ pub async fn get_user_plugins(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> 
         "uploaded_at": uploaded_at,
         "plugin_count": plugins.len(),
         "plugins": plugins,
+    }))
+}
+
+// 查看用户同步到服务器的歌单快照（playlists.json，存于 user_sync_files 表）
+pub async fn get_user_playlists(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "user_id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let user = sqlx::query("SELECT nickname, ciyuanxi_id FROM app_users WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return err(404, "用户不存在");
+    };
+    let username: String = user.get("nickname");
+    let ciyuanxi_id: String = user.get("ciyuanxi_id");
+    if ciyuanxi_id.is_empty() {
+        return ok("ok", json!({ "nickname": username, "playlists": [], "uploaded_at": Value::Null }));
+    }
+    // 歌单快照已迁入 user_sync_files 表，经 read_snapshot 读取（含旧文件懒迁移）
+    let save_data = match crate::handlers::sync_store::read_snapshot(pool, &ciyuanxi_id, "playlists.json").await {
+        Ok(v) => v,
+        Err(_) => {
+            return ok("ok", json!({ "nickname": username, "ciyuanxi_id": ciyuanxi_id, "playlists": [], "playlist_count": 0, "song_total": 0, "uploaded_at": Value::Null }));
+        }
+    };
+    let mut playlists: Vec<Value> = Vec::new();
+    let uploaded_at = save_data.get("uploaded_at").cloned().unwrap_or(Value::Null);
+    let song_total = save_data.get("stats").and_then(|s| s.get("song_total")).and_then(Value::as_i64).unwrap_or(0);
+    if let Some(list) = save_data.get("playlists").and_then(|x| x.as_array()) {
+        for p in list {
+            // 歌曲仅返回数量与前 5 条路径预览，避免整单歌曲列表过大
+            let songs: Vec<Value> = p.get("songs").and_then(|x| x.as_array()).cloned().unwrap_or_default();
+            let song_paths: Vec<&str> = songs
+                .iter()
+                .filter_map(|s| s.get("path").and_then(|x| x.as_str()))
+                .take(5)
+                .collect();
+            playlists.push(json!({
+                "name": p.get("name").and_then(|x| x.as_str()).unwrap_or("(未命名)"),
+                "type": p.get("type").and_then(|x| x.as_str()).unwrap_or(""),
+                "cloudId": p.get("cloudId").and_then(|x| x.as_str()).unwrap_or(""),
+                "createdAt": p.get("createdAt").cloned().unwrap_or(Value::Null),
+                "songCount": songs.len(),
+                "songPaths": song_paths,
+            }));
+        }
+    }
+    ok("ok", json!({
+        "nickname": username,
+        "ciyuanxi_id": ciyuanxi_id,
+        "uploaded_at": uploaded_at,
+        "playlist_count": playlists.len(),
+        "song_total": song_total,
+        "playlists": playlists,
+    }))
+}
+
+// 删除用户歌单快照中的单个歌单（playlists.json，存于 user_sync_files 表）
+pub async fn delete_user_sync_playlist(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "user_id");
+    let index = int_of(&data, "index");
+    let expect_name = str_of(&data, "name").trim().to_string();
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let user = sqlx::query("SELECT ciyuanxi_id FROM app_users WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return err(404, "用户不存在");
+    };
+    let ciyuanxi_id: String = user.get("ciyuanxi_id");
+    if ciyuanxi_id.is_empty() {
+        return err(404, "该用户无弦予号，无同步数据");
+    }
+    let mut save_data = match crate::handlers::sync_store::read_snapshot(pool, &ciyuanxi_id, "playlists.json").await {
+        Ok(v) => v,
+        Err(_) => return err(404, "该用户暂无歌单同步数据"),
+    };
+    let Some(playlists) = save_data.get_mut("playlists").and_then(|x| x.as_array_mut()) else {
+        return err(404, "该用户暂无歌单同步数据");
+    };
+    if index < 0 || index as usize >= playlists.len() {
+        return err(404, "歌单不存在或已被删除，请刷新后重试");
+    }
+    // 校验名称防止数据变化后误删（前端传入打开弹窗时的歌单名）
+    let pl_name = playlists[index as usize].get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    if !expect_name.is_empty() && pl_name != expect_name {
+        return err(409, "歌单数据已变化，请刷新后重试");
+    }
+    let song_count = playlists[index as usize]
+        .get("songs")
+        .and_then(|x| x.as_array())
+        .map(|a| a.len() as i64)
+        .unwrap_or(0);
+    playlists.remove(index as usize);
+    let song_total: i64 = playlists
+        .iter()
+        .map(|p| p.get("songs").and_then(|s| s.as_array()).map(|a| a.len() as i64).unwrap_or(0))
+        .sum();
+    let pl_count = playlists.len();
+    if let Some(obj) = save_data.as_object_mut() {
+        obj.insert("stats".into(), json!({ "playlist_count": pl_count, "song_total": song_total }));
+    }
+    if !crate::handlers::sync_store::write_snapshot(pool, &ciyuanxi_id, "playlists.json", &save_data).await {
+        return err(500, "歌单快照写入失败");
+    }
+    log_operation(
+        pool,
+        ctx,
+        "删除用户歌单快照",
+        &format!("弦予号:{}", ciyuanxi_id),
+        &format!("歌单:{} 歌曲:{}首", pl_name, song_count),
+    )
+    .await;
+    ok("删除成功", json!({ "playlist_count": pl_count, "song_total": song_total }))
+}
+
+// 查看用户同步到服务器的收藏快照（favorites.json，存于 user_sync_files 表）
+pub async fn get_user_favorites(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "user_id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let user = sqlx::query("SELECT nickname, ciyuanxi_id FROM app_users WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return err(404, "用户不存在");
+    };
+    let username: String = user.get("nickname");
+    let ciyuanxi_id: String = user.get("ciyuanxi_id");
+    if ciyuanxi_id.is_empty() {
+        return ok("ok", json!({ "nickname": username, "favorites": [], "uploaded_at": Value::Null }));
+    }
+    // 收藏快照已迁入 user_sync_files 表，经 read_snapshot 读取（含旧文件懒迁移）
+    let save_data = match crate::handlers::sync_store::read_snapshot(pool, &ciyuanxi_id, "favorites.json").await {
+        Ok(v) => v,
+        Err(_) => {
+            return ok("ok", json!({ "nickname": username, "ciyuanxi_id": ciyuanxi_id, "favorites": [], "favorite_count": 0, "uploaded_at": Value::Null }));
+        }
+    };
+    let mut favorites: Vec<Value> = Vec::new();
+    let uploaded_at = save_data.get("uploaded_at").cloned().unwrap_or(Value::Null);
+    if let Some(list) = save_data.get("favorites").and_then(|x| x.as_array()) {
+        for f in list {
+            favorites.push(json!({
+                "name": f.get("name").or_else(|| f.get("title")).and_then(|x| x.as_str()).unwrap_or("(未知)"),
+                "artist": f.get("artist").and_then(|x| x.as_str()).unwrap_or(""),
+                "album": f.get("album").and_then(|x| x.as_str()).unwrap_or(""),
+                "path": f.get("path").and_then(|x| x.as_str()).unwrap_or(""),
+                "addedAt": f.get("added_at").and_then(|x| x.as_i64()).unwrap_or(0),
+            }));
+        }
+    }
+    ok("ok", json!({
+        "nickname": username,
+        "ciyuanxi_id": ciyuanxi_id,
+        "uploaded_at": uploaded_at,
+        "favorite_count": favorites.len(),
+        "favorites": favorites,
     }))
 }
 

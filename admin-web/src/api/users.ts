@@ -89,6 +89,21 @@ export async function getUserPlugins(params: { user_id: number }) {
   return adminApi<any>('get_user_plugins', params)
 }
 
+// ===== 歌单查看 =====
+export async function getUserPlaylists(params: { user_id: number }) {
+  return adminApi<any>('get_user_playlists', params)
+}
+
+// 删除歌单快照中的单个歌单
+export async function deleteUserSyncPlaylist(params: { user_id: number; index: number; name: string }) {
+  return adminApi<{ playlist_count?: number; song_total?: number }>('delete_user_sync_playlist', params)
+}
+
+// ===== 收藏查看 =====
+export async function getUserFavorites(params: { user_id: number }) {
+  return adminApi<any>('get_user_favorites', params)
+}
+
 // ===== 设备管理 =====
 export async function getUserDevices(params: { user_id: number }) {
   return adminApi<any>('get_user_devices', params)
