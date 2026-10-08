@@ -8,7 +8,7 @@ pub async fn connect(cfg: &crate::config::Config) -> Result<MySqlPool> {
         cfg.db_user, cfg.db_pass, cfg.db_host, cfg.db_port, cfg.db_name, cfg.db_charset
     );
     let pool = MySqlPoolOptions::new()
-        .max_connections(10)
+        .max_connections(30)
         .acquire_timeout(std::time::Duration::from_secs(5))
         .after_connect(|conn, _meta| Box::pin(async move {
             conn.execute("SET time_zone = '+00:00'").await?;

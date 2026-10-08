@@ -59,8 +59,35 @@ pub async fn read_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str) -> R
 }
 
 /// 整包写用户同步文件（DB upsert），成功后清掉可能残留的旧文件。
+/// 客户端同步频繁且内容常常不变：先比 content_size，再比 DB 端 MD5，
+/// 完全一致则跳过大字段写入，避免慢查询拖垮连接池（曾导致验证码邮件发不出）。
 pub async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
     let content = serde_json::to_string(data).unwrap_or_default();
+    let size = content.len() as i64;
+    let stored_size: Option<i64> = sqlx::query_scalar(
+        "SELECT content_size FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?",
+    )
+    .bind(ciyuanxi_id)
+    .bind(name)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+    if stored_size == Some(size) {
+        let identical: Option<i64> = sqlx::query_scalar(
+            "SELECT MD5(content) = MD5(?) FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?",
+        )
+        .bind(&content)
+        .bind(ciyuanxi_id)
+        .bind(name)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        if identical == Some(1) {
+            return true;
+        }
+    }
     let ok = sqlx::query(
         "INSERT INTO user_sync_files (ciyuanxi_id, file_name, content, content_size) VALUES (?, ?, ?, ?) \
          ON DUPLICATE KEY UPDATE content = VALUES(content), content_size = VALUES(content_size)",
@@ -68,7 +95,7 @@ pub async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, dat
     .bind(ciyuanxi_id)
     .bind(name)
     .bind(&content)
-    .bind(content.len() as i64)
+    .bind(size)
     .execute(pool)
     .await
     .is_ok();

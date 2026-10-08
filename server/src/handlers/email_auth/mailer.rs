@@ -70,6 +70,7 @@ fn resolve_smtp_endpoint(sender: &str) -> (String, u16) {
     (host.to_string(), port)
 }
 
+#[derive(Clone)]
 pub struct EmailRuntimeConfig {
     pub provider: String,
     pub channel_general: bool,
@@ -90,15 +91,43 @@ pub async fn load_email_config(
     pool: &MySqlPool,
     fallback: &crate::config::Config,
 ) -> EmailRuntimeConfig {
+    // 每封信读 13 个 setting 的开销不小；且 DB 忙时读取失败会被静默降级为空配置，
+    // 导致"SMTP 账号池未配置可用账号"假故障（验证码发不出）。加 60s 缓存兜底。
+    static CFG_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<(EmailRuntimeConfig, std::time::Instant)>>> =
+        std::sync::OnceLock::new();
+    const CFG_TTL: std::time::Duration = std::time::Duration::from_secs(60);
+    if let Some(cache) = CFG_CACHE.get_or_init(|| std::sync::Mutex::new(None)).lock().ok() {
+        if let Some((cfg, at)) = cache.as_ref() {
+            if at.elapsed() <= CFG_TTL {
+                return cfg.clone();
+            }
+        }
+    }
+    let cfg = load_email_config_uncached(pool, fallback).await;
+    if let Ok(mut cache) = CFG_CACHE.get_or_init(|| std::sync::Mutex::new(None)).lock() {
+        *cache = Some((cfg.clone(), std::time::Instant::now()));
+    }
+    cfg
+}
+
+async fn load_email_config_uncached(
+    pool: &MySqlPool,
+    fallback: &crate::config::Config,
+) -> EmailRuntimeConfig {
     async fn read_setting(pool: &MySqlPool, key: &str) -> Option<String> {
-        sqlx::query("SELECT setting_value FROM server_settings WHERE setting_key = ? LIMIT 1")
+        match sqlx::query("SELECT setting_value FROM server_settings WHERE setting_key = ? LIMIT 1")
             .bind(key)
             .fetch_optional(pool)
             .await
-            .ok()
-            .flatten()
-            .and_then(|row| row.try_get::<Option<String>, _>(0).ok().flatten())
-            .filter(|s| !s.trim().is_empty())
+        {
+            Ok(row) => row
+                .and_then(|row| row.try_get::<Option<String>, _>(0).ok().flatten())
+                .filter(|s| !s.trim().is_empty()),
+            Err(e) => {
+                tracing::warn!("读取邮箱配置 {} 失败: {}（本次按未配置处理）", key, e);
+                None
+            }
+        }
     }
 
     let provider = read_setting(pool, "email_provider")
@@ -344,11 +373,13 @@ async fn send_via_smtp_account(account: &SmtpAccount, title: &str, plain: &str, 
             .build()
     };
 
-    transport
-        .send(email)
-        .await
-        .map(|_| ())
-        .map_err(|e| format!("SMTP 发送失败: {e}"))
+    // SMTP 偶发挂起会让请求无限等待（日志里 status=0 的"等待投递"永不更新即此因），强制 30s 超时
+    match tokio::time::timeout(std::time::Duration::from_secs(30), transport.send(email)).await {
+        Ok(res) => res
+            .map(|_| ())
+            .map_err(|e| format!("SMTP 发送失败: {e}")),
+        Err(_) => Err("SMTP 发送超时(30s)".to_string()),
+    }
 }
 
 enum MailChannel {
