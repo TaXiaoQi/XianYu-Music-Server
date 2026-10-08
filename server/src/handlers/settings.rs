@@ -260,18 +260,6 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         if exists {
             return ctx.err(400, "昵称已被使用");
         }
-        {
-            let admin_conflict = sqlx::query("SELECT id FROM admin_users WHERE LOWER(username) = LOWER(?) LIMIT 1")
-                .bind(&nickname)
-                .fetch_optional(pool)
-                .await
-                .ok()
-                .flatten()
-                .is_some();
-            if admin_conflict {
-                return ctx.err(400, "该昵称不可使用");
-            }
-        }
         if let Some(msg) = nickname_submit_block_message(pool, &ciyuanxi_id).await {
             return ctx.err(429, msg);
         }

@@ -95,18 +95,6 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if let Err(msg) = validate_nickname(&nickname, 2, 32) {
         return ctx.err(400, msg);
     }
-    {
-        let admin_conflict = sqlx::query("SELECT id FROM admin_users WHERE LOWER(username) = LOWER(?) LIMIT 1")
-            .bind(&nickname)
-            .fetch_optional(pool)
-            .await
-            .ok()
-            .flatten()
-            .is_some();
-        if admin_conflict {
-            return ctx.err(400, "该昵称不可使用");
-        }
-    }
     if password.len() < 6 {
         return ctx.err(400, "密码长度至少6位");
     }
