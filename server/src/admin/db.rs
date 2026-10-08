@@ -154,29 +154,38 @@ async fn count_where(pool: &MySqlPool, table: &str, cond: &str) -> i64 {
 
 pub async fn list_data_groups(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let mut groups: Vec<Value> = Vec::new();
-    let mut push = |key: &str, name: &str, desc: &str, count: i64| {
-        groups.push(json!({ "key": key, "name": name, "desc": desc, "count": count }));
+    let mut push = |category: &str, key: &str, name: &str, desc: &str, count: i64| {
+        groups.push(json!({ "category": category, "key": key, "name": name, "desc": desc, "count": count }));
     };
     // ---- 用户数据 ----
+    // 歌单快照已迁入 user_sync_files（playlists.json），按 JSON 展开统计歌单总数；
+    // JSON 统计失败（内容异常等）时退回快照份数
+    let pl_count = match sqlx::query_scalar::<_, i64>(
+        "SELECT CAST(COALESCE(SUM(JSON_LENGTH(CAST(content AS JSON), '$.playlists')), 0) AS SIGNED) FROM user_sync_files WHERE file_name = 'playlists.json'",
+    )
+    .fetch_one(pool)
+    .await
+    {
+        Ok(v) => v,
+        Err(_) => count_where(pool, "user_sync_files", "file_name = 'playlists.json'").await,
+    };
+    push("用户数据", "playlists", "用户歌单", "云端保存的歌单与歌曲", pl_count);
     push(
-        "playlists",
-        "用户歌单",
-        "云端保存的歌单与歌曲",
-        sum_counts(pool, &["user_playlists", "user_playlist_songs"]).await,
-    );
-    push(
+        "用户数据",
         "plugins",
         "插件快照",
         "客户端上传的插件脚本备份",
         count_where(pool, "user_sync_files", "file_name = 'plugins.json'").await,
     );
     push(
+        "用户数据",
         "favorites",
         "收藏快照",
         "客户端同步的收藏歌曲备份",
         count_where(pool, "user_sync_files", "file_name = 'favorites.json'").await,
     );
     push(
+        "用户数据",
         "sync_snapshots",
         "同步快照备份",
         "歌单/插件/收藏/设置等全部同步备份与分块数据",
@@ -191,13 +200,39 @@ pub async fn list_data_groups(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         .fetch_one(pool)
         .await
         .unwrap_or(0);
-    push("avatars", "用户头像", "用户上传的头像文件与待审记录", avatar_users + avatar_pending);
+    push("用户数据", "avatars", "用户头像", "用户上传的头像文件与待审记录", avatar_users + avatar_pending);
     push(
+        "用户数据",
+        "tokens",
+        "登录令牌",
+        "客户端登录态，清空后所有用户需重新登录",
+        sum_counts(pool, &["user_tokens"]).await,
+    );
+    // ---- 内容与审核 ----
+    push(
+        "内容与审核",
         "nicknames",
         "昵称审核",
         "待审核的改名申请与改名通知记录",
         sum_counts(pool, &["user_nickname_pending", "nickname_change_notices"]).await,
     );
+    push(
+        "内容与审核",
+        "feedback",
+        "用户反馈",
+        "意见反馈、协作请求与随附截图",
+        sum_counts(pool, &["user_feedback", "feedback_collab_requests", "feedback_admin_notifications"]).await,
+    );
+    push("内容与审核", "beta_testers", "内测申请", "内测资格申请记录", sum_counts(pool, &["beta_testers"]).await);
+    push("内容与审核", "shares", "分享记录", "歌曲分享链接与浏览统计", sum_counts(pool, &["share_log", "share_views", "share_actions"]).await);
+    push(
+        "内容与审核",
+        "announce_confirms",
+        "公告已读记录",
+        "用户对公告的已读确认，清空后公告会重新弹出",
+        sum_counts(pool, &["user_announcement_confirmations"]).await,
+    );
+    // ---- 统计与日志 ----
     let stat_users: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM app_users WHERE listen_duration != 0 OR unique_songs_count != 0 OR listen_duration_offset != 0 OR unique_songs_offset != 0",
     )
@@ -205,73 +240,210 @@ pub async fn list_data_groups(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     .await
     .unwrap_or(0);
     push(
+        "统计与日志",
         "listen_stats",
         "听歌统计",
         "累计听歌时长与每日听歌统计，清空后归零重新累计",
         stat_users + sum_counts(pool, &["listen_daily_stats"]).await,
     );
     push(
+        "统计与日志",
         "play_history",
         "播放历史",
         "播放记录与每日推荐喜欢/不喜欢反馈",
         sum_counts(pool, &["play_history", "daily_like", "daily_dislike"]).await,
     );
+    push("统计与日志", "errors", "客户端错误日志", "客户端上报的运行错误记录", sum_counts(pool, &["error_log"]).await);
     push(
-        "feedback",
-        "用户反馈",
-        "意见反馈、协作请求与随附截图",
-        sum_counts(pool, &["user_feedback", "feedback_collab_requests", "feedback_admin_notifications"]).await,
-    );
-    push("beta_testers", "内测申请", "内测资格申请记录", sum_counts(pool, &["beta_testers"]).await);
-    push(
-        "tokens",
-        "登录令牌",
-        "客户端登录态，清空后所有用户需重新登录",
-        sum_counts(pool, &["user_tokens"]).await,
-    );
-    push(
-        "announce_confirms",
-        "公告已读记录",
-        "用户对公告的已读确认，清空后公告会重新弹出",
-        sum_counts(pool, &["user_announcement_confirmations"]).await,
-    );
-    // ---- 日志与统计 ----
-    push("errors", "客户端错误日志", "客户端上报的运行错误记录", sum_counts(pool, &["error_log"]).await);
-    push(
+        "统计与日志",
         "login_logs",
         "登录日志",
         "客户端与后台的登录流水",
         sum_counts(pool, &["login_log", "admin_login_log", "admin_app_login_log"]).await,
     );
-    push("admin_ops", "后台操作日志", "后台管理的操作审计记录", sum_counts(pool, &["admin_operation_log"]).await);
-    push("call_stats", "曲源调用统计", "各音乐来源的调用流水记录", sum_counts(pool, &["source_call_log"]).await);
+    push("统计与日志", "admin_ops", "后台操作日志", "后台管理的操作审计记录", sum_counts(pool, &["admin_operation_log"]).await);
+    push("统计与日志", "call_stats", "曲源调用统计", "各音乐来源的调用流水记录", sum_counts(pool, &["source_call_log"]).await);
     push(
+        "统计与日志",
         "access_logs",
         "访问与打开日志",
         "App 打开记录与主页访问流水",
         sum_counts(pool, &["app_open_log", "view_access_log"]).await,
     );
-    push("quota_logs", "配额使用记录", "大师配额扣减流水", sum_counts(pool, &["master_quota_usage_log"]).await);
-    push("shares", "分享记录", "歌曲分享链接与浏览统计", sum_counts(pool, &["share_log", "share_views", "share_actions"]).await);
+    push("统计与日志", "quota_logs", "配额使用记录", "大师配额扣减流水", sum_counts(pool, &["master_quota_usage_log"]).await);
     push(
+        "统计与日志",
         "email_logs",
         "邮件与验证码",
         "邮件发送记录与邮箱验证码",
         sum_counts(pool, &["email_send_log", "email_verify_codes", "email_test_logs", "email_test_codes"]).await,
     );
+    // ---- 运行状态 ----
     push(
+        "运行状态",
         "device_status",
         "设备状态与指令",
         "设备在线状态与远程控制指令队列",
         sum_counts(pool, &["device_presence", "watch_commands"]).await,
     );
     push(
+        "运行状态",
         "temp_data",
         "验证与限流临时数据",
         "人机验证、限流计数与 TV 授权码",
         sum_counts(pool, &["human_captcha_challenges", "auth_rate_limits", "api_rate_events", "api_temp_blocks", "tv_login_codes"]).await,
     );
     ok("ok", json!({ "groups": groups }))
+}
+
+/// 数据类别二级页的子表白名单（展示名, 真实表名），与 clear_data_group 的清空范围一致。
+/// 歌单/插件/收藏三类存于 user_sync_files 的 JSON 快照，走 sync_group_detail 特殊通道。
+fn group_parts(key: &str) -> Option<Vec<(&'static str, &'static str)>> {
+    match key {
+        "sync_snapshots" => Some(vec![("同步快照文件", "user_sync_files"), ("上传分块", "user_sync_chunks")]),
+        "avatars" => Some(vec![("头像待审记录", "user_avatar_pending")]),
+        "nicknames" => Some(vec![("改名待审", "user_nickname_pending"), ("改名通知", "nickname_change_notices")]),
+        "listen_stats" => Some(vec![("每日听歌统计", "listen_daily_stats")]),
+        "play_history" => Some(vec![("播放记录", "play_history"), ("每日喜欢", "daily_like"), ("每日不喜欢", "daily_dislike")]),
+        "feedback" => Some(vec![("意见反馈", "user_feedback"), ("协作请求", "feedback_collab_requests"), ("管理员通知", "feedback_admin_notifications")]),
+        "beta_testers" => Some(vec![("内测申请", "beta_testers")]),
+        "tokens" => Some(vec![("登录令牌", "user_tokens")]),
+        "announce_confirms" => Some(vec![("公告已读记录", "user_announcement_confirmations")]),
+        "errors" => Some(vec![("客户端错误日志", "error_log")]),
+        "login_logs" => Some(vec![("客户端登录", "login_log"), ("后台登录", "admin_login_log"), ("App 后台登录", "admin_app_login_log")]),
+        "admin_ops" => Some(vec![("后台操作审计", "admin_operation_log")]),
+        "call_stats" => Some(vec![("曲源调用流水", "source_call_log")]),
+        "access_logs" => Some(vec![("App 打开记录", "app_open_log"), ("主页访问流水", "view_access_log")]),
+        "quota_logs" => Some(vec![("大师配额扣减", "master_quota_usage_log")]),
+        "shares" => Some(vec![("分享链接", "share_log"), ("分享浏览", "share_views"), ("分享操作", "share_actions")]),
+        "email_logs" => Some(vec![("邮件发送", "email_send_log"), ("邮箱验证码", "email_verify_codes"), ("测试发送", "email_test_logs"), ("测试验证码", "email_test_codes")]),
+        "device_status" => Some(vec![("设备在线状态", "device_presence"), ("远程指令队列", "watch_commands")]),
+        "temp_data" => Some(vec![("人机验证", "human_captcha_challenges"), ("限流计数", "auth_rate_limits"), ("API 限流事件", "api_rate_events"), ("临时封禁", "api_temp_blocks"), ("TV 授权码", "tv_login_codes")]),
+        _ => None,
+    }
+}
+
+/// 快照类别的分页明细：歌单展开为「弦予号 × 歌单」行；插件/收藏每行一个用户快照
+async fn sync_group_detail(pool: &MySqlPool, key: &str, page_num: i64, page_size: i64) -> Response {
+    let offset = (page_num - 1) * page_size;
+    if key == "playlists" {
+        let total: i64 = match sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(JSON_LENGTH(CAST(content AS JSON), '$.playlists')), 0) AS SIGNED) FROM user_sync_files WHERE file_name = 'playlists.json'",
+        )
+        .fetch_one(pool)
+        .await
+        {
+            Ok(v) => v,
+            Err(_) => count_where(pool, "user_sync_files", "file_name = 'playlists.json'").await,
+        };
+        let rows: Vec<(String, String)> = sqlx::query_as(
+            "SELECT ciyuanxi_id, content FROM user_sync_files WHERE file_name = 'playlists.json' ORDER BY ciyuanxi_id LIMIT ? OFFSET ?",
+        )
+        .bind(page_size)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+        let mut rows_v: Vec<Value> = Vec::new();
+        for (uid, content) in rows {
+            let v: Value = serde_json::from_str(&content).unwrap_or(Value::Null);
+            if let Some(list) = v.get("playlists").and_then(|x| x.as_array()) {
+                for p in list {
+                    rows_v.push(json!({
+                        "弦予号": uid,
+                        "歌单名": p.get("name").and_then(|x| x.as_str()).unwrap_or("(未命名)"),
+                        "类型": p.get("type").and_then(|x| x.as_str()).unwrap_or("-"),
+                        "歌曲数": p.get("songs").and_then(|x| x.as_array()).map(|a| a.len()).unwrap_or(0),
+                        "创建时间": p.get("createdAt").cloned().unwrap_or(Value::Null),
+                    }));
+                }
+            }
+        }
+        return ok("", json!({
+            "mode": "playlists",
+            "columns": ["弦予号", "歌单名", "类型", "歌曲数", "创建时间"],
+            "rows": rows_v,
+            "total": total,
+            "page": page_num,
+            "pageSize": page_size,
+        }));
+    }
+    // 插件/收藏：每行一个用户的快照文件
+    let file = if key == "plugins" { "plugins.json" } else { "favorites.json" };
+    let total = count_where(pool, "user_sync_files", &format!("file_name = '{file}'")).await;
+    let rows = sqlx::query(&format!(
+        "SELECT ciyuanxi_id, file_name, content_size, updated_at FROM user_sync_files WHERE file_name = '{file}' ORDER BY ciyuanxi_id LIMIT {page_size} OFFSET {offset}"
+    ))
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    let rows: Vec<Value> = rows.iter().map(crate::admin::row_to_value).collect();
+    ok("", json!({
+        "mode": "sync",
+        "columns": ["弦予号", "文件", "大小(字节)", "更新时间"],
+        "rows": rows,
+        "total": total,
+        "page": page_num,
+        "pageSize": page_size,
+    }))
+}
+
+/// 数据类别二级页：分页查看某类别下的具体数据（表名全部来自服务端白名单，不接收前端表名）
+pub async fn data_group_detail(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let key = str_of(&data, "key").trim().to_string();
+    let part = int_of(&data, "part");
+    let page = int_of(&data, "page");
+    let page_num = if page < 1 { 1 } else { page };
+    let page_size: i64 = 50;
+    if key == "playlists" || key == "plugins" || key == "favorites" {
+        return sync_group_detail(pool, &key, page_num, page_size).await;
+    }
+    let parts = match group_parts(&key) {
+        Some(p) => p,
+        None => return err(400, "未知的数据类别"),
+    };
+    let idx = if part < 0 || part as usize >= parts.len() { 0usize } else { part as usize };
+    let (part_name, table) = parts[idx];
+    let cols: Vec<String> = sqlx::query_scalar(&format!("SHOW COLUMNS FROM `{table}`"))
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM `{table}`"))
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    let offset = (page_num - 1) * page_size;
+    let rows = sqlx::query(&format!("SELECT * FROM `{table}` ORDER BY 1 LIMIT {page_size} OFFSET {offset}"))
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+    // 截断超长文本（如快照 content 字段），避免明细页传输与渲染过大
+    let mut rows: Vec<Value> = rows.iter().map(crate::admin::row_to_value).collect();
+    for r in rows.iter_mut() {
+        if let Some(obj) = r.as_object_mut() {
+            for (_, v) in obj.iter_mut() {
+                if let Some(s) = v.as_str() {
+                    if s.len() > 500 {
+                        let t: String = s.chars().take(500).collect();
+                        *v = json!(format!("{t}…"));
+                    }
+                }
+            }
+        }
+    }
+    log_operation(pool, ctx, "查看数据类别", &format!("类别:{} 子项:{}", key, part_name), "").await;
+    let part_names: Vec<&str> = parts.iter().map(|(n, _)| *n).collect();
+    ok("", json!({
+        "mode": "table",
+        "columns": cols,
+        "rows": rows,
+        "total": total,
+        "page": page_num,
+        "pageSize": page_size,
+        "partName": part_name,
+        "parts": part_names,
+    }))
 }
 
 pub async fn clear_data_group(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {

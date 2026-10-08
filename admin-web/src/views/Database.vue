@@ -94,17 +94,69 @@
         </div>
         <div v-else-if="groups.length === 0" class="state-box">暂无数据类别</div>
         <div v-else class="group-list">
-          <div v-for="(g, idx) in groups" :key="g.key" class="group-row" :style="{ animationDelay: `${idx * 40}ms` }">
-            <div class="group-info">
-              <span class="group-name">{{ g.name }}</span>
-              <span class="group-desc">{{ g.desc }}</span>
+          <template v-for="cat in groupedGroups" :key="cat.category">
+            <div class="group-cat">
+              <span class="group-cat-name">{{ cat.category }}</span>
+              <span class="group-cat-count">{{ cat.items.length }} 个类别</span>
             </div>
-            <div class="group-meta">
-              <span class="group-count">{{ g.count }} 条</span>
-              <button class="btn btn-sm btn-danger" :disabled="clearingKey !== ''" @click="doClearGroup(g)">
-                {{ clearingKey === g.key ? '清空中...' : '清空' }}
-              </button>
+            <div v-for="(g, idx) in cat.items" :key="g.key" class="group-row" :style="{ animationDelay: `${idx * 40}ms` }">
+              <div class="group-info">
+                <span class="group-name">{{ g.name }}</span>
+                <span class="group-desc">{{ g.desc }}</span>
+              </div>
+              <div class="group-meta">
+                <span class="group-count">{{ g.count }} 条</span>
+                <button class="btn btn-sm" @click="openGroupDetail(g)">查看</button>
+                <button class="btn btn-sm btn-danger" :disabled="clearingKey !== ''" @click="doClearGroup(g)">
+                  {{ clearingKey === g.key ? '清空中...' : '清空' }}
+                </button>
+              </div>
             </div>
+          </template>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- 数据类别明细弹窗（二级页） -->
+    <Transition name="fade">
+      <div v-if="detailVisible" class="modal-backdrop" @click.self="detailVisible = false">
+        <div class="detail-modal">
+          <div class="detail-head">
+            <div class="detail-title">
+              <h3>{{ detailGroup?.name }} · 数据明细</h3>
+              <span v-if="detail" class="detail-total">共 {{ detail.total }} 条</span>
+            </div>
+            <button class="btn btn-sm" @click="detailVisible = false">关闭</button>
+          </div>
+          <div v-if="detail && detail.parts && detail.parts.length > 1" class="detail-tabs">
+            <button
+              v-for="(pn, i) in detail.parts"
+              :key="pn"
+              class="detail-tab"
+              :class="{ active: detailPart === i }"
+              @click="switchDetailPart(i)"
+            >{{ pn }}</button>
+          </div>
+          <div class="detail-body">
+            <div v-if="detailLoading" class="state-box"><div class="spinner"></div><span>加载中...</span></div>
+            <div v-else-if="!detail || detail.rows.length === 0" class="state-box">暂无数据</div>
+            <div v-else class="detail-table-wrap">
+              <table class="detail-table">
+                <thead>
+                  <tr><th v-for="c in detail.columns" :key="c">{{ c }}</th></tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(r, ri) in detail.rows" :key="ri">
+                    <td v-for="c in detail.columns" :key="c" :title="fmtCell(r[c])">{{ fmtCell(r[c]) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div v-if="detail && detail.total > detail.pageSize" class="detail-pager">
+            <button class="btn btn-sm" :disabled="detailPage <= 1" @click="goDetailPage(detailPage - 1)">上一页</button>
+            <span class="detail-page-info">第 {{ detailPage }} / {{ detailTotalPages }} 页</span>
+            <button class="btn btn-sm" :disabled="detailPage >= detailTotalPages" @click="goDetailPage(detailPage + 1)">下一页</button>
           </div>
         </div>
       </div>
@@ -322,6 +374,7 @@ interface DataGroup {
   name: string
   desc: string
   count: number
+  category?: string
 }
 
 // ===== 列表数据 =====
@@ -337,6 +390,25 @@ const backingUp = ref(false)
 
 const existingCount = computed(() => tables.value.filter(t => t.exists).length)
 const missingCount = computed(() => tables.value.filter(t => !t.exists).length)
+
+// ===== 数据清理：按业务类型分组，组内按数据量降序 =====
+const CATEGORY_ORDER = ['用户数据', '内容与审核', '统计与日志', '运行状态']
+const groupedGroups = computed(() => {
+  const map = new Map<string, DataGroup[]>()
+  for (const g of groups.value) {
+    const c = g.category || '其他'
+    if (!map.has(c)) map.set(c, [])
+    map.get(c)!.push(g)
+  }
+  const out: { category: string; items: DataGroup[] }[] = []
+  for (const c of CATEGORY_ORDER) {
+    if (map.has(c)) out.push({ category: c, items: map.get(c)!.sort((a, b) => b.count - a.count) })
+  }
+  for (const [c, items] of map) {
+    if (!CATEGORY_ORDER.includes(c)) out.push({ category: c, items: items.sort((a, b) => b.count - a.count) })
+  }
+  return out
+})
 
 // ===== 分页（每页 20 条） =====
 const PAGE_SIZE = 20
@@ -423,6 +495,70 @@ async function doClearGroup(g: DataGroup) {
   } else {
     showToast(res.msg || '清空失败')
   }
+}
+
+// ===== 数据类别明细（二级页） =====
+interface GroupDetail {
+  mode: string
+  columns: string[]
+  rows: any[]
+  total: number
+  page: number
+  pageSize: number
+  partName?: string
+  parts?: string[]
+}
+const detailVisible = ref(false)
+const detailGroup = ref<DataGroup | null>(null)
+const detailPart = ref(0)
+const detailPage = ref(1)
+const detailLoading = ref(false)
+const detail = ref<GroupDetail | null>(null)
+const detailTotalPages = computed(() => {
+  const d = detail.value
+  if (!d || !d.pageSize) return 1
+  return Math.max(1, Math.ceil(d.total / d.pageSize))
+})
+
+async function openGroupDetail(g: DataGroup) {
+  detailGroup.value = g
+  detailPart.value = 0
+  detailPage.value = 1
+  detailVisible.value = true
+  await loadGroupDetail()
+}
+
+async function loadGroupDetail() {
+  const g = detailGroup.value
+  if (!g) return
+  detailLoading.value = true
+  const res = await adminApi<GroupDetail>('data_group_detail', { key: g.key, part: detailPart.value, page: detailPage.value })
+  detailLoading.value = false
+  if (res.code === 200 && res.data) {
+    detail.value = res.data
+  } else {
+    detail.value = null
+    showToast(res.msg || '明细加载失败')
+  }
+}
+
+function switchDetailPart(i: number) {
+  if (detailPart.value === i) return
+  detailPart.value = i
+  detailPage.value = 1
+  loadGroupDetail()
+}
+
+function goDetailPage(p: number) {
+  if (p < 1 || p > detailTotalPages.value || p === detailPage.value) return
+  detailPage.value = p
+  loadGroupDetail()
+}
+
+function fmtCell(v: any): string {
+  if (v === null || v === undefined || v === '') return '-'
+  if (typeof v === 'object') return JSON.stringify(v)
+  return String(v)
 }
 
 async function reloadAll() {
@@ -891,6 +1027,131 @@ onMounted(() => {
 }
 .group-row:last-child { border-bottom: none; }
 .group-row:hover { background: var(--table-row-hover); }
+
+/* ===== 数据清理分组头 ===== */
+.group-cat {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 6px 8px;
+  border-bottom: 2px solid #f0f0f0;
+}
+.group-cat-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+}
+.group-cat-count {
+  font-size: 11px;
+  color: #999;
+}
+
+/* ===== 数据类别明细弹窗 ===== */
+.fade-enter-active,
+.fade-leave-active { transition: opacity 0.18s ease; }
+.fade-enter-from,
+.fade-leave-to { opacity: 0; }
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+}
+.detail-modal {
+  width: min(960px, 96vw);
+  max-height: 82vh;
+  background: #fff;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.18);
+}
+.detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #f0f0f0;
+}
+.detail-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.detail-title h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text);
+}
+.detail-total {
+  font-size: 12px;
+  color: #999;
+}
+.detail-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 12px 20px 0;
+  flex-wrap: wrap;
+}
+.detail-tab {
+  border: 1px solid #e5e5e5;
+  background: #fafafa;
+  color: #666;
+  border-radius: 999px;
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.detail-tab.active {
+  background: var(--text, #333);
+  color: #fff;
+  border-color: transparent;
+}
+.detail-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0 20px 8px;
+}
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.detail-table th,
+.detail-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid #f5f5f5;
+  white-space: nowrap;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.detail-table th {
+  color: #999;
+  font-weight: 600;
+  position: sticky;
+  top: 0;
+  background: #fff;
+}
+.detail-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px;
+  border-top: 1px solid #f0f0f0;
+}
+.detail-page-info {
+  font-size: 12px;
+  color: #666;
+}
 .group-info {
   display: flex;
   flex-direction: column;

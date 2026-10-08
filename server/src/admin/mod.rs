@@ -394,6 +394,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "list_tables" => db::list_tables(body, &ctx, pool).await,
         "list_backups" => db::list_backups(body, &ctx, pool).await,
         "list_data_groups" => db::list_data_groups(body, &ctx, pool).await,
+        "data_group_detail" => db::data_group_detail(body, &ctx, pool).await,
         "clear_data_group" => db::clear_data_group(body, &ctx, pool).await,
         "import_db" => db::import_db(body, &ctx, pool).await,
         "get_auto_backup_config" => db::get_auto_backup_config(body, &ctx, pool).await,
