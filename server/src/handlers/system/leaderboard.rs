@@ -168,6 +168,8 @@ async fn fetch_leaderboard_period(
     period: &str,
     limit: i64,
     ciyuanxi_id: &str,
+    base_url: &str,
+    public_base: &str,
 ) -> Result<Value, String> {
     let cache_key = format!("{}|{}|{}", kind, period, limit);
 
@@ -188,7 +190,7 @@ async fn fetch_leaderboard_period(
                 "username": username,
                 "nickname": username,
                 "ciyuanxi_id": uid,
-                "avatar": avatar,
+                "avatar": crate::handlers::upload::absolutize_media_url_with(base_url, public_base, &avatar),
                 "duration": value,
             }));
         }
@@ -230,7 +232,7 @@ async fn fetch_leaderboard_period(
                     "username": username,
                     "nickname": username,
                     "ciyuanxi_id": ciyuanxi_id,
-                    "avatar": avatar,
+                    "avatar": crate::handlers::upload::absolutize_media_url_with(base_url, public_base, &avatar),
                     "duration": value,
                     "is_me": true,
                 }));
@@ -256,7 +258,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     if period == "all" {
         let mut leaderboards = serde_json::Map::new();
         for p in ["daily", "weekly", "total"] {
-            match fetch_leaderboard_period(pool, &kind, p, limit, &ciyuanxi_id).await {
+            match fetch_leaderboard_period(pool, &kind, p, limit, &ciyuanxi_id, &ctx.base_url, &ctx.config.public_base_url).await {
                 Ok(v) => {
                     leaderboards.insert(p.to_string(), v);
                 }
@@ -266,7 +268,7 @@ pub async fn get_leaderboard(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         return ctx.json(200, "ok", Some(json!({ "leaderboards": leaderboards })));
     }
 
-    match fetch_leaderboard_period(pool, &kind, &period, limit, &ciyuanxi_id).await {
+    match fetch_leaderboard_period(pool, &kind, &period, limit, &ciyuanxi_id, &ctx.base_url, &ctx.config.public_base_url).await {
         Ok(v) => ctx.json(200, "ok", Some(v)),
         Err(e) => ctx.err(500, &e),
     }
