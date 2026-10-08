@@ -6,6 +6,7 @@ use sqlx::Row;
 
 use super::{err, log_operation, ok, row_to_value, AdminCtx};
 use crate::handlers::helpers::{compare_version_code, int_of, parse_body, str_of};
+use crate::site_config_store;
 
 pub async fn add_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
@@ -229,16 +230,11 @@ pub async fn delete_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Res
     ok("删除成功", Value::Null)
 }
 
-fn read_desktop_versions() -> Vec<Value> {
-    let path = desktop_version_path();
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        if let Ok(v) = serde_json::from_str::<Value>(&content) {
-            if let Some(arr) = v.as_array() {
-                return arr.clone();
-            }
-        }
+async fn read_desktop_versions(pool: &MySqlPool) -> Vec<Value> {
+    match site_config_store::get_json(pool, "desktop_versions", Some(&desktop_version_path())).await {
+        Some(Value::Array(arr)) => arr,
+        _ => Vec::new(),
     }
-    Vec::new()
 }
 
 fn normalize_platform(raw: &str) -> String {
@@ -301,18 +297,12 @@ fn item_platform(item: &Value) -> String {
     normalize_platform(item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop").trim())
 }
 
-fn write_desktop_versions(list: &[Value]) -> bool {
-    let path = desktop_version_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let json_str = serde_json::to_string_pretty(list).unwrap_or_else(|_| "[]".to_string());
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, json_str).is_ok() && std::fs::rename(&tmp, &path).is_ok()
+async fn write_desktop_versions(pool: &MySqlPool, list: &[Value]) -> Result<(), sqlx::Error> {
+    site_config_store::set_json(pool, "desktop_versions", &Value::Array(list.to_vec())).await
 }
 
 pub async fn get_desktop_version(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    let list = read_desktop_versions();
+    let list = read_desktop_versions(pool).await;
     log_operation(pool, ctx, "读取桌面端更新配置", "", "").await;
     ok("", json!({ "list": list }))
 }
@@ -391,7 +381,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if version.is_empty() {
         return err(400, "版本号不能为空");
     }
-    let mut list = read_desktop_versions();
+    let mut list = read_desktop_versions(pool).await;
     if !file_data.is_empty() {
         let file_bytes = match base64::engine::general_purpose::STANDARD.decode(&file_data) {
             Ok(b) => b,
@@ -542,8 +532,8 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
             list.push(new_item);
         }
     }
-    if !write_desktop_versions(&list) {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_desktop_versions(pool, &list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
     let platform_label = platform_label(&platform);
     let sys_label = system_label(&platform, &system);
@@ -633,7 +623,7 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     if version.is_empty() {
         return err(400, "版本号不能为空");
     }
-    let mut list = read_desktop_versions();
+    let mut list = read_desktop_versions(pool).await;
     let before = list.len();
     // 先收集被删卡片引用的本站安装包文件名（仅 /uploads/packages/ 落盘路径，外链跳过）
     let removed_files: Vec<String> = list
@@ -663,8 +653,8 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     if list.len() == before {
         return err(404, "版本不存在");
     }
-    if !write_desktop_versions(&list) {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_desktop_versions(pool, &list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
     // 配置写成功后级联删除安装包文件，避免垃圾残留
     let packages_dir = std::path::Path::new("uploads").join("packages");

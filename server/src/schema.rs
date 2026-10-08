@@ -1075,4 +1075,11 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_ciyuanxi_type` (`ciyuanxi_id`, `device_type`),
             KEY `idx_updated_at` (`updated_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        // 结构化站点配置（关于页/公告/兜底模块/桌面端版本列表），替代 api/*.json 文件存储
+        "CREATE TABLE IF NOT EXISTS `site_configs` (
+            `key` varchar(64) NOT NULL DEFAULT '',
+            `value` json NOT NULL,
+            `updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`key`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
 ];

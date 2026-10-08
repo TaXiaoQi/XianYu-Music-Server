@@ -8,20 +8,15 @@ fn privacy_policy_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("privacy_policy.json")
 }
 
-fn read_announcements() -> Vec<serde_json::Value> {
-    let path = announcements_path();
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&content) {
-            if let Some(arr) = v.as_array() {
-                return arr.clone();
-            }
-        }
+async fn read_announcements(pool: &MySqlPool) -> Vec<serde_json::Value> {
+    match crate::site_config_store::get_json(pool, "announcements", Some(&announcements_path())).await {
+        Some(serde_json::Value::Array(arr)) => arr,
+        _ => Vec::new(),
     }
-    Vec::new()
 }
 
-pub async fn get_fallback_modules(ctx: ReqCtx) -> Response {
-    let modules = crate::admin::fallback::enabled_modules_payload();
+pub async fn get_fallback_modules(ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let modules = crate::admin::fallback::enabled_modules_payload(pool).await;
     ctx.json(200, "ok", Some(json!({ "modules": modules })))
 }
 
@@ -64,7 +59,8 @@ pub async fn get_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         let p = str_of(&data, "platform").trim().to_string();
         if p.is_empty() { "desktop".to_string() } else { p }
     };
-    let mut list: Vec<serde_json::Value> = read_announcements()
+    let mut list: Vec<serde_json::Value> = read_announcements(pool)
+        .await
         .into_iter()
         .filter(|item| item.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false))
         .filter(|item| {
@@ -129,7 +125,7 @@ pub async fn confirm_announcement(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         return ctx.err(400, "缺少用户或设备标识");
     }
 
-    let list = read_announcements();
+    let list = read_announcements(pool).await;
     let Some(item) = list
         .iter()
         .find(|item| item.get("id").and_then(|v| v.as_str()).unwrap_or("") == announcement_id)

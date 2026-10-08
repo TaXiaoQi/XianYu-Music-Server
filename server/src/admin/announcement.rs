@@ -4,32 +4,21 @@ use sqlx::MySqlPool;
 
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
+use crate::site_config_store;
 
 fn announcements_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("announcement.json")
 }
 
-fn read_announcements() -> Vec<Value> {
-    let path = announcements_path();
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        if let Ok(v) = serde_json::from_str::<Value>(&content) {
-            if let Some(arr) = v.as_array() {
-                return arr.clone();
-            }
-        }
+async fn read_announcements(pool: &MySqlPool) -> Vec<Value> {
+    match site_config_store::get_json(pool, "announcements", Some(&announcements_path())).await {
+        Some(Value::Array(arr)) => arr,
+        _ => Vec::new(),
     }
-    Vec::new()
 }
 
-fn write_announcements(list: &[Value]) -> std::io::Result<()> {
-    let path = announcements_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let json = serde_json::to_string_pretty(list).unwrap_or_else(|_| "[]".to_string());
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, json)?;
-    std::fs::rename(&tmp, &path)
+async fn write_announcements(pool: &MySqlPool, list: &[Value]) -> Result<(), sqlx::Error> {
+    site_config_store::set_json(pool, "announcements", &Value::Array(list.to_vec())).await
 }
 
 fn now_ymd() -> String {
@@ -56,8 +45,8 @@ fn valid_platform(p: &str) -> &str {
     }
 }
 
-pub async fn list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
-    let mut list = read_announcements();
+pub async fn list(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let mut list = read_announcements(pool).await;
     list.sort_by(|a, b| {
         let ta = a.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
         let tb = b.get("created_at").and_then(|v| v.as_str()).unwrap_or("");
@@ -81,7 +70,7 @@ pub async fn add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     }
     let typ = valid_type(&typ).to_string();
     let platform = valid_platform(&str_of(&data, "platform").trim()).to_string();
-    let mut list = read_announcements();
+    let mut list = read_announcements(pool).await;
     let max_id = list.iter().map(|a| a.get("id").and_then(|v| v.as_str()).and_then(|s| s.parse::<i64>().ok()).unwrap_or(0)).max().unwrap_or(0);
     let new_id = (max_id + 1).to_string();
     list.push(json!({
@@ -89,8 +78,8 @@ pub async fn add(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
         "date": now_ymd(), "actionUrl": action_url, "actionText": "",
         "enabled": enabled, "created_at": now_ymd_hms(), "updated_at": now_ymd_hms(),
     }));
-    if write_announcements(&list).is_err() {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_announcements(pool, &list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
     log_operation(pool, ctx, "新增公告", &title, &format!("类型:{} 平台:{} 启用:{}", typ, platform, if enabled { "是" } else { "否" })).await;
     ok("添加成功", Value::Null)
@@ -108,7 +97,7 @@ pub async fn update(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if id.is_empty() || title.is_empty() || content.is_empty() {
         return err(400, "参数错误");
     }
-    let mut list = read_announcements();
+    let mut list = read_announcements(pool).await;
     let mut found = false;
     for a in list.iter_mut() {
         if a.get("id").and_then(|v| v.as_str()).unwrap_or("") == id {
@@ -125,8 +114,8 @@ pub async fn update(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if !found {
         return err(404, "公告不存在");
     }
-    if write_announcements(&list).is_err() {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_announcements(pool, &list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
     log_operation(pool, ctx, "编辑公告", &format!("ID:{}", id), &format!("标题:{}", title)).await;
     ok("修改成功", Value::Null)
@@ -138,7 +127,7 @@ pub async fn delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if id.is_empty() {
         return err(400, "参数错误");
     }
-    let list = read_announcements();
+    let list = read_announcements(pool).await;
     let mut new_list: Vec<Value> = Vec::new();
     let mut found_title = String::new();
     for a in &list {
@@ -151,8 +140,8 @@ pub async fn delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if new_list.len() == list.len() {
         return err(404, "公告不存在");
     }
-    if write_announcements(&new_list).is_err() {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_announcements(pool, &new_list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
     log_operation(pool, ctx, "删除公告", &format!("ID:{}", id), &found_title).await;
     ok("删除成功", Value::Null)
@@ -165,7 +154,7 @@ pub async fn toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if id.is_empty() {
         return err(400, "参数错误");
     }
-    let mut list = read_announcements();
+    let mut list = read_announcements(pool).await;
     let mut found = false;
     for a in list.iter_mut() {
         if a.get("id").and_then(|v| v.as_str()).unwrap_or("") == id {
@@ -177,8 +166,8 @@ pub async fn toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if !found {
         return err(404, "公告不存在");
     }
-    if write_announcements(&list).is_err() {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_announcements(pool, &list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
     log_operation(pool, ctx, "切换公告状态", &format!("ID:{}", id), if enabled { "启用" } else { "禁用" }).await;
     ok("操作成功", Value::Null)

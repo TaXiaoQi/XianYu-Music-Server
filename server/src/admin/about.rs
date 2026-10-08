@@ -4,6 +4,7 @@ use sqlx::MySqlPool;
 
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{bool_of, parse_body, str_of};
+use crate::site_config_store;
 
 fn about_config_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("about_config.json")
@@ -14,6 +15,15 @@ fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
         "desktop" => Some(std::path::Path::new("api").join("about_config_desktop.json")),
         "mobile" => Some(std::path::Path::new("api").join("about_config_mobile.json")),
         "watch" => Some(std::path::Path::new("api").join("about_config_watch.json")),
+        _ => None,
+    }
+}
+
+fn platform_about_key(platform: &str) -> Option<&'static str> {
+    match platform {
+        "desktop" => Some("about_config_desktop"),
+        "mobile" => Some("about_config_mobile"),
+        "watch" => Some("about_config_watch"),
         _ => None,
     }
 }
@@ -36,13 +46,9 @@ fn default_about_config() -> Value {
     })
 }
 
-fn read_about_config() -> Value {
+async fn read_about_config(pool: &MySqlPool) -> Value {
     let defaults = default_about_config();
-    let path = about_config_path();
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return defaults;
-    };
-    let Ok(Value::Object(saved)) = serde_json::from_str::<Value>(&content) else {
+    let Some(Value::Object(saved)) = site_config_store::get_json(pool, "about_config", Some(&about_config_path())).await else {
         return defaults;
     };
     let mut merged = defaults.as_object().cloned().unwrap_or_default();
@@ -62,41 +68,34 @@ fn default_about_config_for(platform: &str) -> Value {
     config
 }
 
-fn read_platform_about_config(platform: &str) -> Value {
-    let mut config = read_about_config();
+async fn read_platform_about_config(pool: &MySqlPool, platform: &str) -> Value {
+    let mut config = read_about_config(pool).await;
     match platform {
         "mobile" => crate::handlers::system::apply_mobile_about_overrides(&mut config),
         "watch" => crate::handlers::system::apply_watch_about_overrides(&mut config),
         _ => {}
     }
-    if let Some(path) = platform_about_config_path(platform) {
-        if let Ok(content) = std::fs::read_to_string(&path) {
-            if let Ok(Value::Object(saved)) = serde_json::from_str::<Value>(&content) {
-                let mut merged = default_about_config_for(platform).as_object().cloned().unwrap_or_default();
-                for (key, value) in saved {
-                    merged.insert(key, value);
-                }
-                return Value::Object(merged);
-            }
-        }
+    let Some(key) = platform_about_key(platform) else {
+        return config;
+    };
+    let Some(Value::Object(saved)) = site_config_store::get_json(pool, key, platform_about_config_path(platform).as_deref()).await else {
+        return config;
+    };
+    let mut merged = default_about_config_for(platform).as_object().cloned().unwrap_or_default();
+    for (key, value) in saved {
+        merged.insert(key, value);
     }
-    config
+    Value::Object(merged)
 }
 
-fn write_about_config(config: &Value, platform: &str) -> std::io::Result<()> {
-    let path = platform_about_config_path(platform).unwrap_or_else(about_config_path);
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let json = serde_json::to_string_pretty(config).unwrap_or_else(|_| "{}".to_string());
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, json)?;
-    std::fs::rename(&tmp, &path)
+async fn write_about_config(pool: &MySqlPool, config: &Value, platform: &str) -> Result<(), sqlx::Error> {
+    let key = platform_about_key(platform).unwrap_or("about_config");
+    site_config_store::set_json(pool, key, config).await
 }
 
-pub async fn get(body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
+pub async fn get(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let platform = str_of(&parse_body(body), "platform").trim().to_string();
-    ok("ok", read_platform_about_config(&platform))
+    ok("ok", read_platform_about_config(pool, &platform).await)
 }
 
 fn name_url_list_of(data: &Value, key: &str, fallback: Vec<Value>) -> Vec<Value> {
@@ -133,7 +132,7 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let project_url = str_of(&data, "projectUrl").trim().to_string();
     let join_group_url = str_of(&data, "joinGroupUrl").trim().to_string();
 
-    let current = read_platform_about_config(&platform);
+    let current = read_platform_about_config(pool, &platform).await;
     let fallback_list = |key: &str| -> Vec<Value> {
         current
             .get(key)
@@ -153,8 +152,8 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
         "acknowledgements": acknowledgements,
     });
 
-    if write_about_config(&config, &platform).is_err() {
-        return err(500, "写入关于页配置失败，请检查 api 目录权限");
+    if write_about_config(pool, &config, &platform).await.is_err() {
+        return err(500, "数据库写入失败");
     }
 
     let platform_label = match platform.as_str() {

@@ -6,6 +6,7 @@ use sqlx::MySqlPool;
 
 use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{int_of, parse_body, str_of};
+use crate::site_config_store;
 
 fn fallback_modules_path() -> std::path::PathBuf {
     std::path::Path::new("api").join("fallback_modules.json")
@@ -68,33 +69,20 @@ pub fn is_valid_module_key(key: &str) -> bool {
     VALID_MODULE_KEYS.iter().any(|(k, _)| *k == key)
 }
 
-fn read_modules() -> Vec<Value> {
-    let path = fallback_modules_path();
-    if let Ok(content) = std::fs::read_to_string(&path) {
-        if let Ok(v) = serde_json::from_str::<Value>(&content) {
-            if let Some(arr) = v.as_array() {
-                return arr
-                    .iter()
-                    .filter(|item| {
-                        item.get("moduleKey").and_then(|v| v.as_str()).map(is_valid_module_key).unwrap_or(false)
-                    })
-                    .cloned()
-                    .collect();
-            }
-        }
+async fn read_modules(pool: &MySqlPool) -> Vec<Value> {
+    match site_config_store::get_json(pool, "fallback_modules", Some(&fallback_modules_path())).await {
+        Some(Value::Array(arr)) => arr
+            .into_iter()
+            .filter(|item| {
+                item.get("moduleKey").and_then(|v| v.as_str()).map(is_valid_module_key).unwrap_or(false)
+            })
+            .collect(),
+        _ => Vec::new(),
     }
-    Vec::new()
 }
 
-fn write_modules(list: &[Value]) -> std::io::Result<()> {
-    let path = fallback_modules_path();
-    if let Some(dir) = path.parent() {
-        let _ = std::fs::create_dir_all(dir);
-    }
-    let json = serde_json::to_string_pretty(list).unwrap_or_else(|_| "[]".to_string());
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, json)?;
-    std::fs::rename(&tmp, &path)
+async fn write_modules(pool: &MySqlPool, list: &[Value]) -> Result<(), sqlx::Error> {
+    site_config_store::set_json(pool, "fallback_modules", &Value::Array(list.to_vec())).await
 }
 
 pub fn sha256_hex(text: &str) -> String {
@@ -107,8 +95,9 @@ fn now_ymd_hms() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string()
 }
 
-pub fn enabled_modules_payload() -> Vec<Value> {
-    read_modules()
+pub async fn enabled_modules_payload(pool: &MySqlPool) -> Vec<Value> {
+    read_modules(pool)
+        .await
         .into_iter()
         .filter(|m| m.get("enabled").and_then(|v| v.as_bool()).unwrap_or(false))
         .map(|m| {
@@ -134,8 +123,8 @@ pub fn enabled_modules_payload() -> Vec<Value> {
         .collect()
 }
 
-pub async fn list(_body: &str, _ctx: &AdminCtx, _pool: &MySqlPool) -> Response {
-    let configured = read_modules();
+pub async fn list(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let configured = read_modules(pool).await;
     let list: Vec<Value> = VALID_MODULE_KEYS
         .iter()
         .map(|(key, label)| {
@@ -181,7 +170,7 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     }
 
     let digest = sha256_hex(&code);
-    let mut list = read_modules();
+    let mut list = read_modules(pool).await;
     let existing = list
         .iter()
         .position(|m| m.get("moduleKey").and_then(|v| v.as_str()) == Some(module_key.as_str()));
@@ -226,8 +215,8 @@ pub async fn save(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
         }
     }
 
-    if write_modules(&list).is_err() {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_modules(pool, &list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
 
     log_operation(
@@ -251,7 +240,7 @@ pub async fn delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if module_key.is_empty() {
         return err(400, "参数错误");
     }
-    let list = read_modules();
+    let list = read_modules(pool).await;
     let new_list: Vec<Value> = list
         .iter()
         .filter(|m| m.get("moduleKey").and_then(|v| v.as_str()) != Some(module_key.as_str()))
@@ -260,8 +249,8 @@ pub async fn delete(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if new_list.len() == list.len() {
         return err(404, "模块未配置");
     }
-    if write_modules(&new_list).is_err() {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_modules(pool, &new_list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
     log_operation(pool, ctx, "删除兜底模块", &module_key, "客户端将回退内置实现").await;
     ok("删除成功，客户端将回退内置默认实现", Value::Null)
@@ -274,7 +263,7 @@ pub async fn toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if module_key.is_empty() {
         return err(400, "参数错误");
     }
-    let mut list = read_modules();
+    let mut list = read_modules(pool).await;
     let mut found = false;
     for m in list.iter_mut() {
         if m.get("moduleKey").and_then(|v| v.as_str()) == Some(module_key.as_str()) {
@@ -287,8 +276,8 @@ pub async fn toggle(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     if !found {
         return err(404, "模块未配置");
     }
-    if write_modules(&list).is_err() {
-        return err(500, "写入文件失败，请检查 api 目录权限");
+    if write_modules(pool, &list).await.is_err() {
+        return err(500, "数据库写入失败");
     }
     log_operation(pool, ctx, "切换兜底模块状态", &module_key, if enabled { "启用" } else { "禁用" }).await;
     ok(if enabled { "已启用，客户端下次拉取后生效" } else { "已禁用，客户端将回退内置实现" }, Value::Null)

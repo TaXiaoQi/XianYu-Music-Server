@@ -8,6 +8,7 @@ mod rate_limit;
 mod response;
 mod schema;
 mod sign;
+mod site_config_store;
 mod watch_relay;
 
 use axum::body::Body;
@@ -102,6 +103,15 @@ async fn main() -> anyhow::Result<()> {
     let app = Router::new()
         .route("/api", get(handle_api).post(handle_api))
         .route("/api/", get(handle_api).post(handle_api))
+        // 结构化配置的原静态 URL：显式路由优先于静态回退，内容改由 site_configs 下发，
+        // 客户端 URL 与行为不变
+        .route("/api/about_config.json", get(serve_site_config))
+        .route("/api/about_config_desktop.json", get(serve_site_config))
+        .route("/api/about_config_mobile.json", get(serve_site_config))
+        .route("/api/about_config_watch.json", get(serve_site_config))
+        .route("/api/announcement.json", get(serve_site_config))
+        .route("/api/fallback_modules.json", get(serve_site_config))
+        .route("/api/version.json", get(serve_site_config))
         .route("/s/:share_id", get(share_landing))
         .route("/s/:share_id/", get(share_landing))
         .route("/theme-editor", get(theme_editor_page))
@@ -399,6 +409,49 @@ async fn handle_admin_api(
         return debug::handle_admin_api(&action);
     }
     admin::dispatch(&action, &raw_body, ctx, &state.pool).await
+}
+
+fn site_config_route_map(path: &str) -> Option<(&'static str, &'static str)> {
+    match path {
+        "/api/about_config.json" => Some(("about_config", "api/about_config.json")),
+        "/api/about_config_desktop.json" => Some(("about_config_desktop", "api/about_config_desktop.json")),
+        "/api/about_config_mobile.json" => Some(("about_config_mobile", "api/about_config_mobile.json")),
+        "/api/about_config_watch.json" => Some(("about_config_watch", "api/about_config_watch.json")),
+        "/api/announcement.json" => Some(("announcements", "api/announcement.json")),
+        "/api/fallback_modules.json" => Some(("fallback_modules", "api/fallback_modules.json")),
+        "/api/version.json" => Some(("desktop_versions", "api/version.json")),
+        _ => None,
+    }
+}
+
+async fn serve_site_config(State(state): State<AppState>, req: Request<Body>) -> Response {
+    let not_found = || (StatusCode::NOT_FOUND, "not found").into_response();
+    let Some((key, legacy)) = site_config_route_map(req.uri().path()) else {
+        return not_found();
+    };
+    let legacy_path = std::path::Path::new(legacy);
+    let value = if state.db_ready {
+        crate::site_config_store::get_json(&state.pool, key, Some(legacy_path)).await
+    } else {
+        // 数据库不可用（含本地调试）：直接读旧文件，保持离线可访问
+        tokio::fs::read_to_string(legacy_path)
+            .await
+            .ok()
+            .and_then(|c| serde_json::from_str(&c).ok())
+    };
+    let Some(value) = value else {
+        return not_found();
+    };
+    let body = serde_json::to_string(&value).unwrap_or_else(|_| "null".to_string());
+    (
+        StatusCode::OK,
+        [
+            (axum::http::header::CONTENT_TYPE, "application/json; charset=utf-8"),
+            (axum::http::header::CACHE_CONTROL, "no-cache"),
+        ],
+        Body::from(body),
+    )
+        .into_response()
 }
 
 async fn serve_apple_app_site_association() -> Response {

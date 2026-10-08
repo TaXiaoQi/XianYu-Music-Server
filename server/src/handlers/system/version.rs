@@ -125,10 +125,13 @@ fn system_label(platform: &str, system: &str) -> &'static str {
     }
 }
 
-fn latest_enabled_platform_version(platform: &str, channel: &str, system: &str, arch: &str) -> Option<serde_json::Value> {
-    let path = std::path::Path::new("api").join("version.json");
-    let content = std::fs::read_to_string(path).ok()?;
-    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+async fn latest_enabled_platform_version(pool: &MySqlPool, platform: &str, channel: &str, system: &str, arch: &str) -> Option<serde_json::Value> {
+    let value = crate::site_config_store::get_json(
+        pool,
+        "desktop_versions",
+        Some(std::path::Path::new("api/version.json")),
+    )
+    .await?;
     let arr = value.as_array()?;
     let platform = match platform {
         "mobile" => "mobile",
@@ -237,9 +240,9 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
     let device_id = str_of(&raw, "device_id").trim().to_string();
 
     let mut selected: Option<serde_json::Value> =
-        latest_enabled_platform_version(&platform, "stable", &system, &arch);
+        latest_enabled_platform_version(pool, &platform, "stable", &system, &arch).await;
     if beta_device_allowed(pool, &device_id).await {
-        if let Some(beta) = latest_enabled_platform_version(&platform, "beta", &system, &arch) {
+        if let Some(beta) = latest_enabled_platform_version(pool, &platform, "beta", &system, &arch).await {
             let beta_newer = match &selected {
                 Some(stable) => {
                     let bv = beta.get("version").and_then(|v| v.as_str()).unwrap_or("");
@@ -338,7 +341,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     let mut systems: Vec<serde_json::Value> = Vec::new();
     let mut first: Option<serde_json::Value> = None;
     for sys_key in &system_keys {
-        if let Some(item) = latest_enabled_platform_version(&platform, "stable", sys_key, &arch) {
+        if let Some(item) = latest_enabled_platform_version(pool, &platform, "stable", sys_key, &arch).await {
             let sys = if sys_key.is_empty() {
                 app_name.to_string()
             } else {

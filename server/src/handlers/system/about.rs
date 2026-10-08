@@ -13,6 +13,15 @@ fn platform_about_config_path(platform: &str) -> Option<std::path::PathBuf> {
     }
 }
 
+fn platform_about_key(platform: &str) -> Option<&'static str> {
+    match platform {
+        "desktop" => Some("about_config_desktop"),
+        "mobile" => Some("about_config_mobile"),
+        "watch" => Some("about_config_watch"),
+        _ => None,
+    }
+}
+
 fn default_about_config() -> serde_json::Value {
     json!({
         "officialSiteUrl": "https://xianyumusic.cn",
@@ -31,13 +40,9 @@ fn default_about_config() -> serde_json::Value {
     })
 }
 
-fn read_about_config() -> serde_json::Value {
+async fn read_about_config(pool: &MySqlPool) -> serde_json::Value {
     let defaults = default_about_config();
-    let path = about_config_path();
-    let Ok(content) = std::fs::read_to_string(&path) else {
-        return defaults;
-    };
-    let Ok(serde_json::Value::Object(saved)) = serde_json::from_str::<serde_json::Value>(&content) else {
+    let Some(serde_json::Value::Object(saved)) = crate::site_config_store::get_json(pool, "about_config", Some(&about_config_path())).await else {
         return defaults;
     };
     let mut merged = defaults.as_object().cloned().unwrap_or_default();
@@ -93,10 +98,9 @@ pub fn apply_platform_about_overrides(config: &mut Value, body: &str) {
     }
 }
 
-fn read_platform_about_config(platform: &str) -> Option<serde_json::Value> {
-    let path = platform_about_config_path(platform)?;
-    let content = std::fs::read_to_string(path).ok()?;
-    let saved = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+async fn read_platform_about_config(pool: &MySqlPool, platform: &str) -> Option<serde_json::Value> {
+    let key = platform_about_key(platform)?;
+    let saved = crate::site_config_store::get_json(pool, key, platform_about_config_path(platform).as_deref()).await?;
     let obj = saved.as_object()?.clone();
     let mut base = default_about_config();
     match platform {
@@ -111,12 +115,12 @@ fn read_platform_about_config(platform: &str) -> Option<serde_json::Value> {
     Some(serde_json::Value::Object(merged))
 }
 
-pub async fn get_about_config(body: &str, ctx: ReqCtx) -> Response {
+pub async fn get_about_config(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let platform = str_of(&parse_body(body), "platform").trim().to_string();
-    if let Some(config) = read_platform_about_config(&platform) {
+    if let Some(config) = read_platform_about_config(pool, &platform).await {
         return ctx.json(200, "ok", Some(config));
     }
-    let mut config = read_about_config();
+    let mut config = read_about_config(pool).await;
     apply_platform_about_overrides(&mut config, body);
     ctx.json(200, "ok", Some(config))
 }
