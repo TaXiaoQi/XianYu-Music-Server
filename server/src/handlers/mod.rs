@@ -83,6 +83,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_avatar_status" => settings::get_avatar_status(body, ctx, pool).await,
         "get_nickname_status" => settings::get_nickname_status(body, ctx, pool).await,
         "report_listen_stats" => settings::report_listen_stats(body, ctx, pool).await,
+        "report_listen_events" => settings::report_listen_events(body, ctx, pool).await,
         "get_listen_stats" => settings::get_listen_stats(body, ctx, pool).await,
         "get_listen_stats_summary" => settings::get_listen_stats_summary(body, ctx, pool).await,
         "deduct_master_quota" => settings::deduct_master_quota(body, ctx, pool).await,

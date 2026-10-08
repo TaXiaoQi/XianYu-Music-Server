@@ -849,17 +849,16 @@ async fn report_listen_stats_delta(
     let cross_ok =
         has_client_elapsed && (client_elapsed_secs - server_elapsed).abs() <= 120;
     // 客户端报了 elapsed 但与服务端核算差超容差 = 两边账脱钩（baseline 丢失/
-    // 时钟异常），此时 delta 不可信：整笔丢弃，宁缺勿滥——虚增不可逆，
-    // 丢笔最多丢一两个心跳的真实播放
+    // 时钟异常/多端共用账号互踢 reported_at）：整笔丢弃，宁缺勿滥——虚增不可逆。
+    // 回执带 server_elapsed_secs，客户端据此重对表，下一笔自然对上账
     let effective_max = if cross_ok {
-        // delta 是同窗播放秒数，不可能超过墙钟：超过客户端自报 elapsed 即自相矛盾
-        // （baseline 丢失/本地统计器虚涨），整笔丢弃——截断反而给虚报留下
-        // 每笔 +容差 的合法入账通道（+120 被 60s 高频心跳放大成 3 倍墙钟速）
-        if delta_total > client_elapsed_secs {
-            0
-        } else {
-            delta_total
-        }
+        // 上限 = 客户端自报墙钟 ×1.5 + 60 秒（容忍倍速播放与计时节拍抖动，
+        // 截断余额留在客户端追报），再与服务端独立核算取严。
+        // 旧的「delta > elapsed 即整笔清零」存在死锁：一笔被清零后双方时钟
+        // 各自前进（服务端 reported_at 照推、客户端 baseline 照刷），而 delta
+        // 余额永不清零，之后每笔都必然大于墙钟窗被持续清零——客户端播了
+        // 几小时、云端今日时长恒为 0 即由此而来
+        server_max.min(client_elapsed_secs * 3 / 2 + 60)
     } else if has_client_elapsed {
         0
     } else {
@@ -889,12 +888,17 @@ async fn report_listen_stats_delta(
     .execute(pool)
     .await;
 
-    let _ = sqlx::query(
-        "UPDATE app_users SET listen_reported_at = UNIX_TIMESTAMP() WHERE ciyuanxi_id = ?",
-    )
-    .bind(ciyuanxi_id)
-    .execute(pool)
-    .await;
+    // 只有真实入账才推进服务端时钟：被截断为 0 的上报若也推进时钟，
+    // server_elapsed 永远停在「刚刚」，客户端带着未入账余额的下一笔 delta
+    // 必然大于墙钟窗，形成永久拒收死锁
+    if delta_total > 0 {
+        let _ = sqlx::query(
+            "UPDATE app_users SET listen_reported_at = UNIX_TIMESTAMP() WHERE ciyuanxi_id = ?",
+        )
+        .bind(ciyuanxi_id)
+        .execute(pool)
+        .await;
+    }
 
     let _ = sqlx::query(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
@@ -911,17 +915,206 @@ async fn report_listen_stats_delta(
 
     match result {
         Ok(r) if r.rows_affected() > 0 => {
-            read_listen_stats_snapshot(ciyuanxi_id, ctx, pool).await
+            let mut snap = listen_snapshot_value(ciyuanxi_id, pool).await;
+            // 回执确认量：客户端 baseline 只按此推进（多端同账号时快照差值会
+            // 混入他端进账，不能作为本端确认依据）
+            snap["accepted_total"] = json!(delta_total);
+            snap["accepted_daily"] = json!(delta_daily);
+            ctx.ok("ok", Some(snap))
         }
         Ok(_) => ctx.err(404, "用户不存在"),
         Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
     }
 }
 
-async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+// ===== 事件流水上报（v2：幂等事件，服务端唯一账本）=====
+// 旧 delta 协议靠「客户端 baseline + 服务端墙钟核验 + 快照合并」三处状态
+// 对账，任何一环断（弱网超时/快照未写/回执缺字段）就与排行榜脱节。v2 让
+// 客户端零账本：只产「听歌事件」流水（幂等 id + 秒数 + 发生时刻），服务端
+// INSERT IGNORE 去重后按事件发生日聚合入账。显示与排行榜同读服务端现算
+// 快照，结构上不可能再出现多账本口径不一致。
+pub async fn report_listen_events(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     use serde_json::json;
+
+    let data = parse_body(body);
+    let ciyuanxi_id = extract_id(&data);
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "弦予号不能为空");
+    }
+
+    // 用户存在性 + reset 信号：UNIX_TIMESTAMP 直读 DATETIME 拿 i64，
+    // 规避 sqlx 对 DATETIME 列的解码类型坑（旧 delta 协议曾栽在这里）
+    let row = sqlx::query(
+        "SELECT UNIX_TIMESTAMP(listen_stats_reset_at) AS reset_ts, listen_stats_reset_reason \
+         FROM app_users WHERE ciyuanxi_id = ?",
+    )
+    .bind(&ciyuanxi_id)
+    .fetch_optional(pool)
+    .await;
+    let (reset_ts, reset_reason) = match &row {
+        Ok(Some(r)) => {
+            use sqlx::Row;
+            (
+                r.try_get::<i64, _>("reset_ts").unwrap_or(0),
+                r.try_get::<String, _>("listen_stats_reset_reason")
+                    .unwrap_or_default(),
+            )
+        }
+        _ => return ctx.err(404, "用户不存在"),
+    };
+    if reset_ts > 0 {
+        // 清零语义与旧协议一致：累计/日表/历史/事件流水全清并消费信号（只发一次）
+        let _ = sqlx::query(
+            "UPDATE app_users SET listen_stats_reset_at = NULL, listen_stats_reset_reason = '', \
+             listen_duration = 0, unique_songs_count = 0, listen_duration_offset = 0, \
+             unique_songs_offset = 0, listen_reported_at = 0 WHERE ciyuanxi_id = ?",
+        )
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+        let _ = sqlx::query("DELETE FROM listen_daily_stats WHERE ciyuanxi_id = ?")
+            .bind(&ciyuanxi_id)
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM play_history WHERE ciyuanxi_id = ?")
+            .bind(&ciyuanxi_id)
+            .execute(pool)
+            .await;
+        let _ = sqlx::query("DELETE FROM listen_events WHERE ciyuanxi_id = ?")
+            .bind(&ciyuanxi_id)
+            .execute(pool)
+            .await;
+        // 回执 DATETIME 字符串，客户端 new Date() 直接解析
+        let reset_at: String = sqlx::query_scalar("SELECT FROM_UNIXTIME(?)")
+            .bind(reset_ts)
+            .fetch_one(pool)
+            .await
+            .unwrap_or_default();
+        return ctx.ok(
+            "ok",
+            Some(json!({ "reset_at": reset_at, "reason": reset_reason })),
+        );
+    }
+
+    let now_sec: i64 = sqlx::query_scalar("SELECT UNIX_TIMESTAMP()")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    let empty = Vec::new();
+    let events = data
+        .get("events")
+        .and_then(|v| v.as_array())
+        .unwrap_or(&empty);
+    if events.is_empty() {
+        // 空批 = 纯快照拉取（幂等，不产生入账）
+        return read_listen_stats_snapshot(&ciyuanxi_id, ctx, pool).await;
+    }
+    if events.len() > 200 {
+        return ctx.err(400, "单批事件数超限");
+    }
+    let batch_id = data
+        .get("batch_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if batch_id.is_empty() || batch_id.len() > 64 {
+        return ctx.err(400, "batch_id 不能为空");
+    }
+
+    // 逐条 INSERT IGNORE 幂等入账：重复事件（重发/多端并发/断网重试）被
+    // uk_user_event 挡掉，只对首次插入的行计账
+    let mut accepted: i64 = 0;
+    let mut accepted_secs_total: i64 = 0;
+    for ev in events {
+        let event_id = ev.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        if event_id.is_empty() || event_id.len() > 64 {
+            continue;
+        }
+        // 单事件物理上限 1 小时：采样差值不可能超过，超出视为异常数据丢弃
+        let secs = match ev.get("secs").and_then(|v| v.as_i64()) {
+            Some(s) if s > 0 && s <= 3600 => s,
+            _ => continue,
+        };
+        // 事件发生时刻 clamp 到 [now-30天, now+1天]：考古补账不可信，未来时刻丢弃；
+        // 越界事件直接丢弃（不入表），防离线巨账一次性冲榜
+        let ended_at = match ev.get("ended_at").and_then(|v| v.as_i64()) {
+            Some(t) if t >= now_sec - 30 * 86400 && t <= now_sec + 86400 => t,
+            _ => continue,
+        };
+        // 东八区日历日：unix 秒加 8 小时后按 86400s 划日，以绝对基准
+        // '1970-01-01' 加天数换算，与服务器会话时区无关。
+        // 不能用 FROM_UNIXTIME(? + INTERVAL 8 HOUR)：MySQL 会把整数当
+        // yyyymmdd 日期字面量解析，解析失败落成 0000-00-00（当日聚合全丢）。
+        let day_index = (ended_at + 8 * 3600) / 86400;
+        let r = sqlx::query(
+            "INSERT IGNORE INTO listen_events \
+             (ciyuanxi_id, event_id, batch_id, played_secs, event_date, created_at) \
+             VALUES (?, ?, ?, ?, DATE_ADD('1970-01-01', INTERVAL ? DAY), ?)",
+        )
+        .bind(&ciyuanxi_id)
+        .bind(event_id)
+        .bind(&batch_id)
+        .bind(secs as i32)
+        .bind(day_index)
+        .bind(now_sec)
+        .execute(pool)
+        .await;
+        if let Ok(res) = r {
+            if res.rows_affected() > 0 {
+                accepted += 1;
+                accepted_secs_total += secs;
+            }
+        }
+    }
+
+    if accepted > 0 {
+        // 总量入账 + 推进服务端时钟（保持监控语义）
+        let _ = sqlx::query(
+            "UPDATE app_users SET listen_duration = listen_duration + ?, \
+             listen_reported_at = UNIX_TIMESTAMP() WHERE ciyuanxi_id = ?",
+        )
+        .bind(accepted_secs_total)
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
+        // 按事件发生日聚合入每日表（FROM_UNIXTIME+8h 在 SQL 侧换算东八区，
+        // 离线跨天补报自动归到真实听歌日）；聚合范围 = 本批首次插入的行
+        // （batch_id + created_at 双重圈定），重放批 accepted=0 不会走到这里
+        let _ = sqlx::query(
+            "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
+             SELECT ciyuanxi_id, event_date, SUM(played_secs), 0 FROM listen_events \
+             WHERE ciyuanxi_id = ? AND batch_id = ? AND created_at = ? \
+             GROUP BY event_date \
+             ON DUPLICATE KEY UPDATE \
+                 listen_duration = LEAST(listen_duration + VALUES(listen_duration), 86400), \
+                 unique_songs_count = unique_songs_count + VALUES(unique_songs_count)",
+        )
+        .bind(&ciyuanxi_id)
+        .bind(&batch_id)
+        .bind(now_sec)
+        .execute(pool)
+        .await;
+        // 低频清理：90 天前的流水已无去重价值（客户端队列远短于此）
+        if now_sec % 100 == 0 {
+            let _ = sqlx::query("DELETE FROM listen_events WHERE created_at < ?")
+                .bind(now_sec - 90 * 86400)
+                .execute(pool)
+                .await;
+        }
+    }
+
+    let mut snap = listen_snapshot_value(&ciyuanxi_id, pool).await;
+    snap["accepted"] = json!(accepted);
+    ctx.ok("ok", Some(snap))
+}
+
+async fn listen_snapshot_value(ciyuanxi_id: &str, pool: &MySqlPool) -> serde_json::Value {
+    use serde_json::json;
+    // listen_duration / unique_songs_count 是 INT UNSIGNED 列：sqlx 的 i64
+    // 解码只认 SIGNED，直接 query_scalar 会类型不匹配、被 unwrap_or(0) 吞成
+    // 永远 0（统计卡 0 vs 排行榜有值的事故根因）。一律 CAST AS SIGNED 再取。
     let total: i64 = sqlx::query_scalar(
-        "SELECT listen_duration FROM app_users WHERE ciyuanxi_id = ?",
+        "SELECT CAST(listen_duration AS SIGNED) FROM app_users WHERE ciyuanxi_id = ?",
     )
     .bind(ciyuanxi_id)
     .fetch_one(pool)
@@ -929,7 +1122,7 @@ async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySql
     .unwrap_or(0);
 
     let daily: i64 = sqlx::query_scalar(
-        "SELECT listen_duration FROM listen_daily_stats \
+        "SELECT CAST(listen_duration AS SIGNED) FROM listen_daily_stats \
          WHERE ciyuanxi_id = ? AND stat_date = DATE(NOW() + INTERVAL 8 HOUR)",
     )
     .bind(ciyuanxi_id)
@@ -938,7 +1131,7 @@ async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySql
     .unwrap_or(0);
 
     let weekly: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(listen_duration), 0) FROM listen_daily_stats \
+        "SELECT CAST(COALESCE(SUM(listen_duration), 0) AS SIGNED) FROM listen_daily_stats \
          WHERE ciyuanxi_id = ? \
            AND stat_date >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 6 DAY",
     )
@@ -947,13 +1140,37 @@ async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySql
     .await
     .unwrap_or(0);
 
+    // 服务端核算的自上次真实入账以来的墙钟秒数（-1 = 从未入账），
+    // 供脱账客户端重对表
+    let reported_at: i64 = sqlx::query_scalar(
+        "SELECT listen_reported_at FROM app_users WHERE ciyuanxi_id = ?",
+    )
+    .bind(ciyuanxi_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    let now_sec: i64 = sqlx::query_scalar("SELECT UNIX_TIMESTAMP()")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+    let elapsed = if reported_at > 0 {
+        (now_sec - reported_at).clamp(0, 30 * 86400)
+    } else {
+        -1
+    };
+
+    json!({
+        "server_total_duration": total.max(0),
+        "server_daily_duration": daily.max(0),
+        "server_weekly_duration": weekly.max(0),
+        "server_elapsed_secs": elapsed,
+    })
+}
+
+async fn read_listen_stats_snapshot(ciyuanxi_id: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     ctx.ok(
         "ok",
-        Some(json!({
-            "server_total_duration": total.max(0),
-            "server_daily_duration": daily.max(0),
-            "server_weekly_duration": weekly.max(0),
-        })),
+        Some(listen_snapshot_value(ciyuanxi_id, pool).await),
     )
 }
 
@@ -974,8 +1191,11 @@ pub async fn get_listen_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         return ctx.err(400, "弦予号不能为空");
     }
 
+    // INT UNSIGNED 列：CAST AS SIGNED 后 i64 解码才成立（同 listen_snapshot_value）
     let row = sqlx::query(
-        "SELECT listen_duration, unique_songs_count FROM app_users WHERE ciyuanxi_id = ?",
+        "SELECT CAST(listen_duration AS SIGNED) AS listen_duration, \
+         CAST(unique_songs_count AS SIGNED) AS unique_songs_count \
+         FROM app_users WHERE ciyuanxi_id = ?",
     )
     .bind(&ciyuanxi_id)
     .fetch_optional(pool)

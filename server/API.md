@@ -246,6 +246,29 @@ md5(x-timestamp + x-nonce + raw_body + api_secret)
 - `me` 为 `null` 时表示当前用户无排行数据。
 - 日榜/周榜依赖 `listen_daily_stats` 表，该表由 `report_listen_stats` 和 `report_user_behavior` 在客户端上报播放数据时同步写入。
 
+## report_listen_stats（delta 增量协议）
+
+请求：`{ ciyuanxi_id, stats_mode: "delta", delta_duration, delta_daily_duration, delta_songs?, elapsed_secs? }`。
+
+服务端以自身 `listen_reported_at` 独立核算墙钟上限（截断不清零，余额留客户端追报），响应回执：
+
+```json
+{
+  "server_total_duration": 0,
+  "server_daily_duration": 0,
+  "server_weekly_duration": 0,
+  "server_elapsed_secs": 30,
+  "accepted_total": 0,
+  "accepted_daily": 0
+}
+```
+
+- `accepted_total` / `accepted_daily`：本次实际入账秒数（截断后），客户端 baseline 只按此推进；多端共用账号时不得用快照差值代替。
+- `server_elapsed_secs`：服务端核算的自上次真实入账以来的墙钟秒数（-1 = 从未入账）；客户端确认量为 0 时据此重对表，避免 delta 永远大于墙钟窗被持续拒收。
+- 服务端仅在 `accepted_total > 0` 时推进 `listen_reported_at`。
+- `delta_duration <= 0 && delta_daily_duration <= 0 && delta_songs <= 0` 时为纯快照拉取，直接回执上述快照字段。
+- 触发云端清零时回执 `{ reset_at, reason? }`，客户端应清空本地统计后重新上报。
+
 ## 已清理的旧接口范围
 
 本轮清理后，服务端不再暴露旧聊天接口、旧歌单 CRUD/收藏接口、分享动态接口、背景/封面上传接口，以及其他未在 `handlers::dispatch` 中登记的旧 action。客户端调用未登记 action 时会返回：

@@ -975,6 +975,22 @@ static TABLE_STATEMENTS: &[&str] = &[
             UNIQUE KEY `uk_user_date` (`ciyuanxi_id`, `stat_date`),
             KEY `idx_stat_date` (`stat_date`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        // 听歌事件流水（v2 协议）：客户端零账本，只产幂等事件；服务端
+        // INSERT IGNORE 去重后按事件发生日聚合入账，是唯一的入账通路。
+        // 90 天前的流水无去重价值（客户端队列远短于此），低频清理。
+        "CREATE TABLE IF NOT EXISTS `listen_events` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',
+            `event_id` varchar(64) NOT NULL DEFAULT '',
+            `batch_id` varchar(64) NOT NULL DEFAULT '',
+            `played_secs` int(11) NOT NULL DEFAULT 0,
+            `event_date` date NOT NULL,
+            `created_at` bigint(20) NOT NULL DEFAULT 0,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_user_event` (`ciyuanxi_id`, `event_id`),
+            KEY `idx_user_batch` (`ciyuanxi_id`, `batch_id`),
+            KEY `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `banned_devices` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `device_id` varchar(128) NOT NULL DEFAULT '',
