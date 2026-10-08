@@ -65,6 +65,11 @@ body.embed-mode #rvOrientBar{ position:fixed; left:14px; bottom:14px; z-index:50
 #rvOrientBar button{ height:28px; border:none; background:transparent; border-radius:999px; padding:0 10px; cursor:pointer; color:var(--text-2); font-size:12.5px; font-weight:700; font-family:var(--font-body); }
 #rvOrientBar button:hover{ background:var(--accent-soft); color:var(--accent); }
 #rvOrientBar button.on{ background:var(--accent); color:#fff; box-shadow:0 2px 10px rgba(236,65,65,.35); }
+/* 页脚 ICP 备案号：悬浮胶囊，App 内嵌（embed=1）模式不显示 */
+.icp-foot{ position:fixed; left:50%; bottom:10px; transform:translateX(-50%); z-index:600; background:var(--card); border:1px solid var(--border); border-radius:999px; padding:3px 12px; box-shadow:var(--shadow); }
+.icp-foot a{ font-size:11px; font-weight:600; color:var(--text-2); text-decoration:none; transition:color .2s; }
+.icp-foot a:hover{ color:var(--accent); }
+body.embed-mode .icp-foot{ display:none; }
 .login-state{ font-size:13px; color:var(--text-2); display:inline-flex; align-items:center; gap:6px; }
 .login-state.on{ color:#0a9d58; font-weight:600; }
 .login-state .dot{ width:7px; height:7px; border-radius:50%; background:var(--text-3); }

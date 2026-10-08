@@ -195,6 +195,21 @@ button, input, textarea, select { font-family: inherit; }
 .switch-mobile-btn:active {
     transform: translateY(0) scale(0.98);
 }
+.sidebar-icp {
+    margin-top: 10px;
+    text-align: center;
+}
+.sidebar-icp a {
+    color: var(--text-light);
+    font-size: 11px;
+    text-decoration: none;
+    opacity: 0.6;
+    transition: opacity 0.2s, color 0.2s;
+}
+.sidebar-icp a:hover {
+    opacity: 1;
+    color: var(--accent);
+}
 .sidebar-menu > li > a,
 .sidebar-menu > li > .menu-header {
     display: flex;

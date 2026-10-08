@@ -70,6 +70,9 @@
           切换移动版
         </button>
       </div>
+      <div class="sidebar-icp">
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026149270号-1</a>
+      </div>
     </aside>
 
     <!-- 主内容区 -->

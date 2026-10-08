@@ -37,6 +37,9 @@
         </button>
       </form>
     </div>
+    <footer class="login-icp">
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026149270号-1</a>
+    </footer>
   </div>
 </template>
 
@@ -109,6 +112,24 @@ async function handleLogin() {
   justify-content: center;
   background: var(--page-bg);
   overflow: hidden;
+}
+.login-icp {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 14px;
+  text-align: center;
+}
+.login-icp a {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity 0.2s, color 0.2s;
+}
+.login-icp a:hover {
+  opacity: 1;
+  color: #EC4141;
 }
 .login-container {
   background: var(--card);
