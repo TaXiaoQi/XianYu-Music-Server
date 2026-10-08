@@ -263,6 +263,7 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
         let arch = item.get("arch").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let url = crate::handlers::upload::absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &url);
         let updated_at = item.get("updated_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let app_name = match platform.as_str() {
             "mobile" => "弦予音乐移动端",
@@ -298,6 +299,7 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
             let version: String = r.get("version_code");
             let content: String = r.get("update_content");
             let url: String = r.get("download_url");
+            let url = crate::handlers::upload::absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &url);
             let size: i64 = r.get("file_size");
             let status: String = r.get("status");
             ctx.json(
@@ -347,14 +349,18 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
             } else {
                 system_label(&platform, sys_key).to_string()
             };
+            let raw_url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let raw_store = item.get("storeUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            // 后台可填相对路径（如 /uploads/packages/x.apk）：官网 safeUrl 只认绝对地址，
+            // 统一转绝对 URL，避免"服务端有版本、官网显示下载暂未开放"
             let entry = json!({
                 "system": sys_key,
                 "label": sys,
                 "arch": item.get("arch").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "version": item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "content": item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                "download_url": item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                "store_url": item.get("storeUrl").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                "download_url": crate::handlers::upload::absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &raw_url),
+                "store_url": crate::handlers::upload::absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &raw_store),
             });
             if first.is_none() {
                 first = Some(entry.clone());
@@ -387,6 +393,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
         Some(r) => {
             let version: String = r.get("version_code");
             let url: String = r.get("download_url");
+            let abs_url = crate::handlers::upload::absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &url);
             ctx.ok(
                 "ok",
                 json!({
@@ -395,7 +402,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                     "systems": [],
                     "version": version,
                     "content": "",
-                    "download_url": url,
+                    "download_url": abs_url,
                     "store_url": "",
                 }),
             )
