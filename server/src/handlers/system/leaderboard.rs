@@ -4,17 +4,26 @@ struct LeaderboardCacheEntry {
     entries: Vec<Value>,
     total_users: u32,
     at: Instant,
+    ttl: Duration,
 }
 
 static LEADERBOARD_CACHE: OnceLock<Mutex<HashMap<String, LeaderboardCacheEntry>>> = OnceLock::new();
-const LEADERBOARD_CACHE_TTL: Duration = Duration::from_secs(30);
 const LEADERBOARD_CACHE_MAX_ENTRIES: usize = 64;
+
+// TTL 按周期分级：daily 榜变化快用短缓存，weekly/total 变化慢用长缓存
+fn leaderboard_cache_ttl(period: &str) -> Duration {
+    match period {
+        "daily" => Duration::from_secs(60),
+        "weekly" => Duration::from_secs(300),
+        _ => Duration::from_secs(600),
+    }
+}
 
 fn leaderboard_cache_get(key: &str) -> Option<(Vec<Value>, u32)> {
     let cache = LEADERBOARD_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     let mut guard = cache.lock().ok()?;
     match guard.get(key) {
-        Some(e) if e.at.elapsed() <= LEADERBOARD_CACHE_TTL => Some((e.entries.clone(), e.total_users)),
+        Some(e) if e.at.elapsed() <= e.ttl => Some((e.entries.clone(), e.total_users)),
         Some(_) => {
             guard.remove(key);
             None
@@ -23,13 +32,13 @@ fn leaderboard_cache_get(key: &str) -> Option<(Vec<Value>, u32)> {
     }
 }
 
-fn leaderboard_cache_put(key: String, entries: Vec<Value>, total_users: u32) {
+fn leaderboard_cache_put(key: String, entries: Vec<Value>, total_users: u32, ttl: Duration) {
     let cache = LEADERBOARD_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
     if let Ok(mut guard) = cache.lock() {
         if guard.len() >= LEADERBOARD_CACHE_MAX_ENTRIES {
             guard.clear();
         }
-        guard.insert(key, LeaderboardCacheEntry { entries, total_users, at: Instant::now() });
+        guard.insert(key, LeaderboardCacheEntry { entries, total_users, at: Instant::now(), ttl });
     }
 }
 
@@ -186,7 +195,7 @@ async fn fetch_leaderboard_period(
         let total_users = sqlx::query(&count_sql).fetch_one(pool).await
             .map(|r| r.get::<i64, _>("cnt") as u32)
             .unwrap_or(entries.len() as u32);
-        leaderboard_cache_put(cache_key, entries.clone(), total_users);
+        leaderboard_cache_put(cache_key, entries.clone(), total_users, leaderboard_cache_ttl(period));
         (entries, total_users)
     };
 
