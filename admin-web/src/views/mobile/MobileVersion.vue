@@ -563,6 +563,7 @@ const desktopDraftEnabled = ref(false)
 const desktopDraftPlatform = ref<PlatformKey>('desktop')
 const desktopDraftSystem = ref<string>('windows')
 const desktopDraftArch = ref<string>('x86')
+const desktopDraftPkg = ref('')
 const desktopDraftChannel = ref<'stable' | 'beta'>('stable')
 const desktopDraftBetaNum = ref('')
 const desktopEditingVersion = ref('')
@@ -607,6 +608,7 @@ function openDesktopModal(item?: any) {
     desktopDraftPlatform.value = platformOf(item)
     desktopDraftSystem.value = systemOf(item)
     desktopDraftArch.value = archOf(item)
+    desktopDraftPkg.value = typeof item?.pkg === 'string' ? item.pkg : ''
     desktopDraftChannel.value = isBeta ? 'beta' : 'stable'
     desktopDraft.value = {
       version: isBeta ? version.slice(0, betaIdx) : version,
@@ -621,6 +623,7 @@ function openDesktopModal(item?: any) {
     desktopDraftPlatform.value = platformFilter.value
     desktopDraftSystem.value = systemFilter.value || defaultSystem(platformFilter.value)
     desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
+    desktopDraftPkg.value = ''
     desktopDraftChannel.value = 'stable'
     desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
     desktopDraftBetaNum.value = ''
@@ -678,6 +681,7 @@ async function saveDesktop() {
     platform: desktopDraftPlatform.value,
     system: desktopDraftSystem.value,
     arch: desktopDraftArch.value,
+    pkg: desktopDraftPkg.value,
     channel: desktopDraftChannel.value,
     version,
     original_version: desktopEditingVersion.value || '',
@@ -703,6 +707,7 @@ async function toggleDesktop(e: Event, item: any) {
     platform: platformOf(item),
     system: systemOf(item),
     arch: archOf(item),
+    pkg: typeof item?.pkg === 'string' ? item.pkg : '',
     channel: channelOf(item),
     version: item.version,
     download_url: item.downloadUrl || '',
@@ -722,7 +727,7 @@ async function toggleDesktop(e: Event, item: any) {
 async function deleteDesktop(item: any) {
   const ok = await mobileConfirm(`确认删除${platformLabelOf(item)}${systemLabelOf(item)} v${item.version} 的更新配置？`, { title: '删除配置', confirmText: '确认删除', danger: true })
   if (!ok) return
-  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), system: systemOf(item), arch: archOf(item), version: item.version })
+  const res = await adminApi('delete_desktop_version', { platform: platformOf(item), system: systemOf(item), arch: archOf(item), pkg: typeof item?.pkg === 'string' ? item.pkg : '', version: item.version })
   if (res.code === 200) { showToast('删除成功', 'success'); loadDesktop() }
   else showToast(res.msg || '删除失败')
 }
@@ -787,6 +792,7 @@ function applyDetectedMeta(fileName: string) {
     desktopDraftPlatform.value = meta.platform
     desktopDraftSystem.value = meta.system
     desktopDraftArch.value = meta.arch
+    desktopDraftPkg.value = meta.pkg
   }
   if (ver) {
     desktopDraft.value.version = ver.main

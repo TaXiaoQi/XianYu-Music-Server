@@ -74,13 +74,70 @@ export interface PackageMeta {
   platform: PlatformKey
   system: string
   arch: string
+  pkg: string   // 安装包格式（扩展名），同一系统下不同格式各自独立槽位；无法归入时为 ''
+}
+
+// 各平台 / 系统支持的安装包格式选项（与服务端 normalize_pkg 的平台级白名单对齐）
+export const PKG_META: Record<PlatformKey, Record<string, { key: string; label: string }[]>> = {
+  desktop: {
+    windows: [
+      { key: 'exe', label: 'EXE' },
+      { key: 'msi', label: 'MSI' },
+      { key: 'zip', label: 'ZIP' },
+      { key: '7z', label: '7Z' },
+      { key: 'rar', label: 'RAR' },
+    ],
+    linux: [
+      { key: 'deb', label: 'DEB' },
+      { key: 'rpm', label: 'RPM' },
+      { key: 'appimage', label: 'AppImage' },
+      { key: 'zip', label: 'ZIP' },
+      { key: '7z', label: '7Z' },
+      { key: 'rar', label: 'RAR' },
+    ],
+    macos: [
+      { key: 'dmg', label: 'DMG' },
+      { key: 'pkg', label: 'PKG' },
+      { key: 'zip', label: 'ZIP' },
+      { key: '7z', label: '7Z' },
+      { key: 'rar', label: 'RAR' },
+    ],
+  },
+  mobile: {
+    android: [{ key: 'apk', label: 'APK' }, { key: 'zip', label: 'ZIP' }, { key: '7z', label: '7Z' }, { key: 'rar', label: 'RAR' }],
+    harmonyos: [{ key: 'hap', label: 'HAP' }, { key: 'app', label: 'APP' }, { key: 'zip', label: 'ZIP' }, { key: '7z', label: '7Z' }, { key: 'rar', label: 'RAR' }],
+    ios: [{ key: 'ipa', label: 'IPA' }, { key: 'zip', label: 'ZIP' }, { key: '7z', label: '7Z' }, { key: 'rar', label: 'RAR' }],
+  },
+  watch: {
+    wearos: [{ key: 'apk', label: 'APK' }, { key: 'zip', label: 'ZIP' }, { key: '7z', label: '7Z' }, { key: 'rar', label: 'RAR' }],
+    ohos: [{ key: 'hap', label: 'HAP' }, { key: 'app', label: 'APP' }, { key: 'zip', label: 'ZIP' }, { key: '7z', label: '7Z' }, { key: 'rar', label: 'RAR' }],
+    watchos: [{ key: 'zip', label: 'ZIP' }, { key: '7z', label: '7Z' }, { key: 'rar', label: 'RAR' }],
+  },
+}
+
+export function pkgOptionsOf(platform: PlatformKey | '', system: string): { key: string; label: string }[] {
+  if (!platform) return []
+  return PKG_META[platform]?.[system] || []
+}
+
+export function pkgLabelOf(platform: PlatformKey | '', pkg: string): string {
+  if (!pkg) return ''
+  for (const systems of Object.values(PKG_META)) {
+    for (const options of Object.values(systems)) {
+      const hit = options.find(o => o.key === pkg)
+      if (hit) return hit.label
+    }
+  }
+  return pkg.toUpperCase()
 }
 
 // 支持的安装包扩展名（含压缩包壳与常见移动端格式）
 export const PACKAGE_ALLOWED_EXT = ['exe', 'msi', 'zip', '7z', 'rar', 'dmg', 'pkg', 'apk', 'hap', 'app', 'ipa', 'deb', 'rpm', 'appimage']
 
 export function packageMetaLabel(meta: PackageMeta): string {
-  return `${platformLabelOf(meta.platform)} · ${systemLabelOf(meta.platform, meta.system)} · ${archLabelOf(meta.platform, meta.arch)}`
+  const base = `${platformLabelOf(meta.platform)} · ${systemLabelOf(meta.platform, meta.system)} · ${archLabelOf(meta.platform, meta.arch)}`
+  const pkg = pkgLabelOf(meta.platform, meta.pkg)
+  return pkg ? `${base} · ${pkg}` : base
 }
 
 export interface PackageVersionInfo {
@@ -163,5 +220,7 @@ export function detectPackageMeta(fileName: string): PackageMeta | null {
   }
   if (!arch) arch = defaultArchOf(platform)
 
-  return { platform, system, arch }
+  // 安装包格式：取扩展名并归一到该平台 / 系统支持的格式列表
+  const pkg = pkgOptionsOf(platform, system).some(o => o.key === ext) ? ext : ''
+  return { platform, system, arch, pkg }
 }

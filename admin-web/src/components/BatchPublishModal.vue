@@ -9,7 +9,7 @@
           </button>
         </div>
         <div class="bpm-form">
-          <p class="bpm-hint">一次发布同一版本号到多个平台：批量添加各平台安装包，自动识别平台 / 系统 / 架构，可逐条修正后统一保存。</p>
+          <p class="bpm-hint">一次发布同一版本号到多个平台：批量添加各平台安装包，自动识别平台 / 系统 / 架构 / 格式，可逐条修正后统一保存。</p>
 
           <div class="bpm-field">
             <label class="bpm-required">更新渠道</label>
@@ -32,7 +32,7 @@
           </div>
 
           <div class="bpm-field">
-            <label>安装包（可多选，自动识别平台 / 系统 / 架构）</label>
+            <label>安装包（可多选，自动识别平台 / 系统 / 架构 / 格式）</label>
             <div
               class="bpm-dropzone"
               :class="{ dragging }"
@@ -65,10 +65,22 @@
                 <select v-model="row.arch" :disabled="!row.platform || row.platform === 'mobile'">
                   <option v-for="a in archOptionsOf(row.platform)" :key="a.key" :value="a.key">{{ a.label }}</option>
                 </select>
+                <select v-model="row.pkg" :disabled="!row.platform" title="安装包格式">
+                  <option value="">格式</option>
+                  <option v-for="f in pkgOptionsOf(row.platform, row.system)" :key="f.key" :value="f.key">{{ f.label }}</option>
+                </select>
                 <button type="button" class="bpm-row-del" title="移除" @click="removeRow(row)">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
               </div>
+              <!-- 后台上传状态：选中文件即开始上传，与新增版本弹窗一致 -->
+              <div v-if="row.uploading" class="bpm-row-up">
+                <div class="bpm-up-track"><div class="bpm-up-fill" :style="{ width: row.progress + '%' }"></div></div>
+                <span class="bpm-up-pct">{{ row.progress }}%</span>
+                <button type="button" class="bpm-up-cancel" @click="cancelRowUpload(row)">取消</button>
+              </div>
+              <p v-else-if="row.uploaded" class="bpm-row-up-ok">安装包已上传完成</p>
+              <p v-else-if="row.uploadError" class="bpm-row-err">{{ row.uploadError }}（发布时将自动重试）</p>
               <p v-if="!row.platform" class="bpm-row-err">未能识别平台，请手动选择平台 / 系统 / 架构</p>
               <p v-else-if="row.error" class="bpm-row-err">{{ row.error }}</p>
             </div>
@@ -87,7 +99,8 @@
             </div>
           </div>
 
-          <p v-if="saving" class="bpm-progress"><span class="bpm-spinner"></span>正在发布 {{ doneCount + 1 }}/{{ rows.length }}，大文件上传需要一些时间...</p>
+          <p v-if="saving" class="bpm-progress"><span class="bpm-spinner"></span>正在发布 {{ doneCount + 1 }}/{{ rows.length }}...</p>
+          <p v-else-if="uploadingCount" class="bpm-progress"><span class="bpm-spinner"></span>正在上传安装包 {{ uploadingCount }}/{{ rows.length }}，发布时会自动等待上传完成</p>
           <p v-else-if="rows.length" class="bpm-progress bpm-progress-idle">共 {{ rows.length }} 个平台，将共用版本号 {{ composedVersion || '（未填写）' }}</p>
         </div>
         <div class="bpm-foot">
@@ -102,8 +115,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { adminApi, showToast } from '@/api/client'
+import { ref, computed } from 'vue'
+import { adminApi, showToast, type ApiResponse } from '@/api/client'
+import { uploadPackage } from '@/api/version'
 import {
   PACKAGE_ALLOWED_EXT,
   PLATFORM_OPTIONS,
@@ -112,6 +126,7 @@ import {
   defaultSystemOf,
   defaultArchOf,
   detectPackageMeta,
+  pkgOptionsOf,
   type PlatformKey,
 } from '@/utils/packageDetect'
 
@@ -121,7 +136,14 @@ interface Row {
   platform: PlatformKey | ''
   system: string
   arch: string
+  pkg: string
   error: string
+  // 后台上传状态（选中文件即开始上传，与新增版本弹窗一致）
+  uploading: boolean
+  progress: number
+  uploaded: boolean
+  downloadUrl: string
+  uploadError: string
 }
 
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>()
@@ -137,6 +159,11 @@ const dragging = ref(false)
 const saving = ref(false)
 const doneCount = ref(0)
 const fileRef = ref<HTMLInputElement | null>(null)
+
+// 上传句柄与任务（非响应式，按行 id 索引）
+const uploadHandles = new Map<number, { abort: () => void }>()
+const uploadTasks = new Map<number, Promise<ApiResponse>>()
+const uploadingCount = computed(() => rows.value.filter(r => r.uploading).length)
 
 const acceptAttr = PACKAGE_ALLOWED_EXT.map(e => `.${e}`).join(',')
 
@@ -164,20 +191,29 @@ function addFiles(files: FileList | File[]) {
     }
     const meta = detectPackageMeta(file.name)
     if (!meta) unrecognized++
-    const key = meta ? `${meta.platform}-${meta.system}-${meta.arch}` : `raw-${file.name}`
-    if (rows.value.some(r => (r.platform ? `${r.platform}-${r.system}-${r.arch}` : `raw-${r.file.name}`) === key)) {
+    const key = meta ? `${meta.platform}-${meta.system}-${meta.arch}-${meta.pkg}` : `raw-${file.name}`
+    if (rows.value.some(r => (r.platform ? `${r.platform}-${r.system}-${r.arch}-${r.pkg}` : `raw-${r.file.name}`) === key)) {
       dup++
       continue
     }
-    rows.value.push({
+    const row: Row = {
       id: rowSeq++,
       file,
       platform: meta?.platform || '',
       system: meta?.system || '',
       arch: meta?.arch || '',
+      pkg: meta?.pkg || '',
       error: '',
-    })
+      uploading: false,
+      progress: 0,
+      uploaded: false,
+      downloadUrl: '',
+      uploadError: '',
+    }
+    rows.value.push(row)
     added++
+    // 选中即后台上传，与新增版本弹窗一致；发布时等待/重试
+    startRowUpload(row)
   }
   if (added && unrecognized) showToast(`${unrecognized} 个安装包未能识别平台，请在列表中手动选择`)
   if (dup) showToast(`${dup} 个安装包与已添加条目重复，已跳过`)
@@ -198,16 +234,102 @@ function onRowPlatform(row: Row) {
   if (!row.platform) return
   row.system = defaultSystemOf(row.platform)
   row.arch = defaultArchOf(row.platform)
+  // 平台 / 系统变更后，原格式若不属于新维度则重置
+  if (!pkgOptionsOf(row.platform, row.system).some(o => o.key === row.pkg)) row.pkg = ''
 }
 
 function onRowSystem(row: Row) {
   if (row.platform === 'watch' && (row.system === 'ohos' || row.system === 'watchos')) {
     row.arch = 'arm64'
   }
+  if (row.platform && !pkgOptionsOf(row.platform, row.system).some(o => o.key === row.pkg)) row.pkg = ''
 }
 
 function removeRow(row: Row) {
+  abortRowUpload(row)
   rows.value = rows.value.filter(r => r.id !== row.id)
+}
+
+// ==================== 行级后台上传 ====================
+
+function startRowUpload(row: Row) {
+  if (uploadTasks.has(row.id)) return
+  row.uploading = true
+  row.progress = 0
+  row.uploaded = false
+  row.downloadUrl = ''
+  row.uploadError = ''
+  const task = (async (): Promise<ApiResponse> => {
+    let fileData = ''
+    try {
+      fileData = await readFileAsBase64(row.file)
+    } catch {
+      if (!rows.value.some(r => r.id === row.id)) return { code: 499, msg: '上传已取消', data: null }
+      row.uploading = false
+      row.uploadError = '安装包读取失败'
+      return { code: 500, msg: '安装包读取失败', data: null }
+    }
+    if (!rows.value.some(r => r.id === row.id)) return { code: 499, msg: '上传已取消', data: null }
+    const handle = uploadPackage({ file_name: row.file.name, file_data: fileData }, (p) => {
+      row.progress = p
+    })
+    uploadHandles.set(row.id, handle)
+    const res = await handle.promise
+    uploadHandles.delete(row.id)
+    if (!rows.value.some(r => r.id === row.id)) return res
+    row.uploading = false
+    if (res.code === 200 && res.data?.download_url) {
+      row.progress = 100
+      row.uploaded = true
+      row.downloadUrl = res.data.download_url
+    } else if (res.code !== 499) {
+      row.uploadError = res.msg || '安装包上传失败'
+    }
+    return res
+  })()
+  uploadTasks.set(row.id, task)
+  task.finally(() => {
+    if (uploadTasks.get(row.id) === task) uploadTasks.delete(row.id)
+  })
+}
+
+// 取消单行上传（移除该行时调用）
+function abortRowUpload(row: Row) {
+  uploadHandles.get(row.id)?.abort()
+  uploadHandles.delete(row.id)
+  uploadTasks.delete(row.id)
+}
+
+// 用户点击行内取消：中断上传并重置状态
+async function cancelRowUpload(row: Row) {
+  abortRowUpload(row)
+  row.uploading = false
+  row.progress = 0
+  row.uploaded = false
+  row.downloadUrl = ''
+  row.uploadError = ''
+  showToast(`已取消上传：${row.file.name}`)
+}
+
+// 发布前调用：已完成直接通过；上传中等待；失败/被取消则重启上传再等待
+async function ensureRowUploaded(row: Row): Promise<boolean> {
+  if (row.uploaded && row.downloadUrl) return true
+  const running = uploadTasks.get(row.id)
+  if (running) {
+    await running
+  } else {
+    row.uploadError = ''
+    startRowUpload(row)
+    await uploadTasks.get(row.id)
+  }
+  return row.uploaded && !!row.downloadUrl
+}
+
+// 关闭弹窗时取消全部未完成上传
+function abortAllUploads() {
+  for (const handle of uploadHandles.values()) handle.abort()
+  uploadHandles.clear()
+  uploadTasks.clear()
 }
 
 function systemOptionsOf(platform: PlatformKey | '') {
@@ -253,9 +375,9 @@ async function saveAll() {
   }
   const seen = new Set<string>()
   for (const r of rows.value) {
-    const key = `${r.platform}-${r.system}-${r.arch}`
+    const key = `${r.platform}-${r.system}-${r.arch}-${r.pkg}`
     if (seen.has(key)) {
-      showToast('存在重复的平台 / 系统 / 架构组合，请检查列表')
+      showToast('存在重复的平台 / 系统 / 架构 / 格式组合，请检查列表')
       return
     }
     seen.add(key)
@@ -266,19 +388,25 @@ async function saveAll() {
   for (let i = 0; i < rows.value.length; i++) {
     const row = rows.value[i]
     try {
-      const fileData = await readFileAsBase64(row.file)
+      // 等待/重试该行的后台上传，拿到 download_url 后再保存版本
+      const uploaded = await ensureRowUploaded(row)
+      if (!uploaded) {
+        row.error = row.uploadError || '安装包上传未完成，请重试'
+        remain.push(row)
+        doneCount.value = i + 1
+        continue
+      }
       const res = await adminApi('save_desktop_version', {
         platform: row.platform,
         system: row.system,
         arch: row.arch,
+        pkg: row.pkg,
         channel: channel.value,
         version: ver,
-        download_url: '',
+        download_url: row.downloadUrl,
         update_content: updateContent.value.trim(),
         enabled: enabled.value ? 1 : 0,
         store_url: '',
-        file_name: row.file.name,
-        file_data: fileData,
       })
       if (res.code === 200) {
         row.error = ''
@@ -305,7 +433,9 @@ async function saveAll() {
 }
 
 function requestClose() {
-  if (!saving.value) emit('close')
+  if (saving.value) return
+  abortAllUploads()
+  emit('close')
 }
 </script>
 
@@ -463,6 +593,40 @@ function requestClose() {
 }
 .bpm-row-del:hover { background: #fdeced; color: #e5484d; }
 .bpm-row-err { margin: 0; font-size: 12px; color: #e5484d; }
+.bpm-row-up { display: flex; align-items: center; gap: 8px; }
+.bpm-up-track {
+  flex: 1;
+  height: 6px;
+  background: #f2f3f5;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.bpm-up-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff7a45, #e5484d);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+.bpm-up-pct {
+  font-size: 12px;
+  color: #5c6370;
+  min-width: 34px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.bpm-up-cancel {
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: #a0a6b0;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+}
+.bpm-up-cancel:hover { background: #fdeced; color: #e5484d; }
+.bpm-row-up-ok { margin: 0; font-size: 12px; color: #30a46c; }
 .bpm-progress {
   margin: 0;
   display: flex;

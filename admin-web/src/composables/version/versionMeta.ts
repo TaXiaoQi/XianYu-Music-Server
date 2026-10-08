@@ -91,3 +91,20 @@ export function platformLabelOf(item: any): string {
 export function systemLabelOf(item: any): string {
   return systemLabelKey(platformOf(item), systemOf(item))
 }
+
+// 安装包格式维度（pkg）：历史数据无该字段时归一为 ''（通用槽位）
+const PKG_LABELS: Record<string, string> = {
+  exe: 'EXE', msi: 'MSI', deb: 'DEB', rpm: 'RPM', appimage: 'AppImage',
+  dmg: 'DMG', pkg: 'PKG', apk: 'APK', hap: 'HAP', app: 'APP', ipa: 'IPA',
+  zip: 'ZIP', '7z': '7Z', rar: 'RAR',
+}
+
+export function pkgOf(item: any): string {
+  const p = item?.pkg
+  return typeof p === 'string' ? p.trim().toLowerCase() : ''
+}
+
+export function pkgLabelOf(item: any): string {
+  const pkg = pkgOf(item)
+  return PKG_LABELS[pkg] || pkg.toUpperCase()
+}

@@ -7,7 +7,7 @@ import type { VersionDraft } from './useVersionDraft'
 
 // 下载渠道 / 安装包上传 / 商店分发：配置弹窗的状态与操作
 export function useVersionChannel(draft: VersionDraft) {
-  const { desktopDraft, desktopDraftEnabled, desktopDraftPlatform, desktopDraftSystem, desktopDraftArch, desktopDraftChannel, desktopDraftBetaNum, desktopEditingVersion } = draft
+  const { desktopDraft, desktopDraftEnabled, desktopDraftPlatform, desktopDraftSystem, desktopDraftArch, desktopDraftPkg, desktopDraftChannel, desktopDraftBetaNum, desktopEditingVersion } = draft
 
   const desktopChannelModalVisible = ref(false)
   const desktopChannelMode = ref<'link' | 'upload'>('link')
@@ -188,6 +188,7 @@ export function useVersionChannel(draft: VersionDraft) {
       desktopDraftPlatform.value = meta.platform
       desktopDraftSystem.value = meta.system
       desktopDraftArch.value = meta.arch
+      desktopDraftPkg.value = meta.pkg
     }
     if (ver) {
       desktopDraft.value.version = ver.main

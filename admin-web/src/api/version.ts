@@ -7,6 +7,7 @@ export interface DesktopVersionSavePayload {
   platform: string
   system: string
   arch: string
+  pkg: string
   channel: 'stable' | 'beta'
   version: string
   original_version?: string
@@ -22,6 +23,7 @@ export interface DesktopVersionDeletePayload {
   platform: string
   system: string
   arch: string
+  pkg: string
   version: string
 }
 

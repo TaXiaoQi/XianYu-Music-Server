@@ -109,7 +109,7 @@
           <TransitionGroup name="card">
             <div
               v-for="(item, idx) in filteredList"
-              :key="`${item.platform || 'desktop'}-${systemOf(item)}-${archOf(item)}-${item.version}`"
+              :key="`${item.platform || 'desktop'}-${systemOf(item)}-${archOf(item)}-${pkgOf(item)}-${item.version}`"
               class="ann-card"
               :class="{ disabled: !item.enabled }"
               :style="{ animationDelay: `${idx * 60}ms` }"
@@ -120,6 +120,7 @@
                   <div class="card-badges">
                     <span class="type-badge" :class="`badge-${systemOf(item)}`">{{ systemLabelOf(item) }}</span>
                     <span class="type-badge badge-arch">{{ archLabelOf(item) }}</span>
+                    <span v-if="pkgOf(item)" class="type-badge badge-arch">{{ pkgLabelOf(item) }}</span>
                     <span v-if="channelOf(item) === 'beta'" class="type-badge badge-beta">测试版</span>
                   </div>
                   <label class="toggle-switch" :title="item.enabled ? '点击禁用' : '点击启用'">
@@ -211,6 +212,30 @@
                 </button>
               </div>
               <p v-if="watchArchLocked" class="field-hint">鸿蒙 / watchOS 仅支持 ARM64 架构。</p>
+            </div>
+            <div class="field">
+              <label>安装包格式</label>
+              <div class="type-picker platform-picker pkg-picker">
+                <button
+                  class="type-option pick-platform"
+                  :class="{ active: desktopDraftPkg === '', locked: !!desktopEditingVersion }"
+                  :disabled="!!desktopEditingVersion"
+                  @click="desktopDraftPkg = ''"
+                >
+                  <span class="pick-dot"></span>通用
+                </button>
+                <button
+                  v-for="f in pkgOptionsOf(desktopDraftPlatform, desktopDraftSystem)"
+                  :key="f.key"
+                  class="type-option pick-platform"
+                  :class="{ active: desktopDraftPkg === f.key, locked: !!desktopEditingVersion }"
+                  :disabled="!!desktopEditingVersion"
+                  @click="desktopDraftPkg = f.key"
+                >
+                  <span class="pick-dot"></span>{{ f.label }}
+                </button>
+              </div>
+              <p class="field-hint">同一系统可按安装包格式细分（如 Linux 的 DEB / RPM / AppImage 各占一个槽位）；「通用」适用于外链等不确定格式的场景，上传安装包时自动按扩展名归位。</p>
             </div>
             <div class="field">
               <label class="required">更新渠道</label>
@@ -518,10 +543,13 @@ import {
   archLabelOf,
   archOf,
   channelOf,
+  pkgLabelOf,
+  pkgOf,
   platformLabelKey,
   systemLabelOf,
   systemOf,
 } from '@/composables/version/versionMeta'
+import { pkgOptionsOf } from '@/utils/packageDetect'
 import { useVersionSaving } from '@/composables/version/useVersionSaving'
 import { useVersionList } from '@/composables/version/useVersionList'
 import { useVersionDraft } from '@/composables/version/useVersionDraft'
@@ -566,6 +594,7 @@ const {
   desktopDraftPlatform,
   desktopDraftSystem,
   desktopDraftArch,
+  desktopDraftPkg,
   desktopDraftChannel,
   desktopDraftBetaNum,
   desktopEditingVersion,
@@ -1252,6 +1281,8 @@ onMounted(() => {
   display: flex;
   gap: 8px;
 }
+/* 安装包格式选项较多（如 Linux 有 DEB / RPM / AppImage 等），允许换行 */
+.pkg-picker { flex-wrap: wrap; }
 .type-option {
   display: inline-flex;
   align-items: center;

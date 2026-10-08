@@ -280,6 +280,23 @@ fn item_arch(item: &Value, platform: &str) -> String {
     }
 }
 
+// 安装包格式：取安装包扩展名（如 deb / rpm / appimage），是版本条目的独立身份维度，
+// 让同一系统下的不同格式（如 Linux 的 DEB / RPM / AppImage）各自占据独立槽位。
+// 空值表示「通用」槽位（外链不确定格式或历史数据）。
+fn normalize_pkg(platform: &str, raw: &str) -> String {
+    let allowed: &[&str] = match platform {
+        "mobile" => &["apk", "hap", "app", "ipa", "zip", "7z", "rar"],
+        "watch" => &["apk", "hap", "app", "zip", "7z", "rar"],
+        _ => &["exe", "msi", "deb", "rpm", "appimage", "dmg", "pkg", "zip", "7z", "rar"],
+    };
+    let r = raw.trim().to_lowercase();
+    if allowed.contains(&r.as_str()) { r } else { String::new() }
+}
+
+fn item_pkg(item: &Value) -> String {
+    normalize_pkg(&item_platform(item), item.get("pkg").and_then(|v| v.as_str()).unwrap_or("").trim())
+}
+
 fn item_platform(item: &Value) -> String {
     normalize_platform(item.get("platform").and_then(|v| v.as_str()).unwrap_or("desktop").trim())
 }
@@ -360,6 +377,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     let system = normalize_system(&platform, str_of(&data, "system").trim());
     let channel = normalize_channel(str_of(&data, "channel").trim());
     let arch = normalize_arch(&platform, str_of(&data, "arch").trim());
+    let mut pkg = normalize_pkg(&platform, str_of(&data, "pkg").trim());
     let mut download_url = str_of(&data, "download_url").trim().to_string();
     let update_content = str_of(&data, "update_content").trim().to_string();
     let enabled = int_of(&data, "enabled") != 0;
@@ -387,6 +405,12 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
             { tracing::error!("无法创建安装包目录: {e}"); return err(500, "无法创建安装包目录"); }
         }
         let ext = safe_file_ext(&file_name);
+        // 上传安装包时格式以文件扩展名为准：扩展名必须属于该平台支持的格式
+        let ext_pkg = normalize_pkg(&platform, &ext);
+        if ext_pkg.is_empty() {
+            return err(400, &format!("安装包格式 .{} 与{}平台不符", ext, platform_label(&platform)));
+        }
+        pkg = ext_pkg;
         let ts = chrono::Local::now().format("%Y%m%d%H%M%S").to_string();
         let existing_pkg_name = list
             .iter()
@@ -395,6 +419,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
                     && item_system(item) == system
                     && item_channel(item) == channel
                     && item_arch(item, &platform) == arch
+                    && item_pkg(item) == pkg
                     && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
             })
             .and_then(|item| item.get("downloadUrl").and_then(|v| v.as_str()))
@@ -432,6 +457,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
             && item_system(item) == system
             && item_channel(item) == channel
             && item_arch(item, &platform) == arch
+            && item_pkg(item) == pkg
             && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
     });
     // 编辑改名：original_version 指向被替换的旧版本号（如把 1.0.3-beta2 改名为 1.0.3-beta1）
@@ -443,7 +469,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     if is_new && original_version.is_empty() {
         let mut max_ver: Option<&str> = None;
         for item in &list {
-            if item_platform(item) != platform || item_system(item) != system || item_channel(item) != channel || item_arch(item, &platform) != arch {
+            if item_platform(item) != platform || item_system(item) != system || item_channel(item) != channel || item_arch(item, &platform) != arch || item_pkg(item) != pkg {
                 continue;
             }
             let ver = item.get("version").and_then(|v| v.as_str()).unwrap_or("");
@@ -460,7 +486,8 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
             if compare_version_code(&version, mv) <= 0 {
                 let channel_label = if channel == "beta" { "测试版" } else { "正式版" };
                 let sys_label = system_label(&platform, &system);
-                return err(400, &format!("新版本 {} 必须大于{}{}[{}]已有的最高版本 {}", version, sys_label, channel_label, arch, mv));
+                let dim_label = if pkg.is_empty() { arch.clone() } else { format!("{arch}·{}", pkg.to_uppercase()) };
+                return err(400, &format!("新版本 {} 必须大于{}{}[{}]已有的最高版本 {}", version, sys_label, channel_label, dim_label, mv));
             }
         }
     }
@@ -470,6 +497,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         "system": system.clone(),
         "channel": channel.clone(),
         "arch": arch.clone(),
+        "pkg": pkg.clone(),
         "version": version.clone(),
         "downloadUrl": download_url,
         "updateContent": update_content,
@@ -485,6 +513,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
                 && item_system(item) == system
                 && item_channel(item) == channel
                 && item_arch(item, &platform) == arch
+                && item_pkg(item) == pkg
                 && item.get("version").and_then(|v| v.as_str()) == Some(original_version.as_str())
             {
                 *item = new_item.clone();
@@ -501,6 +530,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
                 && item_system(item) == system
                 && item_channel(item) == channel
                 && item_arch(item, &platform) == arch
+                && item_pkg(item) == pkg
                 && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
             {
                 *item = new_item.clone();
@@ -599,6 +629,7 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
         normalize_system(&platform, &raw_system)
     };
     let arch = normalize_arch(&platform, str_of(&data, "arch").trim());
+    let pkg = normalize_pkg(&platform, str_of(&data, "pkg").trim());
     if version.is_empty() {
         return err(400, "版本号不能为空");
     }
@@ -611,6 +642,7 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
             item_platform(item) == platform
                 && item_system(item) == system
                 && item_arch(item, &platform) == arch
+                && item_pkg(item) == pkg
                 && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str())
         })
         .filter_map(|item| {
@@ -625,6 +657,7 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
         !(item_platform(item) == platform
             && item_system(item) == system
             && item_arch(item, &platform) == arch
+            && item_pkg(item) == pkg
             && item.get("version").and_then(|v| v.as_str()) == Some(version.as_str()))
     });
     if list.len() == before {

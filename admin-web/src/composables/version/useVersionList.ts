@@ -7,6 +7,7 @@ import {
   SYSTEM_META,
   archOf,
   channelOf,
+  pkgOf,
   platformLabelKey,
   platformLabelOf,
   platformOf,
@@ -71,6 +72,7 @@ export function useVersionList(deps: VersionListDeps) {
       platform: platformOf(item),
       system: systemOf(item),
       arch: archOf(item),
+      pkg: pkgOf(item),
       channel: channelOf(item),
       version: item.version,
       download_url: item.downloadUrl || '',
@@ -91,7 +93,7 @@ export function useVersionList(deps: VersionListDeps) {
   async function deleteDesktop(item: any) {
     const ok = await webConfirm(`确认删除${systemLabelOf(item)}${platformLabelOf(item)} v${item.version} 的更新配置？`, { title: '删除配置', confirmText: '确认删除' })
     if (!ok) return
-    const res = await deleteDesktopVersion({ platform: platformOf(item), system: systemOf(item), arch: archOf(item), version: item.version })
+    const res = await deleteDesktopVersion({ platform: platformOf(item), system: systemOf(item), arch: archOf(item), pkg: pkgOf(item), version: item.version })
     if (res.code === 200) {
       showToast('删除成功', 'success')
       loadDesktop()

@@ -2,7 +2,7 @@ import { ref } from 'vue'
 import type { Ref } from 'vue'
 import { showToast } from '@/api/client'
 import { saveDesktopVersion } from '@/api/version'
-import { archOf, defaultArch, defaultSystem, platformOf, systemOf } from './versionMeta'
+import { archOf, defaultArch, defaultSystem, pkgOf, platformOf, systemOf } from './versionMeta'
 import type { PlatformKey } from './versionMeta'
 import type { VersionDraft } from './useVersionDraft'
 import type { VersionChannel } from './useVersionChannel'
@@ -22,6 +22,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
     desktopDraftPlatform,
     desktopDraftSystem,
     desktopDraftArch,
+    desktopDraftPkg,
     desktopDraftChannel,
     desktopDraftBetaNum,
     desktopEditingVersion,
@@ -43,6 +44,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
       desktopDraftPlatform.value = platformOf(item)
       desktopDraftSystem.value = systemOf(item)
       desktopDraftArch.value = archOf(item)
+      desktopDraftPkg.value = pkgOf(item)
       desktopDraftChannel.value = isBeta ? 'beta' : 'stable'
       desktopDraft.value = {
         version: isBeta ? version.slice(0, betaIdx) : version,
@@ -58,6 +60,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
       desktopDraftPlatform.value = platformFilter.value
       desktopDraftSystem.value = systemFilter.value || defaultSystem(platformFilter.value)
       desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
+      desktopDraftPkg.value = ''
       desktopDraftChannel.value = 'stable'
       desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
       desktopDraftBetaNum.value = ''
@@ -102,6 +105,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
       platform: desktopDraftPlatform.value,
       system: desktopDraftSystem.value,
       arch: desktopDraftArch.value,
+      pkg: desktopDraftPkg.value,
       channel: desktopDraftChannel.value,
       version,
       original_version: desktopEditingVersion.value || '',
