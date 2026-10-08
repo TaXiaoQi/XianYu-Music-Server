@@ -356,9 +356,9 @@
                   <td>
                     <button
                       class="btn btn-sm btn-danger"
-                      :disabled="playlistDeleting >= 0"
+                      :disabled="playlistDeleting.has(i)"
                       @click="removePlaylist(p, i)"
-                    >{{ playlistDeleting === i ? '删除中...' : '删除' }}</button>
+                    >{{ playlistDeleting.has(i) ? '删除中...' : '删除' }}</button>
                   </td>
                 </tr>
               </tbody>

@@ -20,7 +20,8 @@ export function usePlaylistsModal() {
   const playlistsLoading = ref(false)
   const playlistsData = ref<any>({})
   const playlistsUser = ref<User | null>(null)
-  const playlistDeleting = ref(-1)
+  // 正在删除的行下标集合：多行可并发删除，互不阻塞（服务端按歌单名定位，下标漂移不影响）
+  const playlistDeleting = ref<Set<number>>(new Set())
 
   async function viewPlaylists(u: User) {
     playlistsUser.value = u
@@ -36,24 +37,28 @@ export function usePlaylistsModal() {
     }
   }
 
-  // 删除快照中的单个歌单
+  // 删除快照中的单个歌单（支持多行并发：每行独立进行，完成后刷新一次对齐最新列表）
   async function removePlaylist(p: any, index: number) {
     const u = playlistsUser.value
-    if (!u || playlistDeleting.value >= 0) return
+    if (!u || playlistDeleting.value.has(index)) return
+    playlistDeleting.value.add(index)
     const ok = await webConfirm(
       `确定删除歌单「${p.name || '(未命名)'}」？将从服务器的同步快照中移除该歌单（含 ${p.songCount || 0} 首歌曲），该用户客户端下次全量同步后可能恢复。`,
       { title: '删除歌单', confirmText: '确认删除' }
     )
-    if (!ok) return
-    playlistDeleting.value = index
+    if (!ok) {
+      playlistDeleting.value.delete(index)
+      return
+    }
     const res = await deleteUserSyncPlaylist({ user_id: u.id, index, name: p.name || '' })
-    playlistDeleting.value = -1
+    playlistDeleting.value.delete(index)
     if (res.code === 200) {
       showToast('删除成功', 'success')
-      await viewPlaylists(u)
     } else {
       showToast(res.msg || '删除失败')
     }
+    // 无论成败都刷新：并发删除后其余行下标已漂移，以服务端最新数据为准
+    await viewPlaylists(u)
   }
 
   return { showPlaylistsModal, playlistsLoading, playlistsData, viewPlaylists, removePlaylist, playlistDeleting, formatPlaylistType }

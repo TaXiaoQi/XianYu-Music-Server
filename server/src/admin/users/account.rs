@@ -468,23 +468,37 @@ pub async fn delete_user_sync_playlist(body: &str, ctx: &AdminCtx, pool: &MySqlP
         Ok(v) => v,
         Err(_) => return err(404, "该用户暂无歌单同步数据"),
     };
+    // 进程内串行化：删除是「读出整份快照 → 移除一条 → 整体写回」，不串行会互相覆盖丢删除。
+    // 管理端操作频率极低，进程级全局锁足够（不同用户之间短暂串行无感知）。
+    static SNAPSHOT_RMW_LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    let _rmw_guard = SNAPSHOT_RMW_LOCK.get_or_init(|| tokio::sync::Mutex::new(())).lock().await;
     let Some(playlists) = save_data.get_mut("playlists").and_then(|x| x.as_array_mut()) else {
         return err(404, "该用户暂无歌单同步数据");
     };
-    if index < 0 || index as usize >= playlists.len() {
-        return err(404, "歌单不存在或已被删除，请刷新后重试");
-    }
-    // 校验名称防止数据变化后误删（前端传入打开弹窗时的歌单名）
-    let pl_name = playlists[index as usize].get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
-    if !expect_name.is_empty() && pl_name != expect_name {
-        return err(409, "歌单数据已变化，请刷新后重试");
-    }
-    let song_count = playlists[index as usize]
+    // 定位目标歌单。支持管理端并发删除：并发后下标会漂移，歌单名才是稳定标识——
+    // 下标处名字仍匹配则走快路径，否则按名字全表定位；名字为空退回纯下标（兼容旧调用）。
+    let target = if expect_name.is_empty() {
+        if index < 0 || index as usize >= playlists.len() {
+            return err(404, "歌单不存在或已被删除，请刷新后重试");
+        }
+        index as usize
+    } else if index >= 0
+        && playlists.get(index as usize).and_then(|p| p.get("name")).and_then(|x| x.as_str()) == Some(expect_name.as_str())
+    {
+        index as usize
+    } else {
+        match playlists.iter().position(|p| p.get("name").and_then(|x| x.as_str()) == Some(expect_name.as_str())) {
+            Some(pos) => pos,
+            None => return err(404, "歌单不存在或已被删除，请刷新后重试"),
+        }
+    };
+    let pl_name = playlists[target].get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+    let song_count = playlists[target]
         .get("songs")
         .and_then(|x| x.as_array())
         .map(|a| a.len() as i64)
         .unwrap_or(0);
-    playlists.remove(index as usize);
+    playlists.remove(target);
     let song_total: i64 = playlists
         .iter()
         .map(|p| p.get("songs").and_then(|s| s.as_array()).map(|a| a.len() as i64).unwrap_or(0))
