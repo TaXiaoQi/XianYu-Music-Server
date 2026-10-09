@@ -954,6 +954,7 @@ pub async fn log_retention_loop(pool: &MySqlPool) {
         ("error_log", "error_time", 7),
         ("source_call_log", "call_time", 30),
         ("app_open_log", "created_at", 30),
+        ("input_stats_log", "created_at", 30),
         ("view_access_log", "created_at", 30),
         ("login_log", "login_time", 90),
         ("admin_login_log", "created_at", 90),

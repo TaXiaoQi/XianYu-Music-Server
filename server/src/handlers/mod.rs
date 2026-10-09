@@ -42,6 +42,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "error" => reporting::error(body, ctx, pool).await,
         "report_user_behavior" => reporting::report_user_behavior(body, ctx, pool).await,
         "search" => reporting::search(body, ctx, pool).await,
+        "input_stats" => reporting::input_stats(body, ctx, pool).await,
         "get_hot_search" => reporting::get_hot_search(body, ctx, pool).await,
         "get_daily_recommend" => recommend::get_daily_recommend(body, ctx, pool).await,
         "report_daily_dislike" => recommend::report_daily_dislike(body, ctx, pool).await,

@@ -949,6 +949,18 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_device_id` (`device_id`),
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        // 搜索输入统计流水（input_stats）：客户端 1.5s 批量 flush 上报键入字数，
+        // 仅 insert 不更新，保留 30 天由 log_retention_loop 清理
+        "CREATE TABLE IF NOT EXISTS `input_stats_log` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `device_id` varchar(128) NOT NULL DEFAULT '',
+            `char_count` int(11) NOT NULL DEFAULT 0,
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_device_id` (`device_id`),
+            KEY `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_announcement_confirmations` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',

@@ -143,6 +143,34 @@ pub async fn search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     ctx.ok_empty("ok")
 }
 
+/// 搜索键入字数上报（input_stats）：客户端按 1.5s 窗口合并后上报，
+/// 单条正常不过几百字，超限视为异常截断，非正数直接丢弃
+pub async fn input_stats(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    if data.is_null() {
+        return ctx.err(400, "参数错误");
+    }
+    let device_id = str_of(&data, "device_id");
+    if device_id.is_empty() {
+        return ctx.err(400, "设备标识不能为空");
+    }
+    let char_count = int_of(&data, "char_count").max(0).min(100_000);
+    if char_count <= 0 {
+        return ctx.ok_empty("ok");
+    }
+    let result = sqlx::query("INSERT INTO input_stats_log (device_id, char_count, ip) VALUES (?,?,?)")
+        .bind(&device_id)
+        .bind(char_count)
+        .bind(&ctx.client_ip)
+        .execute(pool)
+        .await;
+
+    match result {
+        Ok(_) => ctx.ok_empty("ok"),
+        Err(e) => { tracing::error!("服务器错误: {e}"); ctx.err(500, "服务器错误") },
+    }
+}
+
 pub async fn get_hot_search(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let limit = data
