@@ -113,9 +113,10 @@ pub async fn get_daily_recommend(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> R
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
     if ciyuanxi_id.is_empty() {
-        return ctx.err(401, "请先登录后使用每日推荐");
+        // 旧版客户端把任何 401 都当"登录失效"清登录态；登录竞态期(身份字段未就绪)
+        // 的并发调用会踩中，表现为"登录成功秒被踢"。改为业务层空响应。
+        return ctx.ok("ok", json!({ "require_login": true }));
     }
-
     let today: Option<String> = sqlx::query_scalar(
         "SELECT DATE_FORMAT(NOW() + INTERVAL 8 HOUR, '%Y-%m-%d')",
     )
@@ -382,7 +383,8 @@ pub async fn report_daily_dislike(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
     if ciyuanxi_id.is_empty() {
-        return ctx.err(401, "请先登录后使用每日推荐");
+        // 同 get_daily_recommend：401 会被旧客户端误判为登录失效
+        return ctx.ok("ok", json!({ "ok": false, "require_login": true }));
     }
     let song_name = clip(str_of(&data, "song_name").trim(), 200);
     let singer = clip(str_of(&data, "singer").trim(), 200);
@@ -405,7 +407,8 @@ pub async fn report_daily_like(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "ciyuanxi_id");
     if ciyuanxi_id.is_empty() {
-        return ctx.err(401, "请先登录后使用每日推荐");
+        // 同 get_daily_recommend：401 会被旧客户端误判为登录失效
+        return ctx.ok("ok", json!({ "ok": false, "require_login": true }));
     }
     let songs = match data.get("songs").and_then(|v| v.as_array()) {
         Some(a) => a.clone(),
