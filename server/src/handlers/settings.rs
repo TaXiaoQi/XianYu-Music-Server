@@ -1016,8 +1016,6 @@ pub async fn report_listen_events(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
     // uk_user_event 挡掉，只对首次插入的行计账
     let mut accepted: i64 = 0;
     let mut accepted_secs_total: i64 = 0;
-    // 本批覆盖的东八区日（去重）：聚合按天幂等重算，聚合失败可由后续批次自愈
-    let mut batch_days: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
     for ev in events {
         let event_id = ev.get("id").and_then(|v| v.as_str()).unwrap_or("");
         if event_id.is_empty() || event_id.len() > 64 {
@@ -1039,7 +1037,6 @@ pub async fn report_listen_events(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         // 不能用 FROM_UNIXTIME(? + INTERVAL 8 HOUR)：MySQL 会把整数当
         // yyyymmdd 日期字面量解析，解析失败落成 0000-00-00（当日聚合全丢）。
         let day_index = (ended_at + 8 * 3600) / 86400;
-        batch_days.insert(day_index);
         let r = sqlx::query(
             "INSERT IGNORE INTO listen_events \
              (ciyuanxi_id, event_id, batch_id, played_secs, event_date, created_at) \
@@ -1072,29 +1069,26 @@ pub async fn report_listen_events(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         .execute(pool)
         .await;
     }
-    // 每日聚合（含重放批）：按本批覆盖的天对 listen_events 全量重算。
+    // 每日聚合（含重放批）：对该用户全部事件按天 SUM 重算。
     // 旧实现圈定"本批首次插入的行"且静默吞错——聚合一旦失败，总量已入账而
-    // 日表漏账，重放批 accepted=0 又跳过聚合，缺账永久无法自愈（表现为
-    // 用户有累计时长但日榜/今日时长缺失）。
-    // 现按天 SUM 重算 + GREATEST 幂等入账：任何后续批次都会补上历史缺账，
-    // behavior 旧路径的增量也不会被重算抹掉。
-    if !batch_days.is_empty() {
-        let placeholders = batch_days.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-        let sql = format!(
+    // 日表漏账，重放批 accepted=0 又跳过聚合，缺账永久无法自愈。
+    // 注意不可按 day_index 整数过滤 event_date（DATE 列对整数永不相等，
+    // 会静默匹配 0 行）；此处全量重算 + GREATEST 幂等入账：任何缺账天
+    // （历史失败/补报）都会被后续任意批次补上，behavior 旧路径的增量也不被抹掉。
+    if !events.is_empty() {
+        let _ = sqlx::query(
             "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
              SELECT ?, event_date, SUM(played_secs), 0 FROM listen_events \
-             WHERE ciyuanxi_id = ? AND event_date IN ({}) \
+             WHERE ciyuanxi_id = ? \
              GROUP BY event_date \
              ON DUPLICATE KEY UPDATE \
                  listen_duration = GREATEST(listen_duration, LEAST(VALUES(listen_duration), 86400)), \
                  unique_songs_count = GREATEST(unique_songs_count, VALUES(unique_songs_count))",
-            placeholders
-        );
-        let mut q = sqlx::query(&sql).bind(&ciyuanxi_id).bind(&ciyuanxi_id);
-        for d in &batch_days {
-            q = q.bind(d);
-        }
-        let _ = q.execute(pool).await;
+        )
+        .bind(&ciyuanxi_id)
+        .bind(&ciyuanxi_id)
+        .execute(pool)
+        .await;
     }
     // 低频清理：90 天前的流水已无去重价值（客户端队列远短于此）
     if accepted > 0 && now_sec % 100 == 0 {
