@@ -68,10 +68,20 @@ pub fn merge_into_snapshot(
     let mut id_map: Vec<Value> = Vec::new();
     for mut pl in uploaded {
         let local_id = pl.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        // 上传侧的 cloudId（非空时）也参与匹配：快照里同 cloudId 的旧条目视为同一歌单
+        // 替换掉，防止"localId 变了但 cloudId 相同"的上传在快照里堆出两条同 key 歌单
+        //（对端下载时会因其中一条无本地匹配而 create 成重复歌单）。
+        let up_key: Option<String> = pl
+            .get("cloudId")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string())
+            .filter(|s| !s.is_empty());
         let mut inherited: Option<String> = None;
         let mut prev_deleted: std::collections::HashSet<String> = std::collections::HashSet::new();
         by_cloud.retain(|(k, r)| {
-            if r.get("id").and_then(|v| v.as_str()) == Some(local_id.as_str()) {
+            let id_hit = r.get("id").and_then(|v| v.as_str()) == Some(local_id.as_str());
+            let key_hit = matches!((&up_key, k), (Some(a), Some(b)) if a == b);
+            if id_hit || key_hit {
                 if let Some(ck) = k {
                     inherited = Some(ck.clone());
                 }
@@ -87,11 +97,7 @@ pub fn merge_into_snapshot(
                 true
             }
         });
-        let mut key = pl
-            .get("cloudId")
-            .and_then(|c| c.as_str())
-            .map(|s| s.to_string())
-            .filter(|s| !s.is_empty());
+        let mut key = up_key;
         if key.is_none() {
             key = inherited;
         }
@@ -374,6 +380,24 @@ mod tests {
         let (merged, _) = merge_into_snapshot(uploaded, existing, Some(&["c1".to_string()]));
         assert_eq!(merged.len(), 1);
         assert_eq!(merged[0]["cloudId"], json!("c2"));
+    }
+
+    #[test]
+    fn merge_matches_by_cloud_id_when_local_id_differs() {
+        // 设备 B 下载后采用新 localId（id 冲突时 newId），上传仍带原 cloudId：
+        // 快照不应再保留同 cloudId 的旧条目，否则对端下载会 create 出重复歌单
+        let existing = vec![json!({
+            "id": "LA1", "cloudId": "c1", "name": "dada", "songs": [{"path": "a"}]
+        })];
+        let uploaded = vec![json!({
+            "id": "LB2", "cloudId": "c1", "name": "dada", "songs": [{"path": "a"}, {"path": "b"}]
+        })];
+        let (merged, id_map) = merge_into_snapshot(uploaded, existing, None);
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0]["cloudId"], json!("c1"));
+        assert_eq!(merged[0]["id"], json!("LB2"));
+        assert_eq!(merged[0]["songs"].as_array().unwrap().len(), 2);
+        assert_eq!(id_map[0]["cloudId"], json!("c1"));
     }
 
     #[test]

@@ -45,14 +45,21 @@ pub fn compute_download_ops(snapshot: &Value, local: &[LocalPlaylistReport]) -> 
         return Vec::new();
     };
 
-    let mut by_cloud: HashMap<&str, &LocalPlaylistReport> = HashMap::new();
-    let mut by_local: HashMap<&str, &LocalPlaylistReport> = HashMap::new();
-    for r in local {
-        by_local.insert(r.local_id.as_str(), r);
+    let mut by_cloud: HashMap<&str, usize> = HashMap::new();
+    let mut by_local: HashMap<&str, usize> = HashMap::new();
+    let mut by_name: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (i, r) in local.iter().enumerate() {
+        by_local.insert(r.local_id.as_str(), i);
         if let Some(cid) = r.cloud_id.as_deref().filter(|s| !s.is_empty()) {
-            by_cloud.insert(cid, r);
+            by_cloud.insert(cid, i);
+        }
+        if !r.name.is_empty() {
+            by_name.entry(r.name.as_str()).or_default().push(i);
         }
     }
+    // 已被某个云端歌单占用的本地歌单（按 cloudId/localId 命中）不再参与同名兜底，
+    // 避免两个云端同名歌单绑到同一个本地歌单上。
+    let mut used: HashSet<usize> = HashSet::new();
 
     let mut ops: Vec<Value> = Vec::new();
     for cloud_pl in cloud_playlists {
@@ -65,6 +72,28 @@ pub fn compute_download_ops(snapshot: &Value, local: &[LocalPlaylistReport]) -> 
             .get(cloud_id)
             .copied()
             .or_else(|| by_local.get(local_id).copied());
+        // 同名兜底：本地同名歌单（典型：新设备离线手动建了同名单，无 cloudId）
+        // 不再重复 create，走合并并回写 cloudId —— 消除跨设备同名重复歌单滚雪球。
+        let matched = match matched {
+            Some(i) => {
+                used.insert(i);
+                Some(&local[i])
+            }
+            None => {
+                let name = cloud_pl.get("name").and_then(Value::as_str).unwrap_or("");
+                if name.is_empty() {
+                    None
+                } else {
+                    by_name
+                        .get(name)
+                        .and_then(|idxs| idxs.iter().find(|i| !used.contains(i)))
+                        .map(|i| {
+                            used.insert(*i);
+                            &local[*i]
+                        })
+                }
+            }
+        };
         let Some(report) = matched else {
             ops.push(json!({ "type": "create_playlist", "playlist": cloud_pl }));
             continue;
@@ -90,17 +119,19 @@ pub fn compute_download_ops(snapshot: &Value, local: &[LocalPlaylistReport]) -> 
                     .collect()
             })
             .unwrap_or_default();
+        // op 的 id 用本地命中的真实 local_id（同名兜底/cloudId 命中时与快照存档 id 不同，
+        // 客户端 _findExisting 按 id 兜底查找才不会落空）
         if !add.is_empty() {
-            ops.push(json!({ "type": "add_songs", "cloudId": cloud_id, "id": local_id, "songs": add }));
+            ops.push(json!({ "type": "add_songs", "cloudId": cloud_id, "id": report.local_id, "songs": add }));
         }
 
         if !tombstones.is_empty() {
-            ops.push(json!({ "type": "remove_songs", "cloudId": cloud_id, "id": local_id, "paths": tombstones }));
+            ops.push(json!({ "type": "remove_songs", "cloudId": cloud_id, "id": report.local_id, "paths": tombstones }));
         }
 
         let meta = compute_meta_patch(cloud_pl, report);
         if !meta.is_empty() {
-            let mut op = json!({ "type": "update_playlist_meta", "cloudId": cloud_id, "id": local_id });
+            let mut op = json!({ "type": "update_playlist_meta", "cloudId": cloud_id, "id": report.local_id });
             for (k, v) in meta {
                 op[k] = v;
             }
@@ -302,6 +333,51 @@ mod tests {
         // 本地歌单还没有 cloudId（新设备未上传），但本地 id 与云端存的 id 一致 → 匹配而非建单
         let ops = compute_download_ops(&snapshot, &[report("l1", None, &["h1"])]);
         assert!(ops.is_empty());
+    }
+
+    #[test]
+    fn name_fallback_binds_instead_of_create() {
+        // 跨设备同名歌单（本地手动建、无 cloudId）：不 create 重复单，产 add_songs 绑定
+        let snapshot = json!({"playlists": [
+            {"id": "LA1", "cloudId": "c1", "name": "dada", "songs": [
+                {"path": "lx://wy/1", "song_hash": "h1"},
+                {"path": "lx://wy/2", "song_hash": "h2"}
+            ]}
+        ]});
+        let mut rep = report("LB1", None, &["h1"]);
+        rep.name = "dada".to_string();
+        let ops = compute_download_ops(&snapshot, &[rep]);
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0]["type"], json!("add_songs"));
+        assert_eq!(ops[0]["cloudId"], json!("c1"));
+        // id 必须是本地真实 id，客户端按 id 兜底才找得到目标歌单
+        assert_eq!(ops[0]["id"], json!("LB1"));
+        let songs = ops[0]["songs"].as_array().unwrap();
+        assert_eq!(songs.len(), 1);
+        assert_eq!(songs[0]["song_hash"], json!("h2"));
+    }
+
+    #[test]
+    fn name_fallback_not_used_when_name_absent_or_already_matched() {
+        // 本地 report 无 name → 不做同名兜底，仍 create
+        let snapshot = json!({"playlists": [
+            {"id": "LA1", "cloudId": "c1", "name": "dada", "songs": []}
+        ]});
+        let ops = compute_download_ops(&snapshot, &[report("LB1", None, &[])]);
+        assert_eq!(ops[0]["type"], json!("create_playlist"));
+
+        // 两个云端同名歌单：只有第一个绑同名本地（零差异时无 op），第二个仍 create
+        let two = json!({"playlists": [
+            {"id": "a1", "cloudId": "c1", "name": "dada", "songs": []},
+            {"id": "a2", "cloudId": "c2", "name": "dada", "songs": []}
+        ]});
+        let mut rep = report("LB1", None, &[]);
+        rep.name = "dada".to_string();
+        let ops = compute_download_ops(&two, &[rep]);
+        // c1 与 LB1 绑定但零差异 → 不产 op；只剩 c2 的 create
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0]["type"], json!("create_playlist"));
+        assert_eq!(ops[0]["playlist"]["cloudId"], json!("c2"));
     }
 
     #[test]
