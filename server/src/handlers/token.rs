@@ -219,6 +219,11 @@ async fn verify_lookup(pool: &MySqlPool, key: &str) -> Option<MySqlRow> {
     .bind(key)
     .fetch_optional(pool)
     .await
+    .map_err(|e| {
+        // DB 抖动被吞成 None 会把有效 token 误判为 Unknown → 误弹"登录失效"
+        tracing::warn!("token 校验查询失败(DB): {e}");
+        e
+    })
     .ok()
     .flatten()
 }
@@ -336,10 +341,34 @@ pub async fn check_dispatch_auth(
             record_view_access(pool, &token, &identity, action).await;
             None
         }
-        OwnerState::Mismatch => Some(ctx.err(401, "登录状态与账号不匹配，请重新登录")),
-        OwnerState::Expired => Some(ctx.err(401, "登录已过期，请重新登录")),
+        OwnerState::Mismatch => {
+            // 诊断日志：定位"登录后立马弹失效"（疑似换号后本地残留旧 ciyuanxi_id）
+            let owner_now = sqlx::query_scalar::<_, String>(
+                "SELECT ciyuanxi_id FROM user_tokens WHERE token = ? OR token = ? LIMIT 1",
+            )
+            .bind(sha256_hex(&token))
+            .bind(&token)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+            tracing::warn!(
+                "token归属不匹配: action={} body身份={} token归属={} ip={}",
+                action, identity, owner_now, ctx.client_ip
+            );
+            Some(ctx.err(401, "登录状态与账号不匹配，请重新登录"))
+        }
+        OwnerState::Expired => {
+            tracing::info!("token已过期: action={} identity={}", action, identity);
+            Some(ctx.err(401, "登录已过期，请重新登录"))
+        }
         OwnerState::Unknown => {
             if ctx.config.require_user_token {
+                tracing::warn!(
+                    "token不存在(unknown): action={} body身份={} ip={}",
+                    action, identity, ctx.client_ip
+                );
                 Some(ctx.err(401, "登录状态已失效，请重新登录"))
             } else {
                 None
