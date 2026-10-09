@@ -183,6 +183,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '报错日志', mobile: true, sensitive: true },
       },
       {
+        path: 'email-log',
+        name: 'MobileEmailLog',
+        component: () => import('@/views/mobile/MobileEmailLog.vue'),
+        meta: { title: '邮箱机日志', mobile: true, sensitive: true },
+      },
+      {
         path: 'app-login-log',
         name: 'MobileAppLoginLog',
         component: () => import('@/views/mobile/MobileAppLoginLog.vue'),
@@ -230,6 +236,12 @@ const routes: RouteRecordRaw[] = [
         name: 'ErrorLog',
         component: () => import('@/views/ErrorLog.vue'),
         meta: { title: '报错日志', sensitive: true },
+      },
+      {
+        path: 'email-log',
+        name: 'EmailLog',
+        component: () => import('@/views/EmailLog.vue'),
+        meta: { title: '邮箱机日志', sensitive: true },
       },
       {
         path: 'app-login-log',

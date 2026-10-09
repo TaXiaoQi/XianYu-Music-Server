@@ -232,6 +232,91 @@ pub async fn list_app_login_log(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -
     }))
 }
 
+// 邮箱机投递日志：email_send_log（status 0=待投递 1=成功 2=失败；ip='builtin' 为内置邮箱机记录）
+pub async fn list_email_send_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let page = int_of(&data, "page").max(1);
+    let page_size = {
+        let ps = int_of(&data, "page_size");
+        if ps == 0 { 20 } else { ps.clamp(1, 100) }
+    };
+    let keyword = str_of(&data, "keyword").trim().to_string();
+    let status_filter = str_of(&data, "status_filter").trim().to_string();
+    let offset = (page - 1) * page_size;
+
+    let mut conditions: Vec<String> = Vec::new();
+    let mut binds: Vec<String> = Vec::new();
+    if !keyword.is_empty() {
+        conditions.push("(email LIKE ? OR subject LIKE ? OR error_msg LIKE ?)".to_string());
+        let pat = format!("%{}%", keyword);
+        binds.push(pat.clone());
+        binds.push(pat.clone());
+        binds.push(pat);
+    }
+    if status_filter == "success" {
+        conditions.push("status = 1".to_string());
+    } else if status_filter == "failed" {
+        conditions.push("status = 2".to_string());
+    } else if status_filter == "pending" {
+        conditions.push("status = 0".to_string());
+    }
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    let count_sql = format!("SELECT COUNT(*) FROM email_send_log {}", where_clause);
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+    for b in &binds {
+        count_query = count_query.bind(b);
+    }
+    let filtered_total = count_query.fetch_one(pool).await.unwrap_or(0);
+
+    let list_sql = format!(
+        "SELECT * FROM email_send_log {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        where_clause
+    );
+    let mut list_query = sqlx::query(&list_sql);
+    for b in &binds {
+        list_query = list_query.bind(b);
+    }
+    list_query = list_query.bind(page_size).bind(offset);
+
+    let list: Vec<Value> = match list_query.fetch_all(pool).await {
+        Ok(rows) => rows.iter().map(row_to_value).collect(),
+        Err(e) => return { tracing::error!("查询邮箱机日志失败: {e}"); err(500, "查询失败") },
+    };
+
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log")
+        .fetch_one(pool).await.unwrap_or(0);
+    let success_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log WHERE status = 1")
+        .fetch_one(pool).await.unwrap_or(0);
+    let failed_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log WHERE status = 2")
+        .fetch_one(pool).await.unwrap_or(0);
+    let pending_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log WHERE status = 0")
+        .fetch_one(pool).await.unwrap_or(0);
+    let today_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_send_log WHERE DATE(created_at) = CURDATE()")
+        .fetch_one(pool).await.unwrap_or(0);
+
+    let total_pages = ((filtered_total as f64) / (page_size as f64)).ceil() as i64;
+    ok("ok", json!({
+        "total": total,
+        "filtered_total": filtered_total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "list": list,
+        "stats": {
+            "total": total,
+            "success": success_count,
+            "failed": failed_count,
+            "pending": pending_count,
+            "today": today_count,
+        }
+    }))
+}
+
 pub async fn clear_all_errors(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let _ = body;
     sqlx::query("TRUNCATE TABLE error_log").execute(pool).await.unwrap_or_default();

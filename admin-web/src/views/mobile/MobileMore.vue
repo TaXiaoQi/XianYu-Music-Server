@@ -43,6 +43,7 @@ const groups = [
     title: '日志与工具',
     items: [
       { to: '/m/error-log', label: '报错日志', desc: '查看 APP 崩溃和错误' },
+      { to: '/m/email-log', label: '邮箱机日志', desc: '查看邮件验证码投递记录' },
       { to: '/m/app-login-log', label: '登录日志', desc: '查看客户端登录记录' },
       { to: '/m/logs', label: '后台日志', desc: '查看后台操作记录' },
       { to: '/m/api-test', label: '接口测试', desc: '调试服务端接口' },

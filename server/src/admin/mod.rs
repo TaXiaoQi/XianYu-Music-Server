@@ -401,6 +401,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "save_auto_backup_config" => db::save_auto_backup_config(body, &ctx, pool).await,
         // logs / feedback / share
         "list_error_logs" => logs::list_error_logs(body, &ctx, pool).await,
+        "list_email_send_logs" => logs::list_email_send_logs(body, &ctx, pool).await,
         "get_error_stats" => logs::get_error_stats(body, &ctx, pool).await,
         "get_error_detail" => logs::get_error_detail(body, &ctx, pool).await,
         "delete_error" => logs::delete_error(body, &ctx, pool).await,

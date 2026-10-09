@@ -60,6 +60,7 @@
             <li><router-link to="/api-test">接口测试</router-link></li>
             <li><router-link to="/logs">后台日志</router-link></li>
             <li><router-link to="/error-log">报错日志</router-link></li>
+            <li><router-link to="/email-log">邮箱机日志</router-link></li>
             <li><router-link to="/app-login-log">登录日志</router-link></li>
           </ul>
         </li>
