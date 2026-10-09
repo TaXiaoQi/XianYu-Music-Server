@@ -5,6 +5,7 @@ use sqlx::Row;
 
 use crate::audit_policy::{self, AuditDecision};
 use crate::handlers::helpers::{extract_id, parse_body, str_of, validate_ciyuanxi_id, validate_nickname};
+use crate::handlers::TODAY_CN;
 use crate::response::ReqCtx;
 
 const SETTINGS_FIELDS: [&str; 8] = [
@@ -888,13 +889,15 @@ async fn report_listen_stats_delta(
         .await;
     }
 
-    let _ = sqlx::query(
+    // 旧 delta 协议写入也统一 TODAY_CN：与 v2 事件入桶/快照读取同口径
+    let _ = sqlx::query(&format!(
         "INSERT INTO listen_daily_stats (ciyuanxi_id, stat_date, listen_duration, unique_songs_count) \
-         VALUES (?, DATE(NOW() + INTERVAL 8 HOUR), ?, ?) \
+         VALUES (?, {}, ?, ?) \
          ON DUPLICATE KEY UPDATE \
              listen_duration = LEAST(listen_duration + VALUES(listen_duration), 86400), \
              unique_songs_count = unique_songs_count + VALUES(unique_songs_count)",
-    )
+        TODAY_CN
+    ))
     .bind(ciyuanxi_id)
     .bind(delta_daily)
     .bind(delta_songs)
@@ -1109,20 +1112,20 @@ async fn listen_snapshot_value(ciyuanxi_id: &str, pool: &MySqlPool) -> serde_jso
     .await
     .unwrap_or(0);
 
-    let daily: i64 = sqlx::query_scalar(
+    let daily: i64 = sqlx::query_scalar(&format!(
         "SELECT CAST(listen_duration AS SIGNED) FROM listen_daily_stats \
-         WHERE ciyuanxi_id = ? AND stat_date = DATE(NOW() + INTERVAL 8 HOUR)",
-    )
+         WHERE ciyuanxi_id = ? AND stat_date = {TODAY_CN}",
+    ))
     .bind(ciyuanxi_id)
     .fetch_one(pool)
     .await
     .unwrap_or(0);
 
-    let weekly: i64 = sqlx::query_scalar(
+    let weekly: i64 = sqlx::query_scalar(&format!(
         "SELECT CAST(COALESCE(SUM(listen_duration), 0) AS SIGNED) FROM listen_daily_stats \
          WHERE ciyuanxi_id = ? \
-           AND stat_date >= DATE(NOW() + INTERVAL 8 HOUR) - INTERVAL 6 DAY",
-    )
+           AND stat_date >= {TODAY_CN} - INTERVAL 6 DAY",
+    ))
     .bind(ciyuanxi_id)
     .fetch_one(pool)
     .await

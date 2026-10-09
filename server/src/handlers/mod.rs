@@ -24,6 +24,15 @@ use sqlx::MySqlPool;
 
 use crate::response::ReqCtx;
 
+/// 东八区「今天」(DATE)，纯算术换算、与会话时区无关：
+/// unix 秒 + 8h 后按 86400s 划日，以 '1970-01-01' 加天数还原日期，
+/// 与事件入桶的 day_index = (ended_at + 8h) / 86400 完全同构。
+/// 不能用 DATE(NOW() + INTERVAL 8 HOUR)：它依赖 MySQL 会话时区——
+/// DB 时区为 +08:00 时 NOW() 已是北京墙钟，再 +8h 就落到「明天」，
+/// 与纯算术写入的今天行错位一天（今日时长/日榜恒 0 的事故根因）。
+pub const TODAY_CN: &str =
+    "DATE_ADD('1970-01-01', INTERVAL FLOOR((UNIX_TIMESTAMP() + 28800) / 86400) DAY)";
+
 pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if let Some(resp) = token::check_dispatch_auth(action, body, &ctx, pool).await {
         return resp;

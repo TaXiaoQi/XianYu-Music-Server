@@ -47,7 +47,9 @@ fn build_leaderboard_sql(kind: &str, period: &str) -> (String, String, String, S
 
     match period {
         "daily" => {
-            let day_filter = "stat_date = DATE(NOW() + INTERVAL 8 HOUR)";
+            // 日界用时区无关的 TODAY_CN：DB 时区 +08:00 时 DATE(NOW()+8h)
+            // 是「明天」，日榜恒空且与本端今日时长不同源
+            let day_filter = "stat_date = DATE_ADD('1970-01-01', INTERVAL FLOOR((UNIX_TIMESTAMP() + 28800) / 86400) DAY)";
             (
                 format!(
                     "SELECT d.ciyuanxi_id, u.nickname, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
@@ -92,7 +94,8 @@ fn build_leaderboard_sql(kind: &str, period: &str) -> (String, String, String, S
             )
         }
         "weekly" => {
-            let week_filter = "stat_date >= DATE_SUB(DATE(NOW() + INTERVAL 8 HOUR), INTERVAL WEEKDAY(DATE(NOW() + INTERVAL 8 HOUR)) DAY) AND stat_date <= DATE(NOW() + INTERVAL 8 HOUR)";
+            // 周窗口同用 TODAY_CN：周一零点(东八区)到今天
+            let week_filter = "stat_date >= DATE_SUB(DATE_ADD('1970-01-01', INTERVAL FLOOR((UNIX_TIMESTAMP() + 28800) / 86400) DAY), INTERVAL WEEKDAY(DATE_ADD('1970-01-01', INTERVAL FLOOR((UNIX_TIMESTAMP() + 28800) / 86400) DAY)) DAY) AND stat_date <= DATE_ADD('1970-01-01', INTERVAL FLOOR((UNIX_TIMESTAMP() + 28800) / 86400) DAY)";
             (
                 format!(
                     "SELECT d.ciyuanxi_id, u.nickname, u.avatar_url, CAST(SUM(d.{}) AS SIGNED) AS value \
