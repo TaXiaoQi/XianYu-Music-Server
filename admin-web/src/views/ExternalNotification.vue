@@ -309,6 +309,10 @@
                 <span>邮箱地址</span>
                 <input :value="editTypesForm.email" type="text" disabled />
               </label>
+              <label class="modal-field">
+                <span>备注</span>
+                <input v-model="editTypesForm.remark" type="text" maxlength="50" placeholder="例如：站长通知邮箱" @keydown.enter="saveTypes" />
+              </label>
               <div class="modal-field">
                 <span>通知板块</span>
                 <div class="modal-modules">
@@ -1091,6 +1095,7 @@ async function saveTypes() {
   if (res.code === 200) {
     const item = list.value.find(i => i.id === f.id)
     if (item) {
+      item.remark = f.remark.trim()
       item.notify_wallpaper = f.notify_wallpaper
       item.notify_avatar = f.notify_avatar
       item.notify_nickname = f.notify_nickname

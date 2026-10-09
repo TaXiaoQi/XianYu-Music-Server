@@ -252,13 +252,21 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                 "beta" => "内测申请",
                 _ => "问题反馈",
             };
+            // 邮件正文带反馈标题与内容摘要，通知接收方不用登录后台即可初判优先级
+            let brief: String = content.chars().take(120).collect();
+            let more = if content.chars().count() > 120 { "…（登录后台查看全文）" } else { "" };
+            let body_text = if title.is_empty() {
+                format!("用户 {}（{}）提交了{}，请及时处理。\n\n内容：{}{}", nickname, ciyuanxi_id, type_label, brief, more)
+            } else {
+                format!("用户 {}（{}）提交了{}，请及时处理。\n\n标题：{}\n内容：{}{}", nickname, ciyuanxi_id, type_label, title, brief, more)
+            };
             crate::admin::email::notify_external_emails_for_module(
                 pool,
                 &ctx.config,
                 &ctx.client_ip,
                 "feedback",
                 "【弦予后台】新反馈待处理",
-                &format!("用户 {}（{}）提交了{}「{}」，请及时处理。", nickname, ciyuanxi_id, type_label, title),
+                &body_text,
                 if image_urls.is_empty() { "" } else { &image_urls[0] },
                 &ctx.base_url,
             ).await;

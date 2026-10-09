@@ -485,17 +485,20 @@ async fn send_via_builtin_mailer(
     channels.rotate_left(idx);
 
     for channel in channels {
-        let result = match channel {
+        let label = match &channel {
             MailChannel::Smtp(account) => {
-                let label = if account.remark.trim().is_empty() {
-                    account.sender.clone()
+                if account.remark.trim().is_empty() {
+                    format!("{}（SMTP）", account.sender)
                 } else {
-                    format!("{} ({})", account.sender, account.remark)
-                };
-                send_via_smtp_account(&account, title, plain, html_opts, recipient)
-                    .await
-                    .map_err(|e| format!("SMTP 账号 {} 失败: {}", label, e))
+                    format!("{}（{}）", account.sender, account.remark)
+                }
             }
+            MailChannel::Api => "外部API".to_string(),
+        };
+        let result = match channel {
+            MailChannel::Smtp(account) => send_via_smtp_account(&account, title, plain, html_opts, recipient)
+                .await
+                .map_err(|e| format!("SMTP 账号 {} 失败: {}", label, e)),
             MailChannel::Api => send_via_http_api(cfg, title, plain, html_opts, recipient)
                 .await
                 .map_err(|e| format!("外部 API 失败: {}", e)),
@@ -503,7 +506,8 @@ async fn send_via_builtin_mailer(
 
         match result {
             Ok(()) => {
-                update_builtin_mail_log(pool, log_id, 1, "内置邮箱机投递成功").await;
+                // 记录实际使用的发件账号：排查"延迟/未收到"时可定位具体发件号
+                update_builtin_mail_log(pool, log_id, 1, &format!("内置邮箱机投递成功（via {}）", label)).await;
                 return Ok(());
             }
             Err(e) => errors.push(e),

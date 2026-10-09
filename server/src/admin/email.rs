@@ -61,7 +61,13 @@ pub async fn notify_external_emails_for_module(
     if !notify_module_enabled(pool, module).await {
         return Vec::new();
     }
-    let html = build_review_email_html(subject, body, image_url, &login_base);
+    let html = build_review_email_html(
+        subject,
+        body,
+        image_url,
+        &login_base,
+        if module == "feedback" { "前往处理" } else { "前往审核" },
+    );
     let plain = body.to_string();
 
     let col = format!("notify_{}", module);
@@ -96,7 +102,7 @@ fn html_escape(s: &str) -> String {
         .replace('\'', "&#39;")
 }
 
-pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_url_base: &str) -> String {
+pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_url_base: &str, action: &str) -> String {
     let login_url = if login_url_base.trim().is_empty() {
         "https://api.xianyumusic.cn".to_string()
     } else {
@@ -117,6 +123,7 @@ pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_u
         ("{{body}}", html_escape(body)),
         ("{{img}}", img_html),
         ("{{link}}", html_escape(&login_url)),
+        ("{{action}}", html_escape(action)),
     ]
     .into_iter()
     .fold(REVIEW_NOTICE_TEMPLATE.to_string(), |acc, (k, v)| acc.replace(k, &v))

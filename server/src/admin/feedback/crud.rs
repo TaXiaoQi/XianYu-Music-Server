@@ -419,13 +419,21 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
             _ => "问题反馈",
         };
         let image = image_urls.first().map(|s| s.as_str()).unwrap_or("");
+        // 邮件正文带反馈标题与内容摘要，通知接收方不用登录后台即可初判优先级
+        let brief: String = content.chars().take(120).collect();
+        let more = if content.chars().count() > 120 { "…（登录后台查看全文）" } else { "" };
+        let body_text = if title.is_empty() {
+            format!("管理员 {} 后台新建了{}，请及时处理。\n\n内容：{}{}", ctx.username, type_label, brief, more)
+        } else {
+            format!("管理员 {} 后台新建了{}，请及时处理。\n\n标题：{}\n内容：{}{}", ctx.username, type_label, title, brief, more)
+        };
         crate::admin::email::notify_external_emails_for_module(
             pool,
             &ctx.config,
             &ctx.ip,
             "feedback",
             "【弦予后台】新反馈待处理",
-            &format!("管理员 {} 后台新建了{}「{}」，请及时处理。", ctx.username, type_label, title),
+            &body_text,
             image,
             &ctx.base_url,
         ).await;
