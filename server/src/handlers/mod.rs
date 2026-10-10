@@ -101,6 +101,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         // share
         "create_share" => share::create_share(body, ctx, pool).await,
         "report_share_action" => share::report_share_action(body, ctx, pool).await,
+        "qq_share_sign" => share::qq_share_sign(body, ctx, pool).await,
         "share_download" => system::share_download(body, ctx, pool).await,
         // social
         "submit_feedback" => social::submit_feedback(body, ctx, pool).await,

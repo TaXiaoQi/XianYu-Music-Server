@@ -1,6 +1,9 @@
 use axum::response::Response;
+use base64::Engine as _;
+use hmac::{Hmac, Mac};
 use rand::Rng;
 use serde_json::{json, Value};
+use sha1::Sha1;
 use sqlx::{MySqlPool, Row};
 
 use crate::handlers::helpers::{int_of, parse_body, str_of};
@@ -290,3 +293,70 @@ pub fn render_landing_page(row: &Value, body_params: &Value, download_api: &str)
 }
 
 const HTML: &str = include_str!("share_landing.html");
+
+type HmacSha1 = Hmac<Sha1>;
+
+/// 鸿蒙 QQ 开放平台分享签名：服务端用 QQ 互联 AppKey（严禁进客户端）对
+/// shareJson+timestamp+nonce 拼接串做 HMAC-SHA1，原始摘要字节转 base64，
+/// 客户端拿四个字段透传给鸿蒙 QQ SDK（IQQOpenApi.share）。
+pub async fn qq_share_sign(body: &str, ctx: ReqCtx, _pool: &MySqlPool) -> Response {
+    let app_key = ctx.config.qq_app_key.trim().to_string();
+    if app_key.is_empty() {
+        return ctx.err(500, "未配置 QQ_APP_KEY");
+    }
+    let data = parse_body(body);
+    // 字段按 QQ 分享协议合理上限截断，防止异常大 payload
+    let take = |s: &str, n: usize| s.chars().take(n).collect::<String>();
+    let scene = str_of(&data, "scene").to_string();
+    let title = take(&str_of(&data, "title"), 200);
+    let summary = take(&str_of(&data, "summary"), 200);
+    let url = take(&str_of(&data, "url"), 2048);
+    let picture_url = sanitize_cover_url(&str_of(&data, "picture_url"));
+    if url.is_empty() {
+        return ctx.err(400, "分享链接不能为空");
+    }
+
+    // QQ 好友(type 2) ark 图文 / QZone(type 3009) 图文，字段名按官方协议
+    let share_json = if scene == "qzone" {
+        let mut obj = json!({
+            "title": title,
+            "summary": summary,
+            "targetUrl": url,
+        });
+        if !picture_url.is_empty() {
+            obj["imageUrls"] = json!([picture_url]);
+        }
+        obj
+    } else {
+        json!({
+            "msg_style": 0,
+            "title": title,
+            "summary": summary,
+            "brief": "弦予音乐",
+            "url": url,
+            "picture_url": picture_url,
+        })
+    };
+    let share_json_str = serde_json::to_string(&share_json).unwrap_or_default();
+
+    let timestamp = chrono::Utc::now().timestamp();
+    let nonce: i64 = rand::thread_rng().gen_range(0..i32::MAX as i64);
+    let sign_input = format!("{}{}{}", share_json_str, timestamp, nonce);
+
+    let mut mac = match HmacSha1::new_from_slice(app_key.as_bytes()) {
+        Ok(m) => m,
+        Err(_) => return ctx.err(500, "QQ_APP_KEY 无效"),
+    };
+    mac.update(sign_input.as_bytes());
+    let sign = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+
+    ctx.ok(
+        "ok",
+        json!({
+            "share_json": share_json_str,
+            "timestamp": timestamp,
+            "nonce": nonce,
+            "share_json_sign": sign,
+        }),
+    )
+}

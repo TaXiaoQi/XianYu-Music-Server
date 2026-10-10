@@ -35,6 +35,10 @@ pub struct Config {
     pub public_base_url: String,
     #[serde(default)]
     pub share_base_url: String,
+    // 鸿蒙 QQ 开放平台分享签名密钥（QQ 互联 AppKey，严禁进客户端）。
+    // 为空时 qq_share_sign 接口返回错误，即关闭鸿蒙端 QQ 分享签名能力。
+    #[serde(default)]
+    pub qq_app_key: String,
     #[serde(default)]
     pub require_user_token: bool,
     // 仅当服务端处于受信反向代理（nginx）之后时才置 true：直连部署下
@@ -71,6 +75,7 @@ impl Config {
         cfg.static_dir = env::var("STATIC_DIR").unwrap_or(cfg.static_dir);
         cfg.public_base_url = env::var("PUBLIC_BASE_URL").unwrap_or(cfg.public_base_url);
         cfg.share_base_url = env::var("SHARE_BASE_URL").unwrap_or(cfg.share_base_url);
+        cfg.qq_app_key = env::var("QQ_APP_KEY").unwrap_or(cfg.qq_app_key);
         cfg.require_user_token = env::var("REQUIRE_USER_TOKEN")
             .ok()
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
@@ -155,6 +160,7 @@ impl Config {
                 .unwrap_or(false),
             public_base_url: env::var("PUBLIC_BASE_URL").unwrap_or_default(),
             share_base_url: env::var("SHARE_BASE_URL").unwrap_or_default(),
+            qq_app_key: env::var("QQ_APP_KEY").unwrap_or_default(),
             require_user_token: env::var("REQUIRE_USER_TOKEN")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
