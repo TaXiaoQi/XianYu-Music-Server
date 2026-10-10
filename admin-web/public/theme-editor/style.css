@@ -92,7 +92,8 @@ body.embed-mode #rvOrientBar{ position:fixed; left:14px; bottom:14px; z-index:50
 /* 预览模式（body.review-mode，由 ?preview=1 挂载）：纯查看——隐藏编辑面板与登录/导出/上传入口 */
 body.review-mode .panel{ display:none !important; }
 body.review-mode #loginState, body.review-mode #btnLogin, body.review-mode #btnLogout,
-body.review-mode #btnExport, body.review-mode #btnUpload{ display:none !important; }
+body.review-mode #btnExport, body.review-mode #btnUpload,
+body.review-mode #btnImport, body.review-mode #importFile{ display:none !important; }
 .card{ background:var(--card); border:1px solid var(--border-soft); border-radius:var(--radius-lg); padding:20px; box-shadow:var(--shadow); }
 .card__head{ display:flex; align-items:center; gap:10px; margin-bottom:14px; }
 .card__head h3{ font-family:var(--font-display); font-size:15.5px; font-weight:700; }

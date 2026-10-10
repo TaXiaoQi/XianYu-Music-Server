@@ -1466,6 +1466,37 @@ function exportJson(){
   toast('已导出 .json 主题包，可在客户端「主题中心 → 导入」中使用');
 }
 
+/* ---------- 导入（基于已有主题包继续编辑） ---------- */
+function importJson(){
+  $id('importFile').click();
+}
+function handleImportFile(ev){
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    let pkg;
+    try { pkg = JSON.parse(String(reader.result || '')); }
+    catch { toast('导入失败：不是合法的 JSON 文件'); return; }
+    if(!pkg || typeof pkg !== 'object'){ toast('导入失败：文件结构不对'); return; }
+    // 兼容导出主题包 {version,platform,name,author,payload:{...}}（壳）与裸 payload
+    const inner = (pkg.payload && typeof pkg.payload === 'object') ? pkg.payload : pkg;
+    if(!inner.accentColor && !inner.icons && !inner.themeMode && !inner.wallpapers && !inner.surfaces){
+      toast('导入失败：没有识别到主题数据'); return;
+    }
+    applyThemePayload({
+      id: 'imported',
+      name: pkg.name || '导入的主题',
+      description: '',
+      platform: pkg.platform === 'desktop' ? 'desktop' : 'mobile',
+      payload_json: inner,
+    });
+    toast('已导入「' + (pkg.name || '未命名主题') + '」，可继续编辑后导出或上传', 4000);
+  };
+  reader.readAsText(file);
+}
+
 /* ---------- 主题 payload 渲染（审核预览模式复用） ---------- */
 function applyThemePayload(t){
   // 落库/导出的主题包为 {author,name,payload:{...}} 壳结构，渲染需解壳取内层 payload
@@ -1847,6 +1878,13 @@ syncLoginUi();
 "单曲": "Tracks",
 "单日听歌时长排行": "Daily Listening Time Ranking",
 "导出 JSON": "Export JSON",
+"导入 JSON": "Import JSON",
+"导入失败：不是合法的 JSON 文件": "Import failed: not a valid JSON file",
+"导入失败：文件结构不对": "Import failed: unexpected file structure",
+"导入失败：没有识别到主题数据": "Import failed: no theme data found",
+"已导入「": "Imported \"",
+"」，可继续编辑后导出或上传": "\", you can keep editing, then export or upload",
+"导入的主题": "Imported Theme",
 "导航": "Navigation",
 "导入外部歌单": "Import External Playlist",
 "点击麦克风开始识别": "Tap the microphone to start recognition",
