@@ -387,6 +387,9 @@ function postPreviewPayload() {
   if (!pj || typeof pj !== 'object') {
     try { pj = JSON.parse(item.payload || '{}') } catch { pj = {} }
   }
+  // item 来自 reactive 列表，payload_json 是 Vue Proxy——结构化克隆不支持会抛
+  // DataCloneError（消息静默丢失），必须先还原成纯对象
+  try { pj = JSON.parse(JSON.stringify(pj)) } catch { pj = {} }
   frame.contentWindow.postMessage(
     { type: 'xy_theme_preview', payload: { id: item.id, name: item.name, description: item.description, platform: item.platform, payload_json: pj } },
     '*',
