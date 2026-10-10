@@ -52,7 +52,7 @@
 </script>
 </head>
 <body>
-<script>try{if(/[?&]embed=1/.test(location.search))document.body.classList.add('embed-mode');}catch(e){}</script>
+<script>try{if(/[?&](embed=1|preview=1)/.test(location.search))document.body.classList.add('embed-mode');}catch(e){}</script>
 <div class="bg-fx" aria-hidden="true"><div class="blob b1"></div><div class="blob b2"></div><div class="grid-bg"></div></div>
 
 <header class="topbar">
@@ -65,11 +65,6 @@
       </div>
     </div>
     <div class="topbar__actions">
-      <span id="reviewBox" style="display:none;align-items:center;gap:8px;padding:5px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:10px;">
-        <span style="font-size:12px;font-weight:600;color:#9a3412;" id="reviewLabel">审核主题</span>
-        <button class="btn" id="btnReviewReject" onclick="reviewAct('rejected')" style="background:#fee2e2;color:#b91c1c;">拒绝</button>
-        <button class="btn" id="btnReviewApprove" onclick="reviewAct('normal')" style="background:#10b981;color:#fff;">通过</button>
-      </span>
       <span data-i18n-mount="dropdown"></span>
       <button class="btn" id="btnThemeMode" onclick="__xyEditorTheme.cycle()" title="当前：跟随浏览器"><svg class="tt-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="tt-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg><span>跟随浏览器</span></button>
       <span class="login-state" id="loginState"><span class="dot"></span><span id="loginText">未登录（导出不需要登录）</span></span>

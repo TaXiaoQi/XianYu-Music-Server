@@ -1466,12 +1466,7 @@ function exportJson(){
   toast('已导出 .json 主题包，可在客户端「主题中心 → 导入」中使用');
 }
 
-/* ---------- 审核模式（/theme-editor?review_theme=<id>，从管理后台「编辑器查看」打开） ---------- */
-let reviewThemeId = 0;
-function adminAuthHeaders(){
-  const token = (localStorage.getItem('admin_token') || '').trim();
-  return token ? { 'Content-Type':'application/json', 'Authorization':'Bearer '+token } : null;
-}
+/* ---------- 主题 payload 渲染（审核预览模式复用） ---------- */
 function applyThemePayload(t){
   state.name = t.name || ('待审主题 #' + t.id);
   state.description = t.description || '';
@@ -1506,30 +1501,6 @@ function applyThemePayload(t){
     }
   }catch(e){}
   toast('已加载待审主题：' + state.name, 3500);
-}
-async function reviewAct(status){
-  const ok = status==='normal' ? confirm('确定通过审核并上架此主题吗？') : confirm('确定拒绝此主题吗？');
-  if(!ok) return;
-  const headers = adminAuthHeaders();
-  if(!headers){ showReviewError('缺少管理员登录态', '请从管理后台的「主题中心 → 编辑器审核」重新打开'); return; }
-  const btn = $id(status==='normal' ? 'btnReviewApprove' : 'btnReviewReject');
-  btn.disabled = true;
-  try{
-    const r = await fetch('/admin/api?action=change_theme_status', {
-      method:'POST', headers: headers,
-      body: JSON.stringify({ id: reviewThemeId, status: status })
-    });
-    const j = await r.json();
-    if(j.code === 200){
-      toast(status==='normal' ? '已通过并上架' : '已拒绝', 3000);
-      // iframe 内嵌审核：通知后台父页面关闭弹层并刷新列表
-      try{ if(window.parent && window.parent !== window){ window.parent.postMessage({ type:'theme_review_done', status: status, id: reviewThemeId }, '*'); } }catch(e){}
-      setTimeout(()=>{ try{ window.close(); }catch(e){} }, 900);
-    } else {
-      toast(j.msg || '操作失败', 4000);
-    }
-  }catch(e){ toast('网络错误，请重试'); }
-  btn.disabled = false;
 }
 // 内嵌审核画布：滚轮缩放 + 拖拽平移
 function setupReviewCanvas(){
@@ -1673,49 +1644,25 @@ function setupReviewCanvas(){
   const ezrs = document.getElementById('zoomReset');
   if(ezrs) ezrs.addEventListener('click', reset);
 }
-function showReviewError(title, detail){
-  try{
-    $id('reviewBox').style.display = 'none';
-    const bar = $id('bottomBar');
-    if(bar) bar.style.display = 'none';
-    const tabs = $id('stageTabs');
-    if(tabs) tabs.style.display = 'none';
-    const stage = document.querySelector('.stage');
-    if(stage) stage.innerHTML = '<div style="margin:auto;text-align:center;padding:40px 24px;max-width:420px">'
-      + '<div style="font-size:44px;line-height:1;margin-bottom:14px">🔒</div>'
-      + '<div style="font-size:17px;font-weight:700;color:#1f2329;margin-bottom:8px">' + title + '</div>'
-      + '<div style="font-size:13.5px;color:#646a73;line-height:1.7">' + detail + '</div>'
-      + '<button class="btn btn--primary" style="margin-top:18px" onclick="location.reload()">重试</button>'
-      + '</div>';
-  }catch(e){}
+/* ---------- 轻量预览模式（/theme-editor?preview=1，管理后台审核弹层内嵌） ----------
+ * 仅渲染父页面 postMessage 传入的主题 payload，不做任何身份校验、不调任何接口；
+ * 完整对外编辑器（不带 preview 参数正常打开）仍走登录/TV 绑定流程。
+ * 注意：back 域 /theme-editor 会被 nginx 301 到 topic 独立站，iframe 因此跨域，
+ * 但预览纯前端渲染，跨域无影响。 */
+function setupPreviewMode(){
+  // 后台 iframe 内嵌预览：隐藏编辑器自有顶栏品牌与语言切换（embed-mode），
+  // 并按纯查看语义隐藏编辑面板与登录/导出/上传入口（review-mode）
+  document.body.classList.add('embed-mode', 'review-mode');
+  setupReviewCanvas();
+  window.addEventListener('message', (e) => {
+    const d = e.data;
+    if(!d || d.type !== 'xy_theme_preview' || !d.payload) return;
+    applyThemePayload(d.payload);
+  });
 }
-(function initReviewMode(){
+(function initPreviewMode(){
   const qs = new URLSearchParams(location.search);
-  // 登录态由管理端与编辑器同源共享 localStorage，不再从 URL 接收 token
-  reviewThemeId = qs.get('review_theme') ? (parseInt(qs.get('review_theme'), 10) || 0) : 0;
-  // 后台 iframe 内嵌模式：隐藏编辑器自有顶栏品牌与语言切换，只留审核按钮
-  if(qs.get('embed') === '1'){ document.body.classList.add('embed-mode'); setupReviewCanvas(); }
-  if(!reviewThemeId) return;
-  document.body.classList.add('review-mode');
-  const headers = adminAuthHeaders();
-  if(!headers){ showReviewError('缺少管理员登录态', '请先登录管理后台，再从「主题中心 → 编辑器审核」重新打开'); return; }
-  $id('reviewBox').style.display = 'inline-flex';
-  $id('reviewLabel').textContent = '审核主题 #' + reviewThemeId;
-  fetch('/admin/api?action=list_themes', { method:'POST', headers: headers, body:'{}' })
-    .then(r => r.json())
-    .then(j => {
-      if(j.code !== 200 || !Array.isArray(j.data)){
-        const expired = j.code === 401;
-        showReviewError(
-          expired ? '管理员登录态已失效' : '主题加载失败',
-          expired ? '后台登录已过期（有效期 24 小时）。请回到管理后台重新登录，再从「主题中心 → 编辑器审核」重新打开。' : (j.msg || '请稍后重试'));
-        return;
-      }
-      const t = j.data.find(x => x && x.id === reviewThemeId);
-      if(!t){ showReviewError('未找到主题 #' + reviewThemeId, '该主题可能已被删除，或链接已失效'); return; }
-      applyThemePayload(t);
-    })
-    .catch(() => showReviewError('网络错误', '无法连接服务器，请检查网络后点「重试」'));
+  if(qs.get('preview') === '1') setupPreviewMode();
 })();
 
 /* ---------- init ---------- */

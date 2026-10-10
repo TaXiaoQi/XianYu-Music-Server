@@ -103,7 +103,7 @@
           <div class="card-actions">
             <button class="act-btn act-detail" @click="openDetail(item)">详情</button>
             <template v-if="item.status === 'pending'">
-              <button class="act-btn act-approve" @click="openInEditor(item)">编辑器审核</button>
+              <button class="act-btn act-approve" @click="openReview(item)">编辑审核</button>
             </template>
             <template v-else-if="item.status === 'rejected'">
               <button class="act-btn act-delete" @click="deleteTheme(item.id)">删除</button>
@@ -185,12 +185,13 @@
       </div>
     </Transition>
 
-    <!-- 编辑器审核弹层：后台内部调用，iframe 内嵌编辑器 -->
+    <!-- 审核弹层：iframe 轻量预览（/theme-editor?preview=1，nginx 301 到 topic 独立站），
+         加载后 postMessage 传 payload 纯前端渲染，无身份校验/接口调用 -->
     <Transition name="modal" @before-leave="removeBackdropBlur">
-      <div v-if="reviewVisible" class="modal-backdrop" @click.self="closeReview">
+      <div v-if="reviewVisible && reviewItem" class="modal-backdrop" @click.self="closeReview">
         <div class="modal-dialog editor-dialog">
           <div class="modal-head">
-            <h3>编辑器审核</h3>
+            <h3>编辑审核</h3>
             <div class="review-head-actions">
               <button class="review-btn review-btn--reject" @click="reviewAction('rejected')">拒绝</button>
               <button class="review-btn review-btn--pass" @click="reviewAction('normal')">通过</button>
@@ -200,7 +201,7 @@
             </div>
           </div>
           <div class="editor-frame-wrap">
-            <iframe v-if="reviewVisible && reviewUrl" :src="reviewUrl" class="editor-frame" title="主题编辑器审核"></iframe>
+            <iframe v-if="reviewVisible && reviewItem" ref="reviewFrame" src="/theme-editor?preview=1" class="editor-frame" title="主题预览" @load="postPreviewPayload"></iframe>
           </div>
         </div>
       </div>
@@ -366,26 +367,41 @@ function closeDetail() {
 }
 
 const reviewVisible = ref(false)
-const reviewUrl = ref('')
+const reviewItem = ref<ThemeItem | null>(null)
 const reviewId = ref(0)
+const reviewFrame = ref<HTMLIFrameElement | null>(null)
 
-function openInEditor(item: ThemeItem) {
-  // 后台内部调用：弹层内嵌编辑器（同源 iframe），登录态经共享 localStorage 读取，
-  // 不经 URL 传 token（防落浏览器历史/Referer/访问日志），embed=1 隐藏编辑器自有顶栏
+function openReview(item: ThemeItem) {
+  reviewItem.value = item
   reviewId.value = item.id
-  reviewUrl.value = `/theme-editor?review_theme=${item.id}&embed=1`
   reviewVisible.value = true
+}
+
+// 轻量预览：iframe（/theme-editor?preview=1，nginx 会 301 到 topic 独立站）加载后
+// postMessage 传入 payload，编辑器纯前端渲染，不做任何身份校验/接口调用
+function postPreviewPayload() {
+  const item = reviewItem.value
+  const frame = reviewFrame.value
+  if (!item || !frame?.contentWindow) return
+  let pj = item.payload_json
+  if (!pj || typeof pj !== 'object') {
+    try { pj = JSON.parse(item.payload || '{}') } catch { pj = {} }
+  }
+  frame.contentWindow.postMessage(
+    { type: 'xy_theme_preview', payload: { id: item.id, name: item.name, description: item.description, platform: item.platform, payload_json: pj } },
+    '*',
+  )
 }
 
 function closeReview() {
   reviewVisible.value = false
-  reviewUrl.value = ''
+  reviewItem.value = null
   loadList(true)
 }
 
 async function reviewAction(status: 'normal' | 'rejected') {
   reviewVisible.value = false
-  reviewUrl.value = ''
+  reviewItem.value = null
   await changeStatus(reviewId.value, status)
 }
 

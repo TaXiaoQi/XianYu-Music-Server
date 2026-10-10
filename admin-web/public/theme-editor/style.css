@@ -49,9 +49,8 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 #btnThemeMode{ height:34px; padding:0 13px; font-size:12.5px; font-weight:700; color:var(--text-2); }
 #btnThemeMode svg{ flex:none; width:15px; height:15px; }
 #btnThemeMode:hover{ transform:translateY(-1px); color:var(--accent); background:var(--accent-soft); box-shadow:var(--shadow); }
-/* ====== 内嵌审核（?embed=1）：隐藏编辑器 UI 只留预览舞台，满高布局防窄屏塌缩，缩放由画布 transform 接管 ====== */
+/* ====== 内嵌审核（?embed=1 / ?preview=1）：隐藏编辑器 UI 只留预览舞台，满高布局防窄屏塌缩，缩放由画布 transform 接管 ====== */
 body.embed-mode .brand, body.embed-mode .brand__sub, body.embed-mode .lang-switch{ display:none !important; }
-body.embed-mode #reviewBox{ display:none !important; }
 body.embed-mode .topbar{ display:none !important; }
 body.embed-mode .panel{ display:none !important; }
 body.embed-mode{ height:100vh; display:flex; flex-direction:column; overflow:hidden; -webkit-user-select:none; user-select:none; }
@@ -90,7 +89,7 @@ body.embed-mode #rvOrientBar{ position:fixed; left:14px; bottom:14px; z-index:50
 .panel::-webkit-scrollbar-thumb,.stage::-webkit-scrollbar-thumb{ background:#d9dce1; border-radius:4px; }
 .panel::-webkit-scrollbar-thumb:hover,.stage::-webkit-scrollbar-thumb:hover{ background:#c3c7cd; }
 
-/* 审核模式（body.review-mode）：纯查看——隐藏编辑面板与登录/导出/上传入口 */
+/* 预览模式（body.review-mode，由 ?preview=1 挂载）：纯查看——隐藏编辑面板与登录/导出/上传入口 */
 body.review-mode .panel{ display:none !important; }
 body.review-mode #loginState, body.review-mode #btnLogin, body.review-mode #btnLogout,
 body.review-mode #btnExport, body.review-mode #btnUpload{ display:none !important; }
@@ -635,6 +634,3 @@ html[data-theme="dark"] .lang-menu{ box-shadow:0 18px 48px rgba(0,0,0,.6); }
 html[data-theme="dark"] #toast{ border:1px solid var(--border); }
 /* 登录态绿色在深色下提亮一档保证对比度 */
 html[data-theme="dark"] .login-state.on{ color:#34d399; }
-/* 审核框为内联浅橙样式，深色下需 !important 覆写为暗橙 */
-html[data-theme="dark"] #reviewBox{ background:#3a2410 !important; border-color:#7c4a12 !important; }
-html[data-theme="dark"] #btnReviewReject{ background:#431b1b !important; color:#fca5a5 !important; }
