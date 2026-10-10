@@ -122,6 +122,8 @@ async fn main() -> anyhow::Result<()> {
             "/.well-known/apple-app-site-association",
             get(serve_apple_app_site_association),
         )
+        // 鸿蒙 AGC App Linking 域名校验文件（share.xianyumusic.cn 同源到达本服务）
+        .route("/.well-known/applinking.json", get(serve_applinking))
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
         .route("/admin/api/", get(handle_admin_api).post(handle_admin_api))
         .route("/watch-relay", get(watch_relay::watch_relay_handler))
@@ -460,6 +462,16 @@ async fn serve_apple_app_site_association() -> Response {
         StatusCode::OK,
         [(axum::http::header::CONTENT_TYPE, "application/json")],
         AASA,
+    )
+        .into_response()
+}
+
+async fn serve_applinking() -> Response {
+    static APPLINKING: &str = include_str!("applinking.json");
+    (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        APPLINKING,
     )
         .into_response()
 }
