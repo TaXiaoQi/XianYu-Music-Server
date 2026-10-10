@@ -982,6 +982,7 @@ pub fn handle_admin_api(action: &str) -> Response {
             "pending_wallpapers": 2,
             "pending_avatars": 1,
             "pending_nicknames": 3,
+            "pending_themes": 1,
             "pending_feedback": 4,
             "debug": true
         })),

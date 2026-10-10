@@ -166,6 +166,7 @@ function pickLang(v: LangPref) {
 
 const noticeItems = computed(() => [
   { label: '新壁纸审核', desc: '用户上传壁纸待审核', count: notify.totals.wallpaper || 0, to: '/m/wallpapers', className: 'wallpaper' },
+  { label: '新主题审核', desc: '主题包待审核', count: notify.totals.theme || 0, to: '/m/themes', className: 'theme' },
   { label: '新头像审核', desc: '用户头像变更待审核', count: notify.totals.avatar || 0, to: '/m/avatar-audit', className: 'avatar' },
   { label: '新名称审核', desc: '用户改名申请待审核', count: notify.totals.nickname || 0, to: '/m/avatar-audit', className: 'nickname' },
   { label: '新问题反馈', desc: '用户反馈待处理', count: notify.totals.feedback || 0, to: '/m/feedback', className: 'feedback' },
@@ -540,6 +541,7 @@ html[data-theme='dark'] .mobile-main {
   background: var(--accent);
 }
 .notify-msg-dot.wallpaper { background: #3b82f6; }
+.notify-msg-dot.theme { background: #ec4899; }
 .notify-msg-dot.avatar { background: #22c55e; }
 .notify-msg-dot.nickname { background: #f97316; }
 .notify-msg-dot.feedback { background: #8b5cf6; }

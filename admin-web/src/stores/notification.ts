@@ -11,6 +11,7 @@ export interface NotifyModuleMap {
   wallpaper: boolean
   avatar: boolean
   nickname: boolean
+  theme: boolean
 }
 
 interface PersistedState {
@@ -25,6 +26,7 @@ const DEFAULT_MODULES: NotifyModuleMap = {
   wallpaper: true,
   avatar: true,
   nickname: true,
+  theme: true,
 }
 
 export const MODULE_META: { key: keyof NotifyModuleMap; label: string; desc: string }[] = [
@@ -32,6 +34,7 @@ export const MODULE_META: { key: keyof NotifyModuleMap; label: string; desc: str
   { key: 'wallpaper', label: '新壁纸', desc: '壁纸上传待审核' },
   { key: 'avatar', label: '新头像', desc: '头像变更待审核' },
   { key: 'nickname', label: '新名称', desc: '改名申请待审核' },
+  { key: 'theme', label: '新主题', desc: '主题包待审核' },
 ]
 
 interface NativeBridgeApi {
@@ -244,6 +247,7 @@ export const useNotificationStore = defineStore('notification', () => {
       wallpaper: Number(stats?.pending_wallpapers ?? 0),
       avatar: Number(stats?.pending_avatars ?? 0),
       nickname: Number(stats?.pending_nicknames ?? 0),
+      theme: Number(stats?.pending_themes ?? 0),
     }
 
     if (!state.value.baseline) {

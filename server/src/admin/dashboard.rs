@@ -102,6 +102,7 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
     let sql_pending_wallpapers = "SELECT COUNT(*) FROM wallpapers WHERE status = 'pending'".to_string();
     let sql_pending_avatars = "SELECT COUNT(*) FROM user_avatar_pending WHERE status = 'pending'".to_string();
     let sql_pending_nicknames = "SELECT COUNT(*) FROM user_nickname_pending WHERE status = 'pending'".to_string();
+    let sql_pending_themes = "SELECT COUNT(*) FROM themes WHERE status = 'pending'".to_string();
     let sql_pending_feedback =
         "SELECT COUNT(*) FROM user_feedback WHERE status = 'pending' AND deleted_at IS NULL".to_string();
 
@@ -128,6 +129,7 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         pending_wallpapers,
         pending_avatars,
         pending_nicknames,
+        pending_themes,
         pending_feedback,
     ) = tokio::join!(
         safe_count(pool, &sql_total_users),
@@ -152,6 +154,7 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         safe_count(pool, &sql_pending_wallpapers),
         safe_count(pool, &sql_pending_avatars),
         safe_count(pool, &sql_pending_nicknames),
+        safe_count(pool, &sql_pending_themes),
         safe_count(pool, &sql_pending_feedback),
     );
 
@@ -210,6 +213,7 @@ pub async fn dashboard_stats(_body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "pending_wallpapers": pending_wallpapers,
         "pending_avatars": pending_avatars,
         "pending_nicknames": pending_nicknames,
+        "pending_themes": pending_themes,
         "pending_feedback": pending_feedback,
     });
 
