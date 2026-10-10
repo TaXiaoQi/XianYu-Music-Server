@@ -1468,14 +1468,15 @@ function exportJson(){
 
 /* ---------- 主题 payload 渲染（审核预览模式复用） ---------- */
 function applyThemePayload(t){
-  state.name = t.name || ('待审主题 #' + t.id);
+  // 落库/导出的主题包为 {author,name,payload:{...}} 壳结构，渲染需解壳取内层 payload
+  let pj = (t.payload_json && typeof t.payload_json === 'object') ? t.payload_json : {};
+  if (pj.payload && typeof pj.payload === 'object') pj = pj.payload;
+  state.name = t.name || pj.name || ('待审主题 #' + (t.id || ''));
   state.description = t.description || '';
   $id('themeName').value = state.name;
   $id('themeDesc').value = state.description;
   const p = t.platform === 'desktop' ? 'desktop' : 'mobile';
-  if(t.payload_json && typeof t.payload_json === 'object'){
-    state.themes[p] = Object.assign(defaultTheme(), t.payload_json);
-  }
+  state.themes[p] = Object.assign(defaultTheme(), pj);
   platform = p;
   [...$id('platSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.p===platform));
   $id('wallpaperRef').value = cur().wallpaperRef ? cur().wallpaperRef.id : '';
