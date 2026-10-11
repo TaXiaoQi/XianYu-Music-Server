@@ -551,3 +551,56 @@ pub async fn favorites_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) 
         Err(_) => ctx.ok("暂无同步数据", json!({ "favorites": [] })),
     }
 }
+
+// ===== 网盘凭据云同步 =====
+// 客户端把本地 AES 密封的网盘账号串（`xy1:<iv>:<密文>`）整包上云，
+// 登录弦予账号的其他设备拉取后用各自的本地密钥解密合并。
+// 服务端只见密文，不做任何解析。
+
+/// 密封串上限：11 盘多账号 cookie 级凭据实际约几 KB～几十 KB，
+/// 1MB 足够宽裕，防恶意刷大字段。
+const CLOUD_CREDS_MAX_LEN: usize = 1024 * 1024;
+
+pub async fn cloud_creds_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let sealed = str_of(&data, "sealed").trim().to_string();
+    if sealed.is_empty() {
+        return ctx.err(400, "缺少凭据数据");
+    }
+    if sealed.len() > CLOUD_CREDS_MAX_LEN {
+        return ctx.err(400, "凭据数据过大");
+    }
+    let save = json!({
+        "version": 1,
+        "uploaded_at": now_str(),
+        "timestamp": now_ts(),
+        "sealed": sealed
+    });
+    if !write_snapshot(pool, &ciyuanxi_id, "cloud_creds.json", &save).await {
+        return ctx.err(500, "同步数据写入失败");
+    }
+    ctx.ok("上传成功", json!({ "uploaded_at": save["uploaded_at"] }))
+}
+
+pub async fn cloud_creds_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    match read_snapshot(pool, &ciyuanxi_id, "cloud_creds.json").await {
+        Ok(v) => {
+            let sealed = v.get("sealed").and_then(Value::as_str).unwrap_or("");
+            if sealed.is_empty() {
+                ctx.ok("暂无同步数据", json!({ "sealed": null }))
+            } else {
+                ctx.ok("获取成功", json!({ "sealed": sealed }))
+            }
+        }
+        Err(_) => ctx.ok("暂无同步数据", json!({ "sealed": null })),
+    }
+}
