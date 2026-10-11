@@ -62,7 +62,19 @@ pub async fn cloud_proxy(body: &str, ctx: ReqCtx, _pool: &MySqlPool) -> Response
             }
             ctx.ok("成功", data)
         }
-        Err((code, msg)) => ctx.err(code, &msg),
+        Err((code, msg)) => {
+            // 业务失败（分享失效/提取码错误/凭据过期等）→ 客户端将回退本地直连。
+            // msg 仅中文业务文案，按脱敏约定不含 cred/token/cookie。
+            tracing::warn!(
+                action = "cloud_proxy",
+                provider = %req.provider,
+                op = %req.op,
+                code,
+                msg = %msg,
+                "云端代理业务失败，客户端将回退本地直连"
+            );
+            ctx.err(code, &msg)
+        }
     }
 }
 
