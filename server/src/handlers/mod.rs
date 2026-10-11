@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod cloud;
 pub mod email_auth;
 pub mod helpers;
 pub mod playlist;
@@ -139,6 +140,10 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "settings_sync_download" => sync::settings_sync_download(body, ctx, pool).await,
         "favorites_sync_upload" => sync::favorites_sync_upload(body, ctx, pool).await,
         "favorites_sync_download" => sync::favorites_sync_download(body, ctx, pool).await,
+        "cloud_creds_upload" => sync::cloud_creds_upload(body, ctx, pool).await,
+        "cloud_creds_download" => sync::cloud_creds_download(body, ctx, pool).await,
+        // cloud 网盘业务代理
+        "cloud_proxy" => cloud::cloud_proxy(body, ctx, pool).await,
         // upload
         "upload_avatar" => upload::upload_avatar(body, ctx, pool).await,
         "upload_cover" => upload::upload_cover(body, ctx, pool).await,

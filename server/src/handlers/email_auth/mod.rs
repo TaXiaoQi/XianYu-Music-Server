@@ -66,6 +66,7 @@ mod tests {
             require_user_token: false,
             trust_proxy: true,
             cors_origins: Vec::new(),
+            qq_app_key: String::new(),
         }
     }
 
