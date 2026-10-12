@@ -93,8 +93,6 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "favorites_sync_download",
     "cloud_creds_upload",
     "cloud_creds_download",
-    // cloud 网盘业务代理（凭据经加密通道随请求携带，服务端不落库）
-    "cloud_proxy",
     // upload
     "upload_avatar",
     // account lifecycle
