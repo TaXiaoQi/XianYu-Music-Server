@@ -6,10 +6,11 @@ import {
   deleteBetaTester,
   getBetaTesterDetail,
   listBetaTesters,
+  setBetaLockEnabled,
   updateBetaTesterNote,
 } from '@/api/version'
 
-// 内测名单：列表加载、添加/移除、设备详情与备注编辑
+// 内测名单：列表加载、添加/移除、设备详情与备注编辑；含内测锁开关
 export function useVersionBeta() {
   const betaModalVisible = ref(false)
   const betaList = ref<any[]>([])
@@ -17,14 +18,32 @@ export function useVersionBeta() {
   const betaSaving = ref(false)
   const betaDeviceIdDraft = ref('')
   const betaNoteDraft = ref('')
+  const betaLockEnabled = ref(true)
+  const betaLockSaving = ref(false)
 
   async function loadBeta() {
     betaLoading.value = true
     const res = await listBetaTesters()
     if (res.code === 200 && res.data) {
       betaList.value = Array.isArray(res.data.list) ? res.data.list : []
+      if (typeof res.data.enabled === 'boolean') betaLockEnabled.value = res.data.enabled
     }
     betaLoading.value = false
+  }
+
+  async function toggleBetaLock(event: Event) {
+    const enabled = (event.target as HTMLInputElement).checked
+    betaLockSaving.value = true
+    const res = await setBetaLockEnabled({ enabled })
+    betaLockSaving.value = false
+    if (res.code === 200) {
+      betaLockEnabled.value = enabled
+      showToast(enabled ? '内测锁已开启' : '内测锁已关闭', 'success')
+    } else {
+      // 失败时回滚开关状态
+      betaLockEnabled.value = !enabled
+      showToast(res.msg || '设置失败')
+    }
   }
 
   function openBetaModal() {
@@ -121,6 +140,9 @@ export function useVersionBeta() {
     betaSaving,
     betaDeviceIdDraft,
     betaNoteDraft,
+    betaLockEnabled,
+    betaLockSaving,
+    toggleBetaLock,
     loadBeta,
     openBetaModal,
     closeBetaModal,

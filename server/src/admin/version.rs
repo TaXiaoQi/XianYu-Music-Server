@@ -665,16 +665,41 @@ pub async fn delete_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool
     ok("删除成功", Value::Null)
 }
 
+/// 内测锁开关存储（site_configs `beta_lock`，legacy 文件 api/beta_lock.json，默认开启）。
+fn read_beta_lock(value: Option<Value>) -> bool {
+    value
+        .and_then(|v| v.get("enabled").and_then(|b| b.as_bool()))
+        .unwrap_or(true)
+}
+
 pub async fn list_beta_testers(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let lock_enabled = read_beta_lock(
+        site_config_store::get_json(pool, "beta_lock", Some(std::path::Path::new("api/beta_lock.json")))
+            .await,
+    );
     match sqlx::query("SELECT id, device_id, note, created_at FROM beta_testers ORDER BY id DESC")
         .fetch_all(pool)
         .await
     {
         Ok(rows) => {
             let list: Vec<Value> = rows.iter().map(row_to_value).collect();
-            ok("ok", json!({ "list": list }))
+            ok("ok", json!({ "list": list, "enabled": lock_enabled }))
         }
         Err(e) => { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
+    }
+}
+
+pub async fn set_beta_lock_enabled(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let Some(enabled) = data.get("enabled").and_then(|v| v.as_bool()) else {
+        return err(400, "参数错误");
+    };
+    match site_config_store::set_json(pool, "beta_lock", &json!({ "enabled": enabled })).await {
+        Ok(_) => {
+            log_operation(pool, ctx, if enabled { "开启内测锁" } else { "关闭内测锁" }, "", "").await;
+            ok(if enabled { "内测锁已开启" } else { "内测锁已关闭" }, json!({ "enabled": enabled }))
+        }
+        Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     }
 }
 

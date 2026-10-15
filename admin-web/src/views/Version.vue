@@ -410,6 +410,16 @@
             </button>
           </div>
           <div class="modal-form">
+            <div class="beta-lock-row">
+              <div class="beta-lock-info">
+                <span class="beta-lock-label">内测锁</span>
+                <span class="beta-lock-desc">{{ betaLockEnabled ? '已开启：beta 版客户端启动时校验内测名单资格，名单外设备无法使用' : '已关闭：所有 beta 版客户端正常启动，不校验资格（不影响测试版更新的定向下发）' }}</span>
+              </div>
+              <label class="toggle-switch" :title="betaLockEnabled ? '点击关闭内测锁' : '点击开启内测锁'">
+                <input type="checkbox" :checked="betaLockEnabled" :disabled="betaLockSaving" @change="toggleBetaLock" />
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
             <p class="field-hint">名单内的设备ID可收到「测试版」渠道的更新下发；正式版与官网下载对所有用户不变。点击设备可查看关联帐号与设备信息。设备ID可在客户端「关于/反馈」上报数据或设备管理中查询。</p>
             <div class="beta-add-row">
               <input v-model="betaDeviceIdDraft" type="text" placeholder="输入设备ID" @keyup.enter="addBetaTester" />
@@ -639,6 +649,9 @@ const {
   betaSaving,
   betaDeviceIdDraft,
   betaNoteDraft,
+  betaLockEnabled,
+  betaLockSaving,
+  toggleBetaLock,
   loadBeta,
   openBetaModal,
   closeBetaModal,
@@ -1361,6 +1374,19 @@ onMounted(() => {
 .version-combo-num { max-width: 90px !important; }
 
 .beta-backdrop { z-index: 10010; }
+.beta-lock-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--control-bg);
+}
+.beta-lock-info { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.beta-lock-label { font-size: 14px; font-weight: 700; color: var(--text); }
+.beta-lock-desc { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
 .beta-add-row {
   display: flex;
   gap: 8px;

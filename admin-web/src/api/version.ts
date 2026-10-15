@@ -33,6 +33,7 @@ export interface DesktopVersionListData {
 
 export interface BetaTesterListData {
   list: any[]
+  enabled?: boolean
 }
 
 export interface BetaTesterDetail {
@@ -70,6 +71,10 @@ export async function deleteDesktopVersion(payload: DesktopVersionDeletePayload)
 
 export async function listBetaTesters(): Promise<ApiResponse<BetaTesterListData>> {
   return adminApi<BetaTesterListData>('list_beta_testers')
+}
+
+export async function setBetaLockEnabled(payload: { enabled: boolean }): Promise<ApiResponse> {
+  return adminApi('set_beta_lock_enabled', payload)
 }
 
 export async function createBetaTester(payload: { device_id: string; note: string }): Promise<ApiResponse> {

@@ -445,6 +445,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "upload_package" => version::upload_package(body, &ctx, pool).await,
         "delete_desktop_version" => version::delete_desktop_version(body, &ctx, pool).await,
         "list_beta_testers" => version::list_beta_testers(body, &ctx, pool).await,
+        "set_beta_lock_enabled" => version::set_beta_lock_enabled(body, &ctx, pool).await,
         "get_beta_tester_detail" => version::get_beta_tester_detail(body, &ctx, pool).await,
         "add_beta_tester" => version::add_beta_tester(body, &ctx, pool).await,
         "delete_beta_tester" => version::delete_beta_tester(body, &ctx, pool).await,

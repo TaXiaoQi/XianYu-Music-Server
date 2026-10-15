@@ -205,12 +205,32 @@ fn beta_access_message(device_id: &str, allowed: bool, pending: bool, exp: i64) 
     .into_bytes()
 }
 
+/// 内测锁开关（site_configs `beta_lock`，默认开启）。
+/// 关闭后所有 beta 客户端启动时不再校验名单资格（直接签发 allowed=true）。
+async fn beta_lock_enabled(pool: &MySqlPool) -> bool {
+    match crate::site_config_store::get_json(
+        pool,
+        "beta_lock",
+        Some(std::path::Path::new("api/beta_lock.json")),
+    )
+    .await
+    {
+        Some(v) => v.get("enabled").and_then(|b| b.as_bool()).unwrap_or(true),
+        None => true,
+    }
+}
+
 pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let raw = parse_body(body);
     let device_id = str_of(&raw, "device_id").trim().to_string();
-    let allowed = beta_device_allowed(pool, &device_id).await;
+    let lock_on = beta_lock_enabled(pool).await;
+    let allowed = if lock_on {
+        beta_device_allowed(pool, &device_id).await
+    } else {
+        true
+    };
     let mut pending = false;
-    if !allowed && !device_id.is_empty() {
+    if lock_on && !allowed && !device_id.is_empty() {
         pending = sqlx::query_scalar::<_, i64>(
             "SELECT COUNT(*) FROM user_feedback WHERE device_id = ? AND feedback_type = 'beta' AND status IN ('pending', 'processing')",
         )
@@ -229,7 +249,7 @@ pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
             String::new()
         }
     };
-    ctx.json(200, "ok", Some(json!({ "allowed": allowed, "pending": pending, "exp": exp, "device_id": device_id, "sig": signature })))
+    ctx.json(200, "ok", Some(json!({ "enabled": lock_on, "allowed": allowed, "pending": pending, "exp": exp, "device_id": device_id, "sig": signature })))
 }
 
 pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
