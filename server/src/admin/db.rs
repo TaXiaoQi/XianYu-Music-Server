@@ -159,16 +159,8 @@ pub async fn list_data_groups(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
     };
     // ---- 用户数据 ----
     // 歌单快照已迁入 user_sync_files（playlists.json），按 JSON 展开统计歌单总数；
-    // JSON 统计失败（内容异常等）时退回快照份数
-    let pl_count = match sqlx::query_scalar::<_, i64>(
-        "SELECT CAST(COALESCE(SUM(JSON_LENGTH(CAST(content AS JSON), '$.playlists')), 0) AS SIGNED) FROM user_sync_files WHERE file_name = 'playlists.json'",
-    )
-    .fetch_one(pool)
-    .await
-    {
-        Ok(v) => v,
-        Err(_) => count_where(pool, "user_sync_files", "file_name = 'playlists.json'").await,
-    };
+    // 压缩行（gz1:）由 Rust 端解压解析累加，统计失败时退回快照份数
+    let pl_count = count_playlists_total(pool).await;
     push("用户数据", "playlists", "用户歌单", "云端保存的歌单与歌曲", pl_count);
     push(
         "用户数据",
@@ -323,19 +315,43 @@ fn group_parts(key: &str) -> Option<Vec<(&'static str, &'static str)>> {
     }
 }
 
+/// 歌单总数统计：明文行走 SQL JSON 展开，压缩行（gz1:，超过阈值的大快照）
+/// 由 Rust 端解压解析累加；完全失败时退回快照份数。
+async fn count_playlists_total(pool: &MySqlPool) -> i64 {
+    let mut total: i64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(JSON_LENGTH(CAST(content AS JSON), '$.playlists')), 0) AS SIGNED) FROM user_sync_files WHERE file_name = 'playlists.json' AND content NOT LIKE 'gz1:%'",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    let gz_rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT content FROM user_sync_files WHERE file_name = 'playlists.json' AND content LIKE 'gz1:%'",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    for (content,) in gz_rows {
+        match crate::handlers::sync_store::decode_content(&content) {
+            Some(v) => {
+                total += v
+                    .get("playlists")
+                    .and_then(|x| x.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0) as i64;
+            }
+            None => {
+                return count_where(pool, "user_sync_files", "file_name = 'playlists.json'").await;
+            }
+        }
+    }
+    total
+}
+
 /// 快照类别的分页明细：歌单展开为「弦予号 × 歌单」行；插件/收藏每行一个用户快照
 async fn sync_group_detail(pool: &MySqlPool, key: &str, page_num: i64, page_size: i64) -> Response {
     let offset = (page_num - 1) * page_size;
     if key == "playlists" {
-        let total: i64 = match sqlx::query_scalar(
-            "SELECT CAST(COALESCE(SUM(JSON_LENGTH(CAST(content AS JSON), '$.playlists')), 0) AS SIGNED) FROM user_sync_files WHERE file_name = 'playlists.json'",
-        )
-        .fetch_one(pool)
-        .await
-        {
-            Ok(v) => v,
-            Err(_) => count_where(pool, "user_sync_files", "file_name = 'playlists.json'").await,
-        };
+        let total = count_playlists_total(pool).await;
         let rows: Vec<(String, String)> = sqlx::query_as(
             "SELECT ciyuanxi_id, content FROM user_sync_files WHERE file_name = 'playlists.json' ORDER BY ciyuanxi_id LIMIT ? OFFSET ?",
         )
@@ -346,7 +362,7 @@ async fn sync_group_detail(pool: &MySqlPool, key: &str, page_num: i64, page_size
         .unwrap_or_default();
         let mut rows_v: Vec<Value> = Vec::new();
         for (uid, content) in rows {
-            let v: Value = serde_json::from_str(&content).unwrap_or(Value::Null);
+            let v = crate::handlers::sync_store::decode_content(&content).unwrap_or(Value::Null);
             if let Some(list) = v.get("playlists").and_then(|x| x.as_array()) {
                 for p in list {
                     rows_v.push(json!({
@@ -953,6 +969,7 @@ pub async fn log_retention_loop(pool: &MySqlPool) {
     const RULES: &[(&str, &str, i64)] = &[
         ("error_log", "error_time", 7),
         ("source_call_log", "call_time", 30),
+        ("listen_events", "created_at", 90),
         ("app_open_log", "created_at", 30),
         ("input_stats_log", "created_at", 30),
         ("view_access_log", "created_at", 30),

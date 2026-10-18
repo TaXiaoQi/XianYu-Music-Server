@@ -1,11 +1,54 @@
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
 use chrono::Utc;
+use flate2::write::GzEncoder;
+use flate2::Compression;
 use serde_json::Value;
 use sqlx::MySqlPool;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 /// 用户同步快照的存储层：DB 表 user_sync_files / user_sync_chunks，
 /// 以及旧版文件存储（data/sync/<弦予号>/*.json）的懒迁移与清理。
 /// sync.rs 通过 re-export 保持旧引用路径（crate::handlers::sync::...）可用。
+
+/// 单快照逻辑大小上限（序列化后的明文字节数）。歌单快照实测最大 8MB 级，
+/// 16MB 宽裕；防恶意刷大字段拖垮 DB（longtext 行是慢查询元凶之一）。
+pub const MAX_SNAPSHOT_BYTES: usize = 16 * 1024 * 1024;
+
+/// 压缩存储格式：content 列以 `gz1:<base64(gzip(明文))>` 存放。
+/// 小于该阈值的行保持明文（admin SQL 可直接 JSON 解析，压缩无收益）。
+const GZ_PREFIX: &str = "gz1:";
+const COMPRESS_THRESHOLD: usize = 64 * 1024;
+
+/// gzip 确定性编码（GzEncoder 不写 mtime，同输入同输出，MD5 去重对比依赖此性质）。
+fn encode_content(content: &str) -> String {
+    if content.len() < COMPRESS_THRESHOLD {
+        return content.to_string();
+    }
+    let mut enc = GzEncoder::new(Vec::new(), Compression::fast());
+    if enc.write_all(content.as_bytes()).is_err() {
+        return content.to_string();
+    }
+    match enc.finish() {
+        Ok(gz) => format!("{}{}", GZ_PREFIX, B64.encode(gz)),
+        Err(_) => content.to_string(),
+    }
+}
+
+/// 解码：`gz1:` 前缀走 base64+gzip，其余按明文（旧数据兼容）。
+pub fn decode_content(content: &str) -> Option<Value> {
+    let plain = if let Some(b64) = content.strip_prefix(GZ_PREFIX) {
+        let gz = B64.decode(b64).ok()?;
+        let mut dec = flate2::read::GzDecoder::new(gz.as_slice());
+        let mut buf = Vec::new();
+        dec.read_to_end(&mut buf).ok()?;
+        String::from_utf8(buf).ok()?
+    } else {
+        content.to_string()
+    };
+    serde_json::from_str(&plain).ok()
+}
 
 pub fn sync_root() -> PathBuf {
     PathBuf::from("data/sync")
@@ -38,7 +81,7 @@ pub async fn read_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str) -> R
             .await
             .map_err(|_| ())?;
     if let Some((content,)) = row {
-        return serde_json::from_str(&content).map_err(|_| ());
+        return decode_content(&content).ok_or(());
     }
     // 旧文件回退：命中即导入 DB 并移除旧文件
     let file = sync_dir(ciyuanxi_id).join(name);
@@ -61,9 +104,22 @@ pub async fn read_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str) -> R
 /// 整包写用户同步文件（DB upsert），成功后清掉可能残留的旧文件。
 /// 客户端同步频繁且内容常常不变：先比 content_size，再比 DB 端 MD5，
 /// 完全一致则跳过大字段写入，避免慢查询拖垮连接池（曾导致验证码邮件发不出）。
+/// 超过 MAX_SNAPSHOT_BYTES 的快照拒绝写入（返回 false）。
+/// 超过压缩阈值的行以 gzip+base64 存储（content_size 恒为明文逻辑大小）。
 pub async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, data: &Value) -> bool {
     let content = serde_json::to_string(data).unwrap_or_default();
+    if content.len() > MAX_SNAPSHOT_BYTES {
+        tracing::warn!(
+            "[sync] snapshot {} of {} rejected: {} bytes > limit {}",
+            name,
+            ciyuanxi_id,
+            content.len(),
+            MAX_SNAPSHOT_BYTES
+        );
+        return false;
+    }
     let size = content.len() as i64;
+    let stored = encode_content(&content);
     let stored_size: Option<i64> = sqlx::query_scalar(
         "SELECT content_size FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?",
     )
@@ -77,7 +133,7 @@ pub async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, dat
         let identical: Option<i64> = sqlx::query_scalar(
             "SELECT MD5(content) = MD5(?) FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?",
         )
-        .bind(&content)
+        .bind(&stored)
         .bind(ciyuanxi_id)
         .bind(name)
         .fetch_optional(pool)
@@ -94,7 +150,7 @@ pub async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, dat
     )
     .bind(ciyuanxi_id)
     .bind(name)
-    .bind(&content)
+    .bind(&stored)
     .bind(size)
     .execute(pool)
     .await
@@ -219,6 +275,46 @@ pub async fn backfill_legacy_sync_files(pool: &MySqlPool) {
         tracing::info!("[sync] backfilled {} legacy sync items into db", migrated);
     }
     migrate_digit_sync_keys(pool).await;
+    compress_plaintext_snapshots(pool).await;
+}
+
+/// 存量迁移：把 DB 里超过压缩阈值的明文快照行重写为 gzip 存储（幂等）。
+/// 小于阈值的行保持明文。只在启动时执行一次，量级为用户数。
+async fn compress_plaintext_snapshots(pool: &MySqlPool) {
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT ciyuanxi_id, file_name, content FROM user_sync_files \
+         WHERE content NOT LIKE 'gz1:%' AND LENGTH(content) > ?",
+    )
+    .bind(COMPRESS_THRESHOLD as i64)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    let mut compressed = 0usize;
+    for (uid, name, content) in rows {
+        let v: Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let stored = encode_content(&content);
+        if stored == content {
+            continue;
+        }
+        let res = sqlx::query(
+            "UPDATE user_sync_files SET content = ? WHERE ciyuanxi_id = ? AND file_name = ?",
+        )
+        .bind(&stored)
+        .bind(&uid)
+        .bind(&name)
+        .execute(pool)
+        .await;
+        if res.is_ok() {
+            compressed += 1;
+        }
+        let _ = v; // 校验过可解析即可
+    }
+    if compressed > 0 {
+        tracing::info!("[sync] compressed {} plaintext snapshots", compressed);
+    }
 }
 
 /// 历史版本曾用“弦予号去掉字母只留数字”作为同步 key，
@@ -297,5 +393,30 @@ mod tests {
     #[test]
     fn sync_dir_keeps_digits_only() {
         assert_eq!(sync_dir("abc123"), std::path::PathBuf::from("data/sync").join("123"));
+    }
+
+    #[test]
+    fn gzip_encode_is_deterministic() {
+        // write_snapshot 用 MD5(压缩串) 做去重对比，编码必须确定性
+        let big = "x".repeat(200 * 1024);
+        assert_eq!(encode_content(&big), encode_content(&big));
+    }
+
+    #[test]
+    fn gzip_roundtrip_and_threshold() {
+        // 小内容保持明文
+        let small = r#"{"playlists":[]}"#;
+        assert_eq!(encode_content(small), small);
+        // 大内容加前缀且可解回原文
+        let songs: Vec<Value> = (0..30000).map(|i| serde_json::json!({"id": i, "t": "哈"})).collect();
+        let padded =
+            serde_json::json!({ "playlists": [ { "name": "幻空喜欢的音乐", "songs": songs } ] })
+                .to_string();
+        let stored = encode_content(&padded);
+        assert!(stored.starts_with(GZ_PREFIX));
+        let decoded = decode_content(&stored).unwrap();
+        assert_eq!(decoded, serde_json::from_str::<Value>(&padded).unwrap());
+        // 明文旧数据直接可解
+        assert!(decode_content(&padded).is_some());
     }
 }

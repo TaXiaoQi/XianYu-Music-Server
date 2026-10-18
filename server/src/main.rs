@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
@@ -130,6 +131,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/uploads/covers/:filename", get(serve_cover))
         .nest_service("/uploads", ServeDir::new("uploads"))
         .fallback(spa_fallback)
+        // 响应 gzip：大 JSON（歌单快照/插件脚本/admin 数据）省 70%+ 带宽；
+        // DefaultPredicate 自动跳过图片/视频等已压缩类型
+        .layer(CompressionLayer::new())
         .layer(cors)
         .layer(axum::middleware::from_fn(svg_no_inline_guard))
         .with_state(state);
