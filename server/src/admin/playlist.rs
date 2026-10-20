@@ -4,78 +4,7 @@ use sqlx::MySqlPool;
 use sqlx::Row;
 
 use super::{err, log_operation, ok, AdminCtx};
-use crate::handlers::helpers::{int_of, parse_body, str_of};
-
-// 旧版歌单读取（user_playlists 表，该表已停止写入，仅保留兼容历史数据查看）
-#[allow(dead_code)]
-pub async fn get_user_playlists(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    let data = parse_body(body);
-    let mut ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
-    let legacy_user_id = str_of(&data, "user_id").trim().to_string();
-    let email = str_of(&data, "email").trim().to_string();
-    if ciyuanxi_id.is_empty() && !legacy_user_id.is_empty() {
-        if legacy_user_id.chars().all(|c| c.is_ascii_digit()) {
-            let r = sqlx::query("SELECT ciyuanxi_id FROM app_users WHERE id = ? LIMIT 1").bind(&legacy_user_id).fetch_optional(pool).await.ok().flatten();
-            if let Some(r) = r {
-                ciyuanxi_id = r.try_get::<String, _>("ciyuanxi_id").unwrap_or_default();
-            }
-        } else {
-            ciyuanxi_id = legacy_user_id;
-        }
-    }
-    if ciyuanxi_id.is_empty() && !email.is_empty() {
-        let r = sqlx::query("SELECT ciyuanxi_id FROM app_users WHERE email = ? LIMIT 1").bind(&email).fetch_optional(pool).await.ok().flatten();
-        if let Some(r) = r {
-            ciyuanxi_id = r.try_get::<String, _>("ciyuanxi_id").unwrap_or_default();
-        }
-    }
-    if ciyuanxi_id.is_empty() {
-        return err(404, "未找到对应用户或该用户无弦予号");
-    }
-    let user = sqlx::query("SELECT id, username, ciyuanxi_id FROM app_users WHERE ciyuanxi_id = ? LIMIT 1")
-        .bind(&ciyuanxi_id).fetch_optional(pool).await;
-    let Some(user_row) = user.ok().flatten() else {
-        return err(404, "用户不存在");
-    };
-    let uid: i64 = user_row.get("id");
-    let username: String = user_row.try_get("username").unwrap_or_default();
-    let playlists = sqlx::query("SELECT id, name, description, cover_url, song_count, created_at, updated_at FROM user_playlists WHERE user_id = ? OR user_id = ? ORDER BY updated_at DESC")
-        .bind(&ciyuanxi_id).bind(&uid.to_string()).fetch_all(pool).await;
-
-    let mut result: Vec<Value> = Vec::new();
-    let rows = playlists.unwrap_or_default();
-    for p in &rows {
-        let pid: i64 = p.get("id");
-        let songs = sqlx::query("SELECT id, song_hash, song_name, singer, album, cover_url, duration, source, original_id, sort_order, created_at FROM user_playlist_songs WHERE playlist_id = ? ORDER BY sort_order ASC, id ASC")
-            .bind(pid).fetch_all(pool).await.unwrap_or_default();
-        let songs_arr: Vec<Value> = songs.iter().map(|s| json!({
-            "id": s.get::<i64, _>("id"),
-            "song_name": s.try_get::<String, _>("song_name").unwrap_or_default(),
-            "singer": s.try_get::<String, _>("singer").unwrap_or_default(),
-            "album": s.try_get::<String, _>("album").unwrap_or_default(),
-            "cover_url": s.try_get::<String, _>("cover_url").unwrap_or_default(),
-            "duration": s.get::<i64, _>("duration"),
-            "source": s.try_get::<String, _>("source").unwrap_or_default(),
-            "sort_order": s.get::<i64, _>("sort_order"),
-            "created_at": s.try_get::<String, _>("created_at").unwrap_or_default(),
-        })).collect();
-        result.push(json!({
-            "id": pid,
-            "name": p.try_get::<String, _>("name").unwrap_or_default(),
-            "description": p.try_get::<String, _>("description").unwrap_or_default(),
-            "cover_url": p.try_get::<String, _>("cover_url").unwrap_or_default(),
-            "song_count": p.get::<i64, _>("song_count"),
-            "created_at": p.try_get::<String, _>("created_at").unwrap_or_default(),
-            "updated_at": p.try_get::<String, _>("updated_at").unwrap_or_default(),
-            "songs": songs_arr,
-        }));
-    }
-    log_operation(pool, ctx, "查看用户歌单", &format!("弦予号:{}", ciyuanxi_id), "").await;
-    ok("ok", json!({
-        "user": json!({ "id": uid, "username": username, "ciyuanxi_id": ciyuanxi_id }),
-        "playlists": result,
-    }))
-}
+use crate::handlers::helpers::{int_of, parse_body};
 
 pub async fn delete_user_playlist(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);

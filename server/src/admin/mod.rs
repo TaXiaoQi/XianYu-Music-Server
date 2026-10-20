@@ -44,7 +44,6 @@ pub struct AdminClaims {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct AdminCtx {
     pub id: i64,
     pub username: String,
