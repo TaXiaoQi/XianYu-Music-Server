@@ -11,6 +11,99 @@ use crate::response::ReqCtx;
 // 存储层已迁至 sync_store / sync_merge；旧引用路径保持可用。
 pub use crate::handlers::sync_store::{backfill_legacy_sync_files, delete_user_sync_data};
 
+// ===== 删除广播账本 =====
+// 「删除全部/删除云端」后条目已从快照移除，但其他端仍持有本地副本，且会在
+// 下次上传时把副本并回云端（复活）。各域快照内维护已删除条目账本（按标识
+// 去重、cap 500 丢最旧），随下载响应下发；拉取端按账本裁剪本地副本，同标识
+// 重新上传时从账本移除（复活即撤销广播）。
+const LEDGER_CAP: usize = 500;
+
+/// 记账：把 ids 追加进快照账本字段（field 内条目形如 {id_key, at}）。
+fn ledger_append(doc: &mut Value, field: &str, id_key: &str, ids: &[String]) {
+    if ids.is_empty() {
+        return;
+    }
+    let now = now_ts();
+    let mut entries: Vec<(String, i64)> = doc
+        .get(field)
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|e| {
+                    let k = e.get(id_key)?.as_str()?.to_string();
+                    let at = e.get("at").and_then(Value::as_i64).unwrap_or(0);
+                    Some((k, at))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    for id in ids {
+        let id = id.trim();
+        if id.is_empty() {
+            continue;
+        }
+        entries.retain(|(k, _)| k != id);
+        entries.push((id.to_string(), now));
+    }
+    if entries.len() > LEDGER_CAP {
+        entries.drain(..entries.len() - LEDGER_CAP);
+    }
+    doc[field] = Value::Array(
+        entries
+            .into_iter()
+            .map(|(k, at)| {
+                let mut e = serde_json::Map::new();
+                e.insert(id_key.to_string(), Value::String(k));
+                e.insert("at".to_string(), json!(at));
+                Value::Object(e)
+            })
+            .collect(),
+    );
+}
+
+/// 撤账：同标识重新上传时移除（复活即撤销广播）。
+fn ledger_remove(doc: &mut Value, field: &str, id_key: &str, ids: &[String]) {
+    if ids.is_empty() {
+        return;
+    }
+    let rm: std::collections::HashSet<&str> = ids
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if rm.is_empty() {
+        return;
+    }
+    let keep: Vec<Value> = doc
+        .get(field)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|e| {
+            let k = e.get(id_key).and_then(Value::as_str).unwrap_or("");
+            !rm.contains(k)
+        })
+        .collect();
+    doc[field] = Value::Array(keep);
+}
+
+/// 读取账本标识列表（保持账本顺序，供下载响应扁平下发）。
+fn ledger_keys(doc: &Value, field: &str, id_key: &str) -> Vec<String> {
+    doc.get(field)
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|e| {
+                    e.get(id_key)
+                        .and_then(Value::as_str)
+                        .map(|s| s.to_string())
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 pub async fn file_sync_upload_start(_body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(_body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
@@ -84,34 +177,109 @@ pub async fn file_sync_upload_finish(body: &str, ctx: ReqCtx, pool: &MySqlPool) 
         Ok(r) => r,
         Err(_) => return ctx.err(400, "没有分块数据"),
     };
-    if rows.is_empty() {
+    let do_merge = matches!(data.get("merge"), Some(Value::Bool(true)));
+    // merge=false（手动覆盖上传）允许零分块：空快照即快捷清空云端歌单
+    if rows.is_empty() && do_merge {
         return ctx.err(400, "没有分块数据");
     }
-    let uploaded = sync_merge::assemble_chunk_playlists(&rows);
+    let mut uploaded = sync_merge::assemble_chunk_playlists(&rows);
     let _ = sqlx::query("DELETE FROM user_sync_chunks WHERE ciyuanxi_id = ?")
         .bind(&ciyuanxi_id)
         .execute(pool)
         .await;
-    let do_merge = matches!(data.get("merge"), Some(Value::Bool(true)));
     let mut id_map: Vec<Value> = Vec::new();
-    let merged = if do_merge {
-        let existing: Vec<Value> = read_snapshot(pool, &ciyuanxi_id, "playlists.json")
-            .await
-            .ok()
-            .and_then(|v| v.get("playlists").cloned())
-            .and_then(|x| x.as_array().cloned())
-            .unwrap_or_default();
+    // 账本挂在完整快照文档上（build_snapshot_doc 只组装歌单域），读写都取全文档
+    let mut doc = read_snapshot(pool, &ciyuanxi_id, "playlists.json")
+        .await
+        .unwrap_or_else(|_| json!({ "playlists": [] }));
+    let existing: Vec<Value> = doc
+        .get("playlists")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    // 重新上传视为要回该歌单：按 cloudId 撤销删除广播
+    let uploaded_cloud_ids: Vec<String> = uploaded
+        .iter()
+        .filter_map(|p| {
+            p.get("cloudId")
+                .and_then(Value::as_str)
+                .map(|s| s.to_string())
+        })
+        .filter(|s| !s.is_empty())
+        .collect();
+    ledger_remove(&mut doc, "deleted", "cloudId", &uploaded_cloud_ids);
+    if do_merge {
         let delete_ids: Option<Vec<String>> = data
             .get("delete_cloud_ids")
             .and_then(Value::as_array)
             .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect());
+        // 显式删除云端的歌单进入删除广播账本
+        if let Some(ids) = &delete_ids {
+            ledger_append(&mut doc, "deleted", "cloudId", ids);
+        }
         let (m, im) = sync_merge::merge_into_snapshot(uploaded, existing, delete_ids.as_deref());
         id_map = im;
-        m
+        doc["playlists"] = json!(m);
     } else {
-        uploaded
-    };
-    let save = sync_merge::build_snapshot_doc(merged);
+        // 全量替换（手动覆盖上传 merge=false）：被清掉的存量歌单记入广播账本，
+        // 其他端下载时按 cloudId 裁剪本地副本，避免其自动同步把数据合并复活
+        let kept: std::collections::HashSet<String> = uploaded
+            .iter()
+            .filter_map(|p| {
+                p.get("cloudId")
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string())
+            })
+            .filter(|s| !s.is_empty())
+            .collect();
+        let cleared: Vec<String> = existing
+            .iter()
+            .filter_map(|p| {
+                p.get("cloudId")
+                    .and_then(Value::as_str)
+                    .map(|s| s.to_string())
+            })
+            .filter(|s| !s.is_empty() && !kept.contains(s))
+            .collect();
+        if !cleared.is_empty() {
+            ledger_append(&mut doc, "deleted", "cloudId", &cleared);
+        }
+        // 全量替换（手动覆盖上传 merge=false）：为缺 cloudId 的歌单分配探针 id
+        // 并回传 id_map，供客户端把新歌单绑定云端 id（分配规则与 merge 分支一致）
+        let ts = now_ts();
+        for (n, pl) in uploaded.iter_mut().enumerate() {
+            let has_cloud_id = pl
+                .get("cloudId")
+                .and_then(|c| c.as_str())
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+            let key = if has_cloud_id {
+                pl.get("cloudId")
+                    .and_then(|c| c.as_str())
+                    .unwrap()
+                    .to_string()
+            } else {
+                format!("c{}{}", ts, n)
+            };
+            let local_id = pl
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            pl["cloudId"] = json!(key);
+            id_map.push(json!({ "id": local_id, "cloudId": key }));
+        }
+        doc["playlists"] = json!(uploaded);
+    }
+    let merged: Vec<Value> = doc
+        .get("playlists")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let mut save = sync_merge::build_snapshot_doc(merged);
+    if let Some(d) = doc.get("deleted") {
+        save["deleted"] = d.clone();
+    }
     let ok = write_snapshot(pool, &ciyuanxi_id, "playlists.json", &save).await;
     let meta = json!({
         "last_sync": now_str(),
@@ -175,7 +343,8 @@ pub async fn file_sync_v2_download_ops(body: &str, ctx: ReqCtx, pool: &MySqlPool
             ctx.ok("获取成功", json!({
                 "ops": ops,
                 "stats": stats,
-                "snapshot_timestamp": ts
+                "snapshot_timestamp": ts,
+                "deleted_playlist_cloud_ids": ledger_keys(&fixed, "deleted", "cloudId")
             }))
         }
         Err(_) => ctx.ok(
@@ -183,7 +352,8 @@ pub async fn file_sync_v2_download_ops(body: &str, ctx: ReqCtx, pool: &MySqlPool
             json!({
                 "ops": [],
                 "stats": { "playlist_count": 0, "song_total": 0 },
-                "snapshot_timestamp": 0
+                "snapshot_timestamp": 0,
+                "deleted_playlist_cloud_ids": []
             }),
         ),
     }
@@ -201,9 +371,15 @@ pub async fn file_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
             if changed {
                 let _ = write_snapshot(pool, &ciyuanxi_id, "playlists.json", &fixed_snapshot).await;
             }
-            ctx.ok("获取成功", fixed_snapshot)
+            let deleted_ids = ledger_keys(&fixed_snapshot, "deleted", "cloudId");
+            let mut out = fixed_snapshot;
+            out["deleted_playlist_cloud_ids"] = json!(deleted_ids);
+            ctx.ok("获取成功", out)
         }
-        Err(_) => ctx.ok("暂无同步数据", json!({ "playlists": [] })),
+        Err(_) => ctx.ok(
+            "暂无同步数据",
+            json!({ "playlists": [], "deleted_playlist_cloud_ids": [] }),
+        ),
     }
 }
 
@@ -254,7 +430,7 @@ pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx, pool: &MySqlPool
                 .unwrap_or(0)
         })
         .sum();
-    let save = json!({
+    let mut save = json!({
         "version": 4,
         "uploaded_at": now_str(),
         "timestamp": last_ts,
@@ -264,6 +440,12 @@ pub async fn file_sync_delete_playlist(body: &str, ctx: ReqCtx, pool: &MySqlPool
         },
         "playlists": kept
     });
+    // 保留既有账本，再把本次删除记入广播账本：其他端下载时按 cloudId 裁剪本地副本
+    if let Some(d) = existing.get("deleted") {
+        save["deleted"] = d.clone();
+    }
+    let ids: Vec<String> = delset.into_iter().collect();
+    ledger_append(&mut save, "deleted", "cloudId", &ids);
     let ok = write_snapshot(pool, &ciyuanxi_id, "playlists.json", &save).await;
     if ok {
         ctx.ok("删除成功", json!({ "deleted": deleted }))
@@ -302,21 +484,27 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     if plugin_empty && data.get("subscriptions").is_none() {
         return ctx.err(400, "缺少插件或订阅数据");
     }
-    let is_first = matches!(data.get("is_first"), Some(Value::Bool(true)));
+    // 上传一律按 id upsert（云端 = 各端并集 + plugin_sync_delete 显式删除）。
+    // 曾经的 is_first「清空后整批替换」语义在多端插件数不对称时会互相覆盖
+    // （如移动端 1 个插件的上传把桌面端 31 个清掉），已废弃；字段仅保留兼容忽略。
     let mut save_data = read_snapshot(pool, &ciyuanxi_id, "plugins.json").await.unwrap_or_else(|_| {
         json!({
             "version": 1, "uploaded_at": now_str(), "timestamp": now_ts(),
             "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
         })
     });
-    if is_first {
-        save_data["plugins"] = json!([]);
-        save_data["stats"]["plugin_count"] = json!(0);
-    }
     let mut plugins: Vec<Value> = save_data.get("plugins").and_then(|x| x.as_array()).cloned().unwrap_or_default();
     let pid = plugin.get("id").cloned().unwrap_or(Value::Null);
+    let pid_str = plugin
+        .get("id")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim()
+        .to_string();
     let mut found = false;
     if !plugin_empty {
+        // 重新上传视为要回该插件：按 id 撤销删除广播
+        ledger_remove(&mut save_data, "deleted", "id", &[pid_str.clone()]);
         for p in plugins.iter_mut() {
             if p.get("id").cloned().unwrap_or(Value::Null) != pid {
                 continue;
@@ -339,8 +527,36 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     save_data["plugins"] = json!(plugins);
     save_data["stats"]["plugin_count"] = json!(count);
     if let Some(subs) = data.get("subscriptions").and_then(sanitize_subscriptions) {
-        let sub_count = subs.len() as i64;
-        save_data["subscriptions"] = json!(subs);
+        // 订阅按 url upsert（上传方条目覆盖同 url 元数据）：云端 = 各端并集，
+        // 删除走 plugin_sync_delete 的 subscription_urls 显式删除。整体替换会在
+        // 多端订阅集不对称时互相覆盖（同 is_first 插件清空问题），已废弃。
+        let mut merged: Vec<Value> = save_data
+            .get("subscriptions")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut sub_urls: Vec<String> = Vec::new();
+        for s in subs {
+            let url = s.get("url").and_then(|u| u.as_str()).unwrap_or("").trim().to_string();
+            if url.is_empty() {
+                continue;
+            }
+            // 重新上传视为要回该订阅：按 url 撤销删除广播
+            sub_urls.push(url.clone());
+            let pos = merged.iter().position(|p| {
+                p.get("url")
+                    .and_then(|u| u.as_str())
+                    .map(|u| u.trim() == url)
+                    .unwrap_or(false)
+            });
+            match pos {
+                Some(i) => merged[i] = s,
+                None => merged.push(s),
+            }
+        }
+        ledger_remove(&mut save_data, "deleted_subscriptions", "url", &sub_urls);
+        let sub_count = merged.len() as i64;
+        save_data["subscriptions"] = json!(merged);
         save_data["stats"]["subscription_count"] = json!(sub_count);
     }
     save_data["uploaded_at"] = json!(now_str());
@@ -358,8 +574,21 @@ pub async fn plugin_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> 
         return ctx.err(400, "参数错误");
     }
     match read_snapshot(pool, &ciyuanxi_id, "plugins.json").await {
-        Ok(v) => ctx.ok("获取成功", v),
-        Err(_) => ctx.ok("暂无同步数据", json!({ "plugins": [] })),
+        Ok(v) => {
+            let mut out = v;
+            out["deleted_plugin_ids"] = json!(ledger_keys(&out, "deleted", "id"));
+            out["deleted_subscription_urls"] =
+                json!(ledger_keys(&out, "deleted_subscriptions", "url"));
+            ctx.ok("获取成功", out)
+        }
+        Err(_) => ctx.ok(
+            "暂无同步数据",
+            json!({
+                "plugins": [],
+                "deleted_plugin_ids": [],
+                "deleted_subscription_urls": []
+            }),
+        ),
     }
 }
 
@@ -379,8 +608,23 @@ pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
                 .collect()
         })
         .unwrap_or_default();
-    if delset.is_empty() {
-        return ctx.ok("删除成功", json!({ "deleted": 0, "plugin_count": 0 }));
+    // 订阅显式删除（url 维度）：配合上传 upsert 的并集语义
+    let subdel: std::collections::HashSet<String> = data
+        .get("subscription_urls")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if delset.is_empty() && subdel.is_empty() {
+        return ctx.ok(
+            "删除成功",
+            json!({ "deleted": 0, "plugin_count": 0, "deleted_subscriptions": 0 }),
+        );
     }
     let existing = read_snapshot(pool, &ciyuanxi_id, "plugins.json")
         .await
@@ -405,15 +649,44 @@ pub async fn plugin_sync_delete(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
         })
         .collect();
     let deleted = before - kept.len();
+    let subs = existing
+        .get("subscriptions")
+        .and_then(|x| x.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let sub_before = subs.len();
+    let kept_subs: Vec<Value> = subs
+        .into_iter()
+        .filter(|s| {
+            let u = s
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            !subdel.contains(&u)
+        })
+        .collect();
+    let deleted_subs = sub_before - kept_subs.len();
     let mut save = existing;
     save["plugins"] = json!(kept);
     save["stats"]["plugin_count"] = json!(kept.len() as i64);
+    save["subscriptions"] = json!(kept_subs);
+    save["stats"]["subscription_count"] = json!(kept_subs.len() as i64);
     save["uploaded_at"] = json!(now_str());
     save["timestamp"] = json!(now_ts());
+    // 删除进入广播账本：其他端下载时按 id / url 裁剪本地副本
+    let del_ids: Vec<String> = delset.into_iter().collect();
+    ledger_append(&mut save, "deleted", "id", &del_ids);
+    let sub_urls: Vec<String> = subdel.into_iter().collect();
+    ledger_append(&mut save, "deleted_subscriptions", "url", &sub_urls);
     if !write_snapshot(pool, &ciyuanxi_id, "plugins.json", &save).await {
         return ctx.err(500, "同步数据写入失败");
     }
-    ctx.ok("删除成功", json!({ "deleted": deleted, "plugin_count": kept.len() as i64 }))
+    ctx.ok(
+        "删除成功",
+        json!({ "deleted": deleted, "plugin_count": kept.len() as i64, "deleted_subscriptions": deleted_subs }),
+    )
 }
 
 fn settings_file_name(platform: &str) -> String {
@@ -482,12 +755,15 @@ pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) ->
 
     let final_list: Vec<Value>;
     let count: i64;
+    // 账本挂在完整快照文档上，读写都取全文档（重新上传按 path 撤销广播）
+    let mut doc = read_snapshot(pool, &ciyuanxi_id, "favorites.json")
+        .await
+        .unwrap_or_else(|_| json!({ "favorites": [] }));
     if merge {
-        let existing: Vec<Value> = read_snapshot(pool, &ciyuanxi_id, "favorites.json")
-            .await
-            .ok()
-            .and_then(|v| v.get("favorites").cloned())
-            .and_then(|x| x.as_array().cloned())
+        let existing: Vec<Value> = doc
+            .get("favorites")
+            .and_then(|x| x.as_array())
+            .cloned()
             .unwrap_or_default();
         let mut by_path: Vec<(Option<String>, Value)> = existing
             .into_iter()
@@ -510,13 +786,16 @@ pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) ->
             }
         }
         if let Some(Value::Array(del)) = data.get("delete_paths") {
-            let delset: std::collections::HashSet<String> = del
+            let delset: Vec<String> = del
                 .iter()
                 .filter_map(|v| v.as_str())
                 .map(|s| s.to_string())
                 .collect();
+            // 显式删除进入广播账本：其他端下载时按 path 裁剪本地副本
+            ledger_append(&mut doc, "deleted", "path", &delset);
+            let delset_set: std::collections::HashSet<String> = delset.into_iter().collect();
             by_path.retain(|(k, _)| match k {
-                Some(p) => !delset.contains(p),
+                Some(p) => !delset_set.contains(p),
                 None => true,
             });
         }
@@ -525,16 +804,42 @@ pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) ->
     } else {
         final_list = favorites.as_array().cloned().unwrap_or_default();
         count = final_list.len() as i64;
+        // 全量替换（手动覆盖上传 merge=false）：被清掉的存量 path 记入广播账本，
+        // 其他端下载时按账本裁剪本地副本，避免其自动同步把数据合并复活
+        let kept: std::collections::HashSet<String> = final_list
+            .iter()
+            .filter_map(|it| it.get("path").and_then(Value::as_str).map(|s| s.to_string()))
+            .collect();
+        let cleared: Vec<String> = doc
+            .get("favorites")
+            .and_then(|x| x.as_array())
+            .cloned()
+            .unwrap_or_default()
+            .iter()
+            .filter_map(|it| it.get("path").and_then(Value::as_str).map(|s| s.to_string()))
+            .filter(|p| !p.is_empty() && !kept.contains(p))
+            .collect();
+        if !cleared.is_empty() {
+            ledger_append(&mut doc, "deleted", "path", &cleared);
+        }
     }
+    let uploaded_paths: Vec<String> = final_list
+        .iter()
+        .filter_map(|it| {
+            it.get("path")
+                .and_then(Value::as_str)
+                .map(|s| s.to_string())
+        })
+        .filter(|s| !s.is_empty())
+        .collect();
+    ledger_remove(&mut doc, "deleted", "path", &uploaded_paths);
 
-    let save = json!({
-        "version": 1,
-        "uploaded_at": now_str(),
-        "timestamp": now_ts(),
-        "stats": { "song_count": count },
-        "favorites": final_list
-    });
-    if !write_snapshot(pool, &ciyuanxi_id, "favorites.json", &save).await {
+    doc["favorites"] = json!(final_list);
+    doc["version"] = json!(1);
+    doc["uploaded_at"] = json!(now_str());
+    doc["timestamp"] = json!(now_ts());
+    doc["stats"] = json!({ "song_count": count });
+    if !write_snapshot(pool, &ciyuanxi_id, "favorites.json", &doc).await {
         return ctx.err(500, "同步数据写入失败");
     }
     ctx.ok("上传成功", json!({ "song_count": count }))
@@ -547,8 +852,15 @@ pub async fn favorites_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) 
         return ctx.err(400, "参数错误");
     }
     match read_snapshot(pool, &ciyuanxi_id, "favorites.json").await {
-        Ok(v) => ctx.ok("获取成功", v),
-        Err(_) => ctx.ok("暂无同步数据", json!({ "favorites": [] })),
+        Ok(v) => {
+            let mut out = v;
+            out["deleted_paths"] = json!(ledger_keys(&out, "deleted", "path"));
+            ctx.ok("获取成功", out)
+        }
+        Err(_) => ctx.ok(
+            "暂无同步数据",
+            json!({ "favorites": [], "deleted_paths": [] }),
+        ),
     }
 }
 

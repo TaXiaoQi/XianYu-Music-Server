@@ -765,11 +765,7 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             if plugin_empty && data.get("subscriptions").is_none() {
                 return ctx.err(400, "缺少插件或订阅数据");
             }
-            let is_first = matches!(data.get("is_first"), Some(Value::Bool(true)));
-            if is_first {
-                save["plugins"] = json!([]);
-                save["stats"]["plugin_count"] = json!(0);
-            }
+            // 与 sync.rs 对齐：上传按 id upsert，废弃 is_first 清空语义（多端互相覆盖）
             let mut plugins = save.get("plugins").and_then(|v| v.as_array()).cloned().unwrap_or_default();
             if !plugin_empty {
                 let pid = plugin.get("id").cloned().unwrap_or(Value::Null);
@@ -779,12 +775,29 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             save["plugins"] = json!(plugins);
             save["stats"]["plugin_count"] = json!(plugins.len());
             if let Some(subs) = data.get("subscriptions").and_then(|v| v.as_array()) {
-                let clean: Vec<Value> = subs.iter()
-                    .filter(|item| item.get("url").and_then(|u| u.as_str()).map(|u| !u.trim().is_empty()).unwrap_or(false))
+                // 与 sync.rs 对齐：订阅按 url upsert，废弃整体替换（多端互相覆盖）
+                let mut merged = save
+                    .get("subscriptions")
+                    .and_then(|v| v.as_array())
                     .cloned()
-                    .collect();
-                save["subscriptions"] = json!(clean.clone());
-                save["stats"]["subscription_count"] = json!(clean.len());
+                    .unwrap_or_default();
+                for s in subs {
+                    let url = s.get("url").and_then(|u| u.as_str()).unwrap_or("").trim().to_string();
+                    if url.is_empty() {
+                        continue;
+                    }
+                    match merged.iter().position(|p| {
+                        p.get("url")
+                            .and_then(|u| u.as_str())
+                            .map(|u| u.trim() == url)
+                            .unwrap_or(false)
+                    }) {
+                        Some(i) => merged[i] = s.clone(),
+                        None => merged.push(s.clone()),
+                    }
+                }
+                save["subscriptions"] = json!(merged);
+                save["stats"]["subscription_count"] = json!(merged.len());
             }
             save["uploaded_at"] = json!(now_string());
             save["timestamp"] = json!(now_ts());
