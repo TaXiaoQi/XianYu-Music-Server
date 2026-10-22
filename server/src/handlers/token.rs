@@ -91,6 +91,8 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "settings_sync_download",
     "favorites_sync_upload",
     "favorites_sync_download",
+    "history_sync_upload",
+    "history_sync_download",
     "cloud_creds_upload",
     "cloud_creds_download",
     // upload

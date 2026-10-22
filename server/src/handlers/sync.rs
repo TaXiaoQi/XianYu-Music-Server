@@ -741,6 +741,45 @@ pub async fn settings_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     ctx.ok("暂无同步数据", json!({ "settings": null }))
 }
 
+// ===== 播放历史云同步 =====
+// 客户端（桌面/移动端）上传本地听歌历史（已自行合并去重），云端存
+// listen_history.json；下载直接返回该文件，客户端仅补本地缺失条目。
+
+pub async fn history_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let history = match data.get("history") {
+        Some(Value::Array(arr)) => arr.clone(),
+        _ => return ctx.err(400, "history 格式错误"),
+    };
+    let count = history.len();
+    let save = json!({
+        "version": 1,
+        "uploaded_at": now_str(),
+        "timestamp": now_ts(),
+        "history": history
+    });
+    if !write_snapshot(pool, &ciyuanxi_id, "listen_history.json", &save).await {
+        return ctx.err(500, "同步数据写入失败");
+    }
+    ctx.ok("上传成功", json!({ "history_count": count, "uploaded_at": save["uploaded_at"] }))
+}
+
+pub async fn history_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    match read_snapshot(pool, &ciyuanxi_id, "listen_history.json").await {
+        Ok(v) => ctx.ok("获取成功", v),
+        Err(_) => ctx.ok("暂无同步数据", json!({ "history": [] })),
+    }
+}
+
 pub async fn favorites_sync_upload(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
