@@ -884,10 +884,14 @@ async function confirmResolve() {
   })
   resolveSaving.value = false
   if (res.code === 200) {
-    if (res.data?.resolved) {
-      showToast('协同反馈已全部完成', 'success')
+    if (hasCollab) {
+      if (res.data?.resolved) {
+        showToast('协同反馈已全部完成', 'success')
+      } else {
+        showToast(`已确认完成（${res.data?.completed ?? 0}/${res.data?.total ?? 0}），等待其他参与人`, 'success')
+      }
     } else {
-      showToast(`已确认完成（${res.data?.completed}/${res.data?.total}），等待其他参与人`, 'success')
+      showToast('反馈已完成', 'success')
     }
     closeResolve()
     await loadList()
