@@ -351,6 +351,7 @@ fn profile_for_action(action: &str) -> RateProfile {
         | "file_sync_v2_upload_finish"
         | "file_sync_v2_download_ops"
         | "plugin_sync_upload_one"
+        | "plugin_sync_upload_batch"
         | "plugin_sync_download"
         | "settings_sync_upload"
         | "settings_sync_download"

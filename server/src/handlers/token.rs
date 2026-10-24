@@ -85,6 +85,7 @@ const USER_BOUND_ACTIONS: &[&str] = &[
     "file_sync_v2_upload_finish",
     "file_sync_v2_download_ops",
     "plugin_sync_upload_one",
+    "plugin_sync_upload_batch",
     "plugin_sync_download",
     "plugin_sync_delete",
     "settings_sync_upload",

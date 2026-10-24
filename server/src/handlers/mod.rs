@@ -133,6 +133,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "file_sync_v2_upload_finish" => sync::file_sync_v2_upload_finish(body, ctx, pool).await,
         "file_sync_v2_download_ops" => sync::file_sync_v2_download_ops(body, ctx, pool).await,
         "plugin_sync_upload_one" => sync::plugin_sync_upload_one(body, ctx, pool).await,
+        "plugin_sync_upload_batch" => sync::plugin_sync_upload_batch(body, ctx, pool).await,
         "plugin_sync_download" => sync::plugin_sync_download(body, ctx, pool).await,
         "plugin_sync_delete" => sync::plugin_sync_delete(body, ctx, pool).await,
         "settings_sync_upload" => sync::settings_sync_upload(body, ctx, pool).await,

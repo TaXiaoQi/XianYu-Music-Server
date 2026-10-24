@@ -567,6 +567,149 @@ pub async fn plugin_sync_upload_one(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
     ctx.ok("上传成功", json!({ "plugin_count": count }))
 }
 
+/// 批量覆盖上传：一次请求把云端插件/订阅替换为所传全集（手动「同步至服务器」
+/// 专用，替代「批量删除多余项 + N 次 upload_one」的多请求流程）。
+/// 语义与原客户端两步流程完全一致：
+///  - 重新上传的 id/url：撤销此前删除广播（对齐 upload_one 的 ledger_remove）
+///  - 被覆盖移除的云端多余 id/url：广播删除，其他端下载时按账本裁剪本地副本
+///  - 新插件缺 userVariablesEncrypted 时沿用云端旧值（对齐 upload_one 合并）
+pub async fn plugin_sync_upload_batch(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
+    if ciyuanxi_id.is_empty() {
+        return ctx.err(400, "参数错误");
+    }
+    let plugins_in: Vec<Value> = data
+        .get("plugins")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter(|p| p.is_object())
+                .filter(|p| {
+                    !p.get("id")
+                        .and_then(Value::as_str)
+                        .unwrap_or("")
+                        .trim()
+                        .is_empty()
+                })
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    // subscriptions 字段缺省 = 不动订阅；携带（含空数组）= 以本次全集替换。
+    // plugins 字段必须显式携带（可空数组 = 清空云端插件），防止漏传误清
+    let has_plugins_field = data.get("plugins").map(Value::is_array).unwrap_or(false);
+    let subs_field = data.get("subscriptions").and_then(sanitize_subscriptions);
+    if !has_plugins_field && subs_field.is_none() {
+        return ctx.err(400, "缺少插件或订阅数据");
+    }
+    let mut save_data = read_snapshot(pool, &ciyuanxi_id, "plugins.json").await.unwrap_or_else(|_| {
+        json!({
+            "version": 1, "uploaded_at": now_str(), "timestamp": now_ts(),
+            "stats": { "plugin_count": 0, "subscription_count": 0 }, "plugins": [], "subscriptions": []
+        })
+    });
+    let old_plugins: Vec<Value> = save_data
+        .get("plugins")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let old_subs: Vec<Value> = save_data
+        .get("subscriptions")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut plugins_out: Vec<Value> = Vec::with_capacity(plugins_in.len());
+    let mut new_ids: Vec<String> = Vec::with_capacity(plugins_in.len());
+    for mut p in plugins_in {
+        let pid = p
+            .get("id")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        if p.get("userVariablesEncrypted").is_none() {
+            if let Some(old_enc) = old_plugins.iter().find(|o| {
+                o.get("id").and_then(Value::as_str).map(|s| s.trim() == pid).unwrap_or(false)
+            }).and_then(|o| o.get("userVariablesEncrypted").cloned()) {
+                p["userVariablesEncrypted"] = old_enc;
+            }
+        }
+        new_ids.push(pid);
+        plugins_out.push(p);
+    }
+    let has_subs_field = subs_field.is_some();
+    let (subs_out, new_urls) = match subs_field {
+        Some(subs) => {
+            let urls = subs
+                .iter()
+                .filter_map(|s| {
+                    s.get("url")
+                        .and_then(Value::as_str)
+                        .map(|u| u.trim().to_string())
+                })
+                .filter(|u| !u.is_empty())
+                .collect::<Vec<String>>();
+            (subs, urls)
+        }
+        None => (old_subs.clone(), Vec::new()),
+    };
+
+    // 删除广播账本：本次上传的 id/url 撤销删除广播；被替换移除的广播删除
+    let old_ids: Vec<String> = old_plugins
+        .iter()
+        .filter_map(|p| {
+            p.get("id").and_then(Value::as_str).map(|s| s.trim().to_string())
+        })
+        .filter(|s| !s.is_empty())
+        .collect();
+    let old_urls: Vec<String> = old_subs
+        .iter()
+        .filter_map(|s| {
+            s.get("url").and_then(Value::as_str).map(|u| u.trim().to_string())
+        })
+        .filter(|s| !s.is_empty())
+        .collect();
+    let removed_ids: Vec<String> = old_ids
+        .iter()
+        .filter(|id| !new_ids.contains(id))
+        .cloned()
+        .collect();
+    let removed_urls: Vec<String> = if has_subs_field {
+        old_urls
+            .iter()
+            .filter(|u| !new_urls.contains(u))
+            .cloned()
+            .collect()
+    } else {
+        Vec::new()
+    };
+    ledger_remove(&mut save_data, "deleted", "id", &new_ids);
+    ledger_remove(&mut save_data, "deleted_subscriptions", "url", &new_urls);
+    ledger_append(&mut save_data, "deleted", "id", &removed_ids);
+    ledger_append(&mut save_data, "deleted_subscriptions", "url", &removed_urls);
+
+    save_data["plugins"] = json!(plugins_out);
+    save_data["stats"]["plugin_count"] = json!(plugins_out.len() as i64);
+    if has_subs_field {
+        save_data["subscriptions"] = json!(subs_out);
+        save_data["stats"]["subscription_count"] = json!(subs_out.len() as i64);
+    }
+    save_data["uploaded_at"] = json!(now_str());
+    save_data["timestamp"] = json!(now_ts());
+    if !write_snapshot(pool, &ciyuanxi_id, "plugins.json", &save_data).await {
+        return ctx.err(500, "同步数据写入失败");
+    }
+    ctx.ok(
+        "批量上传成功",
+        json!({
+            "plugin_count": plugins_out.len() as i64,
+            "subscription_count": subs_out.len() as i64,
+        }),
+    )
+}
+
 pub async fn plugin_sync_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let ciyuanxi_id = str_of(&data, "user_id").trim().to_string();
