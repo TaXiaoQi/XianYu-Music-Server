@@ -169,8 +169,8 @@
                   <div class="user-name-row">
                     <span class="user-name">{{ item.nickname || '匿名用户' }}</span>
                     <span v-if="item.platform && platformLabel(item.platform)" class="platform-badge" :class="`platform-${item.platform}`">{{ platformLabel(item.platform) }}</span>
-                    <span v-if="item.app_version" class="platform-badge version-badge">{{ item.app_version }}</span>
                     <span v-if="systemTagOf(item).label" class="platform-badge system-badge" :class="`system-${systemTagOf(item).key}`">{{ systemTagOf(item).label }}</span>
+                    <span v-if="item.app_version" class="platform-badge version-badge">{{ item.app_version }}</span>
                   </div>
                   <span class="user-id">{{ item.ciyuanxi_id || '后台创建' }}</span>
                 </div>
@@ -500,8 +500,8 @@
               <div class="detail-user-row">
                 <strong class="detail-user-name">{{ contentModalItem.nickname || '匿名用户' }}</strong>
                 <span v-if="contentModalItem.platform && platformLabel(contentModalItem.platform)" class="platform-badge" :class="`platform-${contentModalItem.platform}`">{{ platformLabel(contentModalItem.platform) }}</span>
-                <span v-if="contentModalItem.app_version" class="platform-badge version-badge">{{ contentModalItem.app_version }}</span>
                 <span v-if="systemTagOf(contentModalItem).label" class="platform-badge system-badge" :class="`system-${systemTagOf(contentModalItem).key}`">{{ systemTagOf(contentModalItem).label }}</span>
+                <span v-if="contentModalItem.app_version" class="platform-badge version-badge">{{ contentModalItem.app_version }}</span>
                 <span v-if="contentModalItem.category === 'appeal'" class="type-badge type-appeal">封禁申诉</span>
                 <span v-else-if="contentModalItem.feedback_type" class="type-badge" :class="contentModalItem.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
                   {{ contentModalItem.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
