@@ -166,8 +166,6 @@ button, input, textarea, select { font-family: inherit; }
 .sidebar-menu::-webkit-scrollbar-thumb:hover { background: rgba(31, 41, 55, 0.30); }
 .sidebar-switch {
     margin-top: 12px;
-    padding-top: 12px;
-    border-top: 1px solid var(--sidebar-border);
 }
 .switch-mobile-btn {
     display: flex;
@@ -196,7 +194,9 @@ button, input, textarea, select { font-family: inherit; }
     transform: translateY(0) scale(0.98);
 }
 .sidebar-icp {
-    margin-top: 10px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--sidebar-border);
     text-align: center;
 }
 .sidebar-icp a {

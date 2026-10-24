@@ -195,7 +195,9 @@
                 <p class="fb-content fb-content-main fb-content-click" title="点击查看完整留言" @click.stop="openContentModal(item)">{{ item.content || '无内容' }}</p>
                 <div class="detail-more">
                   <div v-if="deviceInfoText(item)" class="device-info-row">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    <svg v-if="deviceIcon(item) === 'mobile'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+                    <svg v-else-if="deviceIcon(item) === 'watch'" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><polyline points="12 10 12 12 13 13"/><path d="M16.13 7.66l-.81-4.05a2 2 0 0 0-2-1.61h-2.68a2 2 0 0 0-2 1.61l-.78 4.05"/><path d="M7.88 16.36l.8 4a2 2 0 0 0 2 1.61h2.69a2 2 0 0 0 2-1.61l.81-4.05"/></svg>
+                    <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
                     <span class="device-info-text">{{ deviceInfoText(item) }}</span>
                   </div>
                   <div v-if="hasErrorLogs(item) || hasAllLogs(item)" class="log-summary">

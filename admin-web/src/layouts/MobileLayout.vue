@@ -48,6 +48,12 @@
       </router-view>
     </main>
 
+    <footer class="mobile-icp">
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026149270号-1</a>
+      <span class="icp-dot">·</span>
+      <a href="https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX" target="_blank" rel="noopener">粤公网安备 XXXXXXXXXXXXXX号</a>
+    </footer>
+
     <nav class="mobile-tabbar">
       <router-link v-for="item in primaryTabs" :key="item.to" :to="item.to">
         <span class="tab-icon" v-html="item.icon"></span>
@@ -378,11 +384,32 @@ html[data-theme='dark'] .mobile-main {
   border-radius: 18px;
 }
 .mobile-main :deep(.page-header),
-.mobile-main :deep(.card-header),
-.mobile-main :deep(.dsh-head) {
+.mobile-main :deep(.card-header) {
   flex-direction: column;
   align-items: stretch;
   gap: 12px;
+}
+.mobile-icp {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 16px 0;
+  font-size: 11px;
+}
+.mobile-icp a {
+  color: var(--text-muted);
+  text-decoration: none;
+  opacity: 0.75;
+}
+.mobile-icp a:active {
+  color: var(--accent);
+  opacity: 1;
+}
+.icp-dot {
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 .mobile-main :deep(.table-wrapper) {
   overflow-x: auto;

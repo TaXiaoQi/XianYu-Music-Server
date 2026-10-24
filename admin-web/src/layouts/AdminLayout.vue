@@ -65,15 +65,15 @@
           </ul>
         </li>
       </ul>
+      <div class="sidebar-icp">
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026149270号-1</a><br>
+        <a href="https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX" target="_blank" rel="noopener">粤公网安备 XXXXXXXXXXXXXX号</a>
+      </div>
       <div class="sidebar-switch">
         <button class="switch-mobile-btn" @click="goMobile">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
           切换移动版
         </button>
-      </div>
-      <div class="sidebar-icp">
-        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026149270号-1</a><br>
-        <a href="https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX" target="_blank" rel="noopener">粤公网安备 XXXXXXXXXXXXXX号</a>
       </div>
     </aside>
 

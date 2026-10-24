@@ -352,7 +352,7 @@ onMounted(async () => {
 .dsh-head {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
+  align-items: flex-start;
   gap: 12px;
   margin-bottom: 16px;
   padding-bottom: 14px;

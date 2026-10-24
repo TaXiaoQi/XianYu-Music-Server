@@ -96,7 +96,14 @@ let orientation = 'portrait'; // 移动端二级模式：portrait=竖屏 | lands
 let previewPage = 'home';
 let previewData = '';
 let auth = null;
+/* 本地登录态与服务端 token（user_tokens，30 天硬过期）对齐：
+   超过 30 天或缺少登录时间戳的残留凭证直接清除，避免共用设备上长期滞留 */
+const EDITOR_AUTH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 try { auth = JSON.parse(localStorage.getItem('themeEditorAuth') || 'null'); } catch(e) { auth = null; }
+if (auth && (!auth.loginAt || Date.now() - auth.loginAt > EDITOR_AUTH_TTL_MS)) {
+  auth = null;
+  try { localStorage.removeItem('themeEditorAuth'); } catch(e) {}
+}
 if (!localStorage.getItem('themeEditorDevice')) {
   localStorage.setItem('themeEditorDevice', 'web-' + Math.random().toString(16).slice(2, 10) + Date.now().toString(16));
 }
@@ -1364,7 +1371,7 @@ async function startLogin(){
         const j2 = await r2.json();
         if(j2.code === 200 && j2.data && j2.data.status === 'logged_in'){
           clearInterval(pollTimer); pollTimer = null;
-          auth = { token: j2.data.token, nickname: j2.data.nickname || j2.data.username || '', ciyuanxi_id: j2.data.ciyuanxi_id || '' };
+          auth = { token: j2.data.token, nickname: j2.data.nickname || j2.data.username || '', ciyuanxi_id: j2.data.ciyuanxi_id || '', loginAt: Date.now() };
           localStorage.setItem('themeEditorAuth', JSON.stringify(auth));
           syncLoginUi();
           closeLogin();
@@ -1442,6 +1449,12 @@ async function doUpload(){
     closeUpload();
     toast('上传成功（' + (j.data && j.data.status === 'normal' ? '已通过机审' : j.data && j.data.status === 'rejected' ? '未通过机审' : '等待管理员审核') + '）', 4000);
   } else {
+    if(j.code === 401){
+      /* token 已被服务端判定失效：立即清本地凭证，UI 回到未登录态 */
+      auth = null;
+      try { localStorage.removeItem('themeEditorAuth'); } catch(e) {}
+      syncLoginUi();
+    }
     toast(j.msg || '上传失败');
   }
 }

@@ -1442,7 +1442,7 @@ onUnmounted(() => { if (alertPollTimer) { clearInterval(alertPollTimer); alertPo
 
 .mfb-foot { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
 .foot-meta { font-size: 11px; color: var(--text-muted); line-height: 1.6; }
-.foot-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.foot-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-top: 8px; }
 .act-btn {
   border: 1px solid var(--border);
   border-radius: 999px;
