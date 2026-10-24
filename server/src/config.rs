@@ -39,7 +39,7 @@ pub struct Config {
     // 为空时 qq_share_sign 接口返回错误，即关闭鸿蒙端 QQ 分享签名能力。
     #[serde(default)]
     pub qq_app_key: String,
-    #[serde(default)]
+    #[serde(default = "default_true")]
     pub require_user_token: bool,
     // 仅当服务端处于受信反向代理（nginx）之后时才置 true：直连部署下
     // X-Forwarded-For / X-Real-IP 可被客户端任意伪造，会绕过限流与登录锁定
@@ -164,7 +164,7 @@ impl Config {
             require_user_token: env::var("REQUIRE_USER_TOKEN")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))
-                .unwrap_or(false),
+                .unwrap_or(true),
             trust_proxy: env::var("TRUST_PROXY")
                 .ok()
                 .map(|v| v == "1" || v.eq_ignore_ascii_case("true") || v.eq_ignore_ascii_case("yes"))

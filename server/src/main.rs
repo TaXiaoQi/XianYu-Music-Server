@@ -135,6 +135,7 @@ async fn main() -> anyhow::Result<()> {
         // DefaultPredicate 自动跳过图片/视频等已压缩类型
         .layer(CompressionLayer::new())
         .layer(cors)
+        .layer(axum::middleware::from_fn(security_headers_guard))
         .layer(axum::middleware::from_fn(svg_no_inline_guard))
         .with_state(state);
 
@@ -478,6 +479,50 @@ async fn serve_applinking() -> Response {
         APPLINKING,
     )
         .into_response()
+}
+
+/// 统一安全响应头：HSTS / nosniff / Referrer-Policy / 防点击劫持。
+/// topic 独立站会被后台跨域 iframe 做主题预览（Themes.vue 审核弹层），
+/// 因此 topic 域不下发 X-Frame-Options，仅用 CSP frame-ancestors 放行 back 域。
+async fn security_headers_guard(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let host = req
+        .headers()
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let is_topic = host.starts_with("topic.");
+    let mut resp = next.run(req).await;
+    let hm = resp.headers_mut();
+    hm.insert(
+        axum::http::header::STRICT_TRANSPORT_SECURITY,
+        axum::http::HeaderValue::from_static("max-age=31536000"),
+    );
+    hm.insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
+    hm.insert(
+        axum::http::header::REFERRER_POLICY,
+        axum::http::HeaderValue::from_static("strict-origin-when-cross-origin"),
+    );
+    if is_topic {
+        hm.insert(
+            axum::http::header::CONTENT_SECURITY_POLICY,
+            axum::http::HeaderValue::from_static(
+                "frame-ancestors 'self' https://back.xianyumusic.cn",
+            ),
+        );
+    } else {
+        hm.insert(
+            axum::http::header::X_FRAME_OPTIONS,
+            axum::http::HeaderValue::from_static("SAMEORIGIN"),
+        );
+    }
+    resp
 }
 
 /// uploads 下的 SVG 一律以 attachment 下发：直接导航不再内联执行（SVG 存储型 XSS
