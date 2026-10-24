@@ -319,7 +319,10 @@ pub async fn check_dispatch_auth(
         return None;
     }
     let data: Value = serde_json::from_str(body).unwrap_or(Value::Null);
-    let identity = ["ciyuanxi_id", "user_id"]
+    // 身份键必须与 helpers::extract_id 完全一致：handler 兜底接受 "id"/"uid"，
+    // 这里若只认 ciyuanxi_id/user_id，攻击者可用 {"id":"他人","token":"自己的有效token"}
+    // 让身份提取为 None 而跳过 token 归属校验（第 5 轮渗透实证的 IDOR），故四处全列
+    let identity = ["ciyuanxi_id", "user_id", "id", "uid"]
         .iter()
         .map(|k| match data.get(*k) {
             Some(Value::String(s)) => s.trim().to_string(),
