@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
-import { adminApi } from '@/api/client'
+import { adminApi, PENDING_CHANGED_EVENT } from '@/api/client'
 
 export type NotifyPermission = 'default' | 'granted' | 'denied' | 'unsupported'
 
@@ -275,6 +275,7 @@ export const useNotificationStore = defineStore('notification', () => {
   }
 
   let timer: number | undefined
+  let pendingRefreshTimer: number | undefined
 
   async function pollOnce() {
     const res = await adminApi<any>('dashboard_stats')
@@ -287,11 +288,23 @@ export const useNotificationStore = defineStore('notification', () => {
     if (document.visibilityState === 'visible') pollOnce()
   }
 
+  // 处理完待办后立即刷新未读数，避免铃铛角标滞后
+  function onPendingChanged() {
+    if (pendingRefreshTimer !== undefined) {
+      window.clearTimeout(pendingRefreshTimer)
+    }
+    pendingRefreshTimer = window.setTimeout(() => {
+      pendingRefreshTimer = undefined
+      pollOnce()
+    }, 200)
+  }
+
   function startPolling(intervalMs = 30000) {
     stopPolling()
     pollOnce()
     timer = window.setInterval(pollOnce, intervalMs)
     document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener(PENDING_CHANGED_EVENT, onPendingChanged)
   }
 
   function stopPolling() {
@@ -300,6 +313,11 @@ export const useNotificationStore = defineStore('notification', () => {
       timer = undefined
     }
     document.removeEventListener('visibilitychange', onVisibilityChange)
+    window.removeEventListener(PENDING_CHANGED_EVENT, onPendingChanged)
+    if (pendingRefreshTimer !== undefined) {
+      window.clearTimeout(pendingRefreshTimer)
+      pendingRefreshTimer = undefined
+    }
   }
 
   return {

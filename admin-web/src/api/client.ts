@@ -1,5 +1,24 @@
 const ADMIN_API = '/admin/api'
 
+// 会改变待办数量的操作（审核/反馈处理）；成功后通知铃铛立即刷新未读数
+const PENDING_CHANGED_ACTIONS = new Set([
+  'approve_avatar',
+  'reject_avatar',
+  'approve_nickname',
+  'reject_nickname',
+  'change_wallpaper_status',
+  'delete_wallpaper',
+  'change_theme_status',
+  'delete_theme',
+  'update_feedback_status',
+  'resolve_feedback',
+  'collaborator_complete',
+  'resolve_beta_application',
+  'batch_delete_feedback',
+])
+
+export const PENDING_CHANGED_EVENT = 'admin:pending-changed'
+
 export interface ApiResponse<T = any> {
   code: number
   msg: string
@@ -56,6 +75,10 @@ export async function adminApi<T = any>(action: string, data: Record<string, any
       if (window.location.pathname !== '/login') {
         window.location.href = '/login'
       }
+    }
+
+    if (json.code === 200 && PENDING_CHANGED_ACTIONS.has(action)) {
+      window.dispatchEvent(new Event(PENDING_CHANGED_EVENT))
     }
 
     return json
