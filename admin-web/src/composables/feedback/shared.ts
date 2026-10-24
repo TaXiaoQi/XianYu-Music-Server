@@ -41,6 +41,25 @@ export function platformLabel(p: string): string {
   return platformMap[p] || ''
 }
 
+// 系统标签：按 os_version 关键词归纳出 安卓/鸿蒙/苹果/Win/Linux/Mac，供反馈条快速识别。
+// 鸿蒙优先于安卓——HarmonyOS 设备兼容层会同时上报 Android 版本
+const SYSTEM_TAG_RULES: { key: string; label: string; pattern: RegExp }[] = [
+  { key: 'harmony', label: '鸿蒙', pattern: /harmonyos|openharmony/i },
+  { key: 'ios', label: '苹果', pattern: /\bios\b|iphone|ipad/i },
+  { key: 'android', label: '安卓', pattern: /android|emui|magicos|hyperos|coloros|miui|originos|flyme/i },
+  { key: 'windows', label: 'Win', pattern: /windows|win32|win64/i },
+  { key: 'mac', label: 'Mac', pattern: /mac ?os|macintosh|darwin/i },
+  { key: 'linux', label: 'Linux', pattern: /linux|ubuntu|debian|fedora|deepin|uos/i },
+]
+
+export function systemTagOf(item: Feedback): { key: string; label: string } {
+  const os = String(item.os_version || '')
+  for (const t of SYSTEM_TAG_RULES) {
+    if (t.pattern.test(os)) return { key: t.key, label: t.label }
+  }
+  return { key: '', label: '' }
+}
+
 export function deviceIcon(item: Feedback): 'desktop' | 'mobile' | 'watch' {
   if (item.platform === 'mobile') return 'mobile'
   if (item.platform === 'watch') return 'watch'

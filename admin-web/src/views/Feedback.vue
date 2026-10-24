@@ -170,6 +170,7 @@
                     <span class="user-name">{{ item.nickname || '匿名用户' }}</span>
                     <span v-if="item.platform && platformLabel(item.platform)" class="platform-badge" :class="`platform-${item.platform}`">{{ platformLabel(item.platform) }}</span>
                     <span v-if="item.app_version" class="platform-badge version-badge">{{ item.app_version }}</span>
+                    <span v-if="systemTagOf(item).label" class="platform-badge system-badge" :class="`system-${systemTagOf(item).key}`">{{ systemTagOf(item).label }}</span>
                   </div>
                   <span class="user-id">{{ item.ciyuanxi_id || '后台创建' }}</span>
                 </div>
@@ -500,6 +501,7 @@
                 <strong class="detail-user-name">{{ contentModalItem.nickname || '匿名用户' }}</strong>
                 <span v-if="contentModalItem.platform && platformLabel(contentModalItem.platform)" class="platform-badge" :class="`platform-${contentModalItem.platform}`">{{ platformLabel(contentModalItem.platform) }}</span>
                 <span v-if="contentModalItem.app_version" class="platform-badge version-badge">{{ contentModalItem.app_version }}</span>
+                <span v-if="systemTagOf(contentModalItem).label" class="platform-badge system-badge" :class="`system-${systemTagOf(contentModalItem).key}`">{{ systemTagOf(contentModalItem).label }}</span>
                 <span v-if="contentModalItem.category === 'appeal'" class="type-badge type-appeal">封禁申诉</span>
                 <span v-else-if="contentModalItem.feedback_type" class="type-badge" :class="contentModalItem.feedback_type === 'suggestion' ? 'type-suggestion' : 'type-problem'">
                   {{ contentModalItem.feedback_type === 'suggestion' ? '功能建议' : '问题反馈' }}
@@ -802,6 +804,7 @@ import { useFeedbackBatchRecycle } from '@/composables/feedback/batch'
 import {
   statusLabel,
   platformLabel,
+  systemTagOf,
   deviceIcon,
   deviceInfoText,
   formatLogSize,
@@ -1454,6 +1457,13 @@ onUnmounted(() => {
 .platform-mobile { background: rgba(139, 92, 246, 0.12); color: #8b5cf6; }
 .platform-watch { background: rgba(20, 184, 166, 0.12); color: #14b8a6; }
 .version-badge { background: rgba(107, 114, 128, 0.14); color: #6b7280; }
+/* 系统标签（安卓/鸿蒙/苹果/Win/Linux/Mac） */
+.system-android { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.system-harmony { background: rgba(0, 102, 255, 0.1); color: #0a6cd4; }
+.system-ios { background: rgba(100, 116, 139, 0.14); color: #475569; }
+.system-windows { background: rgba(0, 120, 212, 0.1); color: #0078d4; }
+.system-mac { background: rgba(120, 120, 120, 0.14); color: #555555; }
+.system-linux { background: rgba(234, 136, 0, 0.12); color: #b96b00; }
 
 .status-badge {
   display: inline-flex;

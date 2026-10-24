@@ -242,7 +242,7 @@ const noticeItems = computed(() => [
   { label: '新头像审核', desc: '用户头像变更待审核', count: notify.totals.avatar || 0, to: '/avatar-audit', className: 'avatar' },
   { label: '新名称审核', desc: '用户改名申请待审核', count: notify.totals.nickname || 0, to: '/avatar-audit', className: 'nickname' },
   { label: '新问题反馈', desc: '用户反馈待处理', count: notify.totals.feedback || 0, to: '/feedback', className: 'feedback' },
-])
+].filter((i) => i.count > 0))
 const noticeTotal = computed(() => noticeItems.value.reduce((sum, i) => sum + Number(i.count || 0), 0))
 
 function goNotice(to: string) {
