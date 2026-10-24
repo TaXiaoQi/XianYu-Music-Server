@@ -27,6 +27,13 @@
     de.dataset.theme = r;
     de.dataset.themeMode = mode;
     de.style.colorScheme = r;
+    var menu = document.getElementById('themeMenu');
+    if (menu) {
+      var items = menu.querySelectorAll('[data-mode]');
+      for (var i = 0; i < items.length; i++) {
+        items[i].classList.toggle('active', items[i].getAttribute('data-mode') === mode);
+      }
+    }
     var b = document.getElementById('btnThemeMode');
     if (b) {
       var lab = mode === 'system' ? '跟随浏览器' : (mode === 'dark' ? '深色' : '浅色');
@@ -37,13 +44,29 @@
       b.title = '当前：' + lab;
     }
   }
+  function setMode(m) {
+    if (m !== 'light' && m !== 'dark' && m !== 'system') m = 'system';
+    mode = m;
+    try { localStorage.setItem(KEY, mode); } catch (e) {}
+    apply();
+  }
+  function toggleMenu(e) {
+    if (e) e.stopPropagation();
+    var wrap = document.getElementById('themeWrap');
+    if (wrap) wrap.classList.toggle('open');
+  }
+  document.addEventListener('click', function (e) {
+    var wrap = document.getElementById('themeWrap');
+    if (!wrap || !wrap.classList.contains('open')) return;
+    var t = e.target;
+    var item = t && t.closest ? t.closest('#themeMenu [data-mode]') : null;
+    if (item) { setMode(item.getAttribute('data-mode')); wrap.classList.remove('open'); return; }
+    if (!(t && t.closest && t.closest('#themeWrap'))) wrap.classList.remove('open');
+  });
   window.__xyEditorTheme = {
     get: function () { return mode; },
-    cycle: function () {
-      mode = mode === 'system' ? 'light' : (mode === 'light' ? 'dark' : 'system');
-      try { localStorage.setItem(KEY, mode); } catch (e) {}
-      apply();
-    }
+    set: setMode,
+    toggleMenu: toggleMenu
   };
   mq.addEventListener('change', function () { if (mode === 'system') apply(); });
   apply();
@@ -66,7 +89,14 @@
     </div>
     <div class="topbar__actions">
       <span data-i18n-mount="dropdown"></span>
-      <button class="btn" id="btnThemeMode" onclick="__xyEditorTheme.cycle()" title="当前：跟随浏览器"><svg class="tt-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="tt-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg><span>跟随浏览器</span></button>
+      <div class="theme-switch" id="themeWrap">
+      <button class="btn" id="btnThemeMode" onclick="__xyEditorTheme.toggleMenu(event)" title="当前：跟随浏览器"><svg class="tt-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg><svg class="tt-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:none"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg><span>跟随浏览器</span></button>
+      <div class="lang-menu" id="themeMenu">
+        <button type="button" class="lang-menu__item" data-mode="system">跟随浏览器</button>
+        <button type="button" class="lang-menu__item" data-mode="light">浅色</button>
+        <button type="button" class="lang-menu__item" data-mode="dark">深色</button>
+      </div>
+      </div>
       <span class="login-state" id="loginState"><span class="dot"></span><span id="loginText">未登录（导出不需要登录）</span></span>
       <button class="btn" id="btnLogin" onclick="openLogin()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg><span>扫码登录</span></button>
       <button class="btn" id="btnLogout" onclick="logout()" style="display:none">退出</button>

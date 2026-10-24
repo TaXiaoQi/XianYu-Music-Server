@@ -45,6 +45,8 @@ body{ font-family:var(--font-body); background:var(--bg); color:var(--text); hei
 .lang-menu__item{ display:block; width:100%; text-align:left; padding:9px 12px; border-radius:9px; border:none; background:transparent; color:var(--text); font-size:13px; font-weight:600; font-family:var(--font-body); cursor:pointer; white-space:nowrap; transition:background .15s,color .15s; }
 .lang-menu__item:hover{ background:var(--accent-soft); color:var(--accent); }
 .lang-menu__item.active{ color:var(--accent); background:var(--accent-soft); }
+.theme-switch{ position:relative; }
+.theme-switch.open .lang-menu{ display:flex; }
 /* 主题模式按钮：与语言按钮同款胶囊（对齐后台 AdminLayout .theme-toggle） */
 #btnThemeMode{ height:34px; padding:0 13px; font-size:12.5px; font-weight:700; color:var(--text-2); }
 #btnThemeMode svg{ flex:none; width:15px; height:15px; }

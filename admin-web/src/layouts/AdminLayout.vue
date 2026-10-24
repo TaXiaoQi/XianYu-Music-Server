@@ -140,7 +140,7 @@
             </teleport>
           </div>
           <div class="lang-wrap">
-            <button class="theme-toggle" :title="t('切换语言')" @click.stop="langOpen = !langOpen">
+            <button class="theme-toggle" :title="t('切换语言')" @click.stop="langOpen = !langOpen; themeOpen = false">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="9"/>
                 <path d="M3 12h18M12 3c2.7 2.6 4 5.6 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.6-4-9s1.3-6.4 4-9z"/>
@@ -158,16 +158,28 @@
               >{{ optLabel(o) }}</button>
             </div>
           </div>
-          <button class="theme-toggle" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
-            <svg v-if="theme.isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
-            </svg>
-            <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="4"/>
-              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
-            </svg>
-            <span>{{ theme.modeLabel }}</span>
-          </button>
+          <div class="theme-wrap">
+            <button class="theme-toggle" :title="`当前：${theme.modeLabel}`" @click.stop="themeOpen = !themeOpen; langOpen = false">
+              <svg v-if="theme.isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/>
+              </svg>
+              <svg v-else width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="4"/>
+                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+              </svg>
+              <span>{{ theme.modeLabel }}</span>
+            </button>
+            <div v-if="themeOpen" class="lang-pop" @click.stop>
+              <button
+                v-for="o in themeOpts"
+                :key="o.v"
+                type="button"
+                class="lang-item"
+                :class="{ active: theme.mode === o.v }"
+                @click="pickTheme(o.v)"
+              >{{ t(o.label) }}</button>
+            </div>
+          </div>
           <span v-if="auth.user" class="topbar-admin">
             <img v-if="auth.user.avatar_url" :src="auth.user.avatar_url" alt="" class="topbar-avatar" />
             <span v-else class="topbar-avatar topbar-avatar-letter">{{ (auth.user.username || 'A').charAt(0).toUpperCase() }}</span>
@@ -197,6 +209,7 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import type { ThemeMode } from '@/stores/theme'
 import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
 import { loadSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
@@ -215,7 +228,14 @@ const openMenu = ref<string | null>(null)
 const notifyOpen = ref(false)
 const panelStyle = ref<Record<string, string>>({})
 const langOpen = ref(false)
+const themeOpen = ref(false)
 const isDebugMode = import.meta.env.DEV
+
+const themeOpts: { v: ThemeMode; label: string }[] = [
+  { v: 'system', label: '跟随浏览器' },
+  { v: 'light', label: '浅色' },
+  { v: 'dark', label: '深色' },
+]
 
 const currentLangLabel = computed(() => {
   const o = langOpts.find((x) => x.v === langPref.value) || langOpts[0]
@@ -225,6 +245,11 @@ const currentLangLabel = computed(() => {
 function pickLang(v: LangPref) {
   setLang(v)
   langOpen.value = false
+}
+
+function pickTheme(v: ThemeMode) {
+  theme.setMode(v)
+  themeOpen.value = false
 }
 
 const pageTitle = computed(() => (route.meta.title as string) || '仪表盘')
@@ -286,6 +311,9 @@ function onClickOutside(e: MouseEvent) {
   }
   if (!target.closest('.lang-wrap')) {
     langOpen.value = false
+  }
+  if (!target.closest('.theme-wrap')) {
+    themeOpen.value = false
   }
 }
 
@@ -525,8 +553,9 @@ const icons = {
   font-weight: 700;
   box-shadow: inset 0 0 0 1px rgba(236, 65, 65, 0.10);
 }
-/* ===== 语言切换 ===== */
-.lang-wrap {
+/* ===== 语言 / 主题切换 ===== */
+.lang-wrap,
+.theme-wrap {
   position: relative;
 }
 .lang-pop {

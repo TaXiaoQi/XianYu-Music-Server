@@ -13,13 +13,13 @@
           </svg>
           <span v-if="notify.pendingTotal > 0" class="notify-badge">{{ notify.pendingTotal }}</span>
         </button>
-        <button class="icon-btn lang-btn" :title="t('切换语言')" @click="langOpen = true">
+        <button class="icon-btn lang-btn" :title="t('切换语言')" @click="themeOpen = false; langOpen = true">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="9"/>
             <path d="M3 12h18M12 3c2.7 2.6 4 5.6 4 9s-1.3 6.4-4 9c-2.7-2.6-4-5.6-4-9s1.3-6.4 4-9z"/>
           </svg>
         </button>
-        <button class="icon-btn theme-toggle" :title="`当前：${theme.modeLabel}`" @click="theme.cycleMode">
+        <button class="icon-btn theme-toggle" :title="`当前：${theme.modeLabel}`" @click="langOpen = false; themeOpen = true">
           <svg v-if="theme.isDark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z" />
           </svg>
@@ -116,6 +116,29 @@
         </div>
       </div>
     </transition>
+    <!-- 主题模式弹窗 -->
+    <transition name="mobile-fade">
+      <div v-if="themeOpen" class="notify-overlay" @click.self="themeOpen = false">
+        <div class="notify-dialog lang-dialog">
+          <div class="notify-head">
+            <span class="notify-title">{{ t('主题模式') }}</span>
+          </div>
+          <div class="lang-list">
+            <button
+              v-for="o in themeOpts"
+              :key="o.v"
+              type="button"
+              class="lang-item"
+              :class="{ active: theme.mode === o.v }"
+              @click="pickTheme(o.v)"
+            >
+              <span>{{ t(o.label) }}</span>
+              <svg v-if="theme.mode === o.v" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -124,6 +147,7 @@ import { ref, watch, onMounted, onUnmounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
+import type { ThemeMode } from '@/stores/theme'
 import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
 import SensitiveNotice from '@/views/SensitiveNotice.vue'
@@ -153,6 +177,18 @@ const notify = useNotificationStore()
 const notifyOpen = ref(false)
 const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
 const langOpen = ref(false)
+const themeOpen = ref(false)
+
+const themeOpts: { v: ThemeMode; label: string }[] = [
+  { v: 'system', label: '跟随浏览器' },
+  { v: 'light', label: '浅色' },
+  { v: 'dark', label: '深色' },
+]
+
+function pickTheme(v: ThemeMode) {
+  theme.setMode(v)
+  themeOpen.value = false
+}
 
 function openNotify() {
   notifyOpen.value = true

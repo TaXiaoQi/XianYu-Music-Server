@@ -2155,6 +2155,7 @@ syncLoginUi();
 "优先匹配本地曲库，本地没有的走在线音源解析": "Matches the local library first; falls back to online sources when missing locally",
 "请先让音乐外放，再点上面的麦克风": "Play the music out loud first, then tap the microphone above",
 "跟随系统": "System",
+"跟随浏览器": "Auto",
 "方圆": "Squircle",
 "正常": "Normal",
 "未设置 · 维持默认材质": "Not set · Default material",

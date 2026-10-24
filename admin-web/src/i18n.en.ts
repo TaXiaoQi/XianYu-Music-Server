@@ -1532,6 +1532,7 @@ export const EN_ADMIN: Record<string, string> = {
   '主题包 JSON': 'Theme Package JSON',
   '主题包按客户端平台隔离下发：用户上传的主题继承其客户端平台，审核通过后仅对该平台展示，下架后不再对用户可见。': 'Theme packages are delivered per client platform: uploaded themes inherit the uploader\'s client platform, are shown only on that platform after approval, and become invisible once unlisted.',
   '主题详情': 'Theme Details',
+  '主题模式': 'Theme Mode',
   '主题中心': 'Theme Center',
   '主题管理': 'Theme Management',
   '主题状态变更': 'Theme status changed',

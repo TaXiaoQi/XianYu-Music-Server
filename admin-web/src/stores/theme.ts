@@ -42,16 +42,6 @@ export const useThemeStore = defineStore('theme', () => {
     applyTheme(nextMode)
   }
 
-  function cycleMode() {
-    if (mode.value === 'system') {
-      setMode('light')
-    } else if (mode.value === 'light') {
-      setMode('dark')
-    } else {
-      setMode('system')
-    }
-  }
-
   function init() {
     applyTheme(mode.value)
     resolvedTheme.value = resolveMode(mode.value)
@@ -68,7 +58,6 @@ export const useThemeStore = defineStore('theme', () => {
     resolvedTheme,
     isDark,
     setMode,
-    cycleMode,
     init,
   }
 })
