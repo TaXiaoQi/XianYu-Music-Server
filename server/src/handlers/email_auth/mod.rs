@@ -67,6 +67,7 @@ mod tests {
             trust_proxy: true,
             cors_origins: Vec::new(),
             qq_app_key: String::new(),
+            fallback: crate::config::FallbackSection::default(),
         }
     }
 

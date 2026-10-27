@@ -240,12 +240,13 @@ pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
         .unwrap_or(0)
             > 0;
     }
-    // 响应签名：客户端 fail-closed 验签，无签名将被视为不可信而拒绝放行
+    // 响应签名：客户端 fail-closed 验签（双公钥槽位遍历），无签名将被视为不可信而拒绝放行。
+    // B 档托管模式下主服务不持有私钥，签发经回环签发服务完成（fail closed）。
     let exp = chrono::Utc::now().timestamp() + BETA_ACCESS_TTL_SECS;
-    let signature = match crate::admin::fallback::load_signing_private_key() {
-        Some(key) => hex::encode(key.sign(&beta_access_message(&device_id, allowed, pending, exp)).to_bytes()),
+    let signature = match crate::admin::fallback::sign_message(&ctx.config, &beta_access_message(&device_id, allowed, pending, exp)).await {
+        Some((sig, _)) => sig,
         None => {
-            tracing::warn!("未配置内测资格签名密钥（FALLBACK_SIGN_PRIVATE_KEY 或 api/fallback_sign_key.txt），check_beta_access 响应未签名");
+            tracing::warn!("未配置签名能力（A 档本机密钥或 B 档签发服务），check_beta_access 响应未签名");
             String::new()
         }
     };

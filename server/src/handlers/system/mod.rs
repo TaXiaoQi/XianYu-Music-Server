@@ -4,7 +4,6 @@ mod leaderboard;
 mod version;
 
 pub(crate) use axum::response::Response;
-pub(crate) use ed25519_dalek::Signer;
 pub(crate) use serde_json::json;
 pub(crate) use serde_json::Value;
 pub(crate) use sqlx::MySqlPool;
