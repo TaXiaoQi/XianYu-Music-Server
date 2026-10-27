@@ -84,7 +84,7 @@ const routes: RouteRecordRaw[] = [
         path: 'fallback-modules',
         name: 'MobileFallbackModules',
         component: () => import('@/views/mobile/MobileFallbackModules.vue'),
-        meta: { title: '兜底管理', mobile: true },
+        meta: { title: '兜底配置', mobile: true },
       },
       {
         path: 'about-config',
@@ -260,12 +260,6 @@ const routes: RouteRecordRaw[] = [
         name: 'Announcements',
         component: () => import('@/views/Announcements.vue'),
         meta: { title: '公告管理' },
-      },
-      {
-        path: 'fallback-modules',
-        name: 'FallbackModules',
-        component: () => import('@/views/FallbackModules.vue'),
-        meta: { title: '兜底管理' },
       },
       {
         path: 'about-config',

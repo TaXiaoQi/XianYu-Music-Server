@@ -19,7 +19,7 @@ const groups = [
     items: [
       { to: '/m/announcements', label: '公告管理', desc: '发布和维护 APP 公告' },
       { to: '/m/version', label: '版本管理', desc: '管理客户端版本和更新' },
-      { to: '/m/fallback-modules', label: '兜底管理', desc: '下发客户端兜底模块代码' },
+      { to: '/m/fallback-modules', label: '兜底配置', desc: '下发客户端兜底行为配置' },
       { to: '/m/about-config', label: '关于页配置', desc: '维护关于页展示内容' },
       { to: '/m/wallpapers', label: '壁纸管理', desc: '审核和管理壁纸资源' },
       { to: '/m/themes', label: '主题中心', desc: '审核和管理主题包' },

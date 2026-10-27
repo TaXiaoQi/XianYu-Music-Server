@@ -313,7 +313,7 @@ pub fn handle_api(action: &str, body: &str, ctx: ReqCtx) -> Response {
             "status": "normal"
         }))),
         "get_version_status" => ctx.json(200, "ok", Some(json!({ "status": "normal", "debug": true }))),
-        "get_fallback_modules" => ctx.json(200, "ok", Some(json!({ "modules": [], "debug": true }))),
+        "get_fallback_modules" => ctx.json(200, "ok", Some(json!({ "config": "", "signature": "", "debug": true }))),
         "get_announcement" => ctx.json(200, "ok", Some(json!({
             "id": "debug",
             "title": "本地调试模式",

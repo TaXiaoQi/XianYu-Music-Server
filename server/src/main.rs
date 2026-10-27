@@ -8,6 +8,7 @@ mod rate_limit;
 mod response;
 mod schema;
 mod sign;
+mod signer;
 mod site_config_store;
 mod watch_relay;
 
@@ -46,6 +47,29 @@ fn service_unavailable() -> Response {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // 子命令模式：--signer（兜底/内测签发服务）、--keygen（离线生成签名密钥）。
+    // 两者均不连数据库、不依赖主服务配置；无子命令参数时行为与旧版完全一致。
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match args.first().map(|s| s.as_str()) {
+        Some("--signer") => return signer::run_signer_service().await,
+        Some("--keygen") => {
+            let key_id = args
+                .get(1)
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty() && !s.starts_with("--"))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("用法: server --keygen <keyId> [--out <目录>]（keyId 形如 2026b）")
+                })?;
+            let out = args
+                .iter()
+                .position(|a| a == "--out")
+                .and_then(|i| args.get(i + 1))
+                .map(|s| s.to_string());
+            return signer::run_keygen(&key_id, out);
+        }
+        _ => {}
+    }
+
     tracing_subscriber::fmt::init();
     let config = Arc::new(Config::load()?);
     config
@@ -111,7 +135,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/about_config_mobile.json", get(serve_site_config))
         .route("/api/about_config_watch.json", get(serve_site_config))
         .route("/api/announcement.json", get(serve_site_config))
-        .route("/api/fallback_modules.json", get(serve_site_config))
         .route("/api/version.json", get(serve_site_config))
         .route("/s/:share_id", get(share_landing))
         .route("/s/:share_id/", get(share_landing))
@@ -425,7 +448,6 @@ fn site_config_route_map(path: &str) -> Option<(&'static str, &'static str)> {
         "/api/about_config_mobile.json" => Some(("about_config_mobile", "api/about_config_mobile.json")),
         "/api/about_config_watch.json" => Some(("about_config_watch", "api/about_config_watch.json")),
         "/api/announcement.json" => Some(("announcements", "api/announcement.json")),
-        "/api/fallback_modules.json" => Some(("fallback_modules", "api/fallback_modules.json")),
         "/api/version.json" => Some(("desktop_versions", "api/version.json")),
         _ => None,
     }

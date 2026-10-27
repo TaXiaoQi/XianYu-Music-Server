@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::admin::fallback::sha256_hex;
+use crate::admin::wallpaper::sha256_hex;
 use crate::response::ReqCtx;
 
 const TOKEN_TTL_DAYS: i64 = 30;
@@ -129,7 +129,7 @@ pub async fn issue(pool: &MySqlPool, ciyuanxi_id: &str, device_id: &str) -> Stri
     let _ = sqlx::query(
         "INSERT INTO user_tokens (token, ciyuanxi_id, device_id, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? DAY))",
     )
-    .bind(sha256_hex(&token))
+    .bind(sha256_hex(token.as_bytes()))
     .bind(ciyuanxi_id)
     .bind(device_id)
     .bind(TOKEN_TTL_DAYS)
@@ -149,7 +149,7 @@ pub async fn revoke_user(pool: &MySqlPool, ciyuanxi_id: &str) {
 /// token 落库一律存 SHA-256 摘要（防拖库冒用），查询先按摘要、未命中再按存量明文并原地升级
 /// （sql 需含 id 列，且 token 占位符是唯一绑定参数）
 async fn find_by_token(pool: &MySqlPool, sql: &str, token: &str) -> Option<MySqlRow> {
-    let digest = sha256_hex(token);
+    let digest = sha256_hex(token.as_bytes());
     if let Some(row) = sqlx::query(sql)
         .bind(&digest)
         .fetch_optional(pool)
@@ -248,7 +248,7 @@ async fn verify_owner(pool: &MySqlPool, token: &str, identity: &str) -> OwnerSta
         }
     }
 
-    let digest = sha256_hex(token);
+    let digest = sha256_hex(token.as_bytes());
     let mut row = verify_lookup(pool, &digest).await;
     if row.is_none() {
         row = verify_lookup(pool, token).await;
@@ -354,7 +354,7 @@ pub async fn check_dispatch_auth(
             let owner_now = sqlx::query_scalar::<_, String>(
                 "SELECT ciyuanxi_id FROM user_tokens WHERE token = ? OR token = ? LIMIT 1",
             )
-            .bind(sha256_hex(&token))
+            .bind(sha256_hex(token.as_bytes()))
             .bind(&token)
             .fetch_optional(pool)
             .await

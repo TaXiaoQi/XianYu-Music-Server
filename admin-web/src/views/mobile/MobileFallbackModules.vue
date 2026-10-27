@@ -3,8 +3,8 @@
     <!-- 页头 -->
     <div class="fb-header">
       <div class="fb-header-info">
-        <h2 class="fb-title">兜底管理</h2>
-        <p class="fb-desc">桌面端内置各兜底行为的默认实现；在此下发的新代码在客户端下次拉取后缓存、下一次调用生效，异常时自动回退内置实现。</p>
+        <h2 class="fb-title">兜底配置</h2>
+        <p class="fb-desc">服务端只下发签名配置（链路开关 / 平台来源），不含任何可执行代码；客户端全部逻辑为内置原生实现，配置验签通过后在下一次拉取后生效。</p>
       </div>
     </div>
 
@@ -15,7 +15,7 @@
           <span class="stat-icon stat-icon-total">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           </span>
-          <strong>{{ modules.length }}</strong>
+          <strong>{{ list.length }}</strong>
         </div>
         <span class="stat-label">全部模块</span>
       </div>
@@ -33,9 +33,77 @@
           <span class="stat-icon stat-icon-normal">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
           </span>
-          <strong>{{ enabledCount }}</strong>
+          <strong>{{ disabledMethodCount }}</strong>
         </div>
-        <span class="stat-label">已启用</span>
+        <span class="stat-label">关闭链路</span>
+      </div>
+    </div>
+
+    <!-- 下发总开关 -->
+    <div class="fb-card fb-global">
+      <div class="fb-body" style="padding-top: 12px; padding-bottom: 12px;">
+        <div class="fb-top">
+          <div class="fb-title-wrap">
+            <h3 class="fb-name">下发总开关</h3>
+            <span class="fb-meta">关闭后客户端拉取到空配置，全部回退默认行为（配置本体保留）</span>
+          </div>
+          <label class="switch" :class="{ 'switch-off': configVersion === 0 }"
+                 :title="configVersion === 0 ? '尚未保存任何模块配置' : ''">
+            <input
+              :checked="deliveryEnabled"
+              :disabled="configVersion === 0 || toggling"
+              type="checkbox"
+              @change="toggleDelivery(($event.target as HTMLInputElement).checked)"
+            />
+            <span class="track"><span class="thumb"></span></span>
+          </label>
+        </div>
+        <div v-if="configVersion > 0" class="fb-meta">
+          <span>配置 v{{ configVersion }} · 签名 {{ shortSig(signature) }}</span>
+          <span v-if="configKeyId">密钥 {{ configKeyId }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 签名密钥 -->
+    <div class="fb-card fb-global">
+      <div class="fb-body" style="padding-top: 12px; padding-bottom: 12px;">
+        <div class="fb-top">
+          <div class="fb-title-wrap">
+            <h3 class="fb-name">签名密钥</h3>
+            <span class="fb-meta">配置/内测响应的 ed25519 签名密钥；客户端内嵌双公钥槽位，轮换先预发布新公钥、再切换签发、最后清理旧槽位</span>
+          </div>
+          <span class="fb-badge" :class="signerBadgeClass">{{ signerModeLabel }}</span>
+        </div>
+        <div v-if="signerStatus" class="fb-meta">
+          <template v-if="signerStatus.mode === 'signer'">
+            <span>当前签发：{{ signerStatus.active || '-' }}</span>
+            <span>过渡旧钥：{{ signerStatus.previous || '无' }}</span>
+            <span v-if="signerStatus.activePublicKey" class="fb-key">{{ shortSig(signerStatus.activePublicKey) }}</span>
+          </template>
+          <template v-else-if="signerStatus.mode === 'local'">
+            <span>A 档本机密钥（FALLBACK_SIGN_PRIVATE_KEY / api/fallback_sign_key.txt），无槽位管理</span>
+            <span v-if="signerStatus.activePublicKey" class="fb-key">{{ shortSig(signerStatus.activePublicKey) }}</span>
+          </template>
+          <template v-else>
+            <span>未配置签名密钥：保存兜底配置将失败；客户端拉取不受影响</span>
+          </template>
+        </div>
+        <div v-if="signerStatus?.signerError" class="fb-meta">
+          <span class="fb-signer-error">签发服务不可达：{{ signerStatus.signerError }}</span>
+        </div>
+        <div v-if="signerStatus?.mode === 'signer' && (signerStatus.available?.length ?? 0) > 0" class="fb-footer" style="border-top: none; padding-top: 4px;">
+          <span class="fb-size">可用槽位：{{ signerStatus!.available!.join('、') }}</span>
+          <div class="fb-actions">
+            <button
+              v-for="kid in signerStatus!.available!"
+              :key="kid"
+              class="mobile-btn"
+              :disabled="kid === signerStatus!.active"
+              @click="switchSignerKey(kid)"
+            >{{ kid === signerStatus!.active ? '当前' : `切换到 ${kid}` }}</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -45,41 +113,35 @@
     <!-- 模块列表 -->
     <div v-else class="fb-list">
       <div
-        v-for="(item, idx) in modules"
+        v-for="(item, idx) in list"
         :key="item.moduleKey"
         class="fb-card"
-        :class="{ 'is-off': isConfigured(item) && !item.enabled }"
+        :class="{ 'is-off': !item.configured }"
         :style="{ animationDelay: (idx * 0.05) + 's' }"
       >
         <div class="fb-body">
           <div class="fb-top">
             <div class="fb-title-wrap">
-              <h3 class="fb-name">{{ item.name || moduleLabel(item.moduleKey) }}</h3>
+              <h3 class="fb-name">{{ item.label }}</h3>
               <span class="fb-key">{{ item.moduleKey }}</span>
             </div>
-            <label class="switch" :class="{ 'switch-off': !isConfigured(item) }" :title="isConfigured(item) ? (item.enabled ? '点击禁用' : '点击启用') : '请先配置代码'">
-              <input
-                :checked="!!item.enabled"
-                :disabled="!isConfigured(item)"
-                type="checkbox"
-                @change="toggle(item, ($event.target as HTMLInputElement).checked)"
-              />
-              <span class="track"><span class="thumb"></span></span>
-            </label>
+            <span v-if="item.configured" class="fb-badge">v{{ item.version }}</span>
+            <span v-else class="fb-badge fb-badge-muted">默认</span>
           </div>
 
-          <div v-if="isConfigured(item)" class="fb-meta">
-            <span>v{{ item.version }} · {{ fmtDateTime(item.updated_at) || '-' }}</span>
-            <span class="fb-digest" :title="item.digest">sha256:{{ shortDigest(item.digest) }}</span>
+          <div v-if="item.configured" class="fb-meta">
+            <span>{{ fmtDateTime(item.updated_at) || '-' }}</span>
+            <span v-if="item.disabledMethods.length">关闭 {{ item.disabledMethods.length }} 条链路</span>
+            <span v-if="item.sources.length">来源：{{ item.sources.join(' → ') }}</span>
             <span v-if="item.remark">{{ item.remark }}</span>
           </div>
-          <div v-else class="fb-meta fb-builtin">使用内置默认实现</div>
+          <div v-else class="fb-meta fb-builtin">默认行为（全部链路开启）</div>
 
           <div class="fb-footer">
-            <span class="fb-size">{{ codeSizeLabel(item) }}</span>
+            <span class="fb-size">{{ methodSummary(item) }}</span>
             <div class="fb-actions">
-              <button class="mobile-btn" @click="openEditModal(item)">{{ isConfigured(item) ? '编辑' : '配置' }}</button>
-              <button v-if="isConfigured(item)" class="mobile-btn danger" @click="remove(item)">删除</button>
+              <button class="mobile-btn" @click="openEditModal(item)">{{ item.configured ? '编辑' : '配置' }}</button>
+              <button v-if="item.configured" class="mobile-btn danger" @click="reset(item)">恢复默认</button>
             </div>
           </div>
         </div>
@@ -91,7 +153,7 @@
       <div v-if="modalVisible" class="modal-backdrop">
         <div class="modal-dialog">
           <div class="modal-head">
-            <h3>{{ isConfigured(form) ? '编辑兜底模块' : '配置兜底模块' }}</h3>
+            <h3>{{ form.configured ? '编辑兜底配置' : '配置兜底行为' }}</h3>
             <button class="modal-close" @click="closeModal">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
@@ -99,31 +161,35 @@
           <div class="modal-body">
             <div class="modal-field">
               <span>模块</span>
-              <div class="fb-module-line">{{ form.moduleKey }} · {{ moduleLabel(form.moduleKey) }}</div>
+              <div class="fb-module-line">{{ form.moduleKey }} · {{ form.label }}</div>
             </div>
-            <label class="modal-field">
-              <span>名称 <em class="optional">（可空）</em></span>
-              <input v-model="form.name" type="text" :placeholder="moduleLabel(form.moduleKey)" />
-            </label>
+            <div class="modal-field">
+              <span>关闭链路 <em class="optional">（勾选后客户端该行为直接返回空，不再走内置实现）</em></span>
+              <div class="fb-method-grid">
+                <label v-for="m in form.methods" :key="m" class="fb-check">
+                  <input v-model="form.disabledMethods" type="checkbox" :value="m" />
+                  <span>{{ m }}</span>
+                </label>
+              </div>
+            </div>
+            <div v-if="form.sourcesSelectable" class="modal-field">
+              <span>平台来源 <em class="optional">（点选决定顺序；留空 = 默认全部）</em></span>
+              <div class="type-picker">
+                <button
+                  v-for="p in sourcePlatforms"
+                  :key="p"
+                  class="type-option"
+                  :class="{ active: form.sources.includes(p) }"
+                  @click="toggleSource(p)"
+                ><span class="pick-dot"></span>{{ p }}</button>
+              </div>
+              <p v-if="form.sources.length" class="fb-hint">生效顺序：{{ form.sources.join(' → ') }}</p>
+            </div>
             <label class="modal-field">
               <span>备注 <em class="optional">（可空）</em></span>
-              <input v-model="form.remark" type="text" placeholder="如：修复酷我搜索失效" />
+              <input v-model="form.remark" type="text" placeholder="如：酷我榜单接口异常，临时关闭" />
             </label>
-            <div class="modal-field">
-              <span>启用状态</span>
-              <div class="type-picker">
-                <button class="type-option pick-enable" :class="{ active: form.enabled }" @click="form.enabled = true"><span class="pick-dot"></span>启用下发</button>
-                <button class="type-option pick-disable" :class="{ active: !form.enabled }" @click="form.enabled = false"><span class="pick-dot"></span>仅保存</button>
-              </div>
-            </div>
-            <div class="modal-field">
-              <div class="fb-code-head">
-                <span class="required">模块代码（JS）</span>
-                <button class="mobile-btn fb-tpl-btn" @click="insertTemplate">填入模板</button>
-              </div>
-              <textarea v-model="form.code" class="fb-code-area" rows="12" spellcheck="false" placeholder="函数体接收 ctx（宿主能力注入），return { version, 方法名(args) { ... } }"></textarea>
-              <p class="fb-hint">代码变更保存后版本号自动 +1，客户端下次拉取后缓存、下一次调用生效。</p>
-            </div>
+            <p class="fb-hint">保存后配置版本号 +1 并整体重新签名，客户端下次拉取（启动时/每 30 分钟）后生效。</p>
           </div>
           <div class="modal-foot">
             <button class="modal-btn cancel" @click="closeModal">取消</button>
@@ -142,147 +208,171 @@ import './MobilePage.css'
 import { mobileConfirm, removeBackdropBlur } from '@/utils/mobileDialog'
 import { fmtDateTime } from '@/utils/time'
 
-interface FallbackModule {
+interface FallbackModuleItem {
   moduleKey: string
-  name: string
+  label: string
+  methods: string[]
+  sourcesSelectable: boolean
+  configured: boolean
   version: number
-  digest: string
-  code: string
+  disabledMethods: string[]
+  sources: string[]
   remark: string
-  enabled: boolean
-  configured?: boolean
-  created_at?: string
-  updated_at?: string
-}
-
-const MODULE_LABELS: Record<string, string> = {
-  lx_search: '落雪歌曲搜索',
-  lx_album: '专辑/歌单获取',
-  lx_duration: '歌曲时长加载',
-  lx_lyric: '逐字歌词解码',
-  lx_cover: '歌曲封面提取',
-  lx_toplist: '落雪音源榜单',
-  plugin_fallback: '插件宿主兜底',
-  playlist_import: '歌单导入',
-}
-
-const MODULE_METHODS: Record<string, string[]> = {
-  lx_search: ['search'],
-  lx_album: ['searchAlbums', 'getAlbumSongs'],
-  lx_duration: ['batchTrackInterval'],
-  lx_lyric: ['fetchLyric'],
-  lx_cover: ['extractCoverUrl'],
-  lx_toplist: ['getTopLists', 'getTopListDetail'],
-  plugin_fallback: [
-    'isQqMusicPluginSource',
-    'hostSearchFallback',
-    'hostAlbumSearchFallback',
-    'hostAlbumSongsFallback',
-    'isQqTrialMediaUrl',
-    'fillSongDurations',
-  ],
-  playlist_import: [
-    'getListDetailKg',
-    'getListDetailWy',
-    'getListDetailTx',
-    'getListDetailKw',
-    'getListDetailQishui',
-  ],
-}
-
-function moduleLabel(key: string): string {
-  return MODULE_LABELS[key] || key
-}
-
-function moduleMethods(key: string): string[] {
-  return MODULE_METHODS[key] || []
+  updated_at: string
 }
 
 const loading = ref(true)
 const saving = ref(false)
-const modules = ref<FallbackModule[]>([])
+const toggling = ref(false)
+const deliveryEnabled = ref(false)
+const configVersion = ref(0)
+const signature = ref('')
+const configKeyId = ref('')
+const sourcePlatforms = ref<string[]>([])
+const list = ref<FallbackModuleItem[]>([])
 
-const configuredCount = computed(() => modules.value.filter(m => isConfigured(m)).length)
-const enabledCount = computed(() => modules.value.filter(m => isConfigured(m) && m.enabled).length)
-
-function isConfigured(item: FallbackModule): boolean {
-  return item.configured !== false && !!item.code
+interface SignerStatus {
+  mode: 'signer' | 'local' | 'none'
+  active?: string
+  previous?: string | null
+  available?: string[]
+  activePublicKey?: string
+  signerError?: string
 }
+const signerStatus = ref<SignerStatus | null>(null)
+
+const signerModeLabel = computed(() => {
+  switch (signerStatus.value?.mode) {
+    case 'signer': return '托管签发'
+    case 'local': return '本机密钥'
+    default: return '未配置'
+  }
+})
+const signerBadgeClass = computed(() => {
+  if (signerStatus.value?.mode === 'signer') {
+    return signerStatus.value.signerError ? 'fb-badge-muted' : ''
+  }
+  return 'fb-badge-muted'
+})
+
+const configuredCount = computed(() => list.value.filter(m => m.configured).length)
+const disabledMethodCount = computed(
+  () => list.value.reduce((n, m) => n + (m.configured ? m.disabledMethods.length : 0), 0),
+)
 
 async function loadList() {
   loading.value = true
-  const res = await adminApi<{ list: FallbackModule[] }>('list_fallback_modules')
+  const res = await adminApi<{
+    enabled: boolean
+    configVersion: number
+    signature: string
+    configKeyId?: string
+    sourcePlatforms: string[]
+    list: FallbackModuleItem[]
+  }>('get_fallback_config')
   if (res.code === 200 && res.data) {
-    modules.value = Array.isArray(res.data.list) ? res.data.list : []
+    deliveryEnabled.value = !!res.data.enabled
+    configVersion.value = res.data.configVersion || 0
+    signature.value = res.data.signature || ''
+    configKeyId.value = res.data.configKeyId || ''
+    sourcePlatforms.value = Array.isArray(res.data.sourcePlatforms) ? res.data.sourcePlatforms : []
+    list.value = Array.isArray(res.data.list) ? res.data.list : []
   } else {
-    modules.value = []
+    list.value = []
     showToast(res.msg || '加载失败')
   }
   loading.value = false
+  loadSignerStatus()
 }
 
-function shortDigest(digest: string): string {
-  if (!digest) return '-'
-  return digest.length > 12 ? `${digest.slice(0, 8)}…${digest.slice(-4)}` : digest
-}
-
-function codeSizeLabel(item: FallbackModule): string {
-  if (!isConfigured(item)) return '内置默认'
-  const kb = item.code.length / 1024
-  return kb >= 1 ? `${kb.toFixed(1)} KB` : `${item.code.length} B`
-}
-
-async function toggle(item: FallbackModule, enabled: boolean) {
-  if (!isConfigured(item)) {
-    showToast('请先配置模块代码')
-    return
+async function loadSignerStatus() {
+  const res = await adminApi<SignerStatus>('get_fallback_signer_status')
+  if (res.code === 200 && res.data) {
+    signerStatus.value = res.data
+  } else {
+    signerStatus.value = { mode: 'none', signerError: res.msg }
   }
-  const res = await adminApi('toggle_fallback_module', { module_key: item.moduleKey, enabled: enabled ? 1 : 0 })
+}
+
+async function switchSignerKey(keyId: string) {
+  const okToSwitch = await mobileConfirm(
+    `确认将签发密钥切换到「${keyId}」？切换后新保存的配置将以新密钥签发（旧密钥移入过渡槽位继续可用）。请确认已在客户端预发布该公钥。`,
+    { title: '切换签名密钥', confirmText: '确认切换', danger: true },
+  )
+  if (!okToSwitch) return
+  const res = await adminApi<SignerStatus>('switch_fallback_signer_key', { key_id: keyId })
   if (res.code === 200) {
-    showToast(res.msg || (enabled ? '已启用' : '已禁用'), 'success')
+    showToast(res.msg || '已切换', 'success')
+    if (res.data) signerStatus.value = res.data
+    loadList()
+  } else {
+    showToast(res.msg || '切换失败')
+  }
+}
+
+function shortSig(sig: string): string {
+  if (!sig) return '-'
+  return sig.length > 12 ? `${sig.slice(0, 8)}…${sig.slice(-4)}` : sig
+}
+
+function methodSummary(item: FallbackModuleItem): string {
+  if (!item.configured) return `${item.methods.length} 条链路 · 内置实现`
+  const off = item.disabledMethods.length
+  return `${item.methods.length - off}/${item.methods.length} 条链路开启`
+}
+
+async function toggleDelivery(enabled: boolean) {
+  toggling.value = true
+  const res = await adminApi('toggle_fallback_config', { enabled: enabled ? 1 : 0 })
+  toggling.value = false
+  if (res.code === 200) {
+    showToast(res.msg || (enabled ? '已开启下发' : '已暂停下发'), 'success')
+    loadList()
+  } else {
+    showToast(res.msg || '操作失败')
+    loadList()
+  }
+}
+
+async function reset(item: FallbackModuleItem) {
+  const ok = await mobileConfirm(`确认将「${item.label}」恢复默认？客户端将在下次拉取后生效。`, {
+    title: '恢复默认',
+    confirmText: '确认恢复',
+    danger: true,
+  })
+  if (!ok) return
+  const res = await adminApi('delete_fallback_module', { module_key: item.moduleKey })
+  if (res.code === 200) {
+    showToast(res.msg || '已恢复默认', 'success')
     loadList()
   } else {
     showToast(res.msg || '操作失败')
   }
 }
 
-async function remove(item: FallbackModule) {
-  const ok = await mobileConfirm(`确认删除「${moduleLabel(item.moduleKey)}」的下发配置？客户端将回退内置默认实现。`, {
-    title: '删除兜底模块',
-    confirmText: '确认删除',
-    danger: true,
-  })
-  if (!ok) return
-  const res = await adminApi('delete_fallback_module', { module_key: item.moduleKey })
-  if (res.code === 200) {
-    showToast('删除成功', 'success')
-    loadList()
-  } else {
-    showToast(res.msg || '删除失败')
-  }
-}
-
 // ===== 弹窗 =====
 const modalVisible = ref(false)
-const form = ref<FallbackModule>({
+const form = ref({
   moduleKey: '',
-  name: '',
-  version: 0,
-  digest: '',
-  code: '',
+  label: '',
+  methods: [] as string[],
+  sourcesSelectable: false,
+  configured: false,
+  disabledMethods: [] as string[],
+  sources: [] as string[],
   remark: '',
-  enabled: true,
 })
 
-function openEditModal(item: FallbackModule) {
+function openEditModal(item: FallbackModuleItem) {
   form.value = {
     moduleKey: item.moduleKey,
-    name: isConfigured(item) ? (item.name || '') : '',
-    version: item.version || 0,
-    digest: item.digest || '',
-    code: item.code || '',
+    label: item.label,
+    methods: item.methods,
+    sourcesSelectable: item.sourcesSelectable,
+    configured: item.configured,
+    disabledMethods: [...(item.disabledMethods || [])],
+    sources: [...(item.sources || [])],
     remark: item.remark || '',
-    enabled: isConfigured(item) ? !!item.enabled : true,
   }
   modalVisible.value = true
 }
@@ -292,40 +382,20 @@ function closeModal() {
   modalVisible.value = false
 }
 
-function codeTemplate(key: string): string {
-  const methods = moduleMethods(key)
-  const methodLines = methods
-    .map(m => `  ${m}: (args) => {\n    // 返回值结构需与内置实现一致；抛出异常时客户端自动回退内置实现\n    throw new Error('not implemented')\n  },`)
-    .join('\n')
-  return `// 兜底模块：函数体接收 ctx（宿主能力白名单），返回 { version, 方法名(args) }
-// ctx.http.get/post / ctx.cache.get/set/del / ctx.log.info/warn/error
-// ctx.config.get('dot.path') / ctx.utils.parseIntervalToSeconds 等
-return {
-  version: 1,
-${methodLines}
-}`
-}
-
-async function insertTemplate() {
-  if (form.value.code.trim()) {
-    const ok = await mobileConfirm('当前已有代码，填入模板会覆盖现有内容，是否继续？', { title: '覆盖代码', confirmText: '覆盖' })
-    if (!ok) return
-  }
-  form.value.code = codeTemplate(form.value.moduleKey)
+function toggleSource(p: string) {
+  const arr = form.value.sources
+  const idx = arr.indexOf(p)
+  if (idx >= 0) arr.splice(idx, 1)
+  else arr.push(p)
 }
 
 async function save() {
-  if (!form.value.code.trim()) {
-    showToast('模块代码不能为空')
-    return
-  }
   saving.value = true
   const res = await adminApi('save_fallback_module', {
     module_key: form.value.moduleKey,
-    code: form.value.code,
-    name: form.value.name.trim(),
+    disabled_methods: form.value.disabledMethods,
+    sources: form.value.sourcesSelectable ? form.value.sources : [],
     remark: form.value.remark.trim(),
-    enabled: form.value.enabled ? 1 : 0,
   })
   saving.value = false
   if (res.code === 200) {
@@ -346,6 +416,7 @@ onMounted(loadList)
 .fb-title { font-size: 18px; font-weight: 850; margin: 0 0 4px; color: var(--text); }
 .fb-desc { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0; }
 
+.fb-global { margin-bottom: 4px; }
 .fb-list { display: flex; flex-direction: column; gap: 12px; }
 .fb-card {
   border: 1px solid var(--border);
@@ -373,6 +444,16 @@ onMounted(loadList)
   background: var(--track);
   color: var(--text-light);
 }
+.fb-badge {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #ecfdf5;
+  color: #10b981;
+}
+.fb-badge-muted { background: var(--track); color: var(--text-muted); font-weight: 500; }
 
 .switch { position: relative; display: inline-flex; flex-shrink: 0; cursor: pointer; }
 .switch.switch-off { opacity: 0.45; cursor: not-allowed; }
@@ -407,7 +488,7 @@ onMounted(loadList)
   color: var(--text-muted);
 }
 .fb-meta.fb-builtin { font-style: italic; }
-.fb-digest { font-family: ui-monospace, 'SF Mono', Consolas, monospace; }
+.fb-signer-error { color: #ef4444; }
 
 .fb-footer {
   display: flex;
@@ -418,7 +499,7 @@ onMounted(loadList)
   padding-top: 10px;
   border-top: 1px solid var(--border);
 }
-.fb-size { font-size: 11px; color: var(--text-muted); font-family: ui-monospace, 'SF Mono', Consolas, monospace; }
+.fb-size { font-size: 11px; color: var(--text-muted); }
 .fb-actions { display: flex; gap: 8px; flex-shrink: 0; }
 
 .modal-backdrop {
@@ -472,8 +553,7 @@ onMounted(loadList)
 .modal-field > span { font-size: 12px; font-weight: 700; color: var(--text-light); }
 .modal-field > span.required::after { content: '*'; color: #ef4444; margin-left: 2px; }
 .modal-field .optional { font-style: normal; font-weight: 400; color: var(--text-muted); font-size: 11px; }
-.modal-field input,
-.modal-field textarea {
+.modal-field input[type='text'] {
   border: 1px solid var(--border);
   border-radius: 14px;
   padding: 11px 12px;
@@ -482,13 +562,10 @@ onMounted(loadList)
   outline: none;
   background: var(--control-bg);
   color: var(--text);
-  resize: vertical;
-  transition: border-color 0.18s, box-shadow 0.18s;
   width: 100%;
   box-sizing: border-box;
 }
-.modal-field input:focus,
-.modal-field textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.modal-field input[type='text']:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 
 .fb-module-line {
   font-size: 12.5px;
@@ -498,20 +575,22 @@ onMounted(loadList)
   border-radius: 10px;
   padding: 10px 12px;
 }
-.fb-code-head {
+.fb-method-grid { display: flex; flex-direction: column; gap: 6px; }
+.fb-check {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-}
-.fb-tpl-btn { padding: 5px 12px; font-size: 12px; }
-.fb-code-area {
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12.5px;
   font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.6;
-  white-space: pre;
-  overflow-x: auto;
-  tab-size: 2;
+  color: var(--text-light);
+  cursor: pointer;
+  transition: all 0.15s;
 }
+.fb-check input { accent-color: #ef4444; }
+.fb-check:has(input:checked) { border-color: #fca5a5; color: var(--text); background: #fef2f2; }
 .fb-hint { font-size: 11px; color: var(--text-muted); margin: 0; line-height: 1.5; }
 
 .type-picker { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -531,10 +610,8 @@ onMounted(loadList)
 }
 .type-option.active { font-weight: 700; }
 .pick-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: background 0.18s; }
-.pick-enable.active { background: #ecfdf5; color: #10b981; border-color: transparent; }
-.pick-enable.active .pick-dot { background: #10b981; }
-.pick-disable.active { background: var(--control-bg); color: var(--text-muted); border-color: transparent; }
-.pick-disable.active .pick-dot { background: #6b7280; }
+.type-option.active { background: #ecfdf5; color: #10b981; border-color: transparent; }
+.type-option.active .pick-dot { background: #10b981; }
 
 .modal-foot { display: flex; gap: 10px; padding: 14px 20px 18px; }
 .modal-btn {
@@ -549,6 +626,7 @@ onMounted(loadList)
 .modal-btn.cancel { background: var(--control-bg); color: var(--text-light); }
 .modal-btn.save { background: var(--accent); color: #fff; }
 .modal-btn.save:disabled { opacity: 0.6; }
+.modal-btn.danger { background: #fef2f2; color: #ef4444; }
 
 .modal-enter-active { transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
 .modal-leave-active { transition: all 0.2s ease; }

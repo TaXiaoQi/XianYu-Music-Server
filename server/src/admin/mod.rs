@@ -250,7 +250,8 @@ fn is_read_action(action: &str) -> bool {
             | "get_wallpaper_upload_limit"
             | "list_wallpaper_account_limits"
             | "list_announcements"
-            | "list_fallback_modules"
+            | "get_fallback_config"
+            | "get_fallback_signer_status"
             // 审核 / 反馈（只读）
             | "list_avatar_pending"
             | "list_nickname_pending"
@@ -467,11 +468,13 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "delete_announcement" => announcement::delete(body, &ctx, pool).await,
         "toggle_announcement" => announcement::toggle(body, &ctx, pool).await,
         "list_announcements" => announcement::list(body, &ctx, pool).await,
-        // fallback modules（兜底管理）
-        "list_fallback_modules" => fallback::list(body, &ctx, pool).await,
+        // fallback config（兜底行为配置：签名配置下发，无可执行代码）
+        "get_fallback_config" => fallback::list(body, &ctx, pool).await,
         "save_fallback_module" => fallback::save(body, &ctx, pool).await,
         "delete_fallback_module" => fallback::delete(body, &ctx, pool).await,
-        "toggle_fallback_module" => fallback::toggle(body, &ctx, pool).await,
+        "toggle_fallback_config" => fallback::toggle(body, &ctx, pool).await,
+        "get_fallback_signer_status" => fallback::signer_status(body, &ctx, pool).await,
+        "switch_fallback_signer_key" => fallback::signer_switch(body, &ctx, pool).await,
         // audit (avatar / nickname / notification email)
         "list_avatar_pending" => audit::list_avatar_pending(body, &ctx, pool).await,
         "list_nickname_pending" => audit::list_nickname_pending(body, &ctx, pool).await,

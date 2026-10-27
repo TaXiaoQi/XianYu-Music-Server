@@ -49,6 +49,50 @@ pub struct Config {
     // 已知消费端（客户端原生 HTTP、admin-web 生产/开发代理、官网静态页）均为同源
     #[serde(default)]
     pub cors_origins: Vec<String>,
+    // 兜底/内测签名档位：默认关闭 = A 档本机密钥（FALLBACK_SIGN_PRIVATE_KEY 或
+    // api/fallback_sign_key.txt，无 keyId）；开启 = B 档托管（同二进制 --signer
+    // 子进程持有私钥，主服务仅经 localhost 回环调用签发，自身不落私钥）。
+    #[serde(default)]
+    pub fallback: FallbackSection,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct FallbackSection {
+    pub signer: SignerSection,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct SignerSection {
+    pub enabled: bool,
+    /// 签发服务地址（仅回环地址，如 http://127.0.0.1:8791）
+    pub url: String,
+    /// 与 --signer 进程一致的共享令牌（env FALLBACK_SIGNER_TOKEN 优先）
+    pub token: String,
+}
+
+impl SignerSection {
+    pub fn effective_url(&self) -> String {
+        let url = std::env::var("FALLBACK_SIGNER_URL")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| self.url.trim().to_string());
+        if url.is_empty() {
+            "http://127.0.0.1:8791".to_string()
+        } else {
+            url
+        }
+    }
+
+    pub fn effective_token(&self) -> String {
+        std::env::var("FALLBACK_SIGNER_TOKEN")
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| self.token.trim().to_string())
+    }
 }
 
 fn default_static_dir() -> String {
@@ -129,6 +173,26 @@ impl Config {
                  请立即在后台修改密码，或在 config.json / 环境变量中设置 ADMIN_USERNAME / ADMIN_PASSWORD"
             );
         }
+        if self.fallback.signer.enabled {
+            if self.fallback.signer.effective_token().is_empty() {
+                return Err("fallback.signer.enabled 已开启但未配置共享令牌：请在 config.json 的 \
+                    fallback.signer.token 或环境变量 FALLBACK_SIGNER_TOKEN 设置（与 --signer 进程一致，如 openssl rand -hex 32 生成）"
+                    .to_string());
+            }
+            let url = self.fallback.signer.effective_url();
+            let host = url
+                .split("://")
+                .nth(1)
+                .and_then(|rest| rest.split(['/', ':']).next())
+                .unwrap_or("")
+                .to_ascii_lowercase();
+            if !host.is_empty() && host != "127.0.0.1" && host != "localhost" && host != "[::1]" {
+                tracing::warn!(
+                    "安全警告：fallback.signer.url 非回环地址（{host}）——签发服务仅应监听 \
+                     localhost/Unix socket，经公网转发会把签发能力暴露给外部"
+                );
+            }
+        }
         Ok(())
     }
 
@@ -175,6 +239,7 @@ impl Config {
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
                 .collect(),
+            fallback: FallbackSection::default(),
         }
     }
 }

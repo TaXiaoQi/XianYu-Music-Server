@@ -15,9 +15,18 @@ async fn read_announcements(pool: &MySqlPool) -> Vec<serde_json::Value> {
     }
 }
 
+/// 获取服务端下发的兜底行为配置（签名配置 JSON，无可执行代码）。
+/// 未启用/未配置时返回空串，客户端按「无配置」处理（全部默认行为）。
+/// keyId 仅 B 档托管签名时随响应下发（可选字段，客户端缺失时遍历公钥槽位）。
 pub async fn get_fallback_modules(ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let modules = crate::admin::fallback::enabled_modules_payload(pool).await;
-    ctx.json(200, "ok", Some(json!({ "modules": modules })))
+    let (config, signature, key_id) = crate::admin::fallback::client_config_payload(pool).await;
+    let mut data = serde_json::Map::new();
+    data.insert("config".into(), json!(config));
+    data.insert("signature".into(), json!(signature));
+    if !key_id.is_empty() {
+        data.insert("keyId".into(), json!(key_id));
+    }
+    ctx.json(200, "ok", Some(serde_json::Value::Object(data)))
 }
 
 fn announcement_version(item: &serde_json::Value) -> String {
