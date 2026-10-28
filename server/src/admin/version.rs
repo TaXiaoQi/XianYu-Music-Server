@@ -672,18 +672,30 @@ fn read_beta_lock(value: Option<Value>) -> bool {
         .unwrap_or(true)
 }
 
+/// 单账号可登录设备数上限（beta_lock JSON `max_devices`，默认 1，范围 1-10）。
+fn read_beta_max_devices(value: Option<Value>) -> u32 {
+    value
+        .and_then(|v| v.get("max_devices").and_then(|n| n.as_u64()))
+        .unwrap_or(1)
+        .clamp(1, 10) as u32
+}
+
 pub async fn list_beta_testers(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
-    let lock_enabled = read_beta_lock(
-        site_config_store::get_json(pool, "beta_lock", Some(std::path::Path::new("api/beta_lock.json")))
-            .await,
-    );
-    match sqlx::query("SELECT id, device_id, note, created_at FROM beta_testers ORDER BY id DESC")
+    let cfg = site_config_store::get_json(
+        pool,
+        "beta_lock",
+        Some(std::path::Path::new("api/beta_lock.json")),
+    )
+    .await;
+    let lock_enabled = read_beta_lock(cfg.clone());
+    let max_devices = read_beta_max_devices(cfg);
+    match sqlx::query("SELECT id, device_id, ciyuanxi_id, note, created_at FROM beta_testers ORDER BY id DESC")
         .fetch_all(pool)
         .await
     {
         Ok(rows) => {
             let list: Vec<Value> = rows.iter().map(row_to_value).collect();
-            ok("ok", json!({ "list": list, "enabled": lock_enabled }))
+            ok("ok", json!({ "list": list, "enabled": lock_enabled, "max_devices": max_devices }))
         }
         Err(e) => { tracing::error!("查询失败: {e}"); err(500, "查询失败") },
     }
@@ -694,10 +706,15 @@ pub async fn set_beta_lock_enabled(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
     let Some(enabled) = data.get("enabled").and_then(|v| v.as_bool()) else {
         return err(400, "参数错误");
     };
-    match site_config_store::set_json(pool, "beta_lock", &json!({ "enabled": enabled })).await {
+    let max_devices = data
+        .get("max_devices")
+        .and_then(|n| n.as_u64())
+        .unwrap_or(1)
+        .clamp(1, 10) as u32;
+    match site_config_store::set_json(pool, "beta_lock", &json!({ "enabled": enabled, "max_devices": max_devices })).await {
         Ok(_) => {
-            log_operation(pool, ctx, if enabled { "开启内测锁" } else { "关闭内测锁" }, "", "").await;
-            ok(if enabled { "内测锁已开启" } else { "内测锁已关闭" }, json!({ "enabled": enabled }))
+            log_operation(pool, ctx, if enabled { "开启内测锁" } else { "关闭内测锁" }, "", &format!("每账号设备上限 {max_devices} 台")).await;
+            ok(if enabled { "内测锁已开启" } else { "内测锁已关闭" }, json!({ "enabled": enabled, "max_devices": max_devices }))
         }
         Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
     }
@@ -706,29 +723,47 @@ pub async fn set_beta_lock_enabled(body: &str, ctx: &AdminCtx, pool: &MySqlPool)
 pub async fn add_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
     let note = str_of(&data, "note").trim().to_string();
-    if device_id.is_empty() {
-        return err(400, "设备ID不能为空");
+    if device_id.is_empty() && ciyuanxi_id.is_empty() {
+        return err(400, "设备ID与账号ID不能同时为空");
     }
     if device_id.chars().count() > 128 {
         return err(400, "设备ID过长（最多128字符）");
     }
-    let dup: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM beta_testers WHERE device_id = ?")
-        .bind(&device_id)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
-    if dup > 0 {
-        return err(400, "该设备ID已在内测名单中");
+    if ciyuanxi_id.chars().count() > 64 {
+        return err(400, "账号ID过长（最多64字符）");
     }
-    match sqlx::query("INSERT INTO beta_testers (device_id, note) VALUES (?, ?)")
+    if !device_id.is_empty() {
+        let dup: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM beta_testers WHERE device_id = ?")
+            .bind(&device_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+        if dup > 0 {
+            return err(400, "该设备ID已在内测名单中");
+        }
+    }
+    if !ciyuanxi_id.is_empty() {
+        let dup: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM beta_testers WHERE ciyuanxi_id = ?")
+            .bind(&ciyuanxi_id)
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
+        if dup > 0 {
+            return err(400, "该账号已在内测名单中");
+        }
+    }
+    match sqlx::query("INSERT INTO beta_testers (device_id, ciyuanxi_id, note) VALUES (?, ?, ?)")
         .bind(&device_id)
+        .bind(&ciyuanxi_id)
         .bind(&note)
         .execute(pool)
         .await
     {
         Ok(_) => {
-            log_operation(pool, ctx, "添加内测设备", &device_id, &note).await;
+            let subject = if ciyuanxi_id.is_empty() { &device_id } else { &ciyuanxi_id };
+            log_operation(pool, ctx, "添加内测资格", subject, &note).await;
             ok("添加成功", Value::Null)
         }
         Err(e) => { tracing::error!("数据库错误: {e}"); err(500, "数据库错误") },
@@ -738,16 +773,19 @@ pub async fn add_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
 pub async fn delete_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
-    if device_id.is_empty() {
-        return err(400, "设备ID不能为空");
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
+    if device_id.is_empty() && ciyuanxi_id.is_empty() {
+        return err(400, "参数错误");
     }
-    match sqlx::query("DELETE FROM beta_testers WHERE device_id = ?")
+    match sqlx::query("DELETE FROM beta_testers WHERE device_id = ? OR (ciyuanxi_id <> '' AND ciyuanxi_id = ?)")
         .bind(&device_id)
+        .bind(&ciyuanxi_id)
         .execute(pool)
         .await
     {
         Ok(r) if r.rows_affected() > 0 => {
-            log_operation(pool, ctx, "移除内测设备", &device_id, "").await;
+            let subject = if ciyuanxi_id.is_empty() { &device_id } else { &ciyuanxi_id };
+            log_operation(pool, ctx, "移除内测资格", subject, "").await;
             ok("删除成功", Value::Null)
         }
         Ok(_) => err(404, "设备不在内测名单中"),
@@ -758,22 +796,25 @@ pub async fn delete_beta_tester(body: &str, ctx: &AdminCtx, pool: &MySqlPool) ->
 pub async fn update_beta_tester_note(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let device_id = str_of(&data, "device_id").trim().to_string();
+    let ciyuanxi_id = str_of(&data, "ciyuanxi_id").trim().to_string();
     let note = str_of(&data, "note").trim().to_string();
-    if device_id.is_empty() {
-        return err(400, "设备ID不能为空");
+    if device_id.is_empty() && ciyuanxi_id.is_empty() {
+        return err(400, "参数错误");
     }
     if note.chars().count() > 255 {
         return err(400, "备注不能超过 255 字");
     }
-    match sqlx::query("UPDATE beta_testers SET note = ? WHERE device_id = ?")
+    match sqlx::query("UPDATE beta_testers SET note = ? WHERE device_id = ? OR (ciyuanxi_id <> '' AND ciyuanxi_id = ?)")
         .bind(&note)
         .bind(&device_id)
+        .bind(&ciyuanxi_id)
         .execute(pool)
         .await
     {
         Ok(r) if r.rows_affected() > 0 => {
-            log_operation(pool, ctx, "设置内测设备备注", &device_id, &note).await;
-            ok("已更新设备备注", json!({ "device_id": device_id, "note": note }))
+            let subject = if ciyuanxi_id.is_empty() { &device_id } else { &ciyuanxi_id };
+            log_operation(pool, ctx, "设置内测备注", subject, &note).await;
+            ok("已更新备注", json!({ "device_id": device_id, "note": note }))
         }
         Ok(_) => err(404, "设备不在内测名单中"),
         Err(_) => err(500, "数据库错误"),

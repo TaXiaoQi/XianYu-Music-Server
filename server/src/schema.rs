@@ -61,6 +61,13 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "wallpapers", "video_size", "bigint(20) NOT NULL DEFAULT 0").await;
     ensure_column(pool, "wallpapers", "video_sha256", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_index(pool, "play_history", "idx_ciyuanxi_played", "ciyuanxi_id, played_at").await;
+    // beta_testers：账号维度迁移（解除 device_id 唯一约束，账号条目 device_id 为空串可并存）
+    ensure_column(pool, "beta_testers", "ciyuanxi_id", "varchar(64) NOT NULL DEFAULT ''").await;
+    let _ = sqlx::query("ALTER TABLE beta_testers DROP INDEX uk_device_id")
+        .execute(pool)
+        .await;
+    ensure_index(pool, "beta_testers", "idx_device_id", "device_id").await;
+    ensure_index(pool, "beta_testers", "idx_ciyuanxi", "ciyuanxi_id").await;
     ensure_column(pool, "tv_login_codes", "location", "varchar(255) NOT NULL DEFAULT ''").await;
     // V-02（渗透修复）：首启强制改密标记；登录响应据此提示，改密成功后清零
     ensure_column(
@@ -606,10 +613,12 @@ static TABLE_STATEMENTS: &[&str] = &[
         "CREATE TABLE IF NOT EXISTS `beta_testers` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `device_id` varchar(128) NOT NULL DEFAULT '',
+            `ciyuanxi_id` varchar(64) NOT NULL DEFAULT '',
             `note` varchar(255) NOT NULL DEFAULT '',
             `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (`id`),
-            UNIQUE KEY `uk_device_id` (`device_id`)
+            KEY `idx_device_id` (`device_id`),
+            KEY `idx_ciyuanxi` (`ciyuanxi_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `user_settings` (
             `ciyuanxi_id` varchar(32) NOT NULL DEFAULT '',

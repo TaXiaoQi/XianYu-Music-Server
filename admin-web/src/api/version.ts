@@ -73,15 +73,15 @@ export async function listBetaTesters(): Promise<ApiResponse<BetaTesterListData>
   return adminApi<BetaTesterListData>('list_beta_testers')
 }
 
-export async function setBetaLockEnabled(payload: { enabled: boolean }): Promise<ApiResponse> {
+export async function setBetaLockEnabled(payload: { enabled: boolean; max_devices?: number }): Promise<ApiResponse> {
   return adminApi('set_beta_lock_enabled', payload)
 }
 
-export async function createBetaTester(payload: { device_id: string; note: string }): Promise<ApiResponse> {
+export async function createBetaTester(payload: { device_id: string; note: string; ciyuanxi_id?: string }): Promise<ApiResponse> {
   return adminApi('add_beta_tester', payload)
 }
 
-export async function deleteBetaTester(payload: { device_id: string }): Promise<ApiResponse> {
+export async function deleteBetaTester(payload: { device_id?: string; ciyuanxi_id?: string }): Promise<ApiResponse> {
   return adminApi('delete_beta_tester', payload)
 }
 

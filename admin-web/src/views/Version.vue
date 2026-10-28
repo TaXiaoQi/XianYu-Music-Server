@@ -420,9 +420,18 @@
                 <span class="toggle-slider"></span>
               </label>
             </div>
-            <p class="field-hint">名单内的设备ID可收到「测试版」渠道的更新下发；正式版与官网下载对所有用户不变。点击设备可查看关联帐号与设备信息。设备ID可在客户端「关于/反馈」上报数据或设备管理中查询。</p>
+            <div class="beta-lock-row">
+              <div class="beta-lock-info">
+                <span class="beta-lock-label">每账号可登录设备数</span>
+                <span class="beta-lock-desc">登录态校验内测资格时，同一账号同时活跃的设备数上限（默认 1 台）；超出上限的设备无法通过内测锁，移除旧设备登录后可换机</span>
+              </div>
+              <input v-model.number="betaMaxDevices" type="number" min="1" max="10" class="beta-max-input" style="width: 72px" :disabled="betaMaxSaving" @keyup.enter="saveBetaMaxDevices" />
+              <button class="btn-save" :disabled="betaMaxSaving" @click="saveBetaMaxDevices">{{ betaMaxSaving ? '保存中...' : '保存' }}</button>
+            </div>
+            <p class="field-hint">名单内的设备ID可收到「测试版」渠道的更新下发；正式版与官网下载对所有用户不变。点击设备可查看关联帐号与设备信息。设备ID可在客户端「关于/反馈」上报数据或设备管理中查询。账号条目（账号ID）按登录态校验资格，不绑定单一设备。</p>
             <div class="beta-add-row">
               <input v-model="betaDeviceIdDraft" type="text" placeholder="输入设备ID" @keyup.enter="addBetaTester" />
+              <input v-model="betaCiyuanxiDraft" type="text" placeholder="或输入账号ID（可选）" class="beta-note-input" @keyup.enter="addBetaTester" />
               <input v-model="betaNoteDraft" type="text" placeholder="备注（可选）" class="beta-note-input" @keyup.enter="addBetaTester" />
               <button class="btn-save" :disabled="betaSaving" @click="addBetaTester">{{ betaSaving ? '添加中...' : '添加' }}</button>
             </div>
@@ -432,11 +441,12 @@
               <TransitionGroup name="card">
                 <div v-for="t in betaList" :key="t.id" class="beta-item clickable" :style="{ animationDelay: '0ms' }" title="点击查看设备详情" @click="openBetaDetail(t)">
                   <div class="beta-item-main">
+                    <span v-if="t.ciyuanxi_id" class="beta-item-note" :title="`内测账号 ${t.ciyuanxi_id}`">账号 {{ t.ciyuanxi_id }}</span>
                     <template v-if="t.note">
                       <span class="beta-item-note" :title="t.note">{{ t.note }}</span>
-                      <span class="beta-device-id beta-device-id-sub" :title="t.device_id">{{ t.device_id }}</span>
+                      <span class="beta-device-id beta-device-id-sub" :title="t.device_id">{{ t.device_id || '（账号条目，跟随登录态）' }}</span>
                     </template>
-                    <span v-else class="beta-device-id" :title="t.device_id">{{ t.device_id }}</span>
+                    <span v-else class="beta-device-id" :title="t.device_id">{{ t.device_id || '（账号条目，跟随登录态）' }}</span>
                   </div>
                   <div class="beta-item-side">
                     <span class="beta-item-date">{{ t.created_at || '-' }}</span>
@@ -648,10 +658,14 @@ const {
   betaLoading,
   betaSaving,
   betaDeviceIdDraft,
+  betaCiyuanxiDraft,
   betaNoteDraft,
   betaLockEnabled,
   betaLockSaving,
+  betaMaxDevices,
+  betaMaxSaving,
   toggleBetaLock,
+  saveBetaMaxDevices,
   loadBeta,
   openBetaModal,
   closeBetaModal,

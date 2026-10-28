@@ -183,11 +183,17 @@ async fn beta_device_allowed(pool: &MySqlPool, device_id: &str) -> bool {
     if device_id.is_empty() {
         return false;
     }
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM beta_testers WHERE device_id = ?")
-        .bind(device_id)
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0)
+    // 设备白名单 OR 该设备当前登录账号在白名单（账号维度；token 未过期视为在用）
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM beta_testers bt WHERE bt.device_id = ? \
+         OR (bt.ciyuanxi_id <> '' AND bt.ciyuanxi_id IN (\
+             SELECT ut.ciyuanxi_id FROM user_tokens ut WHERE ut.device_id = ? AND ut.expires_at > NOW()))",
+    )
+    .bind(device_id)
+    .bind(device_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0)
         > 0
 }
 
@@ -205,9 +211,10 @@ fn beta_access_message(device_id: &str, allowed: bool, pending: bool, exp: i64) 
     .into_bytes()
 }
 
-/// 内测锁开关（site_configs `beta_lock`，默认开启）。
+/// 内测锁配置（site_configs `beta_lock`，legacy 文件 api/beta_lock.json，默认开启）。
 /// 关闭后所有 beta 客户端启动时不再校验名单资格（直接签发 allowed=true）。
-async fn beta_lock_enabled(pool: &MySqlPool) -> bool {
+/// max_devices：单账号可同时活跃的设备数上限（默认 1，范围 1-10）。
+async fn beta_lock_cfg(pool: &MySqlPool) -> (bool, u32) {
     match crate::site_config_store::get_json(
         pool,
         "beta_lock",
@@ -215,20 +222,83 @@ async fn beta_lock_enabled(pool: &MySqlPool) -> bool {
     )
     .await
     {
-        Some(v) => v.get("enabled").and_then(|b| b.as_bool()).unwrap_or(true),
-        None => true,
+        Some(v) => {
+            let enabled = v.get("enabled").and_then(|b| b.as_bool()).unwrap_or(true);
+            let max = v
+                .get("max_devices")
+                .and_then(|n| n.as_u64())
+                .unwrap_or(1)
+                .clamp(1, 10) as u32;
+            (enabled, max)
+        }
+        None => (true, 1),
     }
 }
 
 pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let raw = parse_body(body);
     let device_id = str_of(&raw, "device_id").trim().to_string();
-    let lock_on = beta_lock_enabled(pool).await;
-    let allowed = if lock_on {
-        beta_device_allowed(pool, &device_id).await
+    let token = str_of(&raw, "token").trim().to_string();
+    let (lock_on, max_devices) = beta_lock_cfg(pool).await;
+    let mut allowed = false;
+    let mut reason = String::new();
+    if !lock_on {
+        allowed = true;
+    } else if !token.is_empty() {
+        // 账号维度：token 有效 → 账号白名单 + 活跃设备数上限（防一账号无限铺设备）
+        let user = sqlx::query_scalar::<_, String>(
+            "SELECT ciyuanxi_id FROM user_tokens WHERE token = ? AND expires_at > NOW() LIMIT 1",
+        )
+        .bind(&token)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        match user {
+            Some(user_id) if !user_id.is_empty() => {
+                let in_list: i64 =
+                    sqlx::query_scalar("SELECT COUNT(*) FROM beta_testers WHERE ciyuanxi_id = ?")
+                        .bind(&user_id)
+                        .fetch_one(pool)
+                        .await
+                        .unwrap_or(0);
+                if in_list > 0 {
+                    let devices: i64 = sqlx::query_scalar(
+                        "SELECT COUNT(DISTINCT device_id) FROM user_tokens \
+                         WHERE ciyuanxi_id = ? AND expires_at > NOW() AND device_id <> ''",
+                    )
+                    .bind(&user_id)
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or(0);
+                    allowed = devices <= max_devices as i64;
+                    if !allowed {
+                        reason =
+                            format!("该账号活跃设备数已达上限（{devices} 台 > {max_devices} 台）");
+                    }
+                } else {
+                    // 账号不在名单：回退设备白名单（旧条目/离线迁移过渡）
+                    allowed = beta_device_allowed(pool, &device_id).await;
+                    if !allowed {
+                        reason = "账号未获得内测资格".to_string();
+                    }
+                }
+            }
+            _ => {
+                // token 无效/过期：回退设备白名单
+                allowed = beta_device_allowed(pool, &device_id).await;
+                if !allowed {
+                    reason = "登录状态无效且设备未在白名单".to_string();
+                }
+            }
+        }
     } else {
-        true
-    };
+        // 旧客户端不带 token：沿用设备白名单
+        allowed = beta_device_allowed(pool, &device_id).await;
+        if !allowed {
+            reason = "设备未在内测名单".to_string();
+        }
+    }
     let mut pending = false;
     if lock_on && !allowed && !device_id.is_empty() {
         pending = sqlx::query_scalar::<_, i64>(
@@ -250,7 +320,7 @@ pub async fn check_beta_access(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Res
             String::new()
         }
     };
-    ctx.json(200, "ok", Some(json!({ "enabled": lock_on, "allowed": allowed, "pending": pending, "exp": exp, "device_id": device_id, "sig": signature })))
+    ctx.json(200, "ok", Some(json!({ "enabled": lock_on, "allowed": allowed, "reason": reason, "pending": pending, "exp": exp, "device_id": device_id, "sig": signature })))
 }
 
 pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {

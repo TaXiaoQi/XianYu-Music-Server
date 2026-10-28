@@ -17,9 +17,13 @@ export function useVersionBeta() {
   const betaLoading = ref(false)
   const betaSaving = ref(false)
   const betaDeviceIdDraft = ref('')
+  const betaCiyuanxiDraft = ref('')
   const betaNoteDraft = ref('')
   const betaLockEnabled = ref(true)
   const betaLockSaving = ref(false)
+  // 每账号可登录设备数上限（1-10，默认 1）
+  const betaMaxDevices = ref(1)
+  const betaMaxSaving = ref(false)
 
   async function loadBeta() {
     betaLoading.value = true
@@ -27,6 +31,7 @@ export function useVersionBeta() {
     if (res.code === 200 && res.data) {
       betaList.value = Array.isArray(res.data.list) ? res.data.list : []
       if (typeof res.data.enabled === 'boolean') betaLockEnabled.value = res.data.enabled
+      if (typeof (res.data as any).max_devices === 'number') betaMaxDevices.value = (res.data as any).max_devices
     }
     betaLoading.value = false
   }
@@ -34,7 +39,7 @@ export function useVersionBeta() {
   async function toggleBetaLock(event: Event) {
     const enabled = (event.target as HTMLInputElement).checked
     betaLockSaving.value = true
-    const res = await setBetaLockEnabled({ enabled })
+    const res = await setBetaLockEnabled({ enabled, max_devices: betaMaxDevices.value })
     betaLockSaving.value = false
     if (res.code === 200) {
       betaLockEnabled.value = enabled
@@ -42,6 +47,23 @@ export function useVersionBeta() {
     } else {
       // 失败时回滚开关状态
       betaLockEnabled.value = !enabled
+      showToast(res.msg || '设置失败')
+    }
+  }
+
+  async function saveBetaMaxDevices() {
+    const n = Math.floor(Number(betaMaxDevices.value))
+    if (!Number.isFinite(n) || n < 1 || n > 10) {
+      showToast('设备数需为 1-10 的整数')
+      return
+    }
+    betaMaxSaving.value = true
+    const res = await setBetaLockEnabled({ enabled: betaLockEnabled.value, max_devices: n })
+    betaMaxSaving.value = false
+    if (res.code === 200) {
+      betaMaxDevices.value = n
+      showToast(`每账号设备上限已设为 ${n} 台`, 'success')
+    } else {
       showToast(res.msg || '设置失败')
     }
   }
@@ -57,16 +79,18 @@ export function useVersionBeta() {
 
   async function addBetaTester() {
     const deviceId = betaDeviceIdDraft.value.trim()
-    if (!deviceId) {
-      showToast('请输入设备ID')
+    const ciyuanxiId = betaCiyuanxiDraft.value.trim()
+    if (!deviceId && !ciyuanxiId) {
+      showToast('请输入设备ID或账号ID')
       return
     }
     betaSaving.value = true
-    const res = await createBetaTester({ device_id: deviceId, note: betaNoteDraft.value.trim() })
+    const res = await createBetaTester({ device_id: deviceId, ciyuanxi_id: ciyuanxiId, note: betaNoteDraft.value.trim() })
     betaSaving.value = false
     if (res.code === 200) {
       showToast('已添加到内测名单', 'success')
       betaDeviceIdDraft.value = ''
+      betaCiyuanxiDraft.value = ''
       betaNoteDraft.value = ''
       loadBeta()
     } else {
@@ -75,9 +99,13 @@ export function useVersionBeta() {
   }
 
   async function removeBetaTester(t: any) {
-    const ok = await webConfirm(`确认将设备 ${t.device_id} 移出内测名单？`, { title: '移除内测设备', confirmText: '确认移除' })
+    const isAccount = !t.device_id && t.ciyuanxi_id
+    const ok = await webConfirm(
+      isAccount ? `确认将账号 ${t.ciyuanxi_id} 移出内测名单？` : `确认将设备 ${t.device_id} 移出内测名单？`,
+      { title: '移除内测资格', confirmText: '确认移除' },
+    )
     if (!ok) return
-    const res = await deleteBetaTester({ device_id: t.device_id })
+    const res = await deleteBetaTester({ device_id: t.device_id || '', ciyuanxi_id: t.ciyuanxi_id || '' })
     if (res.code === 200) {
       showToast('已移除', 'success')
       loadBeta()
@@ -139,10 +167,14 @@ export function useVersionBeta() {
     betaLoading,
     betaSaving,
     betaDeviceIdDraft,
+    betaCiyuanxiDraft,
     betaNoteDraft,
     betaLockEnabled,
     betaLockSaving,
+    betaMaxDevices,
+    betaMaxSaving,
     toggleBetaLock,
+    saveBetaMaxDevices,
     loadBeta,
     openBetaModal,
     closeBetaModal,
