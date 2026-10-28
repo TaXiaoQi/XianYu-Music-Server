@@ -1,4 +1,4 @@
-import { changeCiyuanxiId, deleteUser as deleteUserApi, deleteUserAvatar, toggleUserStatus } from '@/api/users'
+import { changeCiyuanxiId, deleteUser as deleteUserApi, deleteUserAvatar, setUserPassword, toggleUserStatus } from '@/api/users'
 import type { User } from '@/api/users'
 import { showToast } from '@/api/client'
 import { webActionMenu, webConfirm, webInfo, webPrompt } from '@/utils/webDialog'
@@ -30,6 +30,7 @@ export function useRowActions(options: RowActionOptions) {
       { key: 'nickname', label: '修改昵称' },
       { key: 'ciyuanxi', label: '修改弦予号' },
       { key: 'email', label: '修改邮箱' },
+      { key: 'password', label: '重置密码' },
       { key: 'reset', label: '重置听歌时长' },
       { key: 'plugins', label: '查看插件' },
       { key: 'playlists', label: '查看歌单' },
@@ -44,6 +45,7 @@ export function useRowActions(options: RowActionOptions) {
       case 'nickname': openNicknameModal(u); break
       case 'ciyuanxi': await changeCiyuanxi(u); break
       case 'email': openEmailModal(u); break
+      case 'password': await resetPassword(u); break
       case 'reset': openResetModal(u); break
       case 'plugins': await viewPlugins(u); break
       case 'playlists': await viewPlaylists(u); break
@@ -99,6 +101,24 @@ export function useRowActions(options: RowActionOptions) {
     }
   }
 
+  async function resetPassword(u: User) {
+    const input = await webPrompt(`请输入 "${u.nickname || u.username}" 的新密码（至少 6 位）：`, '', { title: '重置密码', placeholder: '新密码（至少 6 位）' })
+    if (input === null) return
+    const pwd = input.trim()
+    if (pwd.length < 6) {
+      showToast('密码至少 6 位', 'error')
+      return
+    }
+    const ok = await webConfirm(`确定重置 "${u.nickname || u.username}" 的密码吗？该用户所有登录态将被注销，需用新密码重新登录。`, { title: '重置密码', confirmText: '确认重置' })
+    if (!ok) return
+    const res = await setUserPassword({ user_id: u.id, password: pwd })
+    if (res.code === 200) {
+      showToast('密码已重置', 'success')
+    } else {
+      showToast(res.msg || '重置失败', 'error')
+    }
+  }
+
   async function deleteUser(u: User) {
     const ok = await webConfirm(`确定删除用户 "${u.nickname || u.username}" 吗？此操作不可恢复。`, { title: '删除用户', confirmText: '确认删除' })
     if (!ok) return
@@ -123,5 +143,5 @@ export function useRowActions(options: RowActionOptions) {
     }
   }
 
-  return { openRowMenu, toggleStatus, changeCiyuanxi, deleteUser, deleteAvatar }
+  return { openRowMenu, toggleStatus, changeCiyuanxi, resetPassword, deleteUser, deleteAvatar }
 }

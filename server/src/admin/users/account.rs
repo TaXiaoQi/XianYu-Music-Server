@@ -24,7 +24,8 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
             .unwrap_or(0)
     } else {
         let pat = format!("%{}%", keyword);
-        sqlx::query_scalar("SELECT COUNT(*) FROM app_users WHERE nickname LIKE ? OR email LIKE ?")
+        sqlx::query_scalar("SELECT COUNT(*) FROM app_users WHERE nickname LIKE ? OR email LIKE ? OR ciyuanxi_id LIKE ?")
+            .bind(&pat)
             .bind(&pat)
             .bind(&pat)
             .fetch_one(pool)
@@ -40,7 +41,8 @@ pub async fn get_users(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Respons
             .await
     } else {
         let pat = format!("%{}%", keyword);
-        sqlx::query("SELECT * FROM app_users WHERE nickname LIKE ? OR email LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+        sqlx::query("SELECT * FROM app_users WHERE nickname LIKE ? OR email LIKE ? OR ciyuanxi_id LIKE ? ORDER BY created_at DESC LIMIT ? OFFSET ?")
+            .bind(&pat)
             .bind(&pat)
             .bind(&pat)
             .bind(page_size)
@@ -286,6 +288,49 @@ pub async fn add_user(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response 
     }
     log_operation(pool, ctx, "添加用户", &format!("昵称:{}", username), &format!("弦予号:{} 额度:{}", ciyuanxi_id, master_quota)).await;
     ok("添加成功", json!({ "ciyuanxi_id": ciyuanxi_id }))
+}
+
+pub async fn set_user_password(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let id = int_of(&data, "user_id");
+    if id <= 0 {
+        return err(400, "参数错误");
+    }
+    let password = str_of(&data, "password").to_string();
+    if password.len() < 6 {
+        return err(400, "密码至少 6 位");
+    }
+    if password.len() > 64 {
+        return err(400, "密码过长");
+    }
+    let user = sqlx::query("SELECT nickname, ciyuanxi_id FROM app_users WHERE id = ? LIMIT 1")
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    let Some(user) = user else {
+        return err(404, "用户不存在");
+    };
+    let nickname: String = user.try_get("nickname").unwrap_or_default();
+    let ciyuanxi_id: String = user.try_get("ciyuanxi_id").unwrap_or_default();
+    let hashed = match bcrypt::hash(&password, 10) {
+        Ok(h) => h,
+        Err(_) => return err(500, "加密失败"),
+    };
+    let updated = sqlx::query("UPDATE app_users SET password = ? WHERE id = ?")
+        .bind(&hashed)
+        .bind(id)
+        .execute(pool)
+        .await;
+    if let Err(e) = updated {
+        tracing::error!("重置密码失败: {e}");
+        return err(500, "重置失败");
+    }
+    // 撤销该用户全部登录态，强制用新密码重新登录
+    crate::handlers::token::revoke_user(pool, &ciyuanxi_id).await;
+    log_operation(pool, ctx, "重置用户密码", &format!("昵称:{}", nickname), &format!("弦予号:{}", ciyuanxi_id)).await;
+    ok("密码已重置", json!({ "ciyuanxi_id": ciyuanxi_id }))
 }
 
 pub async fn set_user_master_quota(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {

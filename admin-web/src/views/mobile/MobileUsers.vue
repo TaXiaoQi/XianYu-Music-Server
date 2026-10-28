@@ -541,6 +541,7 @@ async function openActionMenu(u: any) {
     { key: 'nickname', label: '修改昵称' },
     { key: 'ciyuanxi', label: '修改弦予号' },
     { key: 'email', label: '修改邮箱' },
+    { key: 'password', label: '重置密码' },
     { key: 'reset', label: '重置听歌时长' },
     { key: 'plugins', label: '查看插件' },
     { key: 'playlists', label: '查看歌单' },
@@ -555,6 +556,7 @@ async function openActionMenu(u: any) {
     case 'nickname': openNicknameModal(u); break
     case 'ciyuanxi': await changeCiyuanxi(u); break
     case 'email': await changeEmail(u); break
+    case 'password': await resetPassword(u); break
     case 'reset': await resetDuration(u); break
     case 'plugins': await loadPlugins(u); break
     case 'playlists': await loadPlaylists(u); break
@@ -604,6 +606,15 @@ async function changeEmail(u: any) {
   if (email === null) return
   const res = await adminApi('change_user_email', { user_id: u.id, email: email.trim() })
   if (res.code === 200) { u.email = email.trim(); showToast('邮箱已更新', 'success') } else showToast(res.msg || '更新失败')
+}
+async function resetPassword(u: any) {
+  const input = await mobilePrompt(`请输入 ${u.nickname || u.username} 的新密码（至少 6 位）`, '')
+  if (input === null) return
+  const pwd = input.trim()
+  if (pwd.length < 6) return showToast('密码至少 6 位', 'error')
+  if (!(await mobileConfirm(`确认重置 ${u.nickname || u.username} 的密码？该用户所有登录态将被注销，需用新密码重新登录。`))) return
+  const res = await adminApi('set_user_password', { user_id: u.id, password: pwd })
+  if (res.code === 200) showToast('密码已重置', 'success'); else showToast(res.msg || '重置失败', 'error')
 }
 
 // ===== 修改昵称 =====

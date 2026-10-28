@@ -370,6 +370,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "batch_set_master_quota" => users::batch_set_master_quota(body, &ctx, pool).await,
         "delete_user_avatar" => users::delete_user_avatar(body, &ctx, pool).await,
         "change_user_nickname" => users::change_user_nickname(body, &ctx, pool).await,
+        "set_user_password" => users::set_user_password(body, &ctx, pool).await,
         "get_user_plugins" => users::get_user_plugins(body, &ctx, pool).await,
         "get_user_playlists" => users::get_user_playlists(body, &ctx, pool).await,
         "delete_user_sync_playlist" => users::delete_user_sync_playlist(body, &ctx, pool).await,

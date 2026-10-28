@@ -80,6 +80,10 @@ export async function resetListenDuration(params: { user_id: number; ciyuanxi_id
   return adminApi('reset_listen_duration', params)
 }
 
+export async function setUserPassword(params: { user_id: number; password: string }) {
+  return adminApi('set_user_password', params)
+}
+
 export async function deleteEmptyFavoritePlaylists() {
   return adminApi<{ deleted_count?: number; total_scanned?: number }>('delete_empty_favorite_playlists')
 }
