@@ -150,6 +150,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/.well-known/applinking.json", get(serve_applinking))
         .route("/admin/api", get(handle_admin_api).post(handle_admin_api))
         .route("/admin/api/", get(handle_admin_api).post(handle_admin_api))
+        // watch-relay 需要 DB pool 校验 hello 帧用户 token（V-08）
         .route("/watch-relay", get(watch_relay::watch_relay_handler))
         .route("/uploads/covers/:filename", get(serve_cover))
         .nest_service("/uploads", ServeDir::new("uploads"))
@@ -250,11 +251,11 @@ async fn handle_api(
 
     let ctx = response::ReqCtx::new((*state.config).clone(), &headers, Some(&peer_ip));
 
-    let no_sign: [&str; 23] = [
+    let no_sign: [&str; 22] = [
         "install", "check", "get_source_status", "upload_avatar",
         "deduct_master_quota", "get_master_quota_usage",
         "get_captcha", "verify_captcha", "email_send_code", "email_get_captcha_config", "email_get_turnstile_config", "email_register", "email_login", "email_reset_password", "email_get_profile",
-        "open", "get_user_agreement", "get_deploy_doc", "get_site_logo", "share_download",
+        "open", "get_user_agreement", "get_site_logo", "share_download",
         // TV 扫码授权：网页编辑器等无签名能力的端复用（rate_limit 已有 auth/poll 专项配置）
         "generate_tv_login_code", "poll_tv_login_status",
         // 版本检查：公开元数据且旧客户端密钥失配时会收不到更新提示（死锁），必须免签
@@ -275,7 +276,14 @@ async fn handle_api(
             .unwrap_or_default();
         let secret = &state.config.api_secret;
         let tolerance = state.config.api_timestamp_tolerance;
-        if !sign::verify(&timestamp, &nonce, &signature, &raw_body, secret, tolerance) {
+        // 双钥过渡（V-01）：轮换窗口期同时接受当前密钥与 api_secret_previous
+        let sign_ok = sign::verify(&timestamp, &nonce, &signature, &raw_body, secret, tolerance)
+            || state
+                .config
+                .api_secret_previous
+                .as_ref()
+                .is_some_and(|prev| sign::verify(&timestamp, &nonce, &signature, &raw_body, prev, tolerance));
+        if !sign_ok {
             let ua = headers
                 .get("user-agent")
                 .and_then(|v| v.to_str().ok())
@@ -298,7 +306,16 @@ async fn handle_api(
         .get("x-encrypted-iv")
         .map(|v| v.to_str().unwrap_or("").to_string())
     {
-        sign::aes_decrypt(&raw_body, &iv, &state.config.api_secret).unwrap_or_default()
+        // 双钥过渡（V-01）：当前密钥解密失败时回退旧密钥（旧客户端 AES 密文兼容）
+        sign::aes_decrypt(&raw_body, &iv, &state.config.api_secret)
+            .or_else(|| {
+                state
+                    .config
+                    .api_secret_previous
+                    .as_ref()
+                    .and_then(|prev| sign::aes_decrypt(&raw_body, &iv, prev))
+            })
+            .unwrap_or_default()
     } else {
         raw_body
     };
