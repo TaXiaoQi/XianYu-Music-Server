@@ -5,6 +5,53 @@ use sqlx::Row;
 
 use super::{err, int_of, log_operation, ok, row_to_value, str_of, AdminCtx};
 
+// V-02（渗透修复）：admin_login 账号级失败锁定（跨 IP 生效，防绕过 IP 限流的
+// 分布式爆破）。与用户侧 auth_rate_limits 同表复用：identifier=用户名、ip=''。
+const ADMIN_LOGIN_LOCK_WINDOW_MINUTES: i64 = 15;
+const ADMIN_LOGIN_LOCK_THRESHOLD: i64 = 5;
+const ADMIN_LOGIN_LOCK_MINUTES: i64 = 30;
+
+async fn admin_login_locked(username: &str, pool: &MySqlPool) -> bool {
+    let locked: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM auth_rate_limits WHERE action = 'admin_login' AND identifier = ? AND ip = '' AND locked_until IS NOT NULL AND locked_until > NOW()",
+    )
+    .bind(username.trim().to_lowercase())
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    locked > 0
+}
+
+async fn record_admin_login_failure(username: &str, pool: &MySqlPool) {
+    let key = username.trim().to_lowercase();
+    let current: i64 = sqlx::query_scalar(
+        "SELECT failed_count FROM auth_rate_limits WHERE action = 'admin_login' AND identifier = ? AND ip = '' AND updated_at > DATE_SUB(NOW(), INTERVAL ? MINUTE) LIMIT 1",
+    )
+    .bind(&key)
+    .bind(ADMIN_LOGIN_LOCK_WINDOW_MINUTES)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0);
+    let next = current + 1;
+    let lock = if next >= ADMIN_LOGIN_LOCK_THRESHOLD { 1 } else { 0 };
+    let _ = sqlx::query(
+        "INSERT INTO auth_rate_limits (action, identifier, ip, failed_count, locked_until, last_failed_at) VALUES ('admin_login', ?, '', ?, IF(? = 1, DATE_ADD(NOW(), INTERVAL ? MINUTE), NULL), NOW()) ON DUPLICATE KEY UPDATE failed_count = VALUES(failed_count), locked_until = VALUES(locked_until), last_failed_at = NOW()",
+    )
+    .bind(&key)
+    .bind(next)
+    .bind(lock)
+    .bind(ADMIN_LOGIN_LOCK_MINUTES)
+    .execute(pool)
+    .await;
+}
+
+async fn clear_admin_login_failures(username: &str, pool: &MySqlPool) {
+    let _ = sqlx::query("DELETE FROM auth_rate_limits WHERE action = 'admin_login' AND identifier = ? AND ip = ''")
+        .bind(username.trim().to_lowercase())
+        .execute(pool)
+        .await;
+}
+
 pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPool, ip: &str) -> Response {
     let data: serde_json::Value = serde_json::from_str(body).unwrap_or(serde_json::Value::Null);
     let username = str_of(&data, "username").trim().to_string();
@@ -12,7 +59,10 @@ pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPo
     if username.is_empty() || password.is_empty() {
         return err(400, "请输入用户名和密码");
     }
-    let row = sqlx::query("SELECT id, password, role, avatar_url FROM admin_users WHERE username = ? AND status = 1")
+    if admin_login_locked(&username, pool).await {
+        return err(429, "失败次数过多，请 30 分钟后再试");
+    }
+    let row = sqlx::query("SELECT id, password, role, avatar_url, must_change_password FROM admin_users WHERE username = ? AND status = 1")
         .bind(&username)
         .fetch_optional(pool)
         .await
@@ -25,6 +75,7 @@ pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPo
             .bind("")
             .execute(pool)
             .await;
+        record_admin_login_failure(&username, pool).await;
         return err(401, "用户名或密码错误");
     };
     let id: i64 = admin.get("id");
@@ -37,6 +88,7 @@ pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPo
             .bind("")
             .execute(pool)
             .await;
+        record_admin_login_failure(&username, pool).await;
         return err(401, "用户名或密码错误");
     }
     let role: String = admin.get("role");
@@ -48,7 +100,11 @@ pub async fn admin_login(body: &str, cfg: &crate::config::Config, pool: &MySqlPo
         .bind("")
         .execute(pool)
         .await;
-    let must_change_password = username == "admin" && password == "adminadmin";
+    clear_admin_login_failures(&username, pool).await;
+    // V-02（渗透修复）：首启强制改密改由 DB 标记（must_change_password）驱动，
+    // 源码不再内置任何默认口令
+    let must_change_password: i64 = admin.try_get("must_change_password").unwrap_or(0);
+    let must_change_password = must_change_password != 0;
     ok("登录成功", serde_json::json!({
         "token": token,
         "admin_id": id,
@@ -106,7 +162,7 @@ pub async fn change_password(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
         Ok(h) => h,
         Err(_) => return err(500, "加密失败"),
     };
-    let _ = sqlx::query("UPDATE admin_users SET password = ?, token_invalid_before = UNIX_TIMESTAMP() WHERE id = ?")
+    let _ = sqlx::query("UPDATE admin_users SET password = ?, token_invalid_before = UNIX_TIMESTAMP(), must_change_password = 0 WHERE id = ?")
         .bind(hashed)
         .bind(target_id)
         .execute(pool)

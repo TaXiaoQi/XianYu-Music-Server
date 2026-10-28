@@ -62,6 +62,14 @@ pub async fn ensure_schema(pool: &MySqlPool) {
     ensure_column(pool, "wallpapers", "video_sha256", "varchar(64) NOT NULL DEFAULT ''").await;
     ensure_index(pool, "play_history", "idx_ciyuanxi_played", "ciyuanxi_id, played_at").await;
     ensure_column(pool, "tv_login_codes", "location", "varchar(255) NOT NULL DEFAULT ''").await;
+    // V-02（渗透修复）：首启强制改密标记；登录响应据此提示，改密成功后清零
+    ensure_column(
+        pool,
+        "admin_users",
+        "must_change_password",
+        "tinyint(1) NOT NULL DEFAULT 0",
+    )
+    .await;
     ensure_default_admin(pool).await;
 }
 
@@ -74,21 +82,39 @@ async fn ensure_default_admin(pool: &MySqlPool) {
     if count > 0 {
         return;
     }
-    let hash = match bcrypt::hash("adminadmin", 10) {
+    // V-02（渗透修复）：不再内置默认口令（admin/adminadmin 随源码公开，任何
+    // 新部署/重置流程忘记改密即被接管）。首启生成 80bit 随机口令，仅打印一次
+    // 到服务端日志，并以 must_change_password=1 强制首次登录修改。
+    // 注意：ThreadRng 是 !Send，必须在任何 .await 之前离开作用域，
+    // 否则整个 async fn 的 future 非 Send（曾导致 handle_admin_api Handler 报错）。
+    let password: String = {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        (0..20)
+            .map(|_| format!("{:x}", rng.gen_range(0..16)))
+            .collect()
+    };
+    let hash = match bcrypt::hash(&password, 10) {
         Ok(h) => h,
         Err(e) => {
-            warn!("failed to hash default admin password: {}", e);
+            warn!("failed to hash initial admin password: {}", e);
             return;
         }
     };
-    let _ = sqlx::query(
-        "INSERT IGNORE INTO admin_users (username, password, avatar_url, role, status) VALUES (?, ?, '', ?, 1)",
+    let inserted = sqlx::query(
+        "INSERT IGNORE INTO admin_users (username, password, avatar_url, role, status, must_change_password) VALUES (?, ?, '', ?, 1, 1)",
     )
     .bind("admin")
     .bind(&hash)
     .bind("super_admin")
     .execute(pool)
     .await;
+    if matches!(&inserted, Ok(r) if r.rows_affected() > 0) {
+        warn!(
+            "初始化管理员账号 admin 完成。随机初始密码（仅此一次显示，请立即登录后台修改）：{}",
+            password
+        );
+    }
 }
 
 async fn ensure_column(pool: &MySqlPool, table: &str, column: &str, definition: &str) {

@@ -47,6 +47,7 @@ mod tests {
             db_pass: "".into(),
             db_charset: "utf8mb4".into(),
             api_secret: "test_secret".into(),
+            api_secret_previous: None,
             api_timestamp_tolerance: 300,
             admin_username: "admin".into(),
             admin_password: "admin".into(),

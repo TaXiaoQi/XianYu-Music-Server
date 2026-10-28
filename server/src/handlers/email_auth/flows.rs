@@ -1,5 +1,9 @@
 use super::*;
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{SystemTime, UNIX_EPOCH};
+
 // 验证码/登录爆破防护阈值：复用 auth_rate_limits 表（ip 固定存 '' 作账号级计数行，跨 IP 共享）
 const VERIFY_LOCK_THRESHOLD: i64 = 5;
 const VERIFY_LOCK_MINUTES: i64 = 15;
@@ -52,9 +56,45 @@ async fn clear_rate_failures(action: &str, email: &str, pool: &MySqlPool) {
         .await;
 }
 
+// V-06（渗透修复）：send_code IP 级频控（内存版，重启清零可接受——目标是给
+// 轰炸行为加门槛）。每小时 ≤10 条、每天 ≤50 条，先于验证码/Turnstile 校验执行，
+// 同时保护邮件服务商配额与 Turnstile 校验额度。
+const EMAIL_IP_HOURLY_LIMIT: usize = 10;
+const EMAIL_IP_DAILY_LIMIT: usize = 50;
+
+fn email_ip_history() -> &'static Mutex<HashMap<String, Vec<i64>>> {
+    static HISTORY: OnceLock<Mutex<HashMap<String, Vec<i64>>>> = OnceLock::new();
+    HISTORY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn check_email_ip_quota(ip: &str) -> Result<(), &'static str> {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let mut map = email_ip_history().lock().unwrap_or_else(|p| p.into_inner());
+    if map.len() > 10_000 {
+        // 防表膨胀：只保留近 24h 有记录的 IP
+        map.retain(|_, stamps| stamps.last().is_some_and(|t| now - t < 86_400));
+    }
+    let stamps = map.entry(ip.to_string()).or_default();
+    stamps.retain(|t| now - t < 86_400);
+    if stamps.iter().filter(|&&t| now - t < 3_600).count() >= EMAIL_IP_HOURLY_LIMIT {
+        return Err("发送过于频繁，请一小时后再试");
+    }
+    if stamps.len() >= EMAIL_IP_DAILY_LIMIT {
+        return Err("今日发送次数已达上限，请明日再试");
+    }
+    stamps.push(now);
+    Ok(())
+}
+
 pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
+    if let Err(reason) = check_email_ip_quota(&ctx.client_ip) {
+        return ctx.json(429, reason, Option::<serde_json::Value>::None);
+    }
     let captcha_token = {
         let token = str_of(&data, "captcha_token");
         if token.trim().is_empty() {
@@ -170,7 +210,10 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         .ok()
         .flatten();
     if existing.is_some() {
-        return ctx.err(400, "该邮箱已注册，请直接登录");
+        // V-07（渗透修复）：不再区分「邮箱已注册」与「验证码无效」，统一模糊话术
+        // 防邮箱枚举；真实原因仅记录服务端日志
+        eprintln!("[email_auth] register 拒绝（防枚举，响应已统一）：邮箱已注册 len={}", email.len());
+        return ctx.err(400, "注册失败，请检查验证码与填写信息后重试");
     }
 
     let hash = match bcrypt::hash(&password, 10) {

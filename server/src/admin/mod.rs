@@ -328,6 +328,12 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
     match action {
         // dashboard
         "dashboard_stats" => dashboard::dashboard_stats(body, &ctx, pool).await,
+        // 服务器负载（V-04：自用户 API 迁入管理端，泄露 CPU/内存/注册用户数）
+        "get_server_load" => {
+            let (cpu, memory, user_count) =
+                crate::handlers::system::server_load_data(pool).await;
+            ok("ok", json!({ "cpu": cpu, "memory": memory, "user_count": user_count }))
+        }
         // users
         "get_users" => users::get_users(body, &ctx, pool).await,
         "get_user_stats" => users::get_user_stats(body, &ctx, pool).await,

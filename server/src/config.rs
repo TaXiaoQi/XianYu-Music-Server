@@ -13,6 +13,10 @@ pub struct Config {
     pub db_charset: String,
     pub api_secret: String,
     pub api_timestamp_tolerance: i64,
+    // 过渡期旧密钥（轮换后仍接受其签名/密文，待客户端全量更新后删除该配置）。
+    // 2026-10-28 轮换：acca7562… 因客户端源码泄露（渗透报告 V-01）转入此槽位。
+    #[serde(default)]
+    pub api_secret_previous: Option<String>,
     pub admin_username: String,
     pub admin_password: String,
     pub listen_addr: String,
@@ -113,6 +117,13 @@ impl Config {
             Config::from_env()
         };
         cfg.listen_addr = env::var("LISTEN_ADDR").unwrap_or(cfg.listen_addr);
+        cfg.api_secret_previous = match env::var("API_SECRET_PREVIOUS") {
+            Ok(v) => {
+                let v = v.trim().to_string();
+                if v.is_empty() { None } else { Some(v) }
+            }
+            Err(_) => cfg.api_secret_previous.clone(),
+        };
         cfg.captcha_secret = env::var("CAPTCHA_SECRET").unwrap_or(cfg.captcha_secret);
         cfg.turnstile_secret = env::var("TURNSTILE_SECRET").unwrap_or(cfg.turnstile_secret);
         cfg.hcaptcha_secret = env::var("HCAPTCHA_SECRET").unwrap_or(cfg.hcaptcha_secret);
@@ -167,6 +178,18 @@ impl Config {
         if self.jwt_secret == self.api_secret {
             return Err("jwt_secret 与 api_secret 不能相同：管理员令牌签名密钥与客户端 API 密钥必须各自独立，避免一处泄露全线失守".to_string());
         }
+        if let Some(prev) = &self.api_secret_previous {
+            if prev.trim().is_empty() {
+                return Err("api_secret_previous 为空字符串：要么删除该配置，要么填入过渡期旧密钥".to_string());
+            }
+            if prev == &self.api_secret {
+                return Err("api_secret_previous 与 api_secret 相同：过渡密钥必须与当前密钥不同".to_string());
+            }
+            tracing::info!(
+                "api_secret 双钥过渡生效：同时接受当前密钥与旧密钥（api_secret_previous），\
+                 客户端全量更新后请删除 api_secret_previous 以彻底作废旧密钥"
+            );
+        }
         if self.admin_username == "admin" && self.admin_password == "adminadmin" {
             tracing::warn!(
                 "安全警告：后台账号仍为默认凭证 admin/adminadmin（随源码公开，任何人可登录后台）。\
@@ -205,6 +228,10 @@ impl Config {
             db_pass: env::var("DB_PASS").unwrap_or_default(),
             db_charset: env::var("DB_CHARSET").unwrap_or_else(|_| "utf8mb4".into()),
             api_secret: env::var("API_SECRET").unwrap_or_else(|_| "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200".into()),
+            api_secret_previous: env::var("API_SECRET_PREVIOUS")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty()),
             api_timestamp_tolerance: env::var("API_TIMESTAMP_TOLERANCE").ok().and_then(|s| s.parse().ok()).unwrap_or(900),
             admin_username: env::var("ADMIN_USERNAME").unwrap_or_else(|_| "admin".into()),
             admin_password: env::var("ADMIN_PASSWORD").unwrap_or_else(|_| "adminadmin".into()),

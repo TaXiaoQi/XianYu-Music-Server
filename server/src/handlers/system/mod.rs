@@ -20,8 +20,8 @@ pub use about::{
     get_about_config,
 };
 pub use content::{
-    confirm_announcement, confirm_privacy_policy, get_announcement, get_deploy_doc,
-    get_fallback_modules, get_privacy_policy, get_site_logo, get_user_agreement,
+    confirm_announcement, confirm_privacy_policy, get_announcement, get_fallback_modules,
+    get_privacy_policy, get_site_logo, get_user_agreement,
 };
 pub use leaderboard::get_leaderboard;
 pub use version::{check_beta_access, get_latest_version, get_version_status, share_download};
@@ -77,20 +77,15 @@ pub async fn get_source_status(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     }
 }
 
-pub async fn get_server_load(ctx: ReqCtx, pool: &MySqlPool) -> Response {
-    let q = sqlx::query("SELECT COUNT(*) as cnt FROM app_users")
+/// 服务器负载数据（仅供管理端 get_server_load 使用，V-04 迁移）。
+pub(crate) async fn server_load_data(pool: &MySqlPool) -> (f64, f64, i64) {
+    let user_count = sqlx::query("SELECT COUNT(*) as cnt FROM app_users")
         .fetch_one(pool)
-        .await;
-    let user_count: i64 = match q {
-        Ok(row) => row.get("cnt"),
-        Err(_) => 0,
-    };
+        .await
+        .map(|row| row.get::<i64, _>("cnt"))
+        .unwrap_or(0);
     let (cpu, mem) = loadavg();
-    ctx.json(
-        200,
-        "ok",
-        Some(json!({ "cpu": cpu, "memory": mem, "user_count": user_count })),
-    )
+    (cpu, mem, user_count)
 }
 
 fn loadavg() -> (f64, f64) {

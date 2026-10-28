@@ -20,12 +20,15 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use axum::extract::ws::{Message as WsMessage, WebSocket, WebSocketUpgrade};
-use axum::extract::ConnectInfo;
+use axum::extract::{ConnectInfo, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
+use sqlx::MySqlPool;
 use tokio::sync::mpsc;
+
+use crate::AppState;
 
 const MAX_ROOMS: usize = 4096;
 
@@ -56,6 +59,9 @@ fn next_conn_id() -> u64 {
 struct Room {
     phone: Option<Peer>,
     watch: Option<Peer>,
+    // V-08（渗透修复）：房间归属账号（首条带 token 的 hello 绑定；此后同房间
+    // 所有连接必须凭同一账号的有效 token，防止 256-bit key 泄露后陌生人蹭连）
+    owner: Option<String>,
 }
 
 fn rooms() -> &'static Mutex<HashMap<String, Room>> {
@@ -96,6 +102,7 @@ fn conn_release(ip: IpAddr) {
 
 pub async fn watch_relay_handler(
     ws: WebSocketUpgrade,
+    State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Response {
     if !conn_acquire(addr.ip()) {
@@ -103,8 +110,9 @@ pub async fn watch_relay_handler(
     }
     // 升级失败（握手未完成即断开）不会走 on_upgrade 闭包，需在此释放计数防泄漏占满配额
     let ip = addr.ip();
+    let pool = state.pool.clone();
     ws.on_failed_upgrade(move |_| conn_release(ip)).on_upgrade(move |socket| async move {
-        handle_socket(socket).await;
+        handle_socket(socket, pool).await;
         conn_release(addr.ip());
     })
 }
@@ -113,6 +121,8 @@ struct Hello {
     role: String,
     key: String,
     name: String,
+    // 可选用户 token：提供即校验并绑定账号（无效 token 直接拒绝）
+    token: Option<String>,
 }
 
 fn parse_hello(text: &str) -> Option<Hello> {
@@ -135,10 +145,15 @@ fn parse_hello(text: &str) -> Option<Hello> {
         .chars()
         .take(64)
         .collect::<String>();
-    Some(Hello { role, key, name })
+    let token = v
+        .get("token")
+        .and_then(|t| t.as_str())
+        .map(|t| t.trim().chars().take(512).collect::<String>())
+        .filter(|t| !t.is_empty());
+    Some(Hello { role, key, name, token })
 }
 
-async fn handle_socket(socket: WebSocket) {
+async fn handle_socket(socket: WebSocket, pool: MySqlPool) {
     let (mut sender, mut receiver) = socket.split();
 
     // ---- 握手：限时等待第一条 Text ----
@@ -156,11 +171,28 @@ async fn handle_socket(socket: WebSocket) {
         return;
     };
 
+    // ---- V-08：token 携带即校验（锁外完成 DB 查询，锁内只做同步绑定判断）----
+    let owner: Option<String> = match &hello.token {
+        Some(token) => match crate::handlers::token::resolve_owner(&pool, token).await {
+            Some(owner) => Some(owner),
+            None => {
+                let _ = sender
+                    .send(WsMessage::Text(
+                        json!({"op": "error", "msg": "invalid token"}).to_string().into(),
+                    ))
+                    .await;
+                return;
+            }
+        },
+        None => None,
+    };
+
     // ---- 注册进房间（锁内不做任何 await）----
     let (tx, mut rx) = mpsc::channel::<WsMessage>(CHANNEL_CAPACITY);
     let conn_id = next_conn_id();
     enum Register {
         Full,
+        Forbidden(&'static str),
         Ok(Option<(String, mpsc::Sender<WsMessage>)>),
     }
     let outcome = {
@@ -174,27 +206,43 @@ async fn handle_socket(socket: WebSocket) {
             Register::Full
         } else {
             let room = rooms.entry(hello.key.clone()).or_default();
-            let slot = if hello.role == "phone" {
-                &mut room.phone
-            } else {
-                &mut room.watch
+            // V-08：账号绑定判断——已绑定房间要求同账号的有效 token；未绑定房间
+            // 由首个带 token 的连接确立归属（双方均未带 token 的旧客户端保持原行为）
+            let forbidden: Option<&'static str> = match (&room.owner, &owner) {
+                (Some(room_owner), Some(peer_owner)) if peer_owner != room_owner => {
+                    Some("room owner mismatch")
+                }
+                (Some(_), None) => Some("token required"),
+                _ => None,
             };
-            if let Some(old) = slot.take() {
-                let _ = old.tx.try_send(WsMessage::Text(
-                    json!({"op": "replaced"}).to_string().into(),
-                ));
+            if let Some(_msg) = forbidden {
+                Register::Forbidden(_msg)
+            } else {
+                if room.owner.is_none() {
+                    room.owner = owner.clone();
+                }
+                let slot = if hello.role == "phone" {
+                    &mut room.phone
+                } else {
+                    &mut room.watch
+                };
+                if let Some(old) = slot.take() {
+                    let _ = old.tx.try_send(WsMessage::Text(
+                        json!({"op": "replaced"}).to_string().into(),
+                    ));
+                }
+                *slot = Some(Peer {
+                    conn_id,
+                    name: hello.name.clone(),
+                    tx: tx.clone(),
+                });
+                let peer = if hello.role == "phone" {
+                    room.watch.as_ref()
+                } else {
+                    room.phone.as_ref()
+                };
+                Register::Ok(peer.map(|p| (p.name.clone(), p.tx.clone())))
             }
-            *slot = Some(Peer {
-                conn_id,
-                name: hello.name.clone(),
-                tx: tx.clone(),
-            });
-            let peer = if hello.role == "phone" {
-                room.watch.as_ref()
-            } else {
-                room.phone.as_ref()
-            };
-            Register::Ok(peer.map(|p| (p.name.clone(), p.tx.clone())))
         }
     };
     let peer_ready = match outcome {
@@ -202,6 +250,14 @@ async fn handle_socket(socket: WebSocket) {
             let _ = sender
                 .send(WsMessage::Text(
                     json!({"op": "error", "msg": "relay full"}).to_string().into(),
+                ))
+                .await;
+            return;
+        }
+        Register::Forbidden(msg) => {
+            let _ = sender
+                .send(WsMessage::Text(
+                    json!({"op": "error", "msg": msg}).to_string().into(),
                 ))
                 .await;
             return;

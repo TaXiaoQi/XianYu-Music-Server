@@ -37,25 +37,9 @@ pub async fn error(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
 }
 
 pub async fn check(ctx: ReqCtx, pool: &MySqlPool) -> Response {
+    // V-04（渗透修复）：只返回连接布尔值，不再枚举数据库表名（表结构属部署敏感信息）
     let conn_ok = sqlx::query("SELECT 1").execute(pool).await.is_ok();
-    let tables = [
-        "source_call_log", "login_log", "error_log", "app_users", "email_verify_codes",
-        "admin_users", "admin_operation_log", "admin_login_log", "email_templates", "email_send_log",
-    ];
-    let mut table_map = serde_json::Map::new();
-    for t in tables.iter() {
-        let exists = sqlx::query(&format!("SHOW TABLES LIKE '{}'", t))
-            .fetch_all(pool)
-            .await
-            .map(|r| !r.is_empty())
-            .unwrap_or(false);
-        table_map.insert(t.to_string(), json!(exists));
-    }
-    ctx.json(
-        200,
-        "检测完成",
-        Some(json!({ "connection": conn_ok, "tables": table_map })),
-    )
+    ctx.json(200, "检测完成", Some(json!({ "connection": conn_ok })))
 }
 
 pub async fn install(ctx: ReqCtx, pool: &MySqlPool) -> Response {

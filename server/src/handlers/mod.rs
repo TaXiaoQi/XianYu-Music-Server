@@ -63,8 +63,8 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "get_about_config" => system::get_about_config(body, ctx, pool).await,
         "get_site_logo" => system::get_site_logo(ctx, pool).await,
         "get_user_agreement" => system::get_user_agreement(ctx, pool).await,
-        "get_deploy_doc" => system::get_deploy_doc(ctx, pool).await,
-        "get_server_load" => system::get_server_load(ctx, pool).await,
+        // V-04（渗透修复）：get_deploy_doc 从用户 API 下线（改由 /admin/api get_deploy_doc_admin 提供）；
+        // get_server_load 迁入管理端（泄露 CPU/内存/真实注册用户数）
         "get_leaderboard" => system::get_leaderboard(body, ctx, pool).await,
         // auth
         "register" => auth::register(body, ctx, pool).await,
