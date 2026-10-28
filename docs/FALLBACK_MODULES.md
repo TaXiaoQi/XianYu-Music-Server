@@ -61,7 +61,8 @@
 - 主服务开关：`config.json` → `fallback.signer.enabled`（默认 false）、`fallback.signer.url`、`fallback.signer.token`（env `FALLBACK_SIGNER_URL` / `FALLBACK_SIGNER_TOKEN` 优先）。
 - 私钥仅存在于 signer 进程内存；主服务经回环 HTTP 调用，**绝不返回私钥**，签发失败 fail closed（保存配置报错）。
 - 密封私钥目录 `api/fallback_sign_keys/`：`<keyId>.key`（JSON `{keyId, seed, createdAt}`，Unix 0600）+ `state.json`（`{"active","previous"}`，缺 state 且恰有一把私钥时自动初始化）。
-- 主服务侧调用接口：`POST /internal/sign`（`{message_hex}` → `{signature, keyId}`，签发前做 canonical 配置 schema 校验：仅 `version/modules/expiresAt` 结构、模块/字段白名单、64KB 上限）、`GET /internal/keys`、`POST /internal/switch`（`{activate}`，旧 active 移入 previous）、`GET /health`。
+- 主服务侧调用接口：`POST /internal/sign`（`{message_hex}` → `{signature, keyId}`，签发前做消息格式校验，只签两类已知格式、防止沦为任意内容签名机：① 兜底配置 `xianyu-fallback-config-v1\x00{config_json}`（canonical schema 校验：仅 `version/modules/expiresAt` 结构、模块/字段白名单、64KB 上限）；② 内测资格 `xianyu-beta-access-v1\x00{device_id}\x00{0|1}\x00{0|1}\x00{exp}`（载荷格式校验））、`GET /internal/keys`、`POST /internal/switch`（`{activate}`，旧 active 移入 previous）、`GET /health`。
+  > 2026-10-28 修复：此前 `/internal/sign` 仅接受兜底配置前缀，导致 B 档开启后 `check_beta_access` 走签发服务被 `bad_prefix` 拒签、响应空签名，客户端 fail-closed 弹「无法验证内测资格」。现签名服务同时接受内测消息前缀（仍保留格式校验与全部防护）。
 - 防护：令牌常量时间比较、每 IP 限流（120 次/分钟）、审计日志 `logs/fallback_signer_audit.log`（JSONL：sign/switch/rejected）。
 
 ### keygen CLI（离线生成）

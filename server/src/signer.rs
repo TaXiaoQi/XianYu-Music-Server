@@ -37,6 +37,55 @@ pub fn config_signing_message(config_json: &str) -> Vec<u8> {
     format!("{FALLBACK_CONFIG_SIGN_PREFIX}\x00{config_json}").into_bytes()
 }
 
+/// 内测资格签名消息前缀（与 version.rs / 客户端 fallback_verify 逐字一致）。
+pub const BETA_ACCESS_SIGN_PREFIX: &str = "xianyu-beta-access-v1";
+
+/// 签发消息分类校验：签发服务只签两类已知格式，防止沦为任意内容签名机。
+/// - 兜底配置：`xianyu-fallback-config-v1\x00{config_json}`（schema 校验）
+/// - 内测资格：`xianyu-beta-access-v1\x00{device_id}\x00{0|1}\x00{0|1}\x00{exp}`
+/// 返回 Ok(类别) 表示接受；Err(原因) 表示拒绝。
+fn validate_signing_message(message: &[u8]) -> Result<&'static str, String> {
+    let config_prefix = FALLBACK_CONFIG_SIGN_PREFIX.as_bytes();
+    if message.starts_with(config_prefix) && message.get(config_prefix.len()) == Some(&0) {
+        let config_part = std::str::from_utf8(&message[config_prefix.len() + 1..])
+            .map_err(|_| "配置不是合法 UTF-8".to_string())?;
+        validate_config_schema(config_part)?;
+        return Ok("config");
+    }
+    let beta_prefix = BETA_ACCESS_SIGN_PREFIX.as_bytes();
+    if message.starts_with(beta_prefix) && message.get(beta_prefix.len()) == Some(&0) {
+        let payload = std::str::from_utf8(&message[beta_prefix.len() + 1..])
+            .map_err(|_| "内测消息不是合法 UTF-8".to_string())?;
+        validate_beta_payload(payload)?;
+        return Ok("beta");
+    }
+    Err(format!(
+        "消息前缀必须是 {FALLBACK_CONFIG_SIGN_PREFIX} 或 {BETA_ACCESS_SIGN_PREFIX}"
+    ))
+}
+
+/// 内测资格消息载荷校验：`{device_id}\x00{allowed01}\x00{pending01}\x00{exp}`。
+fn validate_beta_payload(payload: &str) -> Result<(), String> {
+    let parts: Vec<&str> = payload.split('\x00').collect();
+    if parts.len() != 4 {
+        return Err("内测消息格式应为 device_id\\x00allowed\\x00pending\\x00exp".to_string());
+    }
+    let device_id = parts[0];
+    if device_id.is_empty()
+        || device_id.len() > 128
+        || !device_id.chars().all(|c| c.is_ascii_graphic())
+    {
+        return Err("device_id 为空/超长/含非法字符".to_string());
+    }
+    if !matches!(parts[1], "0" | "1") || !matches!(parts[2], "0" | "1") {
+        return Err("allowed/pending 必须为 0 或 1".to_string());
+    }
+    if parts[3].parse::<i64>().is_err() {
+        return Err("exp 必须是 unix 秒".to_string());
+    }
+    Ok(())
+}
+
 /// 密封私钥目录（相对服务端工作目录，与其他 api/ 资产一致）。
 pub fn keys_dir() -> PathBuf {
     Path::new("api").join("fallback_sign_keys")
@@ -496,26 +545,17 @@ async fn handle_sign(
                 .into_response()
         }
     };
-    let prefix_bytes = FALLBACK_CONFIG_SIGN_PREFIX.as_bytes();
-    let prefix_len = prefix_bytes.len();
-    let separator_ok = message.len() > prefix_len && message[prefix_len] == 0;
-    if !message.starts_with(prefix_bytes) || !separator_ok {
-        audit("sign_rejected", &ip, json!({ "reason": "bad_prefix", "len": message.len() }));
-        return (
-            StatusCode::BAD_REQUEST,
-            axum::Json(json!({ "ok": false, "error": "消息前缀必须是 xianyu-fallback-config-v1\\x00" })),
-        )
-            .into_response();
-    }
-    let config_part = &message[prefix_len + 1..];
-    if let Err(reason) = validate_config_schema(std::str::from_utf8(config_part).unwrap_or("")) {
-        audit("sign_rejected", &ip, json!({ "reason": "schema", "error": reason }));
-        return (
-            StatusCode::BAD_REQUEST,
-            axum::Json(json!({ "ok": false, "error": format!("配置 schema 校验失败: {reason}") })),
-        )
-            .into_response();
-    }
+    let kind = match validate_signing_message(&message) {
+        Ok(kind) => kind,
+        Err(reason) => {
+            audit("sign_rejected", &ip, json!({ "reason": "bad_message", "error": reason, "len": message.len() }));
+            return (
+                StatusCode::BAD_REQUEST,
+                axum::Json(json!({ "ok": false, "error": reason })),
+            )
+                .into_response();
+        }
+    };
     let Some((signature, key_id)) = st.core.sign(&message) else {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -523,11 +563,18 @@ async fn handle_sign(
         )
             .into_response();
     };
-    let config_version = serde_json::from_str::<Value>(std::str::from_utf8(config_part).unwrap_or(""))
+    let mut audit_extra = json!({ "kind": kind, "keyId": key_id, "len": message.len() });
+    if kind == "config" {
+        let config_prefix_len = FALLBACK_CONFIG_SIGN_PREFIX.as_bytes().len();
+        let config_version = serde_json::from_str::<Value>(
+            std::str::from_utf8(&message[config_prefix_len + 1..]).unwrap_or(""),
+        )
         .ok()
         .and_then(|v| v.get("version").and_then(|x| x.as_u64()))
         .unwrap_or(0);
-    audit("sign", &ip, json!({ "keyId": key_id, "configVersion": config_version, "len": message.len() }));
+        audit_extra["configVersion"] = json!(config_version);
+    }
+    audit("sign", &ip, audit_extra);
     (
         StatusCode::OK,
         axum::Json(json!({ "ok": true, "signature": signature, "keyId": key_id })),
@@ -846,6 +893,36 @@ mod tests {
         let msg = config_signing_message(r#"{"version":1}"#);
         assert_eq!(msg, b"xianyu-fallback-config-v1\x00{\"version\":1}");
         assert!(msg.starts_with(FALLBACK_CONFIG_SIGN_PREFIX.as_bytes()));
+    }
+
+    #[test]
+    fn signing_message_accepts_beta_and_config() {
+        // 内测消息（与服务端 check_beta_access / 客户端 beta_access_message 同构）
+        let beta = b"xianyu-beta-access-v1\x00dev-abc\x001\x000\x001799999999".to_vec();
+        assert_eq!(validate_signing_message(&beta), Ok("beta"));
+        // 配置消息
+        let config = config_signing_message(r#"{"version":1,"modules":{}}"#);
+        assert_eq!(validate_signing_message(&config), Ok("config"));
+        // 未知前缀 / 缺分隔符 / 混用前缀
+        assert!(validate_signing_message(b"random-bytes").is_err());
+        assert!(validate_signing_message(b"xianyu-beta-access-v1noseparator").is_err());
+        let crossed = {
+            let mut m = b"xianyu-beta-access-v1\x00".to_vec();
+            m.extend_from_slice(br#"{"version":1,"modules":{}}"#);
+            m
+        };
+        // beta 前缀下挂 JSON 配置载荷 → 载荷格式校验必须拒绝
+        assert!(validate_signing_message(&crossed).is_err());
+    }
+
+    #[test]
+    fn beta_payload_validation() {
+        assert!(validate_beta_payload("dev1\x001\x000\x00123").is_ok());
+        assert!(validate_beta_payload("\x001\x000\x00123").is_err()); // device_id 空
+        assert!(validate_beta_payload(&format!("{}\x001\x000\x00123", "d".repeat(129))).is_err());
+        assert!(validate_beta_payload("dev1\x00x\x000\x00123").is_err()); // allowed 非 0/1
+        assert!(validate_beta_payload("dev1\x001\x000\x00soon").is_err()); // exp 非数字
+        assert!(validate_beta_payload("dev1\x001\x000").is_err()); // 段数不足
     }
 
     #[test]
