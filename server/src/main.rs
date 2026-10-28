@@ -276,13 +276,21 @@ async fn handle_api(
             .unwrap_or_default();
         let secret = &state.config.api_secret;
         let tolerance = state.config.api_timestamp_tolerance;
-        // 双钥过渡（V-01）：轮换窗口期同时接受当前密钥与 api_secret_previous
-        let sign_ok = sign::verify(&timestamp, &nonce, &signature, &raw_body, secret, tolerance)
-            || state
-                .config
-                .api_secret_previous
-                .as_ref()
-                .is_some_and(|prev| sign::verify(&timestamp, &nonce, &signature, &raw_body, prev, tolerance));
+        // 双钥过渡（V-01）：防重放每请求只登记一次，再逐密钥纯签名比对。
+        // 不可把重放检查放进逐密钥 verify——第一次（当前密钥）调用会登记 nonce，
+        // 第二次（旧密钥）调用恒判重放，旧客户端将永远 403。
+        let sign_ok = !timestamp.is_empty()
+            && !nonce.is_empty()
+            && !signature.is_empty()
+            && !sign::nonce_replayed(&nonce, sign::now_ts(), tolerance)
+            && (sign::verify_signature(&timestamp, &nonce, &signature, &raw_body, secret, tolerance)
+                || state
+                    .config
+                    .api_secret_previous
+                    .as_ref()
+                    .is_some_and(|prev| {
+                        sign::verify_signature(&timestamp, &nonce, &signature, &raw_body, prev, tolerance)
+                    }));
         if !sign_ok {
             let ua = headers
                 .get("user-agent")

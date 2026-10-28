@@ -35,7 +35,10 @@ pub fn hmac_sha256_hex(data: &[u8], secret: &str) -> String {
     hex::encode(mac.finalize().into_bytes())
 }
 
-fn nonce_replayed(nonce: &str, now: i64, window: i64) -> bool {
+/// 防重放：首次见到该 nonce 返回 false 并登记，窗口内重复出现返回 true。
+/// 必须对每个请求只调用一次——调用方若对同一请求逐密钥各调一次 verify，
+/// 第一次调用就会登记 nonce，后续密钥分支恒判重放（双钥过渡陷阱）。
+pub fn nonce_replayed(nonce: &str, now: i64, window: i64) -> bool {
     static SEEN: OnceLock<Mutex<HashMap<String, i64>>> = OnceLock::new();
     let seen = SEEN.get_or_init(|| Mutex::new(HashMap::new()));
     let mut map = seen.lock().unwrap();
@@ -47,15 +50,21 @@ fn nonce_replayed(nonce: &str, now: i64, window: i64) -> bool {
     false
 }
 
-pub fn verify(timestamp: &str, nonce: &str, signature: &str, body: &str, secret: &str, tolerance: i64) -> bool {
+/// 纯签名校验：空值 / 时间容差 / HMAC 比对，不登记 nonce。
+/// 防重放由调用方在逐密钥比对前统一调用 nonce_replayed 一次。
+pub fn verify_signature(
+    timestamp: &str,
+    nonce: &str,
+    signature: &str,
+    body: &str,
+    secret: &str,
+    tolerance: i64,
+) -> bool {
     if timestamp.is_empty() || nonce.is_empty() || signature.is_empty() {
         return false;
     }
     let ts: i64 = timestamp.parse().unwrap_or(0);
     if (now_ts() - ts).abs() > tolerance {
-        return false;
-    }
-    if nonce_replayed(nonce, now_ts(), tolerance) {
         return false;
     }
     let hmac_expected = hmac_sha256_hex(format!("{}{}{}", timestamp, nonce, body).as_bytes(), secret);
@@ -117,4 +126,57 @@ pub fn get_client_ip(
         }
     }
     remote_addr.unwrap_or("").to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 回归测试（V-01 双钥过渡）：重放检查必须每请求只做一次。
+    /// 若逐密钥各调一次带 nonce 登记的 verify，第一次（当前密钥）调用会
+    /// 登记 nonce，第二次（旧密钥）调用恒判重放，旧客户端永远 403。
+    #[test]
+    fn dual_key_transition_accepts_previous_secret() {
+        let now = now_ts();
+        let ts = now.to_string();
+        let nonce = format!("dual-key-{}", now);
+        let body = r#"{"action":"get_music_list"}"#;
+        let current_secret = "current-secret-0123456789abcdef";
+        let previous_secret = "previous-secret-fedcba9876543210";
+
+        // 旧密钥签出的请求：当前密钥校验失败，旧密钥必须通过
+        let sig = hmac_sha256_hex(format!("{ts}{nonce}{body}").as_bytes(), previous_secret);
+
+        // main.rs 双钥路径的等价逻辑：先统一登记 nonce，再逐密钥比对
+        assert!(!nonce_replayed(&nonce, now, 900), "首次请求不得判重放");
+        assert!(
+            !verify_signature(&ts, &nonce, &sig, body, current_secret, 900),
+            "当前密钥应校验失败"
+        );
+        assert!(
+            verify_signature(&ts, &nonce, &sig, body, previous_secret, 900),
+            "旧密钥必须通过（重放检查不得吃掉后续密钥分支）"
+        );
+
+        // 同 nonce 重放仍被拒绝
+        assert!(nonce_replayed(&nonce, now, 900), "同 nonce 重放必须拒绝");
+    }
+
+    #[test]
+    fn verify_signature_rejects_bad_input() {
+        let now = now_ts();
+        let ts = now.to_string();
+        let body = "{}";
+        let secret = "some-secret";
+        let sig = hmac_sha256_hex(format!("{ts}n{body}").as_bytes(), secret);
+        assert!(!verify_signature("", "n", &sig, body, secret, 900));
+        assert!(!verify_signature(&ts, "", &sig, body, secret, 900));
+        assert!(!verify_signature(&ts, "n", "", body, secret, 900));
+        assert!(verify_signature(&ts, "n", &sig, body, secret, 900), "正确密钥应通过");
+        assert!(!verify_signature(&ts, "n", &sig, body, "wrong-secret", 900), "错误密钥应拒绝");
+        assert!(
+            !verify_signature(&(now - 3600).to_string(), "n", &sig, body, secret, 900),
+            "超容差时间戳应拒绝"
+        );
+    }
 }
