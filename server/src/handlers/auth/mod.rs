@@ -1,6 +1,7 @@
 mod account;
 mod captcha;
 mod login;
+mod pow;
 mod tv;
 
 pub(crate) use axum::response::Response;
@@ -18,6 +19,8 @@ pub use account::{delete_account, preverify_delete_account, reset_password, send
 pub use captcha::{get_captcha, verify_captcha};
 pub(crate) use captcha::require_captcha;
 pub use login::{login_by_code, register, user_login};
+pub use pow::get_pow_challenge;
+pub(crate) use pow::{require_pow, require_pow_if_enabled};
 pub use tv::{confirm_tv_login, generate_tv_login_code, poll_tv_login_status, scan_tv_login};
 const CAPTCHA_TTL_MINUTES: i64 = 5;
 

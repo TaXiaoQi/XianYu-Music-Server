@@ -251,7 +251,7 @@ async fn handle_api(
 
     let ctx = response::ReqCtx::new((*state.config).clone(), &headers, Some(&peer_ip));
 
-    let no_sign: [&str; 22] = [
+    let no_sign: [&str; 23] = [
         "install", "check", "get_source_status", "upload_avatar",
         "deduct_master_quota", "get_master_quota_usage",
         "get_captcha", "verify_captcha", "email_send_code", "email_get_captcha_config", "email_get_turnstile_config", "email_register", "email_login", "email_reset_password", "email_get_profile",
@@ -260,6 +260,9 @@ async fn handle_api(
         "generate_tv_login_code", "poll_tv_login_status",
         // 版本检查：公开元数据且旧客户端密钥失配时会收不到更新提示（死锁），必须免签
         "get_latest_version",
+        // V-05 加固：PoW 挑战下发（挑战本身 128bit 随机 + IP 频控，免签以覆盖
+        // 旧签名密钥客户端与网页端；业务动作侧强制校验）
+        "get_pow_challenge",
     ];
     if !state.config.local_debug_no_db && !no_sign.contains(&action.as_str()) {
         let timestamp = headers

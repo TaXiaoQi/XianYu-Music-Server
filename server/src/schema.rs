@@ -388,6 +388,20 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_purpose_ip` (`purpose`, `ip`),
             KEY `idx_expires_at` (`expires_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `pow_challenges` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `challenge_id` varchar(64) NOT NULL DEFAULT '',
+            `salt` varchar(64) NOT NULL DEFAULT '',
+            `difficulty` int(11) NOT NULL DEFAULT 20,
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `used` tinyint(1) NOT NULL DEFAULT 0,
+            `expires_at` datetime NOT NULL,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            UNIQUE KEY `uk_pow_challenge_id` (`challenge_id`),
+            KEY `idx_pow_ip` (`ip`),
+            KEY `idx_pow_expires_at` (`expires_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `auth_rate_limits` (
             `id` bigint(20) NOT NULL AUTO_INCREMENT,
             `action` varchar(32) NOT NULL DEFAULT '',

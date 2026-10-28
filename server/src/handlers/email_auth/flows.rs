@@ -96,6 +96,11 @@ pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.json(429, reason, Option::<serde_json::Value>::None);
     }
 
+    // V-05 加固：PoW 工作量证明先行校验（email_* 端点从未随客户端发布，强制无兼容影响）
+    if let Some(resp) = crate::handlers::auth::require_pow(&data, &ctx, pool).await {
+        return resp;
+    }
+
     // V-05：人机验证统一走 require_captcha——供应商验证码（Turnstile）启用时校验
     // 其 token，未启用时强制内置数学验证码（IP 绑定 + 一次性消费）。
     // 本组 email_* 端点从未随客户端发布，加守卫无兼容影响。
@@ -158,6 +163,11 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let password = str_of(&data, "password");
     let password2 = str_of(&data, "password2");
     let nickname = str_of(&data, "nickname").trim().to_string();
+
+    // V-05 加固：PoW 先行（email_* 端点强制，见 send_code 注释）
+    if let Some(resp) = crate::handlers::auth::require_pow(&data, &ctx, pool).await {
+        return resp;
+    }
 
     // V-05：与 send_code 同一守卫（见 send_code 注释）
     if let Some(resp) = crate::handlers::auth::require_captcha(&data, &ctx, pool, "auth").await {
@@ -242,6 +252,11 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
     let password = str_of(&data, "password");
+
+    // V-05 加固：PoW 先行（email_* 端点强制，见 send_code 注释）
+    if let Some(resp) = crate::handlers::auth::require_pow(&data, &ctx, pool).await {
+        return resp;
+    }
 
     // V-05：与 send_code 同一守卫（见 send_code 注释）
     if let Some(resp) = crate::handlers::auth::require_captcha(&data, &ctx, pool, "auth").await {
@@ -330,6 +345,11 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     let code = str_of(&data, "code").trim().to_string();
     let password = str_of(&data, "password");
     let password2 = str_of(&data, "password2");
+
+    // V-05 加固：PoW 先行（email_* 端点强制，见 send_code 注释）
+    if let Some(resp) = crate::handlers::auth::require_pow(&data, &ctx, pool).await {
+        return resp;
+    }
 
     // V-05：与 send_code 同一守卫（见 send_code 注释）
     if let Some(resp) = crate::handlers::auth::require_captcha(&data, &ctx, pool, "auth").await {

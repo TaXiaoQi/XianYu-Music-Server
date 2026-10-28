@@ -104,6 +104,10 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if verify_code.is_empty() {
         return ctx.err(400, "请输入验证码");
     }
+    // V-05 加固：PoW 工作量证明（pow_required 开启后强制，兼容窗口期由配置兜底）
+    if let Some(resp) = require_pow_if_enabled(&data, &ctx, pool).await {
+        return resp;
+    }
     if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
         return resp;
     }
@@ -210,6 +214,10 @@ pub async fn user_login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
         return ctx.err(400, "弦予号/邮箱和密码不能为空");
     }
     if let Some(resp) = check_login_cooldown(&account_input, &ctx, pool).await {
+        return resp;
+    }
+    // V-05 加固：PoW 工作量证明（pow_required 开启后强制，兼容窗口期由配置兜底）
+    if let Some(resp) = require_pow_if_enabled(&data, &ctx, pool).await {
         return resp;
     }
     if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {

@@ -31,6 +31,15 @@ pub struct Config {
     pub turnstile_secret: String,
     #[serde(default)]
     pub hcaptcha_secret: String,
+    // V-05 加固：PoW 工作量证明。email_* 流程始终强制（从未随客户端发布，无兼容
+    // 影响）；username 流程（register/user_login/send_verify_code/reset_password）
+    // 在本开关开启后才强制——旧版客户端不带 PoW 会被拒，待新版全量后再置 true。
+    #[serde(default)]
+    pub pow_required: bool,
+    // PoW 难度（sha256 前导零 bit 数）：20 ≈ 平均 2^20 次哈希，移动端约 0.1-0.5s，
+    // 服务端验证毫秒级。合法范围 12-28，越界自动收敛。
+    #[serde(default = "default_pow_difficulty")]
+    pub pow_difficulty: u32,
     #[serde(default)]
     pub local_debug_no_db: bool,
     #[serde(default = "default_static_dir")]
@@ -105,6 +114,10 @@ fn default_static_dir() -> String {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_pow_difficulty() -> u32 {
+    20
 }
 
 const KNOWN_DEFAULT_SECRET: &str = "bf027fedb4d1b4f969c10495f12f17042bf0de02de128200";
@@ -243,6 +256,8 @@ impl Config {
             email_password: env::var("EMAIL_PASSWORD").unwrap_or_default(),
             captcha_secret: env::var("CAPTCHA_SECRET").unwrap_or_default(),
             turnstile_secret: env::var("TURNSTILE_SECRET").unwrap_or_default(),
+            pow_required: env::var("POW_REQUIRED").ok().map(|s| s == "1" || s.eq_ignore_ascii_case("true")).unwrap_or(false),
+            pow_difficulty: env::var("POW_DIFFICULTY").ok().and_then(|s| s.parse().ok()).unwrap_or_else(default_pow_difficulty),
             hcaptcha_secret: env::var("HCAPTCHA_SECRET").unwrap_or_default(),
             static_dir: env::var("STATIC_DIR").unwrap_or_else(|_| default_static_dir()),
             local_debug_no_db: env::var("LOCAL_DEBUG_NO_DB")

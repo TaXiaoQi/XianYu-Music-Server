@@ -70,6 +70,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: ReqCtx, pool: &MySqlPool) -
         "register" => auth::register(body, ctx, pool).await,
         "user_login" => auth::user_login(body, ctx, pool).await,
         "get_captcha" => auth::get_captcha(body, ctx, pool).await,
+        "get_pow_challenge" => auth::get_pow_challenge(body, ctx, pool).await,
         "verify_captcha" => auth::verify_captcha(body, ctx, pool).await,
         "login_by_code" => auth::login_by_code(body, ctx, pool).await,
         "send_verify_code" => auth::send_verify_code(body, ctx, pool).await,

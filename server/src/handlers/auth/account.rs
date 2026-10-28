@@ -8,6 +8,10 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
     if email.is_empty() || !email.contains('@') {
         return ctx.err(400, "邮箱格式不正确");
     }
+    // V-05 加固：PoW 工作量证明（pow_required 开启后强制，兼容窗口期由配置兜底）
+    if let Some(resp) = require_pow_if_enabled(&data, &ctx, pool).await {
+        return resp;
+    }
     if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
         return resp;
     }
@@ -139,6 +143,10 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     }
     if new_password.len() < 6 {
         return ctx.err(400, "新密码长度至少6位");
+    }
+    // V-05 加固：PoW 工作量证明（pow_required 开启后强制，兼容窗口期由配置兜底）
+    if let Some(resp) = require_pow_if_enabled(&data, &ctx, pool).await {
+        return resp;
     }
     if let Some(resp) = require_captcha(&data, &ctx, pool, "auth").await {
         return resp;
