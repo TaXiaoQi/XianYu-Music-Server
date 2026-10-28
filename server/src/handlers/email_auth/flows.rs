@@ -95,27 +95,16 @@ pub async fn send_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     if let Err(reason) = check_email_ip_quota(&ctx.client_ip) {
         return ctx.json(429, reason, Option::<serde_json::Value>::None);
     }
-    let captcha_token = {
-        let token = str_of(&data, "captcha_token");
-        if token.trim().is_empty() {
-            str_of(&data, "turnstile_token")
-        } else {
-            token
-        }
-    };
+
+    // V-05：人机验证统一走 require_captcha——供应商验证码（Turnstile）启用时校验
+    // 其 token，未启用时强制内置数学验证码（IP 绑定 + 一次性消费）。
+    // 本组 email_* 端点从未随客户端发布，加守卫无兼容影响。
+    if let Some(resp) = crate::handlers::auth::require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
+    }
 
     if email.is_empty() || !is_valid_email(&email) {
         return ctx.err(400, "邮箱地址格式不正确");
-    }
-
-    let captcha_config = load_captcha_config(pool, &ctx.config).await;
-    match verify_captcha_token(&captcha_config, &captcha_token, &ctx.client_ip).await {
-        Ok(true) => {}
-        Ok(false) => return ctx.err(400, "请先完成人机验证"),
-        Err(e) => {
-            eprintln!("[email_auth] 人机验证校验失败: {}", e);
-            return ctx.err(500, "人机验证服务暂不可用，请稍后重试");
-        }
     }
 
     let recent = sqlx::query(
@@ -169,6 +158,11 @@ pub async fn register(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let password = str_of(&data, "password");
     let password2 = str_of(&data, "password2");
     let nickname = str_of(&data, "nickname").trim().to_string();
+
+    // V-05：与 send_code 同一守卫（见 send_code 注释）
+    if let Some(resp) = crate::handlers::auth::require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
+    }
 
     if email.is_empty() || !is_valid_email(&email) {
         return ctx.err(400, "请输入合法的邮箱地址");
@@ -248,6 +242,11 @@ pub async fn login(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let data = parse_body(body);
     let email = str_of(&data, "email").trim().to_string();
     let password = str_of(&data, "password");
+
+    // V-05：与 send_code 同一守卫（见 send_code 注释）
+    if let Some(resp) = crate::handlers::auth::require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
+    }
 
     if email.is_empty() || password.is_empty() {
         return ctx.err(400, "请输入邮箱和密码");
@@ -331,6 +330,11 @@ pub async fn reset_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
     let code = str_of(&data, "code").trim().to_string();
     let password = str_of(&data, "password");
     let password2 = str_of(&data, "password2");
+
+    // V-05：与 send_code 同一守卫（见 send_code 注释）
+    if let Some(resp) = crate::handlers::auth::require_captcha(&data, &ctx, pool, "auth").await {
+        return resp;
+    }
 
     if email.is_empty() || !is_valid_email(&email) {
         return ctx.err(400, "请输入合法的邮箱地址");
