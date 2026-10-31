@@ -305,13 +305,18 @@ async fn handle_api(
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("-");
             let client_ip = admin::client_ip(&headers, state.config.trust_proxy, Some(&peer_ip));
+            let skew = if timestamp.is_empty() {
+                0
+            } else {
+                sign::now_ts() - timestamp.parse::<i64>().unwrap_or(0)
+            };
             tracing::warn!(
                 "sign verify failed: action={} ip={} ua={} ts={:?} skew_s={} body_len={} has_iv={}",
                 action,
                 client_ip,
                 ua,
                 timestamp,
-                sign::now_ts() - timestamp.parse::<i64>().unwrap_or(0),
+                skew,
                 raw_body.len(),
                 headers.contains_key("x-encrypted-iv")
             );
@@ -340,7 +345,7 @@ async fn handle_api(
                 let action_db = action.chars().take(64).collect::<String>();
                 let ip_db = client_ip.chars().take(45).collect::<String>();
                 let ua_db = ua.chars().take(255).collect::<String>();
-                let skew_db = sign::now_ts() - timestamp.parse::<i64>().unwrap_or(0);
+                let skew_db = skew;
                 let has_iv = headers.contains_key("x-encrypted-iv");
                 let body_len = raw_body.len() as i64;
                 tokio::spawn(async move {
