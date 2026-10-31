@@ -65,7 +65,7 @@
         </li>
       </ul>
       <div class="sidebar-icp">
-        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备2026149270号-1</a><br>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备XXXXXXXXXX号-1</a><br>
         <a href="https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX" target="_blank" rel="noopener">粤公网安备 XXXXXXXXXXXXXX号</a>
       </div>
       <div class="sidebar-switch">
