@@ -1077,7 +1077,7 @@ pub fn handle_admin_api(action: &str) -> Response {
             "role": "super_admin",
             "debug": true
         })),
-        "list_error_logs" | "list_app_login_log" | "list_operation_logs" | "list_admin_login_logs" | "list_feedback" => {
+        "list_error_logs" | "list_app_login_log" | "list_operation_logs" | "list_admin_login_logs" | "list_sign_reject_logs" | "list_feedback" => {
             admin::ok("ok", json!({ "total": 0, "total_pages": 0, "list": [] }))
         }
         "list_recycle_bin" => admin::ok("ok", json!({ "list": [] })),

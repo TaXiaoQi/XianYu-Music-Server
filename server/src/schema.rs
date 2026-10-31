@@ -508,6 +508,19 @@ static TABLE_STATEMENTS: &[&str] = &[
             KEY `idx_admin_id` (`admin_id`),
             KEY `idx_created_at` (`created_at`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
+        "CREATE TABLE IF NOT EXISTS `sign_reject_log` (
+            `id` bigint(20) NOT NULL AUTO_INCREMENT,
+            `action` varchar(64) NOT NULL DEFAULT '',
+            `ip` varchar(45) NOT NULL DEFAULT '',
+            `user_agent` varchar(255) NOT NULL DEFAULT '',
+            `body_len` int(11) NOT NULL DEFAULT 0,
+            `has_iv` tinyint(1) NOT NULL DEFAULT 0,
+            `skew_s` bigint(20) NOT NULL DEFAULT 0,
+            `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_ip` (`ip`),
+            KEY `idx_created_at` (`created_at`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4",
         "CREATE TABLE IF NOT EXISTS `server_settings` (
             `setting_key` varchar(64) NOT NULL DEFAULT '',
             `setting_value` text,

@@ -443,3 +443,74 @@ pub async fn list_admin_login_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool
         "list": list,
     }))
 }
+
+/// 签名拦截流水（后台「签名拦截」页）：请求签名校验失败的 action/ip/UA 等记录
+pub async fn list_sign_reject_logs(body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let page = int_of(&data, "page").max(1);
+    let page_size = {
+        let ps = int_of(&data, "page_size");
+        if ps == 0 { 20 } else { ps.clamp(1, 100) }
+    };
+    let keyword = str_of(&data, "keyword").trim().to_string();
+    let offset = (page - 1) * page_size;
+
+    let mut conditions: Vec<String> = Vec::new();
+    let mut binds: Vec<String> = Vec::new();
+    if !keyword.is_empty() {
+        conditions.push("(action LIKE ? OR ip LIKE ? OR user_agent LIKE ?)".to_string());
+        let pat = format!("%{}%", keyword);
+        binds.push(pat.clone());
+        binds.push(pat.clone());
+        binds.push(pat);
+    }
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
+
+    let count_sql = format!("SELECT COUNT(*) FROM sign_reject_log {}", where_clause);
+    let mut count_query = sqlx::query_scalar::<_, i64>(&count_sql);
+    for b in &binds {
+        count_query = count_query.bind(b);
+    }
+    let filtered_total = count_query.fetch_one(pool).await.unwrap_or(0);
+
+    let list_sql = format!(
+        "SELECT * FROM sign_reject_log {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        where_clause
+    );
+    let mut list_query = sqlx::query(&list_sql);
+    for b in &binds {
+        list_query = list_query.bind(b);
+    }
+    list_query = list_query.bind(page_size).bind(offset);
+    let list: Vec<Value> = match list_query.fetch_all(pool).await {
+        Ok(rows) => rows.iter().map(row_to_value).collect(),
+        Err(e) => return { tracing::error!("查询签名拦截日志失败: {e}"); err(500, "查询失败") },
+    };
+
+    // 总量 / 今日 / 独立 IP（表为空时 SUM 返回 NULL，decode 失败走默认值）
+    let stats = sqlx::query_as::<_, (i64, i64, i64)>(
+        "SELECT COUNT(*), COALESCE(SUM(created_at >= CURDATE()), 0), COUNT(DISTINCT ip) FROM sign_reject_log",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0, 0, 0));
+
+    let total_pages = ((filtered_total as f64) / (page_size as f64)).ceil() as i64;
+    ok("ok", json!({
+        "total": stats.0,
+        "filtered_total": filtered_total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+        "list": list,
+        "stats": {
+            "total": stats.0,
+            "today": stats.1,
+            "distinct_ips": stats.2,
+        },
+    }))
+}

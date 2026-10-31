@@ -253,6 +253,7 @@ pub async fn list_data_groups(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) ->
         "客户端与后台的登录流水",
         sum_counts(pool, &["login_log", "admin_login_log", "admin_app_login_log"]).await,
     );
+    push("统计与日志", "sign_rejects", "签名拦截", "请求签名校验失败流水（旧版本客户端/异常探测）", sum_counts(pool, &["sign_reject_log"]).await);
     push("统计与日志", "admin_ops", "后台操作日志", "后台管理的操作审计记录", sum_counts(pool, &["admin_operation_log"]).await);
     push("统计与日志", "call_stats", "曲源调用统计", "各音乐来源的调用流水记录", sum_counts(pool, &["source_call_log"]).await);
     push(
@@ -303,6 +304,7 @@ fn group_parts(key: &str) -> Option<Vec<(&'static str, &'static str)>> {
         "announce_confirms" => Some(vec![("公告已读记录", "user_announcement_confirmations")]),
         "errors" => Some(vec![("客户端错误日志", "error_log")]),
         "login_logs" => Some(vec![("客户端登录", "login_log"), ("后台登录", "admin_login_log"), ("App 后台登录", "admin_app_login_log")]),
+        "sign_rejects" => Some(vec![("签名拦截", "sign_reject_log")]),
         "admin_ops" => Some(vec![("后台操作审计", "admin_operation_log")]),
         "call_stats" => Some(vec![("曲源调用流水", "source_call_log")]),
         "access_logs" => Some(vec![("App 打开记录", "app_open_log"), ("主页访问流水", "view_access_log")]),
@@ -526,6 +528,7 @@ pub async fn clear_data_group(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> R
         "login_logs" => {
             cleared = del_table(pool, "login_log").await + del_table(pool, "admin_login_log").await + del_table(pool, "admin_app_login_log").await;
         }
+        "sign_rejects" => cleared = del_table(pool, "sign_reject_log").await,
         "admin_ops" => cleared = del_table(pool, "admin_operation_log").await,
         "call_stats" => cleared = del_table(pool, "source_call_log").await,
         "access_logs" => {
@@ -977,6 +980,7 @@ pub async fn log_retention_loop(pool: &MySqlPool) {
         ("admin_login_log", "created_at", 90),
         ("admin_app_login_log", "created_at", 90),
         ("email_send_log", "created_at", 90),
+        ("sign_reject_log", "created_at", 14),
     ];
     loop {
         let mut total: u64 = 0;

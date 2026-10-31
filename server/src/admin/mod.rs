@@ -416,6 +416,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "list_app_login_log" => logs::list_app_login_log(body, &ctx, pool).await,
         "list_operation_logs" => logs::list_operation_logs(body, &ctx, pool).await,
         "list_admin_login_logs" => logs::list_admin_login_logs(body, &ctx, pool).await,
+        "list_sign_reject_logs" => logs::list_sign_reject_logs(body, &ctx, pool).await,
         "list_feedback" => feedback::list_feedback(body, &ctx, pool).await,
         "get_feedback_detail" => feedback::get_feedback_detail(body, &ctx, pool).await,
         "update_feedback_status" => feedback::update_feedback_status(body, &ctx, pool).await,

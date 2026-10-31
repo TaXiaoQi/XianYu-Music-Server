@@ -204,6 +204,11 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+// 签名拦截入库去重：(action|ip) -> 最近入库时间（秒），避免 403 洪水逐条写库
+static SIGN_REJECT_DEDUPE: std::sync::LazyLock<
+    std::sync::Mutex<std::collections::HashMap<String, i64>>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+
 // 请求体上限按 action 分级：默认收紧到 16MB（主题 payload 8MB、反馈图、歌单同步均够用），
 // 仅视频/主题等确实需要大载荷的 action 保留大上限；防止少量并发大请求打爆内存
 fn user_body_limit(action: &str) -> usize {
@@ -299,16 +304,59 @@ async fn handle_api(
                 .get("user-agent")
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("-");
+            let client_ip = admin::client_ip(&headers, state.config.trust_proxy, Some(&peer_ip));
             tracing::warn!(
                 "sign verify failed: action={} ip={} ua={} ts={:?} skew_s={} body_len={} has_iv={}",
                 action,
-                admin::client_ip(&headers, state.config.trust_proxy, Some(&peer_ip)),
+                client_ip,
                 ua,
                 timestamp,
                 sign::now_ts() - timestamp.parse::<i64>().unwrap_or(0),
                 raw_body.len(),
                 headers.contains_key("x-encrypted-iv")
             );
+            // 签名拦截入库（后台「签名拦截」页可见）：同 (action, ip) 10 秒内只记一条，
+            // 防止旧客户端密集重试或恶意洪水把 403 放大成 DB 写入
+            let key = format!("{}|{}", action, client_ip);
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            let should_log = {
+                let mut map = SIGN_REJECT_DEDUPE.lock().unwrap();
+                if map.len() > 2048 {
+                    map.retain(|_, v| now - *v < 300);
+                }
+                match map.get(&key) {
+                    Some(last) if now - *last < 10 => false,
+                    _ => {
+                        map.insert(key, now);
+                        true
+                    }
+                }
+            };
+            if should_log {
+                let pool2 = state.pool.clone();
+                let action_db = action.chars().take(64).collect::<String>();
+                let ip_db = client_ip.chars().take(45).collect::<String>();
+                let ua_db = ua.chars().take(255).collect::<String>();
+                let skew_db = sign::now_ts() - timestamp.parse::<i64>().unwrap_or(0);
+                let has_iv = headers.contains_key("x-encrypted-iv");
+                let body_len = raw_body.len() as i64;
+                tokio::spawn(async move {
+                    let _ = sqlx::query(
+                        "INSERT INTO sign_reject_log (action, ip, user_agent, body_len, has_iv, skew_s) VALUES (?,?,?,?,?,?)",
+                    )
+                    .bind(action_db)
+                    .bind(ip_db)
+                    .bind(ua_db)
+                    .bind(body_len)
+                    .bind(has_iv)
+                    .bind(skew_db)
+                    .execute(&pool2)
+                    .await;
+                });
+            }
             return ctx.err(403, "签名验证失败");
         }
     }

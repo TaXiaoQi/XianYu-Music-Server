@@ -250,6 +250,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '登录日志', sensitive: true },
       },
       {
+        path: 'sign-reject-log',
+        name: 'SignRejectLog',
+        component: () => import('@/views/SignRejectLog.vue'),
+        meta: { title: '签名拦截', sensitive: true },
+      },
+      {
         path: 'version',
         name: 'Version',
         component: () => import('@/views/Version.vue'),
