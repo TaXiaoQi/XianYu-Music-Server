@@ -142,7 +142,7 @@ pub async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, dat
             .ok()
             .flatten();
     if let Some((stored_content,)) = stored_row {
-        if let Ok(old) = decode_content(&stored_content) {
+        if let Some(old) = decode_content(&stored_content) {
             if strip_volatile_meta(&old) == strip_volatile_meta(data) {
                 let _ = std::fs::remove_file(sync_dir(ciyuanxi_id).join(name));
                 return true;
