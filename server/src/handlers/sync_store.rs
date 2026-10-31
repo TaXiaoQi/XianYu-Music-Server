@@ -101,8 +101,21 @@ pub async fn read_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str) -> R
     Ok(v)
 }
 
+/// 比较用序列化：剥离易变元数据后序列化。
+/// 上传方每次都会刷新 uploaded_at/timestamp，若不剥离，去重永远不命中
+/// （曾导致 plugins.json 每次上传都全量落库，ROW binlog 单次 3.67MB，
+/// 把 40G 盘灌满引发全库锁死）。
+fn strip_volatile_meta(v: &Value) -> String {
+    let mut c = v.clone();
+    if let Some(obj) = c.as_object_mut() {
+        obj.remove("uploaded_at");
+        obj.remove("timestamp");
+    }
+    serde_json::to_string(&c).unwrap_or_default()
+}
+
 /// 整包写用户同步文件（DB upsert），成功后清掉可能残留的旧文件。
-/// 客户端同步频繁且内容常常不变：先比 content_size，再比 DB 端 MD5，
+/// 客户端同步频繁且内容常常不变：读出旧快照，剥离易变元数据后逐字比较，
 /// 完全一致则跳过大字段写入，避免慢查询拖垮连接池（曾导致验证码邮件发不出）。
 /// 超过 MAX_SNAPSHOT_BYTES 的快照拒绝写入（返回 false）。
 /// 超过压缩阈值的行以 gzip+base64 存储（content_size 恒为明文逻辑大小）。
@@ -120,28 +133,20 @@ pub async fn write_snapshot(pool: &MySqlPool, ciyuanxi_id: &str, name: &str, dat
     }
     let size = content.len() as i64;
     let stored = encode_content(&content);
-    let stored_size: Option<i64> = sqlx::query_scalar(
-        "SELECT content_size FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?",
-    )
-    .bind(ciyuanxi_id)
-    .bind(name)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
-    if stored_size == Some(size) {
-        let identical: Option<i64> = sqlx::query_scalar(
-            "SELECT MD5(content) = MD5(?) FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?",
-        )
-        .bind(&stored)
-        .bind(ciyuanxi_id)
-        .bind(name)
-        .fetch_optional(pool)
-        .await
-        .ok()
-        .flatten();
-        if identical == Some(1) {
-            return true;
+    let stored_row: Option<(String,)> =
+        sqlx::query_as("SELECT content FROM user_sync_files WHERE ciyuanxi_id = ? AND file_name = ?")
+            .bind(ciyuanxi_id)
+            .bind(name)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
+    if let Some((stored_content,)) = stored_row {
+        if let Ok(old) = decode_content(&stored_content) {
+            if strip_volatile_meta(&old) == strip_volatile_meta(data) {
+                let _ = std::fs::remove_file(sync_dir(ciyuanxi_id).join(name));
+                return true;
+            }
         }
     }
     let ok = sqlx::query(
