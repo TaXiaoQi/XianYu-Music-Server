@@ -268,7 +268,6 @@ pub async fn submit_feedback(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
                 "【弦予后台】新反馈待处理",
                 &body_text,
                 if image_urls.is_empty() { "" } else { &image_urls[0] },
-                &ctx.base_url,
             ).await;
             ctx.json(200, "提交成功", Some(json!({ "id": r.last_insert_id() })))
         }

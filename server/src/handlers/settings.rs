@@ -329,7 +329,6 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 "【弦予后台】新昵称待审核",
                 &format!("用户 {} 申请改名为「{}」，请及时审核。", ciyuanxi_id, nickname),
                 "",
-                &ctx.base_url,
             ).await;
             nickname_submitted = true;
         }
@@ -400,7 +399,6 @@ pub async fn update_profile(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 "【弦予后台】新头像待审核",
                 &format!("用户 {} 提交了新头像，请及时审核。", ciyuanxi_id),
                 &avatar_url,
-                &ctx.base_url,
             ).await;
             avatar_submitted = true;
         }

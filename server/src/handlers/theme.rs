@@ -491,7 +491,6 @@ pub(crate) async fn persist_new_theme(
             "【弦予后台】新主题待审核",
             &format!("用户 {} 上传了主题「{}」，请及时审核。", ciyuanxi_id, name),
             &public_url(ctx, preview_url.clone()),
-            &ctx.base_url,
         )
         .await;
     }

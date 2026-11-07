@@ -45,18 +45,26 @@ pub async fn notify_external_emails_for_module(
     subject: &str,
     body: &str,
     image_url: &str,
-    base_url: &str,
 ) -> Vec<String> {
     if !NOTIFY_MODULES.contains(&module) {
         return Vec::new();
     }
-    let login_base = if !base_url.trim().is_empty() {
-        base_url.to_string()
-    } else if !config.public_base_url.trim().is_empty() {
-        config.public_base_url.trim_end_matches('/').to_string()
-    } else {
-        "https://api.xianyumusic.cn".to_string()
+    // 审核通知的跳转链接必须落到后台管理页（back 域）对应审核路由，
+    // 不能用 API 域（public_base_url / 请求来源域）：此前误用导致邮件按钮
+    // 落在 API 根路径 404（2026-11-07 复盘）。
+    let admin_path = match module {
+        "wallpaper" => "/wallpapers",
+        "avatar" => "/avatar-audit",
+        "nickname" => "/users",
+        "feedback" => "/feedback",
+        _ => "",
     };
+    let admin_base = if !config.admin_base_url.trim().is_empty() {
+        config.admin_base_url.trim_end_matches('/').to_string()
+    } else {
+        "https://back.xianyumusic.cn".to_string()
+    };
+    let login_base = format!("{}{}", admin_base, admin_path);
     super::commtool::broadcast_event(pool, module, subject, body, image_url, &login_base).await;
     if !notify_module_enabled(pool, module).await {
         return Vec::new();
@@ -104,7 +112,7 @@ fn html_escape(s: &str) -> String {
 
 pub fn build_review_email_html(title: &str, body: &str, image_url: &str, login_url_base: &str, action: &str) -> String {
     let login_url = if login_url_base.trim().is_empty() {
-        "https://api.xianyumusic.cn".to_string()
+        "https://back.xianyumusic.cn".to_string()
     } else {
         login_url_base.trim_end_matches('/').to_string()
     };

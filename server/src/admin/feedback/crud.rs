@@ -435,7 +435,6 @@ pub async fn create_feedback(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Re
             "【弦予后台】新反馈待处理",
             &body_text,
             image,
-            &ctx.base_url,
         ).await;
     }
     ok("创建成功", json!({ "id": new_id }))
