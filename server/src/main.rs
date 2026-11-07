@@ -28,6 +28,13 @@ use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
+// Linux 生产环境使用 jemalloc：服务端高频处理 5~16MB 级同步快照，
+// glibc malloc 的堆碎片化会让 RSS 涨到数百 MB 后不再回落；
+// jemalloc 的 background_thread 会把空闲脏页主动归还 OS。
+#[cfg(target_os = "linux")]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 #[derive(Clone)]
 pub struct AppState {
     pub pool: MySqlPool,

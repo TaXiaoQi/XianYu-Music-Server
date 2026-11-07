@@ -36,5 +36,11 @@ uuid = { version = "1", features = ["v4"] }
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"] }
 flate2 = "1"
 
+# 生产环境(Linux)专用：同步快照可达 16MB，高频上传下 glibc malloc 堆碎片化
+# 会让 RSS 爬到数百 MB 后不回落（2026-11-07 排查结论，非泄漏而是碎片）。
+# jemalloc 后台线程主动把空闲页归还 OS，根治内存高位。
+[target.'cfg(target_os = "linux")'.dependencies]
+tikv-jemallocator = { version = "0.6", features = ["background_threads"] }
+
 [profile.release]
 opt-level = 3
