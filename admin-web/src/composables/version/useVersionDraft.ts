@@ -5,7 +5,7 @@ import type { PlatformKey } from './versionMeta'
 
 // 新增/编辑弹窗的草稿状态与维度（平台 / 系统 / 架构 / 安装包格式 / 渠道 / 版本号）
 export function useVersionDraft() {
-  const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string; storeUrl: string }>({ version: '', updateContent: '', downloadUrl: '', storeUrl: '' })
+  const desktopDraft = ref<{ version: string; updateContent: string; downloadUrl: string; downloadPwd: string; storeUrl: string }>({ version: '', updateContent: '', downloadUrl: '', downloadPwd: '', storeUrl: '' })
   const desktopDraftEnabled = ref(false)
   const desktopDraftPlatform = ref<PlatformKey>('desktop')
   const desktopDraftSystem = ref<string>('windows')

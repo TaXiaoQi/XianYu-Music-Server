@@ -272,6 +272,9 @@
             <div v-else class="field">
               <span class="required">下载链接</span>
               <input v-model="desktopChannelLinkDraft" type="text" placeholder="https://..." />
+              <span class="optional-label">访问密码（选填）</span>
+              <input v-model="desktopChannelPwdDraft" type="text" placeholder="蓝奏云等网盘分享密码，留空表示无需密码" />
+              <p class="field-tip">填写蓝奏云链接时，下载方将自动携带密码过验证并直达文件，无需手动输入。</p>
             </div>
           </div>
           <div class="modal-foot">
@@ -558,7 +561,7 @@ async function loadDesktop() {
 
 const desktopModalVisible = ref(false)
 const batchModalVisible = ref(false)
-const desktopDraft = ref({ version: '', updateContent: '', downloadUrl: '' })
+const desktopDraft = ref({ version: '', updateContent: '', downloadUrl: '', downloadPwd: '' })
 const desktopDraftEnabled = ref(false)
 const desktopDraftPlatform = ref<PlatformKey>('desktop')
 const desktopDraftSystem = ref<string>('windows')
@@ -572,6 +575,7 @@ const desktopSaving = ref(false)
 const desktopChannelModalVisible = ref(false)
 const desktopChannelMode = ref<'link' | 'upload'>('link')
 const desktopChannelLinkDraft = ref('')
+const desktopChannelPwdDraft = ref('')
 const desktopFileInputRef = ref<HTMLInputElement | null>(null)
 const desktopPackageFile = ref<File | null>(null)
 const desktopPackageDraft = ref({ fileName: '', fileSize: 0, fileBase64: '' })
@@ -614,6 +618,7 @@ function openDesktopModal(item?: any) {
       version: isBeta ? version.slice(0, betaIdx) : version,
       updateContent: item.updateContent || '',
       downloadUrl: item.downloadUrl || '',
+      downloadPwd: item.downloadPwd || '',
     }
     desktopDraftBetaNum.value = isBeta ? version.slice(betaIdx + '-beta-'.length) : ''
     desktopDraftEnabled.value = !!item.enabled
@@ -625,7 +630,7 @@ function openDesktopModal(item?: any) {
     desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
     desktopDraftPkg.value = ''
     desktopDraftChannel.value = 'stable'
-    desktopDraft.value = { version: '', updateContent: '', downloadUrl: '' }
+    desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', downloadPwd: '' }
     desktopDraftBetaNum.value = ''
     desktopDraftEnabled.value = false
   }
@@ -686,6 +691,7 @@ async function saveDesktop() {
     version,
     original_version: desktopEditingVersion.value || '',
     download_url: desktopDraft.value.downloadUrl?.trim() || '',
+    download_pwd: desktopDraft.value.downloadPwd?.trim() || '',
     update_content: desktopDraft.value.updateContent?.trim() || '',
     enabled: desktopDraftEnabled.value ? 1 : 0,
     file_name: desktopPackageFile.value?.name || '',
@@ -711,6 +717,7 @@ async function toggleDesktop(e: Event, item: any) {
     channel: channelOf(item),
     version: item.version,
     download_url: item.downloadUrl || '',
+    download_pwd: item.downloadPwd || '',
     update_content: item.updateContent || '',
     enabled: enabled ? 1 : 0,
     file_name: '',
@@ -735,6 +742,7 @@ async function deleteDesktop(item: any) {
 function openDesktopChannelModal() {
   desktopChannelMode.value = desktopDraft.value.downloadUrl && !desktopPackageFile.value ? 'link' : 'upload'
   desktopChannelLinkDraft.value = desktopDraft.value.downloadUrl || ''
+  desktopChannelPwdDraft.value = desktopDraft.value.downloadPwd || ''
   desktopPackageDraft.value = desktopPackageFile.value
     ? { fileName: desktopPackageFile.value.name, fileSize: desktopPackageFile.value.size, fileBase64: '' }
     : { fileName: '', fileSize: 0, fileBase64: '' }
@@ -748,6 +756,7 @@ function confirmDesktopChannel() {
     const url = desktopChannelLinkDraft.value.trim()
     if (!url) { showToast('请输入下载链接'); return }
     desktopDraft.value.downloadUrl = url
+    desktopDraft.value.downloadPwd = desktopChannelPwdDraft.value.trim()
     desktopPackageFile.value = null
     desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
     if (desktopFileInputRef.value) desktopFileInputRef.value.value = ''
@@ -755,6 +764,7 @@ function confirmDesktopChannel() {
     if (!desktopPackageDraft.value.fileName) { showToast('请选择安装包'); return }
     desktopPackageFile.value = desktopPackageDraft.value as any
     desktopDraft.value.downloadUrl = ''
+    desktopDraft.value.downloadPwd = ''
     desktopChannelLinkDraft.value = ''
   }
   desktopChannelModalVisible.value = false
@@ -1230,6 +1240,8 @@ onMounted(() => {
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field span { font-size: 12px; font-weight: 700; color: var(--text-light); }
 .field span.required::after { content: '*'; color: #ef4444; margin-left: 2px; }
+.field .optional-label { margin-top: 6px; font-weight: 500; opacity: 0.75; }
+.field .field-tip { font-size: 11px; opacity: 0.65; line-height: 1.5; }
 .field input, .field textarea {
   border: 1px solid var(--border); border-radius: 14px;
   padding: 11px 12px; font-size: 14px; font-family: inherit;

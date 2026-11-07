@@ -12,6 +12,8 @@ export function useVersionChannel(draft: VersionDraft) {
   const desktopChannelModalVisible = ref(false)
   const desktopChannelMode = ref<'link' | 'upload'>('link')
   const desktopChannelLinkDraft = ref('')
+  // 蓝奏云等网盘外链的访问密码（选填），随链接一起随卡片保存
+  const desktopChannelPwdDraft = ref('')
   const desktopFileInputRef = ref<HTMLInputElement | null>(null)
   const desktopPackageFile = ref<File | null>(null)
   const desktopPackageFileDraft = ref<File | null>(null)
@@ -83,6 +85,7 @@ export function useVersionChannel(draft: VersionDraft) {
   function openDesktopChannelModal() {
     desktopChannelMode.value = desktopDraft.value.downloadUrl && !desktopPackageFile.value ? 'link' : 'upload'
     desktopChannelLinkDraft.value = desktopDraft.value.downloadUrl || ''
+    desktopChannelPwdDraft.value = desktopDraft.value.downloadPwd || ''
     desktopPackageFileDraft.value = desktopPackageFile.value
     desktopPackageDraft.value = desktopPackageFile.value
       ? { fileName: desktopPackageFile.value.name, fileSize: desktopPackageFile.value.size, fileBase64: '' }
@@ -100,6 +103,7 @@ export function useVersionChannel(draft: VersionDraft) {
       if (!url) { showToast('请输入下载链接'); return }
       abortDesktopUpload()
       desktopDraft.value.downloadUrl = url
+      desktopDraft.value.downloadPwd = desktopChannelPwdDraft.value.trim()
       desktopPackageFile.value = null
       desktopPackageFileDraft.value = null
       desktopPackageDraft.value = { fileName: '', fileSize: 0, fileBase64: '' }
@@ -108,6 +112,7 @@ export function useVersionChannel(draft: VersionDraft) {
       if (!desktopPackageFileDraft.value) { showToast('请选择安装包'); return }
       desktopPackageFile.value = desktopPackageFileDraft.value
       desktopDraft.value.downloadUrl = ''
+      desktopDraft.value.downloadPwd = ''
       desktopChannelLinkDraft.value = ''
       applyDetectedMeta(desktopPackageFile.value.name)
       // 确认即后台上传：不阻塞弹窗，保存配置前会自动等待上传完成
@@ -259,6 +264,7 @@ export function useVersionChannel(draft: VersionDraft) {
     desktopChannelModalVisible,
     desktopChannelMode,
     desktopChannelLinkDraft,
+    desktopChannelPwdDraft,
     desktopFileInputRef,
     desktopPackageFile,
     desktopPackageFileDraft,

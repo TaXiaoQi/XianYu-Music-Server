@@ -354,7 +354,13 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
         let arch = item.get("arch").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        let url = crate::handlers::upload::absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &url);
+        // 蓝奏云外链改写为服务端代理解析直链（含密码），客户端无感
+        let url = crate::handlers::lanzou::rewrite_download_url(
+            &ctx.base_url,
+            &ctx.config.public_base_url,
+            &url,
+            item.get("downloadPwd").and_then(|v| v.as_str()).unwrap_or(""),
+        );
         let updated_at = item.get("updated_at").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let app_name = match platform.as_str() {
             "mobile" => "弦予音乐移动端",
@@ -444,13 +450,19 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
             let raw_store = item.get("storeUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
             // 后台可填相对路径（如 /uploads/packages/x.apk）：官网 safeUrl 只认绝对地址，
             // 统一转绝对 URL，避免"服务端有版本、官网显示下载暂未开放"
+            // 蓝奏云外链改写为服务端代理解析直链（含密码），官网下载按钮无感
             let entry = json!({
                 "system": sys_key,
                 "label": sys,
                 "arch": item.get("arch").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "version": item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "content": item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                "download_url": crate::handlers::upload::absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &raw_url),
+                "download_url": crate::handlers::lanzou::rewrite_download_url(
+                    &ctx.base_url,
+                    &ctx.config.public_base_url,
+                    &raw_url,
+                    item.get("downloadPwd").and_then(|v| v.as_str()).unwrap_or(""),
+                ),
                 "store_url": crate::handlers::upload::absolutize_media_url_with(&ctx.base_url, &ctx.config.public_base_url, &raw_store),
             });
             if first.is_none() {

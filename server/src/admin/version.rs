@@ -375,6 +375,11 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
     let file_name = str_of(&data, "file_name").trim().to_string();
     let original_version = str_of(&data, "original_version").trim().to_string();
     let store_url = str_of(&data, "store_url").trim().to_string();
+    // 蓝奏云等网盘外链的访问密码（选填）：下发侧据此走 /api/dl 代理解析直链
+    let mut download_pwd = str_of(&data, "download_pwd").trim().to_string();
+    if download_pwd.len() > 128 {
+        download_pwd.truncate(128);
+    }
     if !store_url.is_empty() && !store_url.starts_with("https://") {
         return err(400, "商店页链接必须以 https:// 开头");
     }
@@ -490,6 +495,7 @@ pub async fn save_desktop_version(body: &str, ctx: &AdminCtx, pool: &MySqlPool) 
         "pkg": pkg.clone(),
         "version": version.clone(),
         "downloadUrl": download_url,
+        "downloadPwd": download_pwd,
         "updateContent": update_content,
         "enabled": enabled,
         "storeUrl": store_url,

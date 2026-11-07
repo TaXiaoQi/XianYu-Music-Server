@@ -354,6 +354,9 @@
             <div v-else class="field">
               <label class="required">下载链接</label>
               <input v-model="desktopChannelLinkDraft" type="text" placeholder="https://..." />
+              <label class="optional-label">访问密码（选填）</label>
+              <input v-model="desktopChannelPwdDraft" type="text" placeholder="蓝奏云等网盘分享密码，留空表示无需密码" />
+              <p class="field-tip">填写蓝奏云链接时，下载方将自动携带密码过验证并直达文件，无需手动输入。</p>
             </div>
           </div>
           <div class="modal-foot">
@@ -627,6 +630,7 @@ const {
   desktopChannelModalVisible,
   desktopChannelMode,
   desktopChannelLinkDraft,
+  desktopChannelPwdDraft,
   desktopPackageDraft,
   desktopPackageDragging,
   desktopFileInputRef,
@@ -1261,6 +1265,16 @@ onMounted(() => {
   font-size: 13px;
   font-weight: 600;
   color: var(--text-light);
+}
+.field .optional-label {
+  margin-top: 6px;
+  font-weight: 500;
+  opacity: 0.75;
+}
+.field .field-tip {
+  font-size: 12px;
+  opacity: 0.65;
+  line-height: 1.5;
 }
 .field input,
 .field textarea {

@@ -12,6 +12,7 @@ export interface DesktopVersionSavePayload {
   version: string
   original_version?: string
   download_url: string
+  download_pwd?: string
   update_content: string
   enabled: number
   store_url: string

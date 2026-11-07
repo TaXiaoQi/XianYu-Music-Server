@@ -50,6 +50,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
         version: isBeta ? version.slice(0, betaIdx) : version,
         updateContent: item.updateContent || '',
         downloadUrl: item.downloadUrl || '',
+        downloadPwd: item.downloadPwd || '',
         storeUrl: item.storeUrl || '',
       }
       desktopDraftBetaNum.value = isBeta ? version.slice(betaIdx + '-beta-'.length) : ''
@@ -62,7 +63,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
       desktopDraftArch.value = defaultArch(desktopDraftPlatform.value)
       desktopDraftPkg.value = ''
       desktopDraftChannel.value = 'stable'
-      desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', storeUrl: '' }
+      desktopDraft.value = { version: '', updateContent: '', downloadUrl: '', downloadPwd: '', storeUrl: '' }
       desktopDraftBetaNum.value = ''
       desktopDraftEnabled.value = false
     }
@@ -110,6 +111,7 @@ export function useVersionEditor(draft: VersionDraft, channel: VersionChannel, d
       version,
       original_version: desktopEditingVersion.value || '',
       download_url: desktopDraft.value.downloadUrl?.trim() || '',
+      download_pwd: desktopDraft.value.downloadPwd?.trim() || '',
       update_content: desktopDraft.value.updateContent.trim(),
       enabled: desktopDraftEnabled.value ? 1 : 0,
       store_url: desktopDraft.value.storeUrl,
