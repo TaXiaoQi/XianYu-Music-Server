@@ -981,6 +981,7 @@ pub async fn log_retention_loop(pool: &MySqlPool) {
         ("admin_app_login_log", "created_at", 90),
         ("email_send_log", "created_at", 90),
         ("sign_reject_log", "created_at", 14),
+        ("api_rate_events", "created_at", 90),
     ];
     loop {
         let mut total: u64 = 0;
@@ -993,6 +994,14 @@ pub async fn log_retention_loop(pool: &MySqlPool) {
                 Ok(r) => total += r.rows_affected(),
                 Err(e) => tracing::warn!("log_retention: 清理 {} 失败: {}", table, e),
             }
+        }
+        // share_log 不能按 created_at 删（会误删未过期的分享链），按过期时间宽限 30 天清理
+        match sqlx::query("DELETE FROM `share_log` WHERE `expired_at` < NOW() - INTERVAL 30 DAY")
+            .execute(pool)
+            .await
+        {
+            Ok(r) => total += r.rows_affected(),
+            Err(e) => tracing::warn!("log_retention: 清理 share_log 失败: {}", e),
         }
         if total > 0 {
             tracing::info!("log_retention: 已清理过期日志 {} 行", total);
