@@ -1,7 +1,7 @@
 pub mod auth;
 pub mod email_auth;
 pub mod helpers;
-pub mod lanzou;
+pub mod netdisk;
 pub mod playlist;
 pub mod recommend;
 pub mod reporting;

@@ -354,8 +354,8 @@ pub async fn get_latest_version(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Re
         let arch = item.get("arch").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let content = item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let url = item.get("downloadUrl").and_then(|v| v.as_str()).unwrap_or("").to_string();
-        // 蓝奏云外链改写为服务端代理解析直链（含密码），客户端无感
-        let url = crate::handlers::lanzou::rewrite_download_url(
+        // 蓝奏云/移动云盘外链改写为服务端代理解析直链（含密码），客户端无感
+        let url = crate::handlers::netdisk::rewrite_download_url(
             &ctx.base_url,
             &ctx.config.public_base_url,
             &url,
@@ -457,7 +457,7 @@ pub async fn share_download(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respon
                 "arch": item.get("arch").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "version": item.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string(),
                 "content": item.get("updateContent").and_then(|v| v.as_str()).unwrap_or("").to_string(),
-                "download_url": crate::handlers::lanzou::rewrite_download_url(
+                "download_url": crate::handlers::netdisk::rewrite_download_url(
                     &ctx.base_url,
                     &ctx.config.public_base_url,
                     &raw_url,

@@ -143,7 +143,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/about_config_watch.json", get(serve_site_config))
         .route("/api/announcement.json", get(serve_site_config))
         .route("/api/version.json", get(serve_site_config))
-        .route("/api/dl", get(handlers::lanzou::resolve_dl))
+        .route("/api/dl", get(handlers::netdisk::resolve_dl))
         .route("/s/:share_id", get(share_landing))
         .route("/s/:share_id/", get(share_landing))
         .route("/theme-editor", get(theme_editor_page))
