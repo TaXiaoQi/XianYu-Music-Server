@@ -79,7 +79,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+defineOptions({ name: 'EmailLogView' })
+import { ref, computed, onActivated } from 'vue'
 import { adminApi } from '@/api/client'
 import { fmtDateTime } from '@/utils/time'
 
@@ -127,8 +128,11 @@ const pageNumbers = computed(() => {
   return pages
 })
 
-async function loadList() {
-  loading.value = true
+// silent=true 静默刷新（KeepAlive 页面重新激活时），不清空当前列表
+async function loadList(silent = false) {
+  if (!silent || logs.value.length === 0) {
+    loading.value = true
+  }
   loadError.value = ''
   const res = await adminApi<{ total: number; filtered_total: number; total_pages: number; list: EmailSendLog[]; stats: typeof statsData.value }>('list_email_send_logs', {
     page: page.value,
@@ -141,7 +145,7 @@ async function loadList() {
     filteredTotal.value = res.data.filtered_total
     totalPages.value = res.data.total_pages
     if (res.data.stats) statsData.value = res.data.stats
-  } else {
+  } else if (!silent) {
     loadError.value = res.msg || '加载失败'
     logs.value = []
   }
@@ -189,7 +193,10 @@ function channelText(row: EmailSendLog) {
   return row.ip || '-'
 }
 
-onMounted(loadList)
+// KeepAlive 缓存页面：激活时静默刷新
+onActivated(() => {
+  loadList(true)
+})
 </script>
 
 <style scoped>

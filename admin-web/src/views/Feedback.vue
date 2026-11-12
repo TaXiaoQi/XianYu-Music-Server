@@ -143,7 +143,7 @@
             :key="item.id"
             class="fb-card"
             :class="[`st-${item.status}`, { 'batch-selected': selectedIds.has(item.id) }]"
-            :style="{ animationDelay: `${idx * 60}ms` }"
+            :style="{ animationDelay: `${Math.min(idx * 60, 360)}ms` }"
           >
             <!-- 批量选择复选框 -->
             <div v-if="batchMode" class="card-checkbox" @click.stop="toggleSelect(item.id)">
@@ -793,7 +793,9 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted } from 'vue'
+import { onMounted, onUnmounted, onActivated, onDeactivated } from 'vue'
+
+defineOptions({ name: 'FeedbackView' })
 import { fmtTime } from '@/utils/time'
 import { useFeedbackList } from '@/composables/feedback/list'
 import { useFeedbackImageViewer } from '@/composables/feedback/images'
@@ -968,19 +970,33 @@ const {
 
 let alertPollTimer: ReturnType<typeof setInterval> | null = null
 
-onMounted(() => {
-  loadFeedbackLimit()
-  loadList()
-  window.addEventListener('keydown', onViewerKeydown)
-  alertPollTimer = setInterval(pollFeedbackAlerts, 8000)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', onViewerKeydown)
+function stopAlertPoll() {
   if (alertPollTimer) {
     clearInterval(alertPollTimer)
     alertPollTimer = null
   }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onViewerKeydown)
+})
+
+// KeepAlive 缓存页面：激活时静默刷新数据并恢复轮询，
+// 离开页面时暂停轮询，避免后台空转
+onActivated(() => {
+  loadList()
+  loadFeedbackLimit()
+  stopAlertPoll()
+  alertPollTimer = setInterval(pollFeedbackAlerts, 8000)
+})
+
+onDeactivated(() => {
+  stopAlertPoll()
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onViewerKeydown)
+  stopAlertPoll()
 })
 </script>
 

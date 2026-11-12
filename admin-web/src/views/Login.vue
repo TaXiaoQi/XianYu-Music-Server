@@ -38,19 +38,19 @@
       </form>
     </div>
     <footer class="login-icp">
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备XXXXXXXXXX号-1</a><br>
-      <a href="https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX" target="_blank" rel="noopener">粤公网安备 XXXXXXXXXXXXXX号</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">{{ siteIcp || '粤ICP备XXXXXXXXXX号-1' }}</a><br>
+      <a :href="psBeianUrl" target="_blank" rel="noopener">{{ sitePs || '粤公网安备 XXXXXXXXXXXXXX号' }}</a>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { showToast } from '@/api/client'
 import { CLEAR_LOGIN_FORM_KEY } from '@/utils/adminIdleLogout'
-import { loadSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
+import { loadSiteLogo, siteLogoUrl, siteIcp, sitePs } from '@/utils/siteLogo'
 
 const router = useRouter()
 const route = useRoute()
@@ -60,6 +60,13 @@ const username = ref('')
 const password = ref('')
 const loading = ref(false)
 const timeoutTip = ref(false)
+
+// 公网安备跳转链接：从备案号中提取数字作为 code 参数
+const psBeianUrl = computed(() => {
+  const digits = (sitePs.value || '').replace(/\D/g, '')
+  if (!digits) return 'https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX'
+  return `https://beian.mps.gov.cn/#/query/webSearch?code=${digits}`
+})
 
 function clearLoginForm() {
   username.value = ''

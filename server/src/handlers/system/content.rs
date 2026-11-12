@@ -237,7 +237,12 @@ pub async fn confirm_privacy_policy(body: &str, ctx: ReqCtx, pool: &MySqlPool) -
 
 pub async fn get_site_logo(ctx: ReqCtx, pool: &MySqlPool) -> Response {
     let url = crate::admin::site_config::read_site_logo(pool).await;
-    ctx.json(200, "ok", Some(json!({ "logo_url": url })))
+    // 备案信息一并下发：登录页/布局页脚免登录可读（公开接口）
+    let icp = crate::admin::site_config::read_site_setting_public(pool, "site_icp_number").await;
+    let ps =
+        crate::admin::site_config::read_site_setting_public(pool, "site_public_security_number")
+            .await;
+    ctx.json(200, "ok", Some(json!({ "logo_url": url, "icp": icp, "ps": ps })))
 }
 
 pub async fn get_user_agreement(ctx: ReqCtx, pool: &MySqlPool) -> Response {

@@ -274,7 +274,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+defineOptions({ name: 'DeviceBannedView' })
+import { ref, computed, onActivated } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm, webPrompt, webActionMenu, webInfo } from '@/utils/webDialog'
 import { fmtDateTime } from '@/utils/time'
@@ -350,8 +351,11 @@ const pageNumbers = computed(() => {
   return pages
 })
 
-async function loadDevices() {
-  loading.value = true
+// silent=true 静默刷新（KeepAlive 页面重新激活时），不清空当前列表
+async function loadDevices(silent = false) {
+  if (!silent || devices.value.length === 0) {
+    loading.value = true
+  }
   const res = await adminApi<{ total: number; total_pages: number; platform_counts?: Record<string, number>; list: Device[] }>('list_all_devices', {
     page: page.value,
     page_size: pageSize,
@@ -363,7 +367,7 @@ async function loadDevices() {
     total.value = res.data.total
     totalPages.value = res.data.total_pages
     if (res.data.platform_counts) platformCounts.value = res.data.platform_counts
-  } else {
+  } else if (!silent) {
     devices.value = []
     showToast(res.msg || '加载失败')
   }
@@ -622,7 +626,10 @@ function formatScriptSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
 }
 
-onMounted(loadDevices)
+// KeepAlive 缓存页面：激活时静默刷新，不清空当前视图
+onActivated(() => {
+  loadDevices(true)
+})
 </script>
 
 <style scoped>

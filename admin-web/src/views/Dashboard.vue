@@ -132,7 +132,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, onMounted } from 'vue'
+defineOptions({ name: 'DashboardView' })
+import { computed, ref, onMounted, onActivated } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 
 interface SourceDistributionItem {
@@ -304,16 +305,26 @@ async function copyText(text: string, successMessage: string) {
   }
 }
 
-onMounted(async () => {
+onMounted(() => {
   publicApiUrl.value = resolvePublicApiUrl()
+})
+
+// silent=true 静默刷新（KeepAlive 页面重新激活时），不清空当前视图
+async function loadDashboard(silent = false) {
+  if (!silent || !stats.value) loading.value = true
   const res = await adminApi<DashboardStats>('dashboard_stats')
   if (res.code === 200 && res.data) {
     stats.value = res.data
     if (stats.value.public_api_url) publicApiUrl.value = stats.value.public_api_url
-  } else {
+  } else if (!silent) {
     loadError.value = res.msg || '数据加载失败（数据库可能未连接）'
   }
   loading.value = false
+}
+
+// KeepAlive 缓存页面：激活时静默刷新
+onActivated(() => {
+  loadDashboard(true)
 })
 </script>
 

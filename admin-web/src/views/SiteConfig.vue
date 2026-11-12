@@ -51,13 +51,36 @@
       </div>
     </div>
     </Transition>
+
+    <Transition name="fade-up" appear>
+      <div v-if="!loading" class="config-card beian-card">
+        <div class="section-title">备案信息</div>
+        <p class="beian-hint">配置后展示在后台侧边栏、登录页与移动版页脚，存入数据库，重新部署不会丢失。</p>
+        <div class="beian-form">
+          <label class="beian-field">
+            <span>ICP 备案号</span>
+            <input v-model="icpInput" type="text" maxlength="60" placeholder="例如：粤ICP备2024XXXXXXX号-1" />
+          </label>
+          <label class="beian-field">
+            <span>公网安备号</span>
+            <input v-model="psInput" type="text" maxlength="60" placeholder="例如：粤公网安备 4403XXXXXXX号" />
+          </label>
+          <div class="actions">
+            <button class="btn-save" :disabled="savingBeian" @click="saveBeian">
+              <span v-if="savingBeian" class="spinner"></span>
+              {{ savingBeian ? '保存中...' : '保存备案信息' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { loadSiteLogo, setSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
+import { loadSiteLogo, setSiteLogo, setSiteBeian, siteLogoUrl, siteIcp, sitePs } from '@/utils/siteLogo'
 
 const loading = ref(true)
 const saving = ref(false)
@@ -106,14 +129,71 @@ async function upload() {
 
 onMounted(async () => {
   await loadSiteLogo()
+  icpInput.value = siteIcp.value
+  psInput.value = sitePs.value
   loading.value = false
 })
+
+// ===== 备案信息 =====
+const savingBeian = ref(false)
+const icpInput = ref('')
+const psInput = ref('')
+
+async function saveBeian() {
+  savingBeian.value = true
+  const res = await adminApi<{ icp: string; ps: string }>('update_site_beian', {
+    icp: icpInput.value.trim(),
+    ps: psInput.value.trim(),
+  })
+  savingBeian.value = false
+  if (res.code === 200) {
+    setSiteBeian(icpInput.value.trim(), psInput.value.trim())
+    showToast('备案信息已更新', 'success')
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
 </script>
 
 <style scoped>
 .site-config-page {
   max-width: 760px;
   margin: 0 auto;
+}
+
+/* ===== 备案信息 ===== */
+.beian-card {
+  margin-top: 16px;
+}
+.beian-hint {
+  font-size: 12.5px;
+  color: var(--text-secondary, #8a8f99);
+  margin: 0 0 14px;
+}
+.beian-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.beian-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.beian-field input {
+  font-weight: 500;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e5e7eb);
+  background: var(--bg-input, #f7f8fa);
+  color: var(--text-primary, #1f2329);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.beian-field input:focus {
+  border-color: var(--primary-color, #ef4444);
 }
 .page-header {
   display: flex;

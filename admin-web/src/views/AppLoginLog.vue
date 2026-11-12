@@ -7,7 +7,7 @@
           <h2 class="page-title">登录日志</h2>
           <p class="page-desc">记录管理员通过 APP 端登录的操作日志，包括设备信息、IP 地址和登录状态。</p>
         </div>
-        <button class="btn-refresh" @click="loadList" :disabled="loading">
+        <button class="btn-refresh" @click="loadList()" :disabled="loading">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :class="{ spinning: loading }">
             <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
           </svg>
@@ -181,7 +181,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+defineOptions({ name: 'AppLoginLogView' })
+import { ref, computed, onActivated } from 'vue'
 import { adminApi } from '@/api/client'
 import { fmtDateTime } from '@/utils/time'
 import { formatOsVersion } from '@/utils/osVersion'
@@ -251,8 +252,11 @@ const successPct = computed(() => {
 const failedPct = computed(() => 100 - successPct.value)
 
 // ===== 加载数据 =====
-async function loadList() {
-  loading.value = true
+// silent=true 静默刷新（KeepAlive 页面重新激活时），不清空当前列表
+async function loadList(silent = false) {
+  if (!silent || logList.value.length === 0) {
+    loading.value = true
+  }
   const res = await adminApi<{
     total: number
     filtered_total: number
@@ -273,7 +277,7 @@ async function loadList() {
     if (res.data.stats) {
       stats.value = res.data.stats
     }
-  } else {
+  } else if (!silent) {
     logList.value = []
     filteredTotal.value = 0
   }
@@ -309,8 +313,9 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.substring(0, max) + '...' : s
 }
 
-onMounted(() => {
-  loadList()
+// KeepAlive 缓存页面：激活时静默刷新
+onActivated(() => {
+  loadList(true)
 })
 </script>
 

@@ -49,9 +49,9 @@
     </main>
 
     <footer class="mobile-icp">
-      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备XXXXXXXXXX号-1</a>
+      <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">{{ siteIcp || '粤ICP备XXXXXXXXXX号-1' }}</a>
       <span class="icp-dot">·</span>
-      <a href="https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX" target="_blank" rel="noopener">粤公网安备 XXXXXXXXXXXXXX号</a>
+      <a :href="psBeianUrl" target="_blank" rel="noopener">{{ sitePs || '粤公网安备 XXXXXXXXXXXXXX号' }}</a>
     </footer>
 
     <nav class="mobile-tabbar">
@@ -156,6 +156,7 @@ import { useThemeStore } from '@/stores/theme'
 import type { ThemeMode } from '@/stores/theme'
 import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
+import { loadSiteLogo, siteIcp, sitePs } from '@/utils/siteLogo'
 import SensitiveNotice from '@/views/SensitiveNotice.vue'
 import { setLang, langPref, langOpts, optLabel, t } from '@/i18n'
 import type { LangPref } from '@/i18n'
@@ -179,6 +180,13 @@ watch(
 const auth = useAuthStore()
 const theme = useThemeStore()
 const notify = useNotificationStore()
+
+// 公网安备跳转链接：从备案号中提取数字作为 code 参数
+const psBeianUrl = computed(() => {
+  const digits = (sitePs.value || '').replace(/\D/g, '')
+  if (!digits) return 'https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX'
+  return `https://beian.mps.gov.cn/#/query/webSearch?code=${digits}`
+})
 
 const notifyOpen = ref(false)
 const notifyLabel = computed(() => (notify.canNotify ? '通知已开启' : '通知未开启'))
@@ -221,6 +229,7 @@ function goNotice(to: string) {
 }
 
 onMounted(() => {
+  loadSiteLogo()
   notify.startPolling()
 })
 onUnmounted(() => {

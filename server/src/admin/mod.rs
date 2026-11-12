@@ -348,6 +348,7 @@ pub async fn dispatch(action: &str, body: &str, ctx: AdminCtx, pool: &MySqlPool)
         "get_about_config_admin" => about::get(body, &ctx, pool).await,
         "save_about_config" => about::save(body, &ctx, pool).await,
         "get_site_logo" => site_config::get_site_logo(body, &ctx, pool).await,
+        "update_site_beian" => site_config::update_site_beian(body, &ctx, pool).await,
         "upload_site_logo" => site_config::upload_site_logo(body, &ctx, pool).await,
         "get_server_config_file" => config_file::get(body, &ctx, pool).await,
         "save_server_config_file" => config_file::save(body, &ctx, pool).await,

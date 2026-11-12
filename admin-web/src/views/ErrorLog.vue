@@ -146,7 +146,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+defineOptions({ name: 'ErrorLogView' })
+import { ref, computed, onActivated } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 import { fmtDateTime } from '@/utils/time'
@@ -210,8 +211,11 @@ const pageNumbers = computed(() => {
   return pages
 })
 
-async function loadList() {
-  loading.value = true
+// silent=true 静默刷新（KeepAlive 页面重新激活时），不清空当前列表
+async function loadList(silent = false) {
+  if (!silent || logs.value.length === 0) {
+    loading.value = true
+  }
   loadError.value = ''
   const res = await adminApi<{ total: number; total_pages: number; list: ErrorLog[] }>('list_error_logs', {
     page: page.value,
@@ -225,7 +229,7 @@ async function loadList() {
     logs.value = res.data.list || []
     total.value = res.data.total
     totalPages.value = res.data.total_pages
-  } else {
+  } else if (!silent) {
     loadError.value = res.msg || '加载失败'
     logs.value = []
   }
@@ -306,8 +310,9 @@ async function clearAll() {
   }
 }
 
-onMounted(() => {
-  loadList()
+// KeepAlive 缓存页面：激活时静默刷新列表与统计
+onActivated(() => {
+  loadList(true)
   loadStats()
 })
 </script>

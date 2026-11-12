@@ -556,7 +556,8 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
+defineOptions({ name: 'UsersView' })
+import { onActivated } from 'vue'
 import { fmtDateTime } from '@/utils/time'
 import { useUserList } from '@/composables/users/useUserList'
 import { useAccountModals } from '@/composables/users/useAccountModals'
@@ -608,8 +609,9 @@ const {
   batchToggleSelected, batchBanDevice, batchResetDuration, batchDeleteSelected, deleteEmptyPlaylists,
 } = useBatchMode({ users, loadUsers })
 
-onMounted(() => {
-  loadUsers()
+// KeepAlive 缓存页面：激活时静默刷新列表与统计，不清空当前视图
+onActivated(() => {
+  loadUsers(true)
 })
 </script>
 

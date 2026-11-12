@@ -315,7 +315,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+defineOptions({ name: 'WallpapersView' })
+import { ref, computed, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 import { fmtDateTime } from '@/utils/time'
@@ -692,7 +693,16 @@ onMounted(() => {
   loadList()
   loadWallpaperUploadLimit()
   loadWallpaperAccountLimits()
+})
+
+// KeepAlive 缓存页面：激活时静默刷新并恢复轮询，离开时暂停轮询
+onActivated(() => {
+  loadList(true)
   startPolling()
+})
+
+onDeactivated(() => {
+  stopPolling()
 })
 
 onUnmounted(() => {

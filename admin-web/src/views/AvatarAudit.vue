@@ -149,7 +149,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+defineOptions({ name: 'AvatarAuditView' })
+import { ref, reactive, computed, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue'
 import { adminApi, showToast } from '@/api/client'
 import { webConfirm } from '@/utils/webDialog'
 import { fmtDateTime } from '@/utils/time'
@@ -286,7 +287,16 @@ function stopPolling() {
 
 onMounted(() => {
   loadAll()
+})
+
+// KeepAlive 缓存页面：激活时静默刷新并恢复轮询，离开时暂停轮询
+onActivated(() => {
+  loadAll(true)
   startPolling()
+})
+
+onDeactivated(() => {
+  stopPolling()
 })
 
 onUnmounted(() => {

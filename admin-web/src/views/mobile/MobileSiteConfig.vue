@@ -39,6 +39,24 @@
           <button v-if="hasNewImage" class="mobile-btn" :disabled="saving" @click="reset">取消</button>
         </div>
       </div>
+      <!-- 备案信息 -->
+      <div class="mobile-card mobile-form">
+        <h3 class="mobile-card-title">备案信息</h3>
+        <p class="mobile-muted">配置后展示在页脚，存入数据库，重新部署不会丢失。</p>
+        <label class="mobile-field">
+          <span>ICP 备案号</span>
+          <input v-model="icpInput" type="text" maxlength="60" placeholder="例如：粤ICP备2024XXXXXXX号-1" />
+        </label>
+        <label class="mobile-field">
+          <span>公网安备号</span>
+          <input v-model="psInput" type="text" maxlength="60" placeholder="例如：粤公网安备 4403XXXXXXX号" />
+        </label>
+        <div class="mobile-actions">
+          <button class="mobile-btn primary" :disabled="savingBeian" @click="saveBeian">
+            {{ savingBeian ? '保存中...' : '保存备案信息' }}
+          </button>
+        </div>
+      </div>
     </template>
   </div>
 </template>
@@ -46,7 +64,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { adminApi, showToast } from '@/api/client'
-import { loadSiteLogo, setSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
+import { loadSiteLogo, setSiteLogo, setSiteBeian, siteLogoUrl, siteIcp, sitePs } from '@/utils/siteLogo'
 import './MobilePage.css'
 
 const loading = ref(true)
@@ -96,11 +114,47 @@ async function upload() {
 
 onMounted(async () => {
   await loadSiteLogo()
+  icpInput.value = siteIcp.value
+  psInput.value = sitePs.value
   loading.value = false
 })
+
+// ===== 备案信息 =====
+const savingBeian = ref(false)
+const icpInput = ref('')
+const psInput = ref('')
+
+async function saveBeian() {
+  savingBeian.value = true
+  const res = await adminApi<{ icp: string; ps: string }>('update_site_beian', {
+    icp: icpInput.value.trim(),
+    ps: psInput.value.trim(),
+  })
+  savingBeian.value = false
+  if (res.code === 200) {
+    setSiteBeian(icpInput.value.trim(), psInput.value.trim())
+    showToast('备案信息已更新', 'success')
+  } else {
+    showToast(res.msg || '保存失败')
+  }
+}
 </script>
 
 <style scoped>
+.mobile-field > span {
+  color: var(--text-light);
+  font-size: 12px;
+  font-weight: 800;
+}
+.mobile-field input {
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--control-bg);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+}
 .logo-preview-row {
   display: flex;
   align-items: center;

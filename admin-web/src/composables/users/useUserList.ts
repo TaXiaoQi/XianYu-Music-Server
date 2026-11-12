@@ -37,15 +37,18 @@ export function useUserList() {
     return pages
   })
 
-  async function loadUsers() {
-    loading.value = true
+  // silent=true 静默刷新（KeepAlive 页面重新激活时），不清空当前列表
+  async function loadUsers(silent = false) {
+    if (!silent || users.value.length === 0) {
+      loading.value = true
+    }
     loadError.value = ''
     const res = await getUsers({ page: page.value, page_size: pageSize, keyword: keyword.value })
     if (res.code === 200 && res.data) {
       users.value = res.data.list || []
       total.value = res.data.total
       totalPages.value = res.data.total_pages
-    } else {
+    } else if (!silent) {
       loadError.value = res.msg || '加载失败'
       users.value = []
     }

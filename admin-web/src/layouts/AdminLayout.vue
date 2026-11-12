@@ -66,8 +66,8 @@
         </li>
       </ul>
       <div class="sidebar-icp">
-        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">粤ICP备XXXXXXXXXX号-1</a><br>
-        <a href="https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX" target="_blank" rel="noopener">粤公网安备 XXXXXXXXXXXXXX号</a>
+        <a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">{{ siteIcp || '粤ICP备XXXXXXXXXX号-1' }}</a><br>
+        <a :href="psBeianUrl" target="_blank" rel="noopener">{{ sitePs || '粤公网安备 XXXXXXXXXXXXXX号' }}</a>
       </div>
       <div class="sidebar-switch">
         <button class="switch-mobile-btn" @click="goMobile">
@@ -197,7 +197,11 @@
       </div>
       <router-view v-slot="{ Component }">
         <transition name="route-fade" mode="out-in">
-          <component :is="sensitiveBlocked ? SensitiveNotice : Component" />
+          <!-- 数据量大的列表页缓存组件，切换侧栏不整页重载；
+               各页在 onActivated 静默刷新、onDeactivated 暂停轮询 -->
+          <keep-alive include="FeedbackView,UsersView,DeviceBannedView,WallpapersView,ThemesView,AvatarAuditView,DashboardView,ErrorLogView,EmailLogView,AppLoginLogView,SignRejectLogView">
+            <component :is="sensitiveBlocked ? SensitiveNotice : Component" />
+          </keep-alive>
         </transition>
       </router-view>
     </main>
@@ -212,7 +216,14 @@ import { useThemeStore } from '@/stores/theme'
 import type { ThemeMode } from '@/stores/theme'
 import { useNotificationStore } from '@/stores/notification'
 import { showToast } from '@/api/client'
-import { loadSiteLogo, siteLogoUrl } from '@/utils/siteLogo'
+import { loadSiteLogo, siteLogoUrl, siteIcp, sitePs } from '@/utils/siteLogo'
+
+// 公网安备跳转链接：从备案号中提取数字作为 code 参数
+const psBeianUrl = computed(() => {
+  const digits = (sitePs.value || '').replace(/\D/g, '')
+  if (!digits) return 'https://beian.mps.gov.cn/#/query/webSearch?code=XXXXXXXXXXXXXX'
+  return `https://beian.mps.gov.cn/#/query/webSearch?code=${digits}`
+})
 import SensitiveNotice from '@/views/SensitiveNotice.vue'
 import { setLang, langPref, langCurrent, langOpts, optLabel, t } from '@/i18n'
 import type { LangPref } from '@/i18n'

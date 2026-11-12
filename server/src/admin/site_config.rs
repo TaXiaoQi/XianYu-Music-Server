@@ -6,6 +6,8 @@ use super::{err, log_operation, ok, AdminCtx};
 use crate::handlers::helpers::{parse_body, str_of};
 
 const SITE_LOGO_KEY: &str = "site_logo_url";
+const SITE_ICP_KEY: &str = "site_icp_number";
+const SITE_PS_KEY: &str = "site_public_security_number";
 
 fn logo_dir() -> std::path::PathBuf {
     std::path::Path::new("uploads").join("logos")
@@ -26,6 +28,31 @@ pub async fn read_site_logo(pool: &MySqlPool) -> String {
     .flatten()
     .flatten()
     .unwrap_or_default()
+}
+
+/// 读取站点级文本配置（备案号等），未配置返回空串；供公开接口复用
+pub async fn read_site_setting_public(pool: &MySqlPool, key: &str) -> String {
+    sqlx::query_scalar::<_, Option<String>>(
+        "SELECT setting_value FROM server_settings WHERE setting_key = ? LIMIT 1",
+    )
+    .bind(key)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .flatten()
+    .unwrap_or_default()
+}
+
+async fn save_site_setting(pool: &MySqlPool, key: &str, value: &str) {
+    let _ = sqlx::query(
+        "INSERT INTO server_settings (setting_key, setting_value) VALUES (?, ?)
+         ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await;
 }
 
 fn full_url(base_url: &str, config_public_base_url: &str, url: &str) -> String {
@@ -71,8 +98,27 @@ fn save_logo_png(bytes: &[u8], target: &std::path::Path) -> bool {
 
 pub async fn get_site_logo(_body: &str, _ctx: &AdminCtx, pool: &MySqlPool) -> Response {
     let stored = read_site_logo(pool).await;
+    let icp = read_site_setting_public(pool, SITE_ICP_KEY).await;
+    let ps = read_site_setting_public(pool, SITE_PS_KEY).await;
     let url = if stored.is_empty() { "" } else { &stored };
-    ok("ok", json!({ "logo_url": url }))
+    ok(
+        "ok",
+        json!({ "logo_url": url, "icp": icp, "ps": ps }),
+    )
+}
+
+/// 更新站点备案信息（ICP 备案号 / 公网安备号），存 DB，重新部署不再丢失
+pub async fn update_site_beian(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {
+    let data = parse_body(body);
+    let icp = str_of(&data, "icp").trim().to_string();
+    let ps = str_of(&data, "ps").trim().to_string();
+    if icp.chars().count() > 60 || ps.chars().count() > 60 {
+        return err(400, "备案号长度不能超过 60 字符");
+    }
+    save_site_setting(pool, SITE_ICP_KEY, &icp).await;
+    save_site_setting(pool, SITE_PS_KEY, &ps).await;
+    log_operation(pool, ctx, "更新站点备案信息", "站点配置", &format!("icp={icp}; ps={ps}")).await;
+    ok("备案信息已更新", json!({ "icp": icp, "ps": ps }))
 }
 
 pub async fn upload_site_logo(body: &str, ctx: &AdminCtx, pool: &MySqlPool) -> Response {

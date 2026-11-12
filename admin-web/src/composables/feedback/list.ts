@@ -45,9 +45,15 @@ export function useFeedbackList() {
     return arr
   })
 
-  async function loadList() {
-    loading.value = true
-    const res = await listFeedback(activeFilter.value === 'all' ? '' : activeFilter.value, sortMode.value)
+  // 恒取全量列表，状态/类型/关键词筛选全部走本地 computed——切换筛选即时
+  // 生效，不再整屏转圈。仅首次进入（或列表为空时）显示加载态。
+  // hard=true 强制显示整屏加载（首次挂载）。
+  async function loadList(opts?: { hard?: boolean }) {
+    const hard = opts?.hard === true
+    if (hard || feedbackList.value.length === 0) {
+      loading.value = true
+    }
+    const res = await listFeedback('', sortMode.value)
     if (res.code === 200 && res.data) {
       feedbackList.value = res.data.list || []
       if (res.data.stats) {
@@ -60,30 +66,27 @@ export function useFeedbackList() {
   }
 
   function handleSearch() {
+    // 纯本地筛选，无需请求
     appliedKeyword.value = searchKeyword.value.trim().toLowerCase()
-    loadList()
   }
   function clearSearch() {
     searchKeyword.value = ''
     appliedKeyword.value = ''
-    loadList()
   }
   async function openSortMenu() {
     const key = await webActionMenu('排序方式', sortOptions.map(o => ({ key: o.key, label: o.label })))
     if (key && key !== sortMode.value) {
+      // 排序在服务端执行，需重新拉取（软加载，不清空当前列表）
       sortMode.value = key
       loadList()
     }
   }
+  // 状态/类型筛选均为本地过滤，即时切换
   function setFilter(s: string) {
-    if (activeFilter.value === s) return
     activeFilter.value = s
-    loadList()
   }
   function setTypeFilter(t: string) {
-    if (typeFilter.value === t) return
     typeFilter.value = t
-    loadList()
   }
 
   // resolved/rejected 需二次确认，成功后本地同步 stats 计数
