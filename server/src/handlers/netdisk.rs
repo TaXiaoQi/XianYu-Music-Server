@@ -79,12 +79,17 @@ pub fn rewrite_download_url(base_url: &str, public_base: &str, raw_url: &str, pw
 
 // ===================== 解析结果缓存 =====================
 
-type CacheMap = HashMap<String, (i64, Option<String>)>;
+/// 解析产物：直链 + 文件大小（字节）。
+/// 大小取自蓝奏云分享页 meta「文件大小：x.x M」——直链 CDN 拒绝 HEAD/Range 探测，
+/// 无法从下载侧取得体积，只能解析时顺手提取；139 暂无来源，保持 None。
+type ResolvedFile = (String, Option<u64>);
+
+type CacheMap = HashMap<String, (i64, Option<ResolvedFile>)>;
 
 static CACHE: Mutex<Option<CacheMap>> = Mutex::new(None);
 
-/// 命中返回 Some(直链)；负缓存返回 Some(None)；无缓存返回 None
-fn cache_lookup(key: &str) -> Option<Option<String>> {
+/// 命中返回 Some((直链, 大小))；负缓存返回 Some(None)；无缓存返回 None
+fn cache_lookup(key: &str) -> Option<Option<ResolvedFile>> {
     let now = chrono::Utc::now().timestamp();
     let mut guard = CACHE.lock().ok()?;
     let map = guard.get_or_insert_with(HashMap::new);
@@ -98,7 +103,7 @@ fn cache_lookup(key: &str) -> Option<Option<String>> {
     })
 }
 
-fn cache_store(key: &str, val: Option<String>) {
+fn cache_store(key: &str, val: Option<ResolvedFile>) {
     let now = chrono::Utc::now().timestamp();
     if let Ok(mut guard) = CACHE.lock() {
         let map = guard.get_or_insert_with(HashMap::new);
@@ -171,10 +176,32 @@ fn parse_lanzou_json(text: &str) -> Option<String> {
     Some(format!("{}/file/{}", dom.trim_end_matches('/'), file.trim_start_matches('/')))
 }
 
+/// 从分享页 HTML 提取文件大小（meta「文件大小：18.3 M」），返回字节数
+fn lanzou_page_size(html: &str) -> Option<u64> {
+    const KEY: &str = "文件大小";
+    let idx = html.find(KEY)?;
+    let rest = &html[idx + KEY.len()..];
+    let rest = rest.trim_start_matches(|c: char| c == '：' || c == ':' || c.is_whitespace());
+    let num_end = rest
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(rest.len());
+    let num: f64 = rest[..num_end].parse().ok()?;
+    let unit = rest[num_end..].trim_start().to_lowercase();
+    let mult: f64 = if unit.starts_with('g') {
+        1024.0 * 1024.0 * 1024.0
+    } else if unit.starts_with('k') {
+        1024.0
+    } else {
+        1024.0 * 1024.0
+    };
+    let bytes = (num * mult) as u64;
+    if bytes > 0 { Some(bytes) } else { None }
+}
+
 /// 混合式解析，两种页面形态：
 /// A 带密码页：页面 JS 直接内嵌 isngis 签名 + ajaxfile.php 地址，POST {sign, kd, p:密码}
 /// B 无密码页：/fn? 中转页 → 抠 wp_sign/ajaxdata/domain1/domain2 → POST 换直链
-async fn lanzou_resolve(url: &str, pwd: &str) -> Result<String, String> {
+async fn lanzou_resolve(url: &str, pwd: &str) -> Result<(String, Option<u64>), String> {
     let cookie_jar = Arc::new(reqwest::cookie::Jar::default());
     let client = reqwest::Client::builder()
         .user_agent(BROWSER_UA)
@@ -226,7 +253,9 @@ async fn lanzou_resolve(url: &str, pwd: &str) -> Result<String, String> {
             .await
             .map_err(|e| format!("密码提交失败: {e}"))?;
         let text = resp.text().await.map_err(|e| e.to_string())?;
-        return parse_lanzou_json(&text).ok_or_else(|| "访问密码校验未通过".to_string());
+        return parse_lanzou_json(&text)
+            .map(|direct| (direct, lanzou_page_size(&html)))
+            .ok_or_else(|| "访问密码校验未通过".to_string());
     }
 
     // 分支 B：无密码页（/fn? 中转）
@@ -287,7 +316,7 @@ async fn lanzou_resolve(url: &str, pwd: &str) -> Result<String, String> {
             Err(_) => continue,
         };
         if let Some(direct) = parse_lanzou_json(&text) {
-            return Ok(direct);
+            return Ok((direct, lanzou_page_size(&html)));
         }
     }
     Err("解析接口拒绝或全部候选域失败".to_string())
@@ -376,7 +405,7 @@ fn yun139_link_id(url: &str) -> Option<String> {
 }
 
 /// 139 分享解析（无需登录）：列出分享根目录 → 取第一个文件 → 换直链
-async fn yun139_resolve(url: &str, pwd: &str) -> Result<String, String> {
+async fn yun139_resolve(url: &str, pwd: &str) -> Result<ResolvedFile, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(12))
         .build()
@@ -430,12 +459,12 @@ async fn yun139_resolve(url: &str, pwd: &str) -> Result<String, String> {
     if direct.is_empty() {
         return Err("未获取到直链（分享可能要求登录）".to_string());
     }
-    Ok(direct.to_string())
+    Ok((direct.to_string(), None))
 }
 
 // ===================== 统一端点 =====================
 
-async fn resolve_any(target: &str, pwd: &str) -> Result<String, String> {
+async fn resolve_any(target: &str, pwd: &str) -> Result<ResolvedFile, String> {
     if is_yun139_share_url(target) {
         yun139_resolve(target, pwd).await
     } else {
@@ -444,8 +473,10 @@ async fn resolve_any(target: &str, pwd: &str) -> Result<String, String> {
 }
 
 /// GET /api/dl?u=<网盘分享链接>&p=<访问密码> → 302 直链；解析失败 302 兜底回分享页
+/// HEAD /api/dl?... → 200 + Content-Length（解析直链并探测真实文件大小），供官网 probeSize 展示包体积
 pub async fn resolve_dl(
     State(state): State<AppState>,
+    method: axum::http::Method,
     headers: HeaderMap,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Query(params): Query<HashMap<String, String>>,
@@ -468,9 +499,9 @@ pub async fn resolve_dl(
             None => {
                 let result = resolve_any(&target, &pwd).await;
                 let out = match &result {
-                    Ok(direct) => {
-                        cache_store(&cache_key, Some(direct.clone()));
-                        Some(direct.clone())
+                    Ok((direct, size)) => {
+                        cache_store(&cache_key, Some((direct.clone(), *size)));
+                        Some((direct.clone(), *size))
                     }
                     Err(e) => {
                         tracing::warn!("网盘直链解析失败 {}: {e}", host_of(&target));
@@ -487,9 +518,42 @@ pub async fn resolve_dl(
     // 命中直链 → 302 直链；限流/解析失败 → 302 回分享页（用户手动点一次，服务不中断）
     let fallback = (StatusCode::FOUND, [("location", target.as_str())]).into_response();
     match resolved {
-        Some(direct) => (StatusCode::FOUND, [("location", direct.as_str())]).into_response(),
+        Some((direct, size)) => {
+            // HEAD 探测：返回真实文件大小，官网据此显示「约 xx MB」。
+            // 优先用解析时从分享页提取的大小；CDN 不拦 HEAD 时再回退直链探测
+            if method == axum::http::Method::HEAD {
+                let len = match size {
+                    Some(len) if len > 0 => Some(len),
+                    _ => probe_direct_size(&direct).await,
+                };
+                if let Some(len) = len {
+                    return axum::response::Response::builder()
+                        .status(StatusCode::OK)
+                        .header(axum::http::header::CONTENT_LENGTH, len.to_string())
+                        .body(axum::body::Body::empty())
+                        .unwrap();
+                }
+            }
+            (StatusCode::FOUND, [("location", direct.as_str())]).into_response()
+        }
         None => fallback,
     }
+}
+
+/// 探测直链文件大小（HEAD Content-Length），失败返回 None（回退 302 行为）
+async fn probe_direct_size(direct: &str) -> Option<u64> {
+    let client = reqwest::Client::builder()
+        .user_agent(BROWSER_UA)
+        .timeout(std::time::Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::limited(5))
+        .build()
+        .ok()?;
+    let resp = client.head(direct).send().await.ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let len = resp.content_length().unwrap_or(0);
+    if len > 0 { Some(len) } else { None }
 }
 
 #[cfg(test)]
@@ -507,8 +571,8 @@ mod tests {
         let pwd = std::env::var("NETDISK_TEST_PWD").unwrap_or_default();
         let is_139 = super::is_yun139_share_url(&url);
         match super::resolve_any(&url, &pwd).await {
-            Ok(direct) => {
-                println!("direct={direct}");
+            Ok((direct, size)) => {
+                println!("direct={direct} size={size:?}");
                 assert!(direct.starts_with("http"), "unexpected direct url: {direct}");
             }
             Err(e) => {

@@ -84,6 +84,7 @@ pub async fn send_verify_code(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Resp
         "reset_password" => "找回密码",
         "delete_account" => "注销账号",
         "bind" => "绑定邮箱",
+        "change_password" => "修改密码",
         _ => "注册",
     };
     let title = format!("【弦予音乐】{}验证码", type_label);

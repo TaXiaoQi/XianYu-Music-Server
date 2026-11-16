@@ -448,6 +448,7 @@ pub async fn change_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
     let ciyuanxi_id = extract_id(&data);
     let old_password = str_of(&data, "old_password");
     let new_password = str_of(&data, "new_password");
+    let code = str_of(&data, "code").trim().to_string();
     if ciyuanxi_id.is_empty() {
         return ctx.err(400, "弦予号不能为空");
     }
@@ -464,7 +465,47 @@ pub async fn change_password(body: &str, ctx: ReqCtx, pool: &MySqlPool) -> Respo
         return ctx.err(404, "用户不存在");
     };
     let stored: String = user.get("password");
-    if !bcrypt::verify(&old_password, &stored).unwrap_or(false) {
+    let email: String = user
+        .try_get::<Option<String>, _>("email")
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    if old_password.is_empty() {
+        // 忘记原密码路径：以注册邮箱验证码证明本号主人身份（用户反馈
+        // shiguan962：想不起原密码的人被「当前密码必填」锁死）。动作本身
+        // 已是登录态绑定（token.rs USER_BOUND_ACTIONS），再加发送时人机
+        // 验证 + 收件箱持有校验，安全性达标。原密码路径不受影响（桌面端
+        // 旧客户端兼容）。
+        if email.is_empty() {
+            return ctx.err(400, "该账号未绑定邮箱，请携带原密码修改");
+        }
+        if code.is_empty() {
+            return ctx.err(400, "忘记原密码时请输入邮箱验证码");
+        }
+        let row = sqlx::query(
+            "SELECT id FROM email_verify_codes WHERE email = ? AND code = ? AND type = 'change_password' AND used = 0 AND expired_at > NOW() ORDER BY id DESC LIMIT 1",
+        )
+        .bind(&email)
+        .bind(&code)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+        let Some(row) = row else {
+            return ctx.err(400, "邮箱验证码错误或已过期");
+        };
+        let code_id: i64 = row.get("id");
+        let used = sqlx::query("UPDATE email_verify_codes SET used = 1 WHERE id = ? AND used = 0")
+            .bind(code_id)
+            .execute(pool)
+            .await
+            .map(|r| r.rows_affected())
+            .unwrap_or(0);
+        if used == 0 {
+            return ctx.err(400, "邮箱验证码已被使用");
+        }
+    } else if !bcrypt::verify(&old_password, &stored).unwrap_or(false) {
+        // 携原密码路径：原密码即身份证明，保持旧行为（旧客户端兼容）
         return ctx.err(400, "原密码错误");
     }
     let hashed = match bcrypt::hash(&new_password, 10) {
